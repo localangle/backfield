@@ -15,8 +15,8 @@ from agate_runtime.run_graph_spec import (
     merge_run_result_payload,
     parse_run_result_payload,
 )
+from agate_runtime.run_trigger import trigger_agate_run
 from agate_runtime.s3_batch import graph_spec_json_contains_s3_input
-from agate_runtime.single_item import build_single_item_input_from_graph_spec_json
 from api.deps import get_auth, get_session
 from api.processed_item import (
     OverlayGeometryValidationError,
@@ -810,69 +810,29 @@ def create_run(
     if not g:
         raise HTTPException(404, "Graph not found")
     require_project_access(session, auth, int(g.project_id))
-    is_s3_batch = graph_spec_json_contains_s3_input(g.spec_json)
-    run = AgateRun(
-        graph_id=g.id,
-        status="pending",
-        replace_article_geography_on_persist=body.replace_article_geography_on_persist,
-    )
-    session.add(run)
-    session.commit()
-    session.refresh(run)
 
+    def _enqueue(task_name: str, args: list[Any]) -> None:
+        celery_app.send_task(task_name, args=args, queue=_celery_queue())
+
+    try:
+        triggered = trigger_agate_run(
+            session,
+            graph=g,
+            inputs=None,
+            replace_article_geography_on_persist=body.replace_article_geography_on_persist,
+            enqueue=_enqueue,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    run = triggered.run
     processed_items_out: list[ProcessedItemOut] = []
-    if is_s3_batch:
-        run.result_json = merge_run_result_payload(None, graph_spec_json=g.spec_json)
-        run.updated_at = datetime.now(UTC)
-        session.add(run)
-        session.commit()
-        session.refresh(run)
-        celery_app.send_task(
-            "worker.tasks.execute_s3_batch_setup",
-            args=[run.id],
-            queue=_celery_queue(),
-        )
-        total_items, pending_items, running_items, succeeded_items, failed_items = (
-            0,
-            0,
-            0,
-            0,
-            0,
-        )
-    else:
-        try:
-            input_doc, source_file = build_single_item_input_from_graph_spec_json(g.spec_json)
-        except ValueError as exc:
-            session.delete(run)
-            session.commit()
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-        item = AgateProcessedItem(
-            run_id=run.id,
-            source_file=source_file,
-            input_json=json.dumps(input_doc),
-            status="pending",
-        )
-        session.add(item)
-        run.status = "running"
-        run.result_json = merge_run_result_payload(None, graph_spec_json=g.spec_json)
-        run.updated_at = datetime.now(UTC)
-        session.add(run)
-        session.commit()
-        session.refresh(item)
-        session.refresh(run)
-
-        iid = item.id
-        if iid is None:
-            raise HTTPException(500, "Processed item id missing after save")
-        celery_app.send_task(
-            "worker.tasks.execute_processed_item",
-            args=[int(iid)],
-            queue=_celery_queue(),
-        )
+    if triggered.processed_item is not None:
+        item = triggered.processed_item
+        iid = int(item.id)  # type: ignore[arg-type]
         processed_items_out = [
             ProcessedItemOut(
-                id=int(iid),
+                id=iid,
                 run_id=run.id,
                 source_file=item.source_file,
                 input_preview=_processed_item_input_preview(item.input_json),
@@ -887,6 +847,14 @@ def create_run(
         total_items, pending_items, running_items, succeeded_items, failed_items = (
             1,
             1,
+            0,
+            0,
+            0,
+        )
+    else:
+        total_items, pending_items, running_items, succeeded_items, failed_items = (
+            0,
+            0,
             0,
             0,
             0,

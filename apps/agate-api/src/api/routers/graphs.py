@@ -60,6 +60,7 @@ class GraphCreate(BaseModel):
     description: str = ""
     spec: GraphSpec
     project_id: int
+    public_run_enabled: bool = False
 
 
 class GraphOut(BaseModel):
@@ -68,6 +69,7 @@ class GraphOut(BaseModel):
     description: str
     project_id: int
     spec: GraphSpec
+    public_run_enabled: bool
     created_at: datetime
 
 
@@ -78,6 +80,7 @@ def _graph_out(graph: AgateGraph) -> GraphOut:
         description=graph.description or "",
         project_id=graph.project_id,
         spec=GraphSpec.model_validate_json(graph.spec_json),
+        public_run_enabled=bool(graph.public_run_enabled),
         created_at=graph.created_at,
     )
 
@@ -105,6 +108,7 @@ def create_graph(
         description=(body.description or "").strip(),
         spec_json=prepared_spec.model_dump_json(),
         project_id=body.project_id,
+        public_run_enabled=body.public_run_enabled,
     )
     session.add(g)
     session.commit()
@@ -163,6 +167,7 @@ def update_graph(
     g.description = (body.description or "").strip()
     g.spec_json = prepared_spec.model_dump_json()
     g.project_id = body.project_id
+    g.public_run_enabled = body.public_run_enabled
     session.add(g)
     session.commit()
     session.refresh(g)

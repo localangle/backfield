@@ -8,13 +8,15 @@ RUN pip install --no-cache-dir uv
 COPY packages/backfield-db /app/packages/backfield-db
 COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-entities /app/packages/backfield-entities
+COPY packages/backfield-agate /app/packages/backfield-agate
 COPY packages/backfield-auth /app/packages/backfield-auth
 COPY apps/core-api /app/apps/core-api
 
-# Local packages are not on PyPI: db → ai → entities → auth → app.
+# Local packages are not on PyPI: db → ai → entities → agate → auth → app.
 RUN cd /app/packages/backfield-db && uv pip install --system -e . \
     && cd /app/packages/backfield-ai && uv pip install --system -e . \
     && cd /app/packages/backfield-entities && uv pip install --system -e . \
+    && cd /app/packages/backfield-agate && uv pip install --system -e . \
     && cd /app/packages/backfield-auth && uv pip install --system -e . \
     && cd /app/apps/core-api && uv pip install --system -e .
 

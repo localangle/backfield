@@ -1787,3 +1787,47 @@ Single mention with all non-suppressed occurrence evidence and article context. 
 ### Response `200`
 
 Same fields as search items, but `evidence` is replaced by `occurrences[]` (all non-suppressed spans ordered by `occurrence_order`).
+
+---
+
+## POST `/public/v1/projects/{project_slug}/runs`
+
+| Field | Value |
+|-------|-------|
+| **Status** | Shipped (Phase 7) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/runs/create.py`](../../../apps/core-api/src/core_api/routers/public/runs/create.py) — `create_public_run` |
+| **Auth** | Project API key with **`runs:trigger`** scope |
+
+Trigger an Agate run for a **`public_run_enabled`** graph. See [`runs.md`](runs.md) for ingress alias and per-type input shapes.
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `graph_id` | string | yes | Agate graph id in this project |
+| `inputs` | object | no | Map of `public_alias` → ingress argument (exactly one key when provided) |
+
+### Response `200`
+
+`PublicRunOut`: `run_id`, `status`, `counts` (`total`, `pending`, `running`, `succeeded`, `failed`), `created_at`, `updated_at`, `error_message`.
+
+### Errors
+
+**400** invalid inputs; **403** missing scope or graph not public-enabled; **404** unknown graph.
+
+---
+
+## GET `/public/v1/projects/{project_slug}/runs/{run_id}`
+
+| Field | Value |
+|-------|-------|
+| **Status** | Shipped (Phase 7) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/runs/detail.py`](../../../apps/core-api/src/core_api/routers/public/runs/detail.py) — `get_public_run` |
+| **Auth** | Project API key (read scope) |
+
+Poll run status and item counts. Same response shape as POST create.
+
+### Errors
+
+**404** when the run does not exist or is not in this project.
+

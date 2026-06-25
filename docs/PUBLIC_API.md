@@ -379,10 +379,12 @@ Automation may **start an Agate run** without using session-based Agate API rout
 
 ### Principles
 
-- **Opt-in graphs:** only graphs explicitly marked **`public_run_enabled`** (new graph or project flag — exact storage TBD in Phase 1) may be triggered via the public API.
-- **Input injection:** request body supplies parameters mapped to **ingress nodes** (TextInput, JSONInput, or a documented subset of S3Input batch parameters).
-- **Same worker path** as `POST /runs` on Agate API (enqueue Celery; no duplicate execution engine).
+- **Opt-in graphs:** only graphs with **`public_run_enabled: true`** on **`agate_graph`** may be triggered via the public API (set on graph create/update via Agate API; UI toggle deferred).
+- **Input injection:** optional `inputs` map keyed by the ingress node's **`public_alias`** param (stable alias declared on the node instance in the graph spec). Omitted → run with saved ingress params (same as a UI run).
+- **Effective spec:** at trigger, saved ingress params are merged with `inputs`, pinned on `run.result_json.graph_spec_json`, and consumed by the worker (including S3 batch setup).
+- **Same worker path** as `POST /runs` on Agate API via shared **`trigger_agate_run`** helper (enqueue Celery; no duplicate execution engine).
 - **Poll-only follow-up** on public API — no cancel, rerun, or review overlay.
+- **Auth:** requires project API key with **`runs:trigger`** scope (service keys; org-admin mint).
 
 ### Routes
 
@@ -391,18 +393,24 @@ Automation may **start an Agate run** without using session-based Agate API rout
 | `POST` | `…/runs` | Start a run |
 | `GET` | `…/runs/{run_id}` | Run status + minimal item summary |
 
-**POST body (conceptual):**
+**POST body:**
 
 ```json
 {
-  "graph_id": "uuid-or-slug",
+  "graph_id": "uuid",
   "inputs": {
-    "<ingress_node_id_or_alias>": { "text": "…" }
+    "<public_alias>": { }
   }
 }
 ```
 
-Exact ingress mapping rules (node id vs stable alias, JSONInput shape) are specified during Phase 1 implementation. Public run responses omit internal cost breakdowns unless needed for billing integrations.
+| Ingress type | `inputs[alias]` |
+|--------------|-----------------|
+| TextInput | `{ "text": "…" }` |
+| JSONInput | article JSON object |
+| S3Input | `{ "bucket"?, "prefix"?, "max_files"? }` (merged over saved params) |
+
+See [`docs/public-api/reference/runs.md`](public-api/reference/runs.md) for the full contract. Public run responses omit internal cost breakdowns.
 
 ---
 
@@ -454,7 +462,7 @@ Work on branch **`feat/api-surface`** (or child branches per phase). Update this
 - [x] Shared helpers: pagination envelope, project + stylebook resolution, OpenAPI tags
 - [x] `GET /public/v1/projects/{project_slug}` — project metadata (name, slug, Stylebook) plus substrate summary stats (articles, mentions, images, semantic indexing counts)
 - [x] Running endpoint registry: **`docs/public-api/reference/endpoints.md`**
-- [ ] Decide storage for **`public_run_enabled`** on graphs
+- [x] Decide storage for **`public_run_enabled`** on graphs (`agate_graph.public_run_enabled` boolean)
 - [x] Scaffold `docs/public-api/reference/README.md` and `capability-matrix.md`
 - [x] Tests: auth, wrong project, 404 semantics
 
@@ -534,11 +542,12 @@ Extract shared “canonical query” module in `backfield-entities` to avoid cop
 
 **Goal:** Controlled automation entrypoint.
 
-- Shared enqueue helper callable from agate-api and core-api public router
-- `POST …/runs`, `GET …/runs/{run_id}` (minimal public run shape)
-- Graph allowlist (`public_run_enabled`)
-- Document ingress `inputs` mapping
-- Reference page `runs.md`
+- [x] Shared enqueue helper (`agate_runtime.run_trigger.trigger_agate_run`) callable from agate-api and core-api public router
+- [x] `POST …/runs`, `GET …/runs/{run_id}` (minimal public run shape)
+- [x] Graph allowlist (`agate_graph.public_run_enabled`)
+- [x] Document ingress `inputs` mapping (`public_alias` + per-type shapes)
+- [x] Reference page `runs.md`
+- [x] Worker S3 batch setup reads pinned `graph_spec_json` on the run
 
 **Validation:** `make lint`, `make test`, `make smoke` when run path touches worker enqueue
 
@@ -567,14 +576,14 @@ Update as phases complete. **Shipped** / **Planned** / **N/A**.
 | People | ✅ | ✅ | ✅ | ✅ | Planned | Partial |
 | Organizations | ✅ | ✅ | ✅ | ✅ | Planned | Partial |
 | Works | N/A | N/A | N/A | N/A | N/A | N/A |
-| Runs (trigger) | — | Planned | — | — | — | — |
+| Runs (trigger) | — | ✅ | — | — | — | — |
 
 ---
 
 ## Open decisions (resolve in Phase 1)
 
-1. **Graph public flag:** column on `agate_graph` vs project-level allowlist table.
-2. **Ingress mapping:** node React Flow id vs declared stable alias in graph metadata.
+1. ~~**Graph public flag:** column on `agate_graph` vs project-level allowlist table.~~ **Resolved:** `agate_graph.public_run_enabled` boolean (default false).
+2. ~~**Ingress mapping:** node React Flow id vs declared stable alias in graph metadata.~~ **Resolved:** `public_alias` on ingress node `params`; API `inputs` keyed by alias.
 3. **Article preview:** max characters and whether to index preview for search.
 4. **Rate limiting:** defer to gateway vs middleware in core-api.
 5. **Custom record search:** which field types support substring vs exact match in v1.

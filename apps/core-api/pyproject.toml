@@ -10,6 +10,9 @@ dependencies = [
     "backfield-auth",
     "backfield-db",
     "backfield-entities",
+    "agate-runtime",
+    "celery>=5.3.0",
+    "redis>=5.0.0",
     "passlib[bcrypt]>=1.7.4",
     # passlib 1.7.x reads bcrypt.__about__.__version__ (removed in bcrypt 4.1+) and mishandles 5.x.
     "bcrypt>=4.0.1,<4.1",

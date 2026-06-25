@@ -1842,6 +1842,10 @@ class AgateGraph(SQLModel, table=True):
     description: str = Field(default="", sa_column=Column(Text, nullable=False, server_default=""))
     spec_json: str = Field(sa_column=Column(Text, nullable=False))
     project_id: int = Field(foreign_key="backfield_project.id")
+    public_run_enabled: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )

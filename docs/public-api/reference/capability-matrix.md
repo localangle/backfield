@@ -98,6 +98,6 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 
 | Mode | Status | Notes |
 |------|--------|-------|
-| Trigger | 🚧 | `POST …/runs`; graph allowlist |
-| Poll status | 🚧 | `GET …/runs/{id}`; minimal shape |
+| Trigger | ✅ | `POST …/runs`; `public_run_enabled` + `runs:trigger` scope |
+| Poll status | ✅ | `GET …/runs/{run_id}`; minimal shape |
 | Cancel / rerun / review | ❌ | Editorial Agate API only |

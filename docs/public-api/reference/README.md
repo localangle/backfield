@@ -81,7 +81,7 @@ Core API public routers live under `apps/core-api/src/core_api/routers/public/`:
 | `people.md` | Shipped in `endpoints.md` (Phase 4) |
 | `organizations.md` | Shipped in `endpoints.md` (Phase 4) |
 | `geo.md` | Phase 6 |
-| `runs.md` | Phase 7 |
+| `runs.md` | Shipped (Phase 7) |
 
 ## OpenAPI
 
