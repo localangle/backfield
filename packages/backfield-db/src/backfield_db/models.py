@@ -880,6 +880,10 @@ class BackfieldApiCredential(SQLModel, table=True):
     key_prefix: str = Field(sa_column=Column(Text, nullable=False, index=True))
     key_hash: str = Field(sa_column=Column(Text, nullable=False))
     label: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    scopes: str = Field(
+        sa_column=Column(Text, nullable=False, server_default="read"),
+        description="Space-separated scopes, e.g. 'read runs:trigger'",
+    )
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )

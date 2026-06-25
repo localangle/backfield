@@ -39,8 +39,8 @@ This document covers **internal and editorial** HTTP: the Agate API in `apps/aga
 **Member project access (sessions / API keys):** `org_admin` sees all org projects. Other members see projects in their assigned workspaces plus any legacy explicit `backfield_project_membership` rows for that org (see `session_project_ids_for_user` in `packages/backfield-auth`).
 
 - **Project API keys (Bearer `bfk_…`):** for callers with access to the project (`require_project_access`):
-  - `GET /v1/projects/{project_id}/api-keys` — active keys (`id`, `credential_type`, `key_prefix`, `label`, `created_at`, `user_id` — `null` for `service` keys).
-  - `POST /v1/projects/{project_id}/api-keys` — body `{ "credential_type": "user" | "service", "label"?: string }`. Returns `raw_key` **once** on create. `user` keys require a browser session; `service` keys require org admin. Response includes `user_id` for `user` keys.
+  - `GET /v1/projects/{project_id}/api-keys` — active keys (`id`, `credential_type`, `key_prefix`, `label`, `scopes`, `created_at`, `user_id` — `null` for `service` keys).
+  - `POST /v1/projects/{project_id}/api-keys` — body `{ "credential_type": "user" | "service", "label"?: string, "scopes"?: string[] }`. Returns `raw_key` **once** on create. `user` keys require a browser session and are always read-only (`read` scope). `service` keys require org admin; optional `scopes` may include `runs:trigger` (always includes `read`). Response includes `user_id` for `user` keys and `scopes` for all keys.
   - `DELETE /v1/projects/{project_id}/api-keys/{credential_id}` — revoke (session rules: org admin for `service` or another user’s `user` key; owner for own `user` key).
 - **Project AI catalog (any member with project access):**
   - `GET /v1/projects/{project_id}/ai-models/effective` — inherited organization **active generative and embedding** models; optional query `**capabilities`** (comma-separated; embedding rows match only when `embedding` is requested); optional `**include_disabled=true**` to list models turned off for this project (workspace **Models** tab).

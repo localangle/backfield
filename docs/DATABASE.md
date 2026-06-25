@@ -39,7 +39,7 @@ Worker tasks release DB sessions during long graph execution and LLM calls so co
 - `backfield_project` — canonical project for Agate graphs, encrypted vault keys, Stylebook scoping, and future Core import APIs (`organization_id` required; `workspace_id` optional but new/bootstrap flows should set it).
 - `backfield_workspace_membership` — `(user_id, workspace_id)` unique; grants a **member** access to every project whose `workspace_id` is that workspace (same org). Unioned in auth with legacy `backfield_project_membership` rows until the latter are fully deprecated.
 - `backfield_project_membership` — `(user_id, project_id)` with optional per-project `role` (legacy explicit grants).
-- `backfield_api_credential` — per-project API keys (`credential_type` `user` or `service`), `key_prefix` + `key_hash`, `revoked_at`.
+- `backfield_api_credential` — per-project API keys (`credential_type` `user` or `service`), `key_prefix` + `key_hash`, `scopes` (space-separated; default `read`; optional `runs:trigger` on service keys only), `revoked_at`.
 
 ### Shared AI model infrastructure (`backfield_ai_*`)
 

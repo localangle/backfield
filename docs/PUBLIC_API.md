@@ -54,6 +54,10 @@ flowchart LR
 
 - **Mechanism:** `Authorization: Bearer <project_api_key>` (keys issued via Core API credentials routes; prefix `bfk_`).
 - **Scope:** Every public route is **project-scoped**. The key must grant access to the project in the URL (same rules as `backfield_auth.gate` project access).
+- **Key scopes:** Each project API key carries one or more scopes (space-separated in storage; returned as a list on mint/list):
+  - `read` — default for all keys; required for current public read routes.
+  - `runs:trigger` — reserved for the upcoming public run-trigger endpoint; may only be minted on **service** keys (org-admin-gated at mint). User keys remain read-only.
+- Side-effecting public routes (starting with run trigger) will require the matching scope via `require_scope(...)`; keys without it receive **403**.
 - **No session cookies** on public routes.
 - **Service token** (`SERVICE_API_TOKEN`) is for internal automation only — not documented as a public consumer credential.
 
