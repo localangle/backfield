@@ -251,6 +251,7 @@ export default function RunGraph() {
       await updateGraph(graph.id, {
         name: graph.name,
         description: nextDescription,
+        public_run_enabled: graph.public_run_enabled,
         project_id: graph.project_id,
         spec: graph.spec,
       })

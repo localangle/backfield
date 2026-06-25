@@ -8,7 +8,7 @@ Design reference: [`../../PUBLIC_API.md`](../../PUBLIC_API.md) — Run trigger s
 |-------|--------|
 | **Base path** | `/public/v1/projects/{project_slug}/runs` |
 | **Auth** | `Authorization: Bearer bfk_…` with **`runs:trigger`** scope |
-| **Graph gate** | Target graph must have **`public_run_enabled: true`** (set via Agate API graph create/update) |
+| **Graph gate** | Target graph must have **`public_run_enabled: true`** (toggle **Enable API runs** on the content-source node in Agate UI, or set via Agate API graph create/update) |
 
 ## POST `/public/v1/projects/{project_slug}/runs`
 
@@ -32,7 +32,7 @@ Start a run. Returns immediately with a run handle; poll **`GET …/runs/{run_id
 
 ### Ingress aliases
 
-Each ingress node declares a stable alias in its graph params: **`public_alias`** (string). When `inputs` is provided, it must contain **exactly one** key matching that alias.
+Each ingress node gets a stable alias in its graph params: **`public_alias`** (string). The Agate UI sets this automatically from the node name when **Enable API runs** is on (for example **Text Input** → `text_input`). When `inputs` is provided, it must contain **exactly one** key matching that alias.
 
 Supported ingress types (one per graph):
 

@@ -379,7 +379,7 @@ Automation may **start an Agate run** without using session-based Agate API rout
 
 ### Principles
 
-- **Opt-in graphs:** only graphs with **`public_run_enabled: true`** on **`agate_graph`** may be triggered via the public API (set on graph create/update via Agate API; UI toggle deferred).
+- **Opt-in graphs:** only graphs with **`public_run_enabled: true`** on **`agate_graph`** may be triggered via the public API (toggle **Enable API runs** on the content-source node in Agate UI, or set via Agate API graph create/update).
 - **Input injection:** optional `inputs` map keyed by the ingress node's **`public_alias`** param (stable alias declared on the node instance in the graph spec). Omitted → run with saved ingress params (same as a UI run).
 - **Effective spec:** at trigger, saved ingress params are merged with `inputs`, pinned on `run.result_json.graph_spec_json`, and consumed by the worker (including S3 batch setup).
 - **Same worker path** as `POST /runs` on Agate API via shared **`trigger_agate_run`** helper (enqueue Celery; no duplicate execution engine).
