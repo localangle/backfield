@@ -14,6 +14,9 @@ def test_banner_preserves_block_logo() -> None:
 
 def test_print_banner_renders_without_error(monkeypatch) -> None:
     printed: list[object] = []
-    monkeypatch.setattr("backfield_cli.console.CONSOLE.print", lambda value, **_: printed.append(value))
+    monkeypatch.setattr(
+        "backfield_cli.console.CONSOLE.print",
+        lambda value, **_: printed.append(value),
+    )
     print_banner()
     assert len(printed) == 1

@@ -54,15 +54,15 @@ def print_banner() -> None:
 
 def print_intro() -> None:
     CONSOLE.print()
-    CONSOLE.print("[bold]Welcome to Backfield local setup.[/bold]")
+    CONSOLE.print("[bold]Welcome to the Backfield local setup utility.[/bold]")
+    CONSOLE.print()
     CONSOLE.print(
-        "This will prepare your machine for local development:\n"
-        "  • Generate or reuse repo-root [cyan].env[/cyan] secrets\n"
-        "  • Start the Docker Compose stack\n"
-        "  • Run database migrations\n"
-        "  • Wait for API readiness\n"
-        "  • Seed your organization, stylebook, and admin user"
+        "Fill out the following information to bootstrap the Backfield platform on your "
+        "machine. Running Backfield locally requires Docker and Docker Compose "
+        "([link=https://docs.docker.com/compose/]https://docs.docker.com/compose/[/link])."
     )
+    CONSOLE.print()
+    CONSOLE.print("Supply the following information to get started.")
     CONSOLE.print()
 
 

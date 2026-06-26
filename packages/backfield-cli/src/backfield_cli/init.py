@@ -39,6 +39,10 @@ logger = logging.getLogger(__name__)
 
 _NO_BROWSER_ENV_VALUES = frozenset({"1", "true", "yes"})
 
+DEFAULT_SUPERUSER_EMAIL = "admin@backfield.news"
+DEFAULT_SUPERUSER_PASSWORD = "admin"
+DEFAULT_SUPERUSER_USERNAME = "Admin"
+
 
 def register_subcommand(subparsers) -> None:
     parser = subparsers.add_parser(
@@ -111,11 +115,14 @@ def _prompt(text: str, *, default: str | None = None) -> str:
         print("A value is required.")
 
 
-def _prompt_password(text: str) -> str:
+def _prompt_password(text: str, *, default: str | None = None) -> str:
+    suffix = f" (default: {default})" if default else ""
     while True:
-        value = getpass.getpass(f"{text}: ")
+        value = getpass.getpass(f"{text}{suffix}: ")
         if value:
             return value
+        if default is not None:
+            return default
         print("A value is required.")
 
 
@@ -127,9 +134,15 @@ def _load_config(args: argparse.Namespace) -> InitConfig:
     if args.config:
         return load_init_config(Path(args.config))
 
-    admin_email = _prompt("Admin email")
-    admin_password = _prompt_password("Admin password")
-    admin_display_name = _prompt("Admin display name", default="Admin")
+    admin_email = _prompt(
+        "Superuser email (you will use this to log in)",
+        default=DEFAULT_SUPERUSER_EMAIL,
+    )
+    admin_password = _prompt_password(
+        "Superuser password",
+        default=DEFAULT_SUPERUSER_PASSWORD,
+    )
+    admin_display_name = _prompt("Superuser username", default=DEFAULT_SUPERUSER_USERNAME)
     org_name = _prompt("Organization name", default=DEFAULT_ORG_NAME)
     stylebook_name = _prompt("Default Stylebook name", default=DEFAULT_STYLEBOOK_NAME)
     return InitConfig(
