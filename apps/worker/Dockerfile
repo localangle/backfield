@@ -16,12 +16,14 @@ FROM base AS builder
 
 COPY packages/backfield-db /app/packages/backfield-db
 COPY packages/backfield-ai /app/packages/backfield-ai
+COPY packages/backfield-auth /app/packages/backfield-auth
 COPY packages/backfield-agate /app/packages/backfield-agate
 COPY packages/backfield-entities /app/packages/backfield-entities
 COPY apps/worker /app/apps/worker
 
 RUN uv pip install --system /app/packages/backfield-db \
     && uv pip install --system /app/packages/backfield-ai \
+    && uv pip install --system /app/packages/backfield-auth \
     && uv pip install --system /app/packages/backfield-entities \
     && uv pip install --system /app/packages/backfield-agate \
     && uv pip install --system /app/apps/worker
@@ -52,12 +54,14 @@ FROM base AS dev
 
 COPY packages/backfield-db /app/packages/backfield-db
 COPY packages/backfield-ai /app/packages/backfield-ai
+COPY packages/backfield-auth /app/packages/backfield-auth
 COPY packages/backfield-agate /app/packages/backfield-agate
 COPY packages/backfield-entities /app/packages/backfield-entities
 COPY apps/worker /app/apps/worker
 
 RUN pip install --no-cache-dir -e /app/packages/backfield-db \
     && pip install --no-cache-dir -e /app/packages/backfield-ai \
+    && pip install --no-cache-dir -e /app/packages/backfield-auth \
     && pip install --no-cache-dir -e /app/packages/backfield-entities \
     && pip install --no-cache-dir -e /app/packages/backfield-agate \
     && pip install --no-cache-dir "celery>=5.3.0" "redis>=5.0.0" \

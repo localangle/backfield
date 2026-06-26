@@ -6,6 +6,8 @@ import os
 from contextlib import asynccontextmanager
 
 from backfield_auth.health_router import create_health_router
+from backfield_auth.request_logging_middleware import RequestLoggingMiddleware
+from backfield_auth.structured_logging import configure_structured_logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -21,6 +23,8 @@ from core_api.routers import org_integration_secrets as org_integration_secrets_
 from core_api.routers import project_ai_models as project_ai_models_router
 from core_api.routers import secure as secure_router
 from core_api.routers.public import router as public_v1_router
+
+configure_structured_logging("core-api")
 
 
 @asynccontextmanager
@@ -54,6 +58,7 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization", "Cookie"],
     expose_headers=["Set-Cookie"],
 )
+app.add_middleware(RequestLoggingMiddleware, service_name="core-api")
 
 app.include_router(legacy_public_router.router, prefix="/v1")
 app.include_router(public_v1_router, prefix="/public/v1")

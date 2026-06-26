@@ -5,8 +5,12 @@ from __future__ import annotations
 import os
 
 from api.routers import graphs, health, nodes, projects, runs, templates
+from backfield_auth.request_logging_middleware import RequestLoggingMiddleware
+from backfield_auth.structured_logging import configure_structured_logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+configure_structured_logging("agate-api")
 
 UI_ORIGIN = os.getenv("UI_ORIGIN", "http://localhost:5173")
 if UI_ORIGIN.startswith("http://localhost") or UI_ORIGIN.startswith("http://127.0.0.1"):
@@ -27,6 +31,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestLoggingMiddleware, service_name="agate-api")
 
 app.include_router(health.router)
 app.include_router(projects.router)

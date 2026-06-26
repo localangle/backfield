@@ -76,6 +76,8 @@ Each app ships [`.env.production`](../apps/agate-ui/.env.production) defaults lo
 
 ## Runtime contracts
 
+- Structured logs: all HTTP APIs and the worker emit **JSON lines** to stderr with shared fields (`service`, `environment`, `version`, `git_sha`, `request_id`, `client`, `run_id`, `job_id`, `event`, …). APIs log one `http_request` line per request (health/version paths excluded); Celery tasks log `task_start` / `task_end`. Set `BACKFIELD_ENV` or `ENVIRONMENT` (default `development`). Implementation: `packages/backfield-auth` (`structured_logging`, `request_logging_middleware`, worker `celery_logging` hooks).
+
 - Agate worker queue: `agate`
 - Worker task names:
   - `worker.tasks.execute_agate_run` — legacy whole-graph execution when no `agate_processed_item` rows exist (stores output on `agate_run` only).
@@ -92,6 +94,25 @@ Each app ships [`.env.production`](../apps/agate-ui/.env.production) defaults lo
   - Core API: `GET /health`
 
 ## Environment variables
+
+- `BACKFIELD_ENV` / `ENVIRONMENT`: deployment label included on every structured log line (default **`development`** in local Compose).
+
+### Runtime configuration surface (production)
+
+All runtime connectivity and secrets are **environment-driven** — no hardcoded production hosts in application code. Confirm these are set in deployment (not only Compose dev defaults):
+
+| Concern | Primary variables | Notes |
+|--------|-------------------|-------|
+| Database | `BACKFIELD_DATABASE_URL`, `DATABASE_URL`, `BACKFIELD_DATABASE_URL_DIRECT` | Runtime traffic uses the pooled URL; migrations use `_DIRECT` when set. |
+| Redis / Celery | `REDIS_URL`, `CELERY_QUEUE`, `CELERY_WORKER_CONCURRENCY` | Required for async runs and worker execution. |
+| Encryption | `MASTER_ENCRYPTION_KEY` | Required on **agate-api**, **worker**, **core-api**, **stylebook-api** for project/org secrets. |
+| Session auth | `SESSION_SECRET` | Shared across services that verify the session cookie. |
+| Service auth | `SERVICE_API_TOKEN` | Bearer token for service-to-service calls. |
+| S3 bundles | `STYLEBOOK_BUNDLE_S3_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, optional `AWS_S3_ENDPOINT_URL` | Bundle import/export only; unset bucket disables bundle routes. |
+| Stylebook worker access | `STYLEBOOK_API_URL` | Worker → Stylebook API base URL. |
+| Build identity | `APP_VERSION`, `GIT_SHA`, `BUILD_TIME` | Baked into prod images; surfaced on `/version` and startup logs. |
+
+**Local-only gaps (do not rely on in production):** Compose dev defaults for `MASTER_ENCRYPTION_KEY` and `SESSION_SECRET`; `BACKFIELD_LOCAL_BOOTSTRAP` project secret sync; `BACKFIELD_BOOTSTRAP_ADMIN_*` first-user creation; `POST /v1/bootstrap/first-user`. Production provisioning uses **`backfield migrate`** + **`backfield seed`** instead.
 
 - `BACKFIELD_DATABASE_URL` / `DATABASE_URL`: runtime database connection string for `agate-api`, **`stylebook-api`**, `worker`, and **`core-api`**. Local Compose routes these through **PgBouncer** (`...@pgbouncer:6432/backfield`) so many client connections multiplex onto a bounded pool of Postgres backends.
 - `BACKFIELD_DATABASE_URL_DIRECT`: optional direct Postgres URL for **migrations and admin** (`...@postgres:5432/backfield` in Compose). Alembic, `ensure_database_exists`, and `backfield migrate` prefer this when set so DDL and `CREATE DATABASE` bypass PgBouncer transaction pooling. Set on the **`migrate`** service in local Compose; runtime app code still uses the pooled URL.
