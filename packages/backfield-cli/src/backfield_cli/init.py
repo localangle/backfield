@@ -18,7 +18,7 @@ from rich.status import Status
 from backfield_cli.console import (
     CONSOLE,
     INIT_STEP_COUNT,
-    INTEGRATIONS_URL,
+    MODELS_URL,
     is_interactive,
     print_banner,
     print_intro,
@@ -67,7 +67,7 @@ def register_subcommand(subparsers) -> None:
     parser.add_argument(
         "--no-browser",
         action="store_true",
-        help="Do not open Settings → Integrations in a browser after setup",
+        help="Do not open Settings → AI models in a browser after setup",
     )
     parser.set_defaults(handler=_run_init)
 
@@ -217,7 +217,7 @@ def run_init(config: InitConfig, *, repo_root: Path, interactive: bool = False) 
         report.admin_email,
     )
     print_next_steps(config.admin_email)
-    _maybe_open_browser(INTEGRATIONS_URL, enabled=config.open_browser and interactive)
+    _maybe_open_browser(MODELS_URL, enabled=config.open_browser and interactive)
     return 0
 
 

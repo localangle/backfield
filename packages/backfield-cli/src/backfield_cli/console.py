@@ -24,7 +24,9 @@ BANNER = """
 
 AGATE_UI_URL = "http://localhost:5173"
 STYLEBOOK_UI_URL = "http://localhost:5175"
+MODELS_URL = f"{AGATE_UI_URL}/settings/models"
 INTEGRATIONS_URL = f"{AGATE_UI_URL}/settings/integrations"
+DOCS_URL = "https://docs.backfield.news"
 
 INIT_STEP_COUNT = 5
 
@@ -81,12 +83,16 @@ def print_next_steps(admin_email: str) -> None:
     CONSOLE.print()
     CONSOLE.print("[bold]Next steps[/bold]")
     CONSOLE.print(
-        "  1. Open [bold]Settings → Integrations[/bold] in the Agate UI\n"
+        "  1. Open [bold]Settings → AI models[/bold] in the Agate UI\n"
+        "     Add provider credentials and configure the models your flows will use\n"
+        f"     [link={MODELS_URL}]{MODELS_URL}[/link]"
+    )
+    CONSOLE.print(
+        "  2. Open [bold]Settings → Integrations[/bold] in the Agate UI\n"
+        "     Add API keys for geocoding, search, and storage\n"
         f"     [link={INTEGRATIONS_URL}]{INTEGRATIONS_URL}[/link]"
     )
     CONSOLE.print(
-        "  2. Add API keys for geocoding, search, and storage\n"
-        "     (Geocode Earth, Geocodio, Brave Search, Amazon S3)"
+        f"  3. Continue setup in the docs: [link={DOCS_URL}]{DOCS_URL}[/link]"
     )
-    CONSOLE.print("  3. Open Agate and build or run your first flow")
     CONSOLE.print()

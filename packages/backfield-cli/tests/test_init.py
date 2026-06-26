@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from backfield_cli.console import INTEGRATIONS_URL
+from backfield_cli.console import DOCS_URL, INTEGRATIONS_URL, MODELS_URL
 from backfield_cli.init import (
     _maybe_open_browser,
     _resolve_open_browser,
@@ -162,7 +162,9 @@ def test_backfield_init_cli_non_interactive(monkeypatch, tmp_path, capsys) -> No
         == 0
     )
     output = capsys.readouterr().out
+    assert MODELS_URL in output
     assert INTEGRATIONS_URL in output
+    assert DOCS_URL in output
 
 
 def test_run_init_does_not_open_browser_when_not_interactive(monkeypatch, tmp_path) -> None:
@@ -208,7 +210,7 @@ def test_run_init_opens_browser_when_interactive(monkeypatch, tmp_path) -> None:
     )
 
     assert run_init(config, repo_root=tmp_path, interactive=True) == 0
-    assert opened == [INTEGRATIONS_URL]
+    assert opened == [MODELS_URL]
 
 
 def test_run_init_respects_open_browser_false(monkeypatch, tmp_path) -> None:
@@ -239,7 +241,7 @@ def test_maybe_open_browser_swallows_errors(monkeypatch) -> None:
         raise OSError("no browser")
 
     monkeypatch.setattr("backfield_cli.init.webbrowser.open", _boom)
-    _maybe_open_browser(INTEGRATIONS_URL, enabled=True)
+    _maybe_open_browser(MODELS_URL, enabled=True)
 
 
 def test_resolve_open_browser_honors_no_browser_flag() -> None:
