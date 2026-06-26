@@ -68,6 +68,7 @@ services:
     build:
       context: ..
       dockerfile: apps/agate-api/Dockerfile
+      target: dev
     environment:
       BACKFIELD_DATABASE_URL_DIRECT: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
     command: ["backfield-migrate"]
@@ -80,6 +81,7 @@ services:
     build:
       context: ..
       dockerfile: apps/stylebook-api/Dockerfile
+      target: dev
     env_file:
       - path: ../.env
         required: false
@@ -111,6 +113,7 @@ services:
     build:
       context: ..
       dockerfile: apps/core-api/Dockerfile
+      target: dev
     env_file:
       - path: ../.env
         required: false
@@ -155,6 +158,7 @@ services:
     build:
       context: ..
       dockerfile: apps/agate-api/Dockerfile
+      target: dev
     env_file:
       - path: ../.env
         required: false

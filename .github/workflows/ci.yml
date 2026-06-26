@@ -26,6 +26,12 @@ jobs:
           cache-dependency-path: apps/stylebook-ui/package-lock.json
       - name: Stylebook UI build
         run: make stylebook-ui-build
+      - name: Build production API images
+        run: |
+          make docker-build-prod-apis \
+            APP_VERSION=ci-test \
+            GIT_SHA=${{ github.sha }} \
+            BUILD_TIME=1970-01-01T00:00:00Z
 
   test:
     runs-on: ubuntu-latest

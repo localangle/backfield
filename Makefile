@@ -1,8 +1,12 @@
 # Backfield — minimal developer surface (see `make help`)
 COMPOSE_FILE := infra/docker-compose.yml
 DC := docker compose -f $(COMPOSE_FILE) --env-file .env
+APP_VERSION ?= 0.0.0-dev
+GIT_SHA ?= unknown
+BUILD_TIME ?= unknown
+DOCKER_PROD_BUILD_ARGS := --build-arg APP_VERSION=$(APP_VERSION) --build-arg GIT_SHA=$(GIT_SHA) --build-arg BUILD_TIME=$(BUILD_TIME)
 
-.PHONY: help up up-detached down logs migrate reset-db clear-entity-data docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full test test-unit test-integration lint format bootstrap smoke smoke-auth smoke-agate-basic smoke-stylebook-basic smoke-agate-stylebook-handoff smoke-worker-async smoke-stylebook-editorial smoke-s3-batch smoke-stylebook-import-export smoke-fast smoke-runtime smoke-slower smoke-place-geocode smoke-place-geocode-stack smoke-people smoke-people-stack smoke-organizations smoke-organizations-stack smoke-article-metadata smoke-article-metadata-stack smoke-custom-extract smoke-custom-extract-stack smoke-parallel-graph smoke-parallel-graph-stack stylebook-ui-build
+.PHONY: help up up-detached down logs migrate reset-db clear-entity-data docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full docker-build-prod-apis docker-build-prod-agate-api docker-build-prod-core-api docker-build-prod-stylebook-api test test-unit test-integration lint format bootstrap smoke smoke-auth smoke-agate-basic smoke-stylebook-basic smoke-agate-stylebook-handoff smoke-worker-async smoke-stylebook-editorial smoke-s3-batch smoke-stylebook-import-export smoke-fast smoke-runtime smoke-slower smoke-place-geocode smoke-place-geocode-stack smoke-people smoke-people-stack smoke-organizations smoke-organizations-stack smoke-article-metadata smoke-article-metadata-stack smoke-custom-extract smoke-custom-extract-stack smoke-parallel-graph smoke-parallel-graph-stack stylebook-ui-build
 
 help:
 	@echo "Backfield"
@@ -42,6 +46,7 @@ help:
 	@echo "  make smoke-parallel-graph - Fan-out level parallelism timing (in-process, not CI)"
 	@echo "  make smoke-parallel-graph-stack - Same script --via-agate-api (level + multi-item timing)"
 	@echo "  make stylebook-ui-build - Typecheck and production-build apps/stylebook-ui"
+	@echo "  make docker-build-prod-apis - Build production targets for agate/core/stylebook APIs"
 
 bootstrap:
 	uv sync --all-packages
@@ -101,6 +106,17 @@ docker-trim: docker-prune-system
 
 docker-trim-full: docker-trim docker-prune-volumes
 	@echo "docker-trim-full done."
+
+docker-build-prod-agate-api:
+	docker build -f apps/agate-api/Dockerfile --target prod $(DOCKER_PROD_BUILD_ARGS) -t backfield-agate-api:prod .
+
+docker-build-prod-core-api:
+	docker build -f apps/core-api/Dockerfile --target prod $(DOCKER_PROD_BUILD_ARGS) -t backfield-core-api:prod .
+
+docker-build-prod-stylebook-api:
+	docker build -f apps/stylebook-api/Dockerfile --target prod $(DOCKER_PROD_BUILD_ARGS) -t backfield-stylebook-api:prod .
+
+docker-build-prod-apis: docker-build-prod-agate-api docker-build-prod-core-api docker-build-prod-stylebook-api
 
 test: test-unit test-integration
 

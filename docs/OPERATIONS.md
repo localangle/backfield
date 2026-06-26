@@ -40,6 +40,17 @@ When a migration is **destructive** toward existing Stylebook catalog data (for 
 
 Docker builds use the repo root as context; [.dockerignore](../.dockerignore) excludes optional large local `*.db` files under `packages/backfield-agate/.../geocoding/data/` so image builds do not copy multi-gigabyte artifacts if present on a developer machine.
 
+**Production API images** (`agate-api`, `core-api`, `stylebook-api`) expose a multi-stage Dockerfile with a **`prod`** target (non-editable installs, no `--reload`) and a **`dev`** target (editable installs for local Compose). Build production images from the repo root:
+
+```bash
+make docker-build-prod-apis \
+  APP_VERSION=v0.1.0 \
+  GIT_SHA=$(git rev-parse HEAD) \
+  BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+```
+
+Each production image bakes `APP_VERSION`, `GIT_SHA`, and `BUILD_TIME` into the environment; `GET /version` on a running container reports those values. Local Compose uses `target: dev` explicitly.
+
 **`agate-api`**, **`worker`**, and **`core-api` images** copy `packages/backfield-ai` and install editable wheels in dependency order (`backfield-db` → `backfield-ai` → …) because that package name is not published on PyPI (`agate-api` / `worker` continue with `agate-runtime` → `backfield-entities` → … as before).
 
 ## Runtime contracts
