@@ -477,28 +477,6 @@ export function ProcessedItemInformationCard({
             ) : null}
           </div>
         </div>
-
-        {item.node_timings && item.node_timings.length > 0 ? (
-          <div className="border-t border-border pt-4">
-            <p className="text-sm font-medium text-muted-foreground mb-2">Step timing</p>
-            <div className="space-y-2">
-              {item.node_timings.map((row) => (
-                <div
-                  key={`${row.node_type}:${row.node_id}`}
-                  className="flex items-center justify-between gap-3 text-sm"
-                >
-                  <span className="min-w-0 text-muted-foreground truncate">
-                    {row.node_type}
-                    <span className="font-mono text-xs ml-1">({row.node_id})</span>
-                  </span>
-                  <span className="shrink-0 font-medium tabular-nums">
-                    {formatDurationMs(row.elapsed_ms)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
       </CardContent>
     </Card>
   )
