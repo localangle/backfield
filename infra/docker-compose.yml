@@ -69,9 +69,9 @@ services:
       context: ..
       dockerfile: apps/agate-api/Dockerfile
       target: dev
+    entrypoint: ["backfield-migrate"]
     environment:
       BACKFIELD_DATABASE_URL_DIRECT: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
-    command: ["backfield-migrate"]
     depends_on:
       postgres:
         condition: service_healthy
