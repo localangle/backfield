@@ -22,6 +22,15 @@ from sqlmodel import Session, col, select
 from backfield_auth.service_tokens import verify_service_token
 from backfield_auth.session_tokens import verify_session_token
 
+SCOPE_READ = "read"
+SCOPE_RUNS_TRIGGER = "runs:trigger"
+ALL_SCOPES = (SCOPE_READ, SCOPE_RUNS_TRIGGER)
+
+
+def parse_scopes(raw: str | None) -> list[str]:
+    tokens = [t for t in (raw or "").split() if t]
+    return [t for t in tokens if t in ALL_SCOPES] or [SCOPE_READ]
+
 
 def try_resolve_bearer_api_key(session: Session, raw: str) -> dict[str, Any] | None:
     """Validate `bfk_` project API key; return auth dict or None if not a valid key."""
@@ -46,6 +55,7 @@ def try_resolve_bearer_api_key(session: Session, raw: str) -> dict[str, Any] | N
         "project_id": int(row.project_id),
         "organization_id": int(proj.organization_id),
         "credential_type": str(row.credential_type),
+        "scopes": parse_scopes(row.scopes),
     }
 
 

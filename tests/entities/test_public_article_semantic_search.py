@@ -96,6 +96,9 @@ def test_search_public_articles_semantic_orders_by_score() -> None:
     assert len(items) == 2
     assert items[0].headline == "Bridge repair funding"
     assert items[0].score >= items[1].score
+    assert items[0].preview
+    assert items[0].pub_date == date(2024, 3, 1)
+    assert items[0].metadata == []
 
 
 def test_search_public_articles_semantic_skips_articles_without_embeddings() -> None:

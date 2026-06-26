@@ -9,17 +9,21 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 | Mode | Status | Notes |
 |------|--------|-------|
 | Keyword search | ✅ | `GET …/articles/search` |
+| Search facets | ✅ | `GET …/articles/facets` (authors, sources, preset metadata categories) |
+| Metadata types | ✅ | `GET …/articles/metadata/types` |
+| Metadata values | ✅ | `GET …/articles/metadata/types/{meta_type}/values` |
+| Article metadata | ✅ | `GET …/articles/{id}/metadata` |
 | Semantic search | ✅ | `POST …/articles/semantic-search` (requires `substrate_article_embedding`; optional HyDE via `use_hyde`) |
 | Geo search | ✅ | `GET …/articles/geo-search` (point+radius or bbox; location mentions) |
 | Geo cells (hex coverage) | ✅ | `GET …/articles/geo-cells` (bbox; distinct-article counts per H3 cell) |
 | Geo cell drill-down | ✅ | `GET …/articles/geo-cells/{h3_cell}` (articles + in-cell location mentions) |
 | Batch geo cell drill-down | ✅ | `POST …/articles/geo-cells/query` (many cells; deduplicated articles + `matched_cells`) |
-| Detail | ✅ | No full body; optional preview |
-| Detail counts embed | ✅ | `include=counts` on detail |
-| Mentions (hub) | ✅ | `GET …/articles/{id}/mentions`; `entity_type` filter |
+| Detail | ✅ | Preview always; optional `include=text` for full body; inline images (≤10); optional `include=counts` |
+| Article counts (`include=counts`) | ✅ | Mention totals, distinct canonical totals, image/custom-record counts, `embedded` on search + detail |
+| Mentions (hub) | ✅ | `GET …/articles/{id}/mentions`; `entity_type`, `nature`, `quote` filters |
 | Locations (hub) | ✅ | `GET …/articles/{id}/locations` — map-oriented |
 | Images (hub) | ✅ | `GET …/articles/{id}/images` |
-| Metadata filters | ✅ | On search: include/exclude `meta_type` + category, date range |
+| Metadata filters | ✅ | Legacy `meta_type` / exclude params plus repeatable `meta` clauses on keyword search, semantic search, geo search, geo cells (+ drill-down/batch), and mention search |
 | Geo filters (search) | ✅ | `GET …/articles/geo-search` |
 | Bundle (convenience) | ❌ | Not v1; optional later |
 
@@ -39,7 +43,8 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 | Geo search | ✅ | `GET …/locations/geo-search` (canonical geometry; point+radius or bbox) |
 | Type facets | ✅ | `GET …/locations/types` |
 | Detail | ✅ | UUID canonical id; includes geometry |
-| Mentions | ✅ | `GET …/locations/{id}/mentions` |
+| Mentions | ✅ | `GET …/locations/{id}/mentions` — article/mention filters + `sort`, `sort_direction`, `quote` |
+| Mention timeline | ✅ | `GET …/locations/{id}/mentions/timeline` |
 | Articles | ✅ | `GET …/locations/{id}/articles` |
 | Connections | ✅ | `GET …/locations/{id}/connections` |
 | Semantic search | 🚧 | Phase 5 |
@@ -51,7 +56,8 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 | Keyword search | ✅ | `GET …/people` and `GET …/people/search` |
 | Type facets | ✅ | `GET …/people/types` |
 | Detail | ✅ | UUID canonical id |
-| Mentions | ✅ | `GET …/people/{id}/mentions` |
+| Mentions | ✅ | `GET …/people/{id}/mentions` — article/mention filters + `sort`, `sort_direction`, `quote` |
+| Mention timeline | ✅ | `GET …/people/{id}/mentions/timeline` — counts by article `pub_date`; `pub_date_from`/`pub_date_to`, `quote` |
 | Articles | ✅ | `GET …/people/{id}/articles` |
 | Connections | ✅ | `GET …/people/{id}/connections` |
 | Semantic search | 🚧 | Phase 5 |
@@ -64,7 +70,8 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 | Keyword search | ✅ | `GET …/organizations` and `GET …/organizations/search` |
 | Type facets | ✅ | `GET …/organizations/types` |
 | Detail | ✅ | UUID canonical id |
-| Mentions | ✅ | `GET …/organizations/{id}/mentions` |
+| Mentions | ✅ | `GET …/organizations/{id}/mentions` — article/mention filters + `sort`, `sort_direction`, `quote` |
+| Mention timeline | ✅ | `GET …/organizations/{id}/mentions/timeline` |
 | Articles | ✅ | `GET …/organizations/{id}/articles` |
 | Connections | ✅ | `GET …/organizations/{id}/connections` |
 | Semantic search | 🚧 | Phase 5 |
@@ -77,7 +84,7 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 | Keyword search | ✅ | `GET …/mentions/search` — unified across entity types |
 | Facets | ✅ | `GET …/mentions/facets` — entity types, natures, type values |
 | Detail | ✅ | `GET …/mentions/{entity_type}/{mention_id}` — all occurrences |
-| Article/metadata filters | ✅ | On search: author, source, section, meta include/exclude, date range |
+| Article/metadata filters | ✅ | On search: author, source, section, legacy meta include/exclude, repeatable `meta` clauses, date range |
 | Semantic search | 🚧 | Phase 5 (per-type `…/{type}/semantic-search`) |
 | Geo search | 🚧 | Phase 6 |
 
@@ -91,6 +98,6 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 
 | Mode | Status | Notes |
 |------|--------|-------|
-| Trigger | 🚧 | `POST …/runs`; graph allowlist |
-| Poll status | 🚧 | `GET …/runs/{id}`; minimal shape |
+| Trigger | ✅ | `POST …/runs`; `public_run_enabled` + `runs:trigger` scope |
+| Poll status | ✅ | `GET …/runs/{run_id}`; minimal shape |
 | Cancel / rerun / review | ❌ | Editorial Agate API only |

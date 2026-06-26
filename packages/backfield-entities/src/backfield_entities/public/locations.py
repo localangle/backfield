@@ -5,13 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any
 
 from backfield_db import (
     StylebookLocationCanonical,
     SubstrateArticle,
     SubstrateLocation,
     SubstrateLocationMention,
+    SubstrateLocationMentionOccurrence,
 )
 from pydantic import BaseModel
 from sqlalchemy import case, exists, literal, or_
@@ -23,9 +24,14 @@ from backfield_entities.public.entity_articles import (
     collect_mention_article_pairs,
     paginate_public_articles_from_mention_pairs,
 )
+from backfield_entities.public.entity_counts import PublicEntityCountsOut
 from backfield_entities.public.mention_evidence import (
     PublicMentionEvidenceOut,
     location_evidence_by_mention_id,
+)
+from backfield_entities.public.mention_filters import (
+    PublicEntityMentionListParams,
+    apply_entity_mention_list_filters,
 )
 from backfield_entities.public.stylebook_scope import (
     get_public_location_canonical,
@@ -53,7 +59,7 @@ class PublicLocationOut(BaseModel):
     geometry_json: dict[str, Any] | None = None
     h3_cell: str | None = None
     h3_resolution: int | None = None
-    mention_count: int = 0
+    counts: PublicEntityCountsOut = PublicEntityCountsOut()
 
 
 class PublicLocationMentionArticleOut(BaseModel):
@@ -89,6 +95,7 @@ def _location_to_public_out(
     canon: StylebookLocationCanonical,
     *,
     mention_count: int = 0,
+    story_count: int = 0,
     stylebook_slug: str | None = None,
 ) -> PublicLocationOut:
     return PublicLocationOut(
@@ -102,7 +109,7 @@ def _location_to_public_out(
         geometry_json=canon.geometry_json,
         h3_cell=canon.h3_cell,
         h3_resolution=canon.h3_resolution,
-        mention_count=mention_count,
+        counts=PublicEntityCountsOut(mentions=mention_count, stories=story_count),
     )
 
 
@@ -118,6 +125,31 @@ def _mention_counts_by_canonical(
         select(
             SubstrateLocation.stylebook_location_canonical_id,
             func.count(col(SubstrateLocationMention.id)),
+        )
+        .select_from(SubstrateLocationMention)
+        .join(SubstrateLocation, SubstrateLocation.id == SubstrateLocationMention.location_id)
+        .where(
+            SubstrateLocation.project_id == project_id,
+            col(SubstrateLocation.stylebook_location_canonical_id).in_(canonical_ids),
+            SubstrateLocationMention.deleted == False,  # noqa: E712
+        )
+        .group_by(SubstrateLocation.stylebook_location_canonical_id)
+    ).all()
+    return {str(cid): int(cnt) for cid, cnt in rows if cid is not None}
+
+
+def _story_counts_by_canonical(
+    session: Session,
+    *,
+    project_id: int,
+    canonical_ids: list[str],
+) -> dict[str, int]:
+    if not canonical_ids:
+        return {}
+    rows = session.exec(
+        select(
+            SubstrateLocation.stylebook_location_canonical_id,
+            func.count(func.distinct(SubstrateLocationMention.article_id)),
         )
         .select_from(SubstrateLocationMention)
         .join(SubstrateLocation, SubstrateLocation.id == SubstrateLocationMention.location_id)
@@ -260,11 +292,17 @@ def search_public_locations(
         project_id=project_id,
         canonical_ids=canonical_ids,
     )
+    story_counts = _story_counts_by_canonical(
+        session,
+        project_id=project_id,
+        canonical_ids=canonical_ids,
+    )
     stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
     items = [
         _location_to_public_out(
             row,
             mention_count=mention_counts.get(str(row.id), 0),
+            story_count=story_counts.get(str(row.id), 0),
             stylebook_slug=stylebook_slug,
         )
         for row in rows
@@ -291,10 +329,16 @@ def get_public_location(
         project_id=project_id,
         canonical_ids=[str(canon.id)],
     )
+    story_counts = _story_counts_by_canonical(
+        session,
+        project_id=project_id,
+        canonical_ids=[str(canon.id)],
+    )
     stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
     return _location_to_public_out(
         canon,
         mention_count=mention_counts.get(str(canon.id), 0),
+        story_count=story_counts.get(str(canon.id), 0),
         stylebook_slug=stylebook_slug,
     )
 
@@ -305,11 +349,9 @@ def list_public_location_mentions(
     stylebook_id: int,
     project_id: int,
     location_id: str,
-    limit: int = 50,
-    offset: int = 0,
-    sort: Literal["article", "created_at"] = "created_at",
-    sort_direction: Literal["asc", "desc"] = "desc",
+    params: PublicEntityMentionListParams | None = None,
 ) -> tuple[list[PublicLocationMentionOut], int] | None:
+    list_params = params or PublicEntityMentionListParams()
     canon = get_public_location_canonical(
         session,
         stylebook_id=stylebook_id,
@@ -326,34 +368,50 @@ def list_public_location_mentions(
         SubstrateArticle.deleted == False,  # noqa: E712
     ]
 
-    total = int(
-        session.scalar(
-            select(func.count())
-            .select_from(SubstrateLocationMention)
-            .join(SubstrateArticle, SubstrateArticle.id == SubstrateLocationMention.article_id)
-            .join(SubstrateLocation, SubstrateLocation.id == SubstrateLocationMention.location_id)
-            .where(*base_where)
-        )
-        or 0
+    count_stmt = (
+        select(func.count())
+        .select_from(SubstrateLocationMention)
+        .join(SubstrateArticle, SubstrateArticle.id == SubstrateLocationMention.article_id)
+        .join(SubstrateLocation, SubstrateLocation.id == SubstrateLocationMention.location_id)
+        .where(*base_where)
     )
+    count_stmt = apply_entity_mention_list_filters(
+        count_stmt,
+        params=list_params,
+        mention_nature_col=SubstrateLocationMention.nature,
+        mention_id_col=SubstrateLocationMention.id,
+        occurrence_model=SubstrateLocationMentionOccurrence,
+        mention_fk_column="location_mention_id",
+    )
+    total = int(session.scalar(count_stmt) or 0)
 
-    descending = sort_direction != "asc"
-    if sort == "article":
+    descending = list_params.sort_direction != "asc"
+    if list_params.sort == "article":
         headline_sort = col(SubstrateArticle.headline)
         order_by = headline_sort.desc() if descending else headline_sort.asc()
     else:
         ts = col(SubstrateLocationMention.updated_at)
         order_by = ts.desc() if descending else ts.asc()
 
+    select_stmt = (
+        select(SubstrateLocationMention, SubstrateArticle, SubstrateLocation)
+        .join(SubstrateArticle, SubstrateArticle.id == SubstrateLocationMention.article_id)
+        .join(SubstrateLocation, SubstrateLocation.id == SubstrateLocationMention.location_id)
+        .where(*base_where)
+    )
+    select_stmt = apply_entity_mention_list_filters(
+        select_stmt,
+        params=list_params,
+        mention_nature_col=SubstrateLocationMention.nature,
+        mention_id_col=SubstrateLocationMention.id,
+        occurrence_model=SubstrateLocationMentionOccurrence,
+        mention_fk_column="location_mention_id",
+    )
     triples = list(
         session.exec(
-            select(SubstrateLocationMention, SubstrateArticle, SubstrateLocation)
-            .join(SubstrateArticle, SubstrateArticle.id == SubstrateLocationMention.article_id)
-            .join(SubstrateLocation, SubstrateLocation.id == SubstrateLocationMention.location_id)
-            .where(*base_where)
-            .order_by(order_by)
-            .offset(offset)
-            .limit(limit)
+            select_stmt.order_by(order_by)
+            .offset(list_params.offset)
+            .limit(list_params.limit)
         ).all()
     )
     mention_ids = [int(m.id) for m, _, _ in triples if m.id is not None]  # type: ignore[union-attr]
@@ -393,7 +451,8 @@ def list_public_location_articles(
     limit: int = 25,
     offset: int = 0,
     nature: str | None = None,
-    include_preview: bool = False,
+    pub_date_from: date | None = None,
+    pub_date_to: date | None = None,
 ) -> tuple[list[PublicArticleOut], int] | None:
     canon = get_public_location_canonical(
         session,
@@ -412,12 +471,13 @@ def list_public_location_articles(
         canonical_id=str(canon.id),
         project_id=project_id,
         nature=nature,
+        pub_date_from=pub_date_from,
+        pub_date_to=pub_date_to,
     )
     items, total = paginate_public_articles_from_mention_pairs(
         session,
         pairs=pairs,
         limit=limit,
         offset=offset,
-        include_preview=include_preview,
     )
     return items, total

@@ -30,11 +30,12 @@ from backfield_entities.public.article_hub import (
     _canonical_stylebook_slugs,
     _canonical_summary,
 )
-from backfield_entities.public.articles import _apply_public_article_list_filters
+from backfield_entities.public.articles import ArticleMetaClause, _apply_public_article_list_filters
 from backfield_entities.public.mention_evidence import (
     PublicMentionEvidenceOut,
     PublicMentionOccurrenceOut,
     location_evidence_by_mention_id,
+    maybe_quotes_only_mention_filters,
     occurrences_by_mention_id,
     organization_evidence_by_mention_id,
     person_evidence_by_mention_id,
@@ -109,10 +110,12 @@ class PublicMentionSearchParams:
     meta_category: str | None = None
     exclude_meta_type: str | None = None
     exclude_meta_category: str | None = None
+    meta_clauses: tuple[ArticleMetaClause, ...] = ()
     location_type: str | None = None
     person_type: str | None = None
     organization_type: str | None = None
     public_figure: bool | None = None
+    quotes_only: bool = False
     pub_date_from: date | None = None
     pub_date_to: date | None = None
     limit: int = 25
@@ -169,6 +172,7 @@ def _apply_article_filters_to_mention_arm(stmt, params: PublicMentionSearchParam
         meta_category=params.meta_category,
         exclude_meta_type=params.exclude_meta_type,
         exclude_meta_category=params.exclude_meta_category,
+        meta_clauses=params.meta_clauses,
         author=params.author,
         external_source=params.external_source,
         has_mentions=None,
@@ -217,6 +221,14 @@ def _location_mention_arm(
         canonical_col=SubstrateLocation.stylebook_location_canonical_id,
         has_canonical=params.has_canonical,
     )
+    if params.quotes_only:
+        for clause in maybe_quotes_only_mention_filters(
+            SubstrateLocationMention.id,
+            occurrence_model=SubstrateLocationMentionOccurrence,
+            mention_fk_column="location_mention_id",
+            quotes_only=True,
+        ):
+            stmt = stmt.where(clause)
     return stmt
 
 
@@ -262,6 +274,14 @@ def _person_mention_arm(
         canonical_col=SubstratePerson.stylebook_person_canonical_id,
         has_canonical=params.has_canonical,
     )
+    if params.quotes_only:
+        for clause in maybe_quotes_only_mention_filters(
+            SubstratePersonMention.id,
+            occurrence_model=SubstratePersonMentionOccurrence,
+            mention_fk_column="person_mention_id",
+            quotes_only=True,
+        ):
+            stmt = stmt.where(clause)
     return stmt
 
 
@@ -308,6 +328,14 @@ def _organization_mention_arm(
         canonical_col=SubstrateOrganization.stylebook_organization_canonical_id,
         has_canonical=params.has_canonical,
     )
+    if params.quotes_only:
+        for clause in maybe_quotes_only_mention_filters(
+            SubstrateOrganizationMention.id,
+            occurrence_model=SubstrateOrganizationMentionOccurrence,
+            mention_fk_column="organization_mention_id",
+            quotes_only=True,
+        ):
+            stmt = stmt.where(clause)
     return stmt
 
 

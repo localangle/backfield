@@ -28,13 +28,12 @@ Use POST so large `cells[]` arrays are not limited by URL length.
 | `meta_category` | string | no | With `meta_type`, include this category |
 | `exclude_meta_type` | string | no | Exclude articles with this metadata type |
 | `exclude_meta_category` | string | no | With `exclude_meta_type`, exclude this category |
+| `section` | string | no | Include articles with this topic metadata category (editorial section sugar) |
 | `external_source` | string | no | Include articles from this external source (case-insensitive) |
 | `pub_date_from` | string | no | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | no | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | no | Page size (1–100, default 25) |
 | `offset` | integer | no | Offset for pagination (default 0) |
-| `include_preview` | boolean | no | Include truncated text preview per article (default false) |
-
 Example:
 
 ```json
@@ -44,7 +43,6 @@ Example:
   "meta_type": "subject",
   "meta_category": "public_safety_crime",
   "pub_date_from": "2024-01-01",
-  "include_preview": true,
   "limit": 100,
   "offset": 0
 }

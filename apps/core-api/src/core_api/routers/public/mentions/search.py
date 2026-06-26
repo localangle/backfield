@@ -12,7 +12,9 @@ from sqlmodel import Session
 
 from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import (
+    META_PARAM_DESCRIPTION,
     parse_entity_type,
+    parse_meta_clauses,
     parse_optional_date,
 )
 from core_api.routers.public.deps import get_public_project
@@ -69,6 +71,7 @@ def search_project_mentions(
         None,
         description="With exclude_meta_type, exclude mentions in articles with this category",
     ),
+    meta: list[str] = Query(default=[], description=META_PARAM_DESCRIPTION),
     location_type: str | None = Query(
         None,
         description="Filter location mentions by location type",
@@ -81,6 +84,10 @@ def search_project_mentions(
     public_figure: bool | None = Query(
         None,
         description="Filter person mentions by public figure flag",
+    ),
+    quote: bool | None = Query(
+        None,
+        description="When true, return only mentions with quoted evidence",
     ),
     pub_date_from: str | None = Query(None),
     pub_date_to: str | None = Query(None),
@@ -101,10 +108,12 @@ def search_project_mentions(
         meta_category=meta_category,
         exclude_meta_type=exclude_meta_type,
         exclude_meta_category=exclude_meta_category,
+        meta_clauses=parse_meta_clauses(meta),
         location_type=location_type,
         person_type=person_type,
         organization_type=organization_type,
         public_figure=public_figure,
+        quotes_only=quote is True,
         pub_date_from=parse_optional_date(pub_date_from, param_name="pub_date_from"),
         pub_date_to=parse_optional_date(pub_date_to, param_name="pub_date_to"),
         limit=limit,

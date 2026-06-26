@@ -44,3 +44,19 @@ def get_public_project(
     if project is None or project.id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     return require_project_access(session, auth, int(project.id))
+
+
+def require_scope(scope: str):
+    """Require a project API key scope; service tokens bypass scope checks."""
+
+    def _dep(auth: dict[str, Any] = Depends(require_public_api_auth)) -> dict[str, Any]:
+        if auth["type"] == "service":
+            return auth
+        if scope not in (auth.get("scopes") or []):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"API key missing required scope: {scope}",
+            )
+        return auth
+
+    return _dep

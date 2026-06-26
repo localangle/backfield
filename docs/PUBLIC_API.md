@@ -54,6 +54,10 @@ flowchart LR
 
 - **Mechanism:** `Authorization: Bearer <project_api_key>` (keys issued via Core API credentials routes; prefix `bfk_`).
 - **Scope:** Every public route is **project-scoped**. The key must grant access to the project in the URL (same rules as `backfield_auth.gate` project access).
+- **Key scopes:** Each project API key carries one or more scopes (space-separated in storage; returned as a list on mint/list):
+  - `read` — default for all keys; required for current public read routes.
+  - `runs:trigger` — reserved for the upcoming public run-trigger endpoint; may only be minted on **service** keys (org-admin-gated at mint). User keys remain read-only.
+- Side-effecting public routes (starting with run trigger) will require the matching scope via `require_scope(...)`; keys without it receive **403**.
 - **No session cookies** on public routes.
 - **Service token** (`SERVICE_API_TOKEN`) is for internal automation only — not documented as a public consumer credential.
 
@@ -141,38 +145,40 @@ Articles are first-class public resources (`substrate_article` + related meta). 
 
 | Layer | Pattern | Use when |
 |-------|---------|----------|
-| **Detail** | `GET …/articles/{article_id}` | Headline, metadata, preview; optional cheap **`include=counts`** |
+| **Detail** | `GET …/articles/{article_id}` | Headline, metadata, optional preview |
 | **Sub-routes** | `GET …/articles/{article_id}/<slice>` | Heavy or paginated data: mentions, locations, custom records, images |
 | **Entity-centric** | `GET …/people/{id}/mentions`, etc. | Starting from a canonical, not a story |
 | **Bundle (later)** | `GET …/articles/{article_id}/bundle?sections=…` | Optional one-round-trip aggregator; not the primary contract |
 
-Do **not** use open-ended `?include=locations,people,custom_records,images` on detail—payload size, pagination, and caching differ too much per slice. Reserve `include` on detail for **small** embeds only (`counts`).
+Do **not** use open-ended `?include=locations,people,custom_records,images` on detail—payload size, pagination, and caching differ too much per slice. Use **sub-routes** for heavy slices.
+
+The only supported `include` tokens on list routes are **`counts`**: a lightweight summary (mention totals by type, distinct canonical entity totals by type, image count, custom-record counts, and whether the article itself is semantically embedded). Request it on **`GET …/articles/search`**, **`GET …/articles/geo-search`**, or **`POST …/articles/semantic-search`** when you need availability signals without loading mention rows or full sub-route payloads.
+
+On **`GET …/articles/{article_id}`**, supported `include` tokens are **`counts`** (same summary as list routes) and **`text`** (full article body in addition to the always-included preview).
 
 ### Detail (`GET …/articles/{article_id}`)
 
 **Core fields (v1):**
 
-- `id`, `headline`, `url`, `author`, `pub_date`, `external_source`, `external_id`, `entry_id`
+- `id`, `headline`, `url`, `author`, `pub_date`, `source` (`id`, `name`)
 - **`metadata`**: tags from `substrate_article_meta` (`meta_type`, `category`, `confidence`, …)
-- **`processing`**: Agate runs that touched the article (`run_id`, optional `processed_item_id`, `domains`), aggregated from article provenance, metadata/custom-record `source_run_id`, matching `agate_processed_item` rows, and DBOutput `stylebook_output` persist summaries when available
-- Optional **`preview`**: short truncated snippet (max 280 characters; not full body)
+- Optional **`preview`**: short truncated snippet (max 280 characters; not full body; always included)
+- **`images`**: up to 10 inline image rows (`id`, `image_id`, `url`, `caption`); use `GET …/images` when you need pagination or the full set
 
-**Query:** `include_preview` (default `true`).
+**Query:** `include=counts` (optional; adds `counts` and `embedded`); `include=text` (optional; adds full body in `text` alongside `preview`).
 
-**Optional embed:** `include=counts` adds cheap aggregates without loading evidence:
+**Optional `counts` block** (when `include=counts`):
 
-```json
-{
-  "entity_counts": { "locations": 4, "people": 2, "organizations": 1 },
-  "custom_record_counts": { "contracts": 3 },
-  "image_count": 2
-}
-```
+- `mentions`: non-deleted mention row totals by type (`locations`, `people`, `organizations`, `total`)
+- `entities`: distinct Stylebook canonical totals by type (uncanonicalized mentions excluded)
+- `images`: total image count for the article
+- `custom_records`: map of record type → count
+- `embedded`: `true` when the article has a populated `substrate_article_embedding` row
 
 ### Excluded from detail
 
 - Full **`text`** / body
-- Mention rows, geometry, custom record payloads, image payloads (use sub-routes)
+- Mention rows, geometry, custom record payloads (use sub-routes)
 - Internal overlay state and other Agate execution internals unless a support contract requires them
 
 ### Article sub-routes (primary pattern for rich context)
@@ -181,16 +187,17 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `…/mentions` | Paginated mention evidence across entity types |
+| `GET` | `…/mentions` | All mention evidence across entity types for one article |
+| `GET` | `…/metadata` | Metadata rows and distinct types for this article |
 | `GET` | `…/locations` | Geography-focused: places in the story with canonical + geometry where available |
 | `GET` | `…/custom-records` | Custom Extract rows for this article |
 | `GET` | `…/images` | Images attached to the article (`substrate_image`) |
 
 **`GET …/mentions`** — unified index for “who/what is mentioned?”
 
-- Query: `entity_type` optional filter (`location`, `person`, `organization`)
-- Each row: entity type, substrate/canonical ids, label, mention text/quote spans, optional canonical summary
-- Paginated; does not return full article body
+- Query: `entity_type` optional filter (`location`, `person`, `organization`); `nature` exact match; `quote=true` for quoted evidence only
+- Each row: entity type, label, optional `nature` / `role_in_story`, optional canonical summary, optional evidence (`mention_text`, `quote`, character offsets)
+- Returns all matching mentions (not paginated); does not return full article body
 
 **`GET …/locations`** — map-oriented view (may overlap mentions but different shape)
 
@@ -209,6 +216,9 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `…/articles/search` | Keyword search + metadata filters + date range |
+| `GET` | `…/articles/facets` | Distinct authors, sources, and preset metadata categories for filter dropdowns |
+| `GET` | `…/articles/metadata/types` | Distinct metadata types attached to articles in the project |
+| `GET` | `…/articles/metadata/types/{meta_type}/values` | Distinct category values for one metadata type |
 | `POST` | `…/articles/semantic-search` | Natural-language search over embedded articles |
 | `GET` | `…/articles/geo-search` | Articles with location mentions near a point or in a bbox |
 | `GET` | `…/articles/geo-cells` | H3 hex cells with distinct-article counts for a bbox (map coverage) |
@@ -216,31 +226,37 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 | `POST` | `…/articles/geo-cells/query` | Batch drill-down for many hexes (deduplicated articles + `matched_cells`) |
 | `GET` | `…/articles/{article_id}` | Article detail |
 
-**Search parameters:**
+**Search parameters** (shared across article keyword search, semantic search, geo search, geo cells, and project-wide mention search):
 
-- `q` — keyword (headline, body text, URL); on PostgreSQL, full-text search with web-style syntax: quoted phrases (`"city council"`), `OR`, and `-` exclusions; unquoted terms are ANDed
-- `meta_type`, `meta_category` — include articles matching `substrate_article_meta`
-- `exclude_meta_type`, `exclude_meta_category` — exclude articles with matching metadata rows
+- `q` — keyword (headline, body text, URL); on PostgreSQL, full-text search with web-style syntax: quoted phrases (`"city council"`), `OR`, and `-` exclusions; unquoted terms are ANDed (**keyword search only**)
+- `meta_type`, `meta_category` — include articles matching `substrate_article_meta` (single clause; legacy)
+- `exclude_meta_type`, `exclude_meta_category` — exclude articles with matching metadata rows (legacy)
+- `meta` — advanced metadata clauses (AND across clauses). On **GET** routes, repeat the query param; on **POST** routes (`semantic-search`, `geo-cells/query`), pass a JSON string array. Forms: `type`, `type:category`, `type:cat1|cat2` (OR within type), `!type` or `!type:category` (negation). Repeat a type to require all listed categories. Max 25 clauses; max 50 categories per clause.
+- `section` — shorthand for `meta=topic:<value>`
 - `pub_date_from`, `pub_date_to` — ISO dates (`YYYY-MM-DD`)
 - Standard pagination
-- `include_preview` (default `false` on search)
+
+**Keyword search (`GET …/articles/search`):** response echoes effective query filters (`q`, metadata, author, source, dates, etc.) at the top level, then paginated **`items[]`** in the standard article list shape. Optional **`include=counts`**.
 
 **Semantic search (`POST …/articles/semantic-search`):**
 
 - `query` — natural-language search text (required JSON body field)
-- `use_hyde` (default `false`) — when `true`, generate a hypothetical news passage from the query with the project/org **`semantic.hyde`** generative model (or the sole enabled generative model), embed that passage, and rank articles against it
+- `use_hyde` (default `false`) — when `true`, generate a hypothetical news passage from the query with the project/org **`generative.default`** model (or the sole enabled generative model), embed that passage, and rank articles against it
 - Embeds the query (or HyDE passage) with the project/org default **`semantic.embedding`** model
 - Ranks only articles with a matching **`substrate_article_embedding`** row (same model config, or legacy rows matched by provider model id)
 - Supports the same metadata and date filters as keyword search
-- Returns **`score`** per article (cosine similarity) plus embedding model metadata; when HyDE is used, echoes **`hyde_used`**, **`hypothetical_document`**, and HyDE model metadata
+- **`items[]`** use the same article list shape as keyword search (`preview`, `metadata`, optional `include=counts` for `embedded` and hub totals) plus **`score`** per row
+- Returns embedding model metadata; when HyDE is used, echoes **`hyde_used`**, **`hypothetical_document`**, and HyDE model metadata
 - **503** when no embedding model is configured, or when `use_hyde` is `true` but no generative model is available
 
 **Geo search (`GET …/articles/geo-search`):**
 
 - **Point mode:** `center_lng`, `center_lat`, `radius_miles` — articles with at least one location mention whose geometry falls within the radius
 - **Bbox mode:** `bbox=min_lng,min_lat,max_lng,max_lat` — articles with location mentions inside the box
-- Optional `location_type`, `nature`, metadata, and date filters (same as keyword search)
-- Returns each matching article with **`matching_locations`** (the location mentions that satisfied the geo filter)
+- Optional repeatable `location_type` (OR — match any listed type), `nature`, metadata, and date filters (same as keyword search)
+- Response echoes the geographic query (`search_mode`, point/bbox coordinates, filters) plus paginated **`items[]`**
+- Each item uses the same article list shape as keyword search plus **`matching_locations`** (the location mentions that satisfied the geo filter)
+- Optional **`include=counts`** for hub totals and `embedded` (same as keyword search)
 
 **Geo cells (`GET …/articles/geo-cells`):**
 
@@ -284,9 +300,9 @@ All paths are under `…/projects/{project_slug}/mentions/…`. Returns **404** 
 | `GET` | `…/mentions/facets` | Distinct entity types, natures, and type values for filter dropdowns |
 | `GET` | `…/mentions/{entity_type}/{mention_id}` | Single mention with full occurrence evidence and article context |
 
-**Search parameters** mirror article search where applicable (`author`, `external_source`, `section`, metadata include/exclude, `pub_date_from`/`pub_date_to`), plus mention-specific filters: `entity_type`, `q` (entity name), `nature`, `has_canonical`, `location_type`, `person_type`, `organization_type`, `public_figure`.
+**Search parameters** mirror article search where applicable (`author`, `external_source`, `section`, metadata include/exclude, `pub_date_from`/`pub_date_to`), plus mention-specific filters: `entity_type`, `q` (entity name), `nature`, `has_canonical`, `quote` (quoted first occurrence only), `location_type`, `person_type`, `organization_type`, `public_figure`.
 
-Results are ordered by article `pub_date` descending (nulls last), then mention id descending. Search rows include first-occurrence evidence; detail returns all non-suppressed occurrences.
+Results are ordered by article `pub_date` descending (nulls last), then mention id descending. Search rows include first-occurrence evidence; detail returns all non-suppressed occurrences. Evidence uses a single shape everywhere: `mention_text` (quote passage when quoted, otherwise matched mention text), `quote` (boolean), and optional character offsets.
 
 ---
 
@@ -297,8 +313,8 @@ Public responses expose the **resolved editorial view**: Stylebook canonical fie
 ### Shared detail shape (conceptual)
 
 - Canonical identity: `id`, `slug`, `label`, type-specific fields
-- **`mention_count`** (project scope, non-deleted mentions)
-- **`story_count`** (people detail only: distinct articles with at least one mention — use `GET …/people/{id}/articles` for a deduped story list; `GET …/people/{id}/mentions` returns passage-level rows and may repeat the same article)
+- **`counts.mentions`** (project scope, non-deleted mentions)
+- **`counts.stories`** (distinct articles with at least one mention — use `GET …/{type}/{id}/articles` for a deduped story list; `GET …/{type}/{id}/mentions` returns passage-level rows and may repeat the same article)
 - Links to **Stylebook meta** and **connections** where applicable
 
 ### Routes (per type `{type}` = `locations` | `people` | `organizations` | `works`)
@@ -309,7 +325,8 @@ Public responses expose the **resolved editorial view**: Stylebook canonical fie
 | `GET` | `…/{type}/search` | Keyword / filter search |
 | `GET` | `…/{type}/types` | Distinct type values for filters (people in v1) |
 | `GET` | `…/{type}/{id}` | Canonical detail |
-| `GET` | `…/{type}/{id}/mentions` | Paginated mention evidence |
+| `GET` | `…/{type}/{id}/mentions` | Paginated mention evidence; same article/mention filters as `…/mentions/search`, plus `sort` / `sort_direction` |
+| `GET` | `…/{type}/{id}/mentions/timeline` | Mention counts grouped by article `pub_date`; filter by `pub_date_from`/`pub_date_to` and `quote` |
 | `GET` | `…/{type}/{id}/articles` | Paginated articles mentioning the canonical |
 | `GET` | `…/{type}/{id}/connections` | Stylebook connections |
 | `POST` | `…/{type}/semantic-search` | Natural-language mention search |
@@ -362,10 +379,12 @@ Automation may **start an Agate run** without using session-based Agate API rout
 
 ### Principles
 
-- **Opt-in graphs:** only graphs explicitly marked **`public_run_enabled`** (new graph or project flag — exact storage TBD in Phase 1) may be triggered via the public API.
-- **Input injection:** request body supplies parameters mapped to **ingress nodes** (TextInput, JSONInput, or a documented subset of S3Input batch parameters).
-- **Same worker path** as `POST /runs` on Agate API (enqueue Celery; no duplicate execution engine).
+- **Opt-in graphs:** only graphs with **`public_run_enabled: true`** on **`agate_graph`** may be triggered via the public API (toggle **Enable API runs** on the content-source node in Agate UI, or set via Agate API graph create/update).
+- **Input injection:** optional `inputs` map keyed by the ingress node's **`public_alias`** param (stable alias declared on the node instance in the graph spec). Omitted → run with saved ingress params (same as a UI run).
+- **Effective spec:** at trigger, saved ingress params are merged with `inputs`, pinned on `run.result_json.graph_spec_json`, and consumed by the worker (including S3 batch setup).
+- **Same worker path** as `POST /runs` on Agate API via shared **`trigger_agate_run`** helper (enqueue Celery; no duplicate execution engine).
 - **Poll-only follow-up** on public API — no cancel, rerun, or review overlay.
+- **Auth:** requires project API key with **`runs:trigger`** scope (service keys; org-admin mint).
 
 ### Routes
 
@@ -374,18 +393,24 @@ Automation may **start an Agate run** without using session-based Agate API rout
 | `POST` | `…/runs` | Start a run |
 | `GET` | `…/runs/{run_id}` | Run status + minimal item summary |
 
-**POST body (conceptual):**
+**POST body:**
 
 ```json
 {
-  "graph_id": "uuid-or-slug",
+  "graph_id": "uuid",
   "inputs": {
-    "<ingress_node_id_or_alias>": { "text": "…" }
+    "<public_alias>": { }
   }
 }
 ```
 
-Exact ingress mapping rules (node id vs stable alias, JSONInput shape) are specified during Phase 1 implementation. Public run responses omit internal cost breakdowns unless needed for billing integrations.
+| Ingress type | `inputs[alias]` |
+|--------------|-----------------|
+| TextInput | `{ "text": "…" }` |
+| JSONInput | article JSON object |
+| S3Input | `{ "bucket"?, "prefix"?, "max_files"? }` (merged over saved params) |
+
+See [`docs/public-api/reference/runs.md`](public-api/reference/runs.md) for the full contract. Public run responses omit internal cost breakdowns.
 
 ---
 
@@ -435,9 +460,9 @@ Work on branch **`feat/api-surface`** (or child branches per phase). Update this
 - [x] Add `core_api/routers/public/` package mounted at **`/public/v1`**
 - [x] Project API key dependency (reuse `backfield_auth.gate` project key path)
 - [x] Shared helpers: pagination envelope, project + stylebook resolution, OpenAPI tags
-- [x] `GET /public/v1/projects/{project_slug}` — minimal project metadata (name, slug)
+- [x] `GET /public/v1/projects/{project_slug}` — project metadata (name, slug, Stylebook) plus substrate summary stats (articles, mentions, images, semantic indexing counts)
 - [x] Running endpoint registry: **`docs/public-api/reference/endpoints.md`**
-- [ ] Decide storage for **`public_run_enabled`** on graphs
+- [x] Decide storage for **`public_run_enabled`** on graphs (`agate_graph.public_run_enabled` boolean)
 - [x] Scaffold `docs/public-api/reference/README.md` and `capability-matrix.md`
 - [x] Tests: auth, wrong project, 404 semantics
 
@@ -448,7 +473,7 @@ Work on branch **`feat/api-surface`** (or child branches per phase). Update this
 **Goal:** Prove substrate queries and documentation shape.
 
 - [x] `GET …/articles/search` — keyword, meta filters, date range
-- [x] `GET …/articles/{article_id}` — detail without full body; optional preview
+- [x] `GET …/articles/{article_id}` — detail with preview; optional `include=text` for full body
 - [x] Registry entries in **`docs/public-api/reference/endpoints.md`**
 - [x] Indexes: existing `substrate_article` / `substrate_article_meta` indexes cover v1 filters
 
@@ -458,8 +483,7 @@ Work on branch **`feat/api-surface`** (or child branches per phase). Update this
 
 **Goal:** Rich article context via sub-routes (not combinatorial `include` on detail).
 
-- [x] `include=counts` on `GET …/articles/{article_id}`
-- [x] `GET …/articles/{article_id}/mentions` — paginated; optional `entity_type`
+- [x] `GET …/articles/{article_id}/mentions` — all mentions; optional `entity_type`, `nature`, `quote`
 - [x] `GET …/articles/{article_id}/locations` — geography / map-oriented shape
 - [x] `GET …/articles/{article_id}/images`
 - [x] Registry entries in **`endpoints.md`** for each shipped sub-route
@@ -518,11 +542,12 @@ Extract shared “canonical query” module in `backfield-entities` to avoid cop
 
 **Goal:** Controlled automation entrypoint.
 
-- Shared enqueue helper callable from agate-api and core-api public router
-- `POST …/runs`, `GET …/runs/{run_id}` (minimal public run shape)
-- Graph allowlist (`public_run_enabled`)
-- Document ingress `inputs` mapping
-- Reference page `runs.md`
+- [x] Shared enqueue helper (`agate_runtime.run_trigger.trigger_agate_run`) callable from agate-api and core-api public router
+- [x] `POST …/runs`, `GET …/runs/{run_id}` (minimal public run shape)
+- [x] Graph allowlist (`agate_graph.public_run_enabled`)
+- [x] Document ingress `inputs` mapping (`public_alias` + per-type shapes)
+- [x] Reference page `runs.md`
+- [x] Worker S3 batch setup reads pinned `graph_spec_json` on the run
 
 **Validation:** `make lint`, `make test`, `make smoke` when run path touches worker enqueue
 
@@ -551,18 +576,18 @@ Update as phases complete. **Shipped** / **Planned** / **N/A**.
 | People | ✅ | ✅ | ✅ | ✅ | Planned | Partial |
 | Organizations | ✅ | ✅ | ✅ | ✅ | Planned | Partial |
 | Works | N/A | N/A | N/A | N/A | N/A | N/A |
-| Runs (trigger) | — | Planned | — | — | — | — |
+| Runs (trigger) | — | ✅ | — | — | — | — |
 
 ---
 
 ## Open decisions (resolve in Phase 1)
 
-1. **Graph public flag:** column on `agate_graph` vs project-level allowlist table.
-2. **Ingress mapping:** node React Flow id vs declared stable alias in graph metadata.
+1. ~~**Graph public flag:** column on `agate_graph` vs project-level allowlist table.~~ **Resolved:** `agate_graph.public_run_enabled` boolean (default false).
+2. ~~**Ingress mapping:** node React Flow id vs declared stable alias in graph metadata.~~ **Resolved:** `public_alias` on ingress node `params`; API `inputs` keyed by alias.
 3. **Article preview:** max characters and whether to index preview for search.
 4. **Rate limiting:** defer to gateway vs middleware in core-api.
 5. **Custom record search:** which field types support substring vs exact match in v1.
 
 **Resolved (Phase 2):** article preview uses **280 characters** max (`PUBLIC_ARTICLE_PREVIEW_MAX_LEN` in `backfield_entities.public.articles`).
 
-**Resolved (article hub):** use **lean detail + paginated sub-routes** (`/mentions`, `/locations`, `/custom-records`, `/images`); optional `include=counts` on detail only; optional `/bundle` later—not combinatorial `include` for heavy slices.
+**Resolved (article hub):** use **lean detail + paginated sub-routes** (`/mentions`, `/locations`, `/custom-records`, `/images`); optional `/bundle` later—not combinatorial `include` for heavy slices.

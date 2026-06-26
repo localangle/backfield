@@ -94,6 +94,7 @@ export interface Graph {
   id: string
   name: string
   description: string
+  public_run_enabled: boolean
   project_id: number
   spec: {
     name: string
@@ -248,6 +249,7 @@ export interface ApiKeyCreate {
 export interface GraphCreate {
   name: string
   description?: string
+  public_run_enabled?: boolean
   project_id: number
   spec: {
     name: string
@@ -288,6 +290,7 @@ interface RawGraph {
   id: string
   name: string
   description?: string | null
+  public_run_enabled?: boolean | null
   project_id: number
   spec: Graph['spec']
   created_at: string
@@ -349,6 +352,7 @@ function normalizeGraph(raw: RawGraph): Graph {
     id: raw.id,
     name: raw.name,
     description: typeof raw.description === 'string' ? raw.description : '',
+    public_run_enabled: Boolean(raw.public_run_enabled),
     project_id: raw.project_id,
     spec: raw.spec,
     created_at: raw.created_at,
@@ -565,6 +569,7 @@ export async function createGraph(data: GraphCreate): Promise<Graph> {
     body: JSON.stringify({
       name: data.name,
       description: data.description ?? '',
+      public_run_enabled: Boolean(data.public_run_enabled),
       project_id: data.project_id,
       spec: data.spec,
     }),
@@ -588,6 +593,7 @@ export async function updateGraph(id: string | number, data: GraphCreate): Promi
     body: JSON.stringify({
       name: data.name,
       description: data.description ?? '',
+      public_run_enabled: Boolean(data.public_run_enabled),
       project_id: data.project_id,
       spec: data.spec,
     }),

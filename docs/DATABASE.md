@@ -39,7 +39,7 @@ Worker tasks release DB sessions during long graph execution and LLM calls so co
 - `backfield_project` — canonical project for Agate graphs, encrypted vault keys, Stylebook scoping, and future Core import APIs (`organization_id` required; `workspace_id` optional but new/bootstrap flows should set it).
 - `backfield_workspace_membership` — `(user_id, workspace_id)` unique; grants a **member** access to every project whose `workspace_id` is that workspace (same org). Unioned in auth with legacy `backfield_project_membership` rows until the latter are fully deprecated.
 - `backfield_project_membership` — `(user_id, project_id)` with optional per-project `role` (legacy explicit grants).
-- `backfield_api_credential` — per-project API keys (`credential_type` `user` or `service`), `key_prefix` + `key_hash`, `revoked_at`.
+- `backfield_api_credential` — per-project API keys (`credential_type` `user` or `service`), `key_prefix` + `key_hash`, `scopes` (space-separated; default `read`; optional `runs:trigger` on service keys only), `revoked_at`.
 
 ### Shared AI model infrastructure (`backfield_ai_*`)
 
@@ -101,7 +101,7 @@ New entity types (person, organization, work, …) follow the same **substrate t
 
 ### Agate execution (`agate_*`)
 
-- `agate_graph` — stored graph spec (JSON), optional human-readable **`description`** (plain text, default empty), FK to `backfield_project`.
+- `agate_graph` — stored graph spec (JSON), optional human-readable **`description`** (plain text, default empty), **`public_run_enabled`** (boolean, default false — gates public API run trigger), FK to `backfield_project`.
 - `agate_run` — execution record, status, result/error JSON. Boolean **`replace_article_geography_on_persist`** remains for legacy queued-run compatibility, but saved geography behavior now comes from the Backfield Output `reconciliation_policy` stored in graph node params.
 - `agate_processed_item` — per-S3-object work unit for **S3Input** batch runs: FK to `agate_run.id`, optional `source_file` (S3 key), optional `input_json` (full valid document), `status` (`pending` / `running` / `succeeded` / `failed` / `skipped`), optional `error_message` / `result_json` (immutable model output), optional **`overlay_json`** (human review overlay) and integer **`overlay_version`** (optimistic concurrency for overlay PATCH; default `0`), optional **`reviewed_output_json`** (materialized `result_json` + overlay for export/display; cleared with overlay on rerun), legacy boolean **`replace_article_geography_on_persist`** (default `false`), optional **`started_at`** (when worker began processing; used with `updated_at` for processing duration), optional **`substrate_article_id`** (denormalized link to persisted article; indexed for public article provenance), timestamps. Indexed on `run_id`.
 - `agate_node_timing` — per-node wall-clock rows for batch **`execute_processed_item`** runs: FK to `agate_run.id` and `agate_processed_item.id` (**`ON DELETE CASCADE`**), `node_id`, `node_type`, `elapsed_s` (seconds). Indexed on `run_id`, `processed_item_id`, and `node_type` (project stats aggregate by node type).
@@ -162,6 +162,8 @@ Revision **`039_organization_schema`** adds the organization **substrate trio**,
 Revision **`040_sb_conn_evidence`** adds nullable **`evidence_json`** on **`stylebook_connections`** (creation evidence for auto-linked edges) and unique **`uq_stylebook_connection_exact_edge`** on **`(project_id, from_entity_type, from_entity_id, to_entity_type, to_entity_id, nature)`**. Manual connections keep free-form **`nature`** values; the automatic taxonomy lives in **`backfield_entities.connections`**.
 
 Revision **`046_agate_graph_description`** adds nullable-by-default **`description`** (`TEXT NOT NULL DEFAULT ''`) on **`agate_graph`** for optional flow summaries shown in Agate UI lists and on create/edit screens.
+
+Revision **`060_agate_graph_public_run`** adds **`public_run_enabled`** (`BOOLEAN NOT NULL DEFAULT false`) on **`agate_graph`** to gate public API run trigger.
 
 Revision **`047_substrate_article_fulltext`** adds Postgres GIN index **`idx_substrate_article_fulltext`** on `to_tsvector('english', coalesce(headline, '') || ' ' || coalesce(text, '') || ' ' || coalesce(url, ''))` for public article keyword search.
 

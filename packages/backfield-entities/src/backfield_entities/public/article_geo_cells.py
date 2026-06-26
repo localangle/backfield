@@ -9,10 +9,14 @@ from datetime import date
 from backfield_db import SubstrateArticle, SubstrateLocation, SubstrateLocationMention
 from pydantic import BaseModel, Field
 from sqlalchemy import text
-from sqlmodel import Session, col, select
+from sqlmodel import Session, select
 
 from backfield_entities.geo.h3_index import EARTH_RADIUS_KM, POINT_H3_RESOLUTION
-from backfield_entities.public.articles import _apply_public_article_list_filters
+from backfield_entities.public.article_geo_cell_detail import (
+    PublicArticleGeoMentionFilters,
+    filter_allowed_article_ids,
+)
+from backfield_entities.public.articles import ArticleMetaClause
 
 MAX_CELLS_PER_RESPONSE = 5000
 MIN_H3_RESOLUTION = 0
@@ -46,6 +50,7 @@ class PublicArticleGeoCellsParams:
     meta_category: str | None = None
     exclude_meta_type: str | None = None
     exclude_meta_category: str | None = None
+    meta_clauses: tuple[ArticleMetaClause, ...] = ()
     pub_date_from: date | None = None
     pub_date_to: date | None = None
 
@@ -137,30 +142,16 @@ def _point_in_bbox(
     return min_lng <= lng <= max_lng and min_lat <= lat <= max_lat
 
 
-def _allowed_article_ids(
-    session: Session,
-    *,
-    project_id: int,
-    candidate_article_ids: set[int],
-    params: PublicArticleGeoCellsParams,
-) -> set[int]:
-    if not candidate_article_ids:
-        return set()
-    stmt = select(SubstrateArticle.id).where(
-        col(SubstrateArticle.id).in_(candidate_article_ids),
-        SubstrateArticle.project_id == project_id,
-        SubstrateArticle.deleted == False,  # noqa: E712
-    )
-    stmt = _apply_public_article_list_filters(
-        stmt,
+def _mention_filters(params: PublicArticleGeoCellsParams) -> PublicArticleGeoMentionFilters:
+    return PublicArticleGeoMentionFilters(
         meta_type=params.meta_type,
         meta_category=params.meta_category,
         exclude_meta_type=params.exclude_meta_type,
         exclude_meta_category=params.exclude_meta_category,
+        meta_clauses=params.meta_clauses,
         pub_date_from=params.pub_date_from,
         pub_date_to=params.pub_date_to,
     )
-    return {int(aid) for aid in session.exec(stmt).all()}
 
 
 def _parent_cell(h3_cell: str, resolution: int) -> str:
@@ -369,11 +360,11 @@ def aggregate_article_geo_cells(
         candidate_rows = _sqlite_candidate_rows(session, project_id=project_id, params=params)
 
     candidate_article_ids = {article_id for article_id, _, _ in candidate_rows}
-    allowed_article_ids = _allowed_article_ids(
+    allowed_article_ids = filter_allowed_article_ids(
         session,
         project_id=project_id,
-        candidate_article_ids=candidate_article_ids,
-        params=params,
+        article_ids=candidate_article_ids,
+        filters=_mention_filters(params),
     )
     counts, resolution, coarsened = _aggregate_with_auto_coarsen(
         candidate_rows,

@@ -30,6 +30,9 @@ export type GraphPanelContext = {
   flowProjectLoading?: boolean
   /** Loads project-effective AI models filtered by capability (e.g. text+json for JSON-using nodes). */
   fetchProjectAiModels?: (capabilities: string[]) => Promise<ProjectAiModelOption[]>
+  /** Whether this flow can be triggered via the public API. */
+  publicRunEnabled?: boolean
+  onPublicRunEnabledChange?: (enabled: boolean) => void
 }
 
 interface NodePanelProps {

@@ -16,6 +16,7 @@ from backfield_db import (
 )
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from backfield_entities.public.connections import list_public_entity_connections
+from backfield_entities.public.mention_filters import PublicEntityMentionListParams
 from backfield_entities.public.people import (
     PublicPersonSearchParams,
     get_public_person,
@@ -66,6 +67,7 @@ def _seed_people(session: Session) -> tuple[int, int, str]:
         project_id=project_id,
         headline="Budget vote",
         text="Body",
+        author="Jane Reporter",
         pub_date=date(2024, 3, 1),
     )
     session.add(article)
@@ -108,7 +110,7 @@ def test_search_public_people_filters_by_name_and_affiliation() -> None:
         )
         assert total == 1
         assert items[0].id == mayor_id
-        assert items[0].mention_count == 1
+        assert items[0].counts.mentions == 1
 
         items, total = search_public_people(
             session,
@@ -143,8 +145,8 @@ def test_get_public_person_and_mentions() -> None:
         assert person is not None
         assert person.title == "Mayor"
         assert person.stylebook_slug == "default"
-        assert person.mention_count == 1
-        assert person.story_count == 1
+        assert person.counts.mentions == 1
+        assert person.counts.stories == 1
 
         result = list_public_person_mentions(
             session,
@@ -157,6 +159,53 @@ def test_get_public_person_and_mentions() -> None:
         assert total == 1
         assert items[0].article.headline == "Budget vote"
         assert items[0].nature == "subject"
+
+
+def test_list_public_person_mentions_filters_by_nature_and_author() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, project_id, mayor_id = _seed_people(session)
+
+        by_nature = list_public_person_mentions(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            person_id=mayor_id,
+            params=PublicEntityMentionListParams(nature="subject"),
+        )
+        assert by_nature is not None
+        assert by_nature[1] == 1
+
+        no_match = list_public_person_mentions(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            person_id=mayor_id,
+            params=PublicEntityMentionListParams(nature="actor"),
+        )
+        assert no_match is not None
+        assert no_match[1] == 0
+
+        by_author = list_public_person_mentions(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            person_id=mayor_id,
+            params=PublicEntityMentionListParams(author="Jane Reporter"),
+        )
+        assert by_author is not None
+        assert by_author[1] == 1
+
+        wrong_author = list_public_person_mentions(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            person_id=mayor_id,
+            params=PublicEntityMentionListParams(author="Other Reporter"),
+        )
+        assert wrong_author is not None
+        assert wrong_author[1] == 0
 
 
 def test_list_public_person_articles() -> None:
@@ -175,7 +224,7 @@ def test_list_public_person_articles() -> None:
         items, total = result
         assert total == 1
         assert items[0].headline == "Budget vote"
-        assert items[0].author is None
+        assert items[0].author == "Jane Reporter"
 
         filtered_result = list_public_person_articles(
             session,
@@ -188,6 +237,55 @@ def test_list_public_person_articles() -> None:
         filtered, filtered_total = filtered_result
         assert filtered_total == 1
         assert len(filtered) == 1
+
+
+def test_list_public_person_articles_filters_by_pub_date() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, project_id, mayor_id = _seed_people(session)
+        older = SubstrateArticle(
+            project_id=project_id,
+            headline="Older story",
+            text="Body",
+            pub_date=date(2024, 1, 1),
+        )
+        session.add(older)
+        session.commit()
+        session.refresh(older)
+        person = session.exec(
+            select(SubstratePerson).where(
+                SubstratePerson.stylebook_person_canonical_id == mayor_id
+            )
+        ).one()
+        session.add(
+            SubstratePersonMention(
+                article_id=int(older.id),  # type: ignore[arg-type]
+                person_id=int(person.id),  # type: ignore[arg-type]
+                nature="subject",
+            )
+        )
+        session.commit()
+
+        all_result = list_public_person_articles(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            person_id=mayor_id,
+        )
+        assert all_result is not None
+        assert all_result[1] == 2
+
+        filtered = list_public_person_articles(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            person_id=mayor_id,
+            pub_date_from=date(2024, 3, 1),
+        )
+        assert filtered is not None
+        assert filtered[1] == 1
+        assert filtered[0][0].headline == "Budget vote"
 
 
 def test_list_public_entity_connections_for_person() -> None:
@@ -256,8 +354,8 @@ def test_get_public_person_story_count_distinct_from_mention_count() -> None:
             person_id=mayor_id,
         )
         assert detail is not None
-        assert detail.mention_count == 2
-        assert detail.story_count == 1
+        assert detail.counts.mentions == 2
+        assert detail.counts.stories == 1
 
 
 def test_list_public_person_type_values() -> None:

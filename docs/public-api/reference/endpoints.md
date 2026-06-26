@@ -45,7 +45,21 @@ Returns minimal project metadata for the given slug. Resolves the effective Styl
   "name": "General",
   "slug": "general",
   "stylebook_slug": "default",
-  "stylebook_name": "Default Stylebook"
+  "stylebook_name": "Default Stylebook",
+  "stats": {
+    "articles": {
+      "total": 1,
+      "embedded": 1
+    },
+    "mentions": {
+      "total": 3,
+      "embedded": 0
+    },
+    "images": {
+      "total": 1,
+      "embedded": 0
+    }
+  }
 }
 ```
 
@@ -56,6 +70,13 @@ Returns minimal project metadata for the given slug. Resolves the effective Styl
 | `slug` | string | URL slug |
 | `stylebook_slug` | string \| null | Effective Stylebook slug for this project, when resolvable |
 | `stylebook_name` | string \| null | Effective Stylebook display name |
+| `stats` | object | Substrate summary counts for non-deleted articles in the project |
+| `stats.articles.total` | integer | Non-deleted articles |
+| `stats.articles.embedded` | integer | Articles with a populated `substrate_article_embedding` row |
+| `stats.mentions.total` | integer | Non-deleted location, person, and organization mention aggregates |
+| `stats.mentions.embedded` | integer | Distinct mentions with a ready semantic document embedding (searchable) |
+| `stats.images.total` | integer | Images attached to non-deleted articles |
+| `stats.images.embedded` | integer | Images with a populated `substrate_image_embedding` row |
 
 ### Errors
 
@@ -80,6 +101,8 @@ Returns minimal project metadata for the given slug. Resolves the effective Styl
 
 Search non-deleted articles in a project by keyword (headline, body text, or URL), metadata tags, and publication date. Returns a paginated list without full body text. On PostgreSQL, `q` uses full-text search (`websearch_to_tsquery`) over headline + body + URL with web-style phrase, `OR`, and `-` exclusion syntax (not semantic embeddings). Non-PostgreSQL test dialects fall back to case-insensitive substring match on the full `q` string.
 
+Advanced metadata filtering uses the repeatable `meta` parameter (see examples below). Legacy `meta_type` / `exclude_*` params remain supported and AND together with `meta` clauses.
+
 ### Path parameters
 
 | Name | Type | Required | Description |
@@ -91,20 +114,44 @@ Search non-deleted articles in a project by keyword (headline, body text, or URL
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
 | `q` | string | — | Keyword match on headline, body text, or URL. PostgreSQL: `"phrase"`, `term1 OR term2`, `-exclude`, implicit AND between terms |
-| `meta_type` | string | — | Include articles with a metadata row of this type |
+| `meta_type` | string | — | Include articles with a metadata row of this type (legacy single clause) |
 | `meta_category` | string | — | With `meta_type`, include articles with this category value |
 | `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
 | `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
+| `meta` | string | — | Repeatable metadata filter clause (AND across clauses). Forms: `type`, `type:category`, `type:cat1\|cat2` (OR within type), `!type` or `!type:category` (negation). Repeat a type to require all listed categories. Max 25 clauses; max 50 categories per clause. |
+| `section` | string | — | Shorthand for `meta=topic:<value>` |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
-| `include_preview` | boolean | `false` | Include truncated text preview (max 280 characters) |
+| `include` | string | — | Repeatable include token. Supported: `counts` (mention and canonical entity totals, image count, custom records, `embedded` flag) |
+
+**Advanced `meta` example** — news stories that are backward-looking or evergreen, about pro sports, but not obituaries:
+
+```http
+GET …/articles/search?meta=news_story&meta=temporal_orientation:backward|evergreen&meta=topic:pro_sports&meta=!topic:obituaries
+```
+
+(URL-encode `|` as `%7C` in clients.)
+
+Discover filter values: `GET …/articles/metadata/types`, `GET …/articles/metadata/types/{meta_type}/values`, `GET …/articles/facets`.
 
 ### Response `200`
 
+Echoes the effective query filters at the top level, then `items` and `pagination`:
+
 ```json
 {
+  "q": "budget",
+  "meta_type": null,
+  "meta_category": null,
+  "exclude_meta_type": null,
+  "exclude_meta_category": null,
+  "author": null,
+  "external_source": null,
+  "has_mentions": null,
+  "pub_date_from": null,
+  "pub_date_to": null,
   "items": [
     {
       "id": 1,
@@ -112,9 +159,7 @@ Search non-deleted articles in a project by keyword (headline, body text, or URL
       "url": "https://example.com/budget",
       "author": "Jane Doe",
       "pub_date": "2024-03-01",
-      "external_source": null,
-      "external_id": null,
-      "entry_id": null,
+      "source": { "id": "example.com", "name": "example.com" },
       "preview": null,
       "metadata": [
         {
@@ -122,7 +167,14 @@ Search non-deleted articles in a project by keyword (headline, body text, or URL
           "category": "local_government_politics",
           "confidence": 0.92
         }
-      ]
+      ],
+      "embedded": true,
+      "counts": {
+        "mentions": { "locations": 1, "people": 1, "organizations": 1, "total": 3 },
+        "entities": { "locations": 1, "people": 1, "organizations": 1, "total": 3 },
+        "images": 1,
+        "custom_records": { "contracts": 1 }
+      }
     }
   ],
   "pagination": {
@@ -139,10 +191,140 @@ Results are ordered by `pub_date` descending (nulls last), then `id` descending.
 
 | Status | When |
 |--------|------|
-| `400` | Invalid `pub_date_from` or `pub_date_to` format |
+| `400` | Invalid `pub_date_from` or `pub_date_to` format; unknown `include` token |
 | `401` | Missing or invalid API key |
 | `403` | API key not valid for this project |
 | `404` | Unknown `project_slug` |
+
+---
+
+## GET `/public/v1/projects/{project_slug}/articles/facets`
+
+| | |
+|---|---|
+| **Status** | Shipped |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/facets.py`](../../../apps/core-api/src/core_api/routers/public/articles/facets.py) — `get_project_article_facets` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_facets.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_facets.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Return distinct authors, external sources, and preset metadata category lists (`format`, `topic`, `subject`) for search filter dropdowns.
+
+### Response `200`
+
+```json
+{
+  "authors": ["Jane Doe"],
+  "external_sources": ["Daily Herald"],
+  "format_categories": ["news_story"],
+  "topic_categories": ["local_government_politics"],
+  "subject_categories": []
+}
+```
+
+---
+
+## GET `/public/v1/projects/{project_slug}/articles/metadata/types`
+
+| | |
+|---|---|
+| **Status** | Shipped |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/metadata.py`](../../../apps/core-api/src/core_api/routers/public/articles/metadata.py) — `list_project_article_metadata_types` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_metadata.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_metadata.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Return distinct **`meta_type`** values present on **`substrate_article_meta`** rows for non-deleted articles in the project. Use to discover which metadata dimensions exist before building filters or UI pickers.
+
+### Response `200`
+
+```json
+{
+  "meta_types": ["format", "subject", "topic"]
+}
+```
+
+Values are sorted alphabetically.
+
+---
+
+## GET `/public/v1/projects/{project_slug}/articles/metadata/types/{meta_type}/values`
+
+| | |
+|---|---|
+| **Status** | Shipped |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/metadata.py`](../../../apps/core-api/src/core_api/routers/public/articles/metadata.py) — `list_project_article_metadata_values` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_metadata.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_metadata.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Return distinct **`category`** values (the stored metadata value) for one **`meta_type`** in the project. Returns an empty `values` array when the type is valid but unused.
+
+### Path parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `meta_type` | string | yes | Metadata type slug (e.g. `topic`, `subject`, `format`) |
+
+### Response `200`
+
+```json
+{
+  "meta_type": "topic",
+  "values": ["local_government_politics", "public_safety_crime"]
+}
+```
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `400` | Empty `meta_type` |
+| `401` | Missing or invalid API key |
+| `403` | API key not valid for this project |
+| `404` | Unknown `project_slug` |
+
+---
+
+## GET `/public/v1/projects/{project_slug}/articles/{article_id}/metadata`
+
+| | |
+|---|---|
+| **Status** | Shipped |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/metadata.py`](../../../apps/core-api/src/core_api/routers/public/articles/metadata.py) — `get_project_article_metadata` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_metadata.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_metadata.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Return metadata rows for one article plus a deduplicated list of **`meta_types`** present on that article. Lighter than article detail when the client only needs classification tags.
+
+### Response `200`
+
+```json
+{
+  "article_id": 1,
+  "meta_types": ["topic"],
+  "metadata": [
+    {
+      "meta_type": "topic",
+      "category": "local_government_politics",
+      "confidence": 0.92
+    }
+  ]
+}
+```
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `401` | Missing or invalid API key |
+| `403` | API key not valid for this project |
+| `404` | Unknown `project_slug` or article not in project |
 
 ---
 
@@ -157,7 +339,7 @@ Results are ordered by `pub_date` descending (nulls last), then `id` descending.
 
 ### Functionality
 
-Natural-language article search over **`substrate_article_embedding`** rows. Embeds the request `query` with the project/org default **`semantic.embedding`** model, then ranks matching embedded articles by cosine similarity. When **`use_hyde`** is `true`, a generative model (`semantic.hyde` default, or the sole enabled generative model) writes a hypothetical news passage from the query; that passage is embedded and used for ranking instead of the raw query. Articles without an embedding row are omitted (not an error). Keyword search remains on **`GET …/articles/search`**.
+Natural-language article search over **`substrate_article_embedding`** rows. Embeds the request `query` with the project/org default **`semantic.embedding`** model, then ranks matching embedded articles by cosine similarity. When **`use_hyde`** is `true`, a generative model (`generative.default`, or the sole enabled generative model) writes a hypothetical news passage from the query; that passage is embedded and used for ranking instead of the raw query. Articles without an embedding row are omitted (not an error). Keyword search remains on **`GET …/articles/search`**.
 
 ### Path parameters
 
@@ -174,12 +356,15 @@ Natural-language article search over **`substrate_article_embedding`** rows. Emb
 | `meta_category` | string | — | With `meta_type`, include articles with this category value |
 | `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
 | `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
+| `meta` | array of string | `[]` | Advanced metadata filter clauses (same grammar as `GET …/articles/search`; AND across clauses) |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
-| `include_preview` | boolean | `false` | Include truncated text preview (max 280 characters) |
 | `use_hyde` | boolean | `false` | Generate a hypothetical news passage from the query, embed it, and search against that (HyDE) |
+| `include` | array of string | `[]` | Repeatable include token. Supported: `counts` (same extras as `GET …/articles/search`) |
+
+Each **`items[]`** row uses the same article list shape as keyword search (`id`, `headline`, `url`, `author`, `pub_date`, `source`, `preview`, `metadata`, optional `embedded`/`counts` via `include`) plus **`score`** (cosine similarity).
 
 ### Response `200`
 
@@ -196,9 +381,26 @@ Natural-language article search over **`substrate_article_embedding`** rows. Emb
     {
       "id": 1,
       "headline": "City council votes on budget",
-      "score": 0.82,
-      "preview": null,
-      "metadata": []
+      "url": "https://example.com/budget",
+      "author": "Jane Doe",
+      "pub_date": "2024-03-01",
+      "source": { "id": "example.com", "name": "example.com" },
+      "preview": "City council approved the downtown budget after…",
+      "metadata": [
+        {
+          "meta_type": "subject",
+          "category": "local_government_politics",
+          "confidence": 0.92
+        }
+      ],
+      "embedded": true,
+      "counts": {
+        "mentions": { "locations": 1, "people": 1, "organizations": 1, "total": 3 },
+        "entities": { "locations": 1, "people": 1, "organizations": 1, "total": 3 },
+        "images": 1,
+        "custom_records": { "contracts": 1 }
+      },
+      "score": 0.82
     }
   ],
   "pagination": {
@@ -215,7 +417,7 @@ Results are ordered by **`score`** descending, then `pub_date` descending, then 
 
 | Status | When |
 |--------|------|
-| `400` | Invalid `pub_date_from` or `pub_date_to` format |
+| `400` | Invalid `pub_date_from` or `pub_date_to` format, invalid `meta` clause, or unknown `include` token |
 | `401` | Missing or invalid API key |
 | `403` | API key not valid for this project |
 | `404` | Unknown `project_slug` |
@@ -251,35 +453,52 @@ Geometry comes from **`substrate_location.geometry`** (PostGIS on PostgreSQL). A
 | `center_lat` | number | — | Center latitude (point mode) |
 | `radius_miles` | number | — | Radius in miles (required with center coordinates) |
 | `bbox` | string | — | Bounding box `min_lng,min_lat,max_lng,max_lat` (bbox mode) |
-| `location_type` | string | — | Filter matching locations by substrate `location_type` |
+| `location_type` | string | — | Repeatable location type filter (OR). Include articles with a matching mention of any listed substrate `location_type` |
 | `nature` | string | — | Filter matching location mentions by editorial `nature` (e.g. `primary`, `secondary`) |
 | `meta_type` | string | — | Include articles with a metadata row of this type |
 | `meta_category` | string | — | With `meta_type`, include articles with this category value |
 | `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
 | `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
+| `section` | string | — | Include articles with this topic metadata category (editorial section sugar) |
+| `meta` | string | — | Repeatable metadata filter clause (same grammar as `GET …/articles/search`; AND across clauses) |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
-| `include_preview` | boolean | `false` | Include truncated text preview per article |
+| `include` | string | — | Repeatable include token. Supported: `counts` (same extras as keyword search) |
 
 ### Response `200`
 
+Echoes the geographic query at the top level. Each **`items[]`** row uses the same article list shape as keyword search plus **`matching_locations`**.
+
 ```json
 {
+  "search_mode": "point",
+  "center_lng": -87.6,
+  "center_lat": 41.8,
+  "radius_miles": 5,
+  "bbox": null,
+  "location_types": [],
+  "nature": null,
+  "meta_type": null,
+  "meta_category": null,
+  "exclude_meta_type": null,
+  "exclude_meta_category": null,
+  "pub_date_from": null,
+  "pub_date_to": null,
   "items": [
     {
-      "search_mode": "point",
-      "article": {
-        "id": 1,
-        "headline": "City council votes on budget",
-        "preview": null,
-        "metadata": []
-      },
+      "id": 1,
+      "headline": "City council votes on budget",
+      "url": "https://example.com/budget",
+      "author": "Jane Doe",
+      "pub_date": "2024-03-01",
+      "source": { "id": "example.com", "name": "example.com" },
+      "preview": null,
+      "metadata": [],
       "matching_locations": [
         {
           "mention_id": 10,
-          "substrate_location_id": 4,
           "label": "City Hall",
           "geometry_json": { "type": "Point", "coordinates": [-87.6, 41.8] },
           "h3_cell": "872664c1bffffff",
@@ -302,7 +521,7 @@ Results are ordered by article `pub_date` descending (nulls last), then `id` des
 
 | Status | When |
 |--------|------|
-| `400` | Invalid geo parameters, mixed point+bbox modes, or invalid dates |
+| `400` | Invalid geo parameters, mixed point+bbox modes, invalid dates, invalid `meta` clause, or unknown `include` token |
 | `401` | Missing or invalid API key |
 | `403` | API key not valid for this project |
 | `404` | Unknown `project_slug` |
@@ -341,6 +560,8 @@ Only locations with populated `h3_cell` and `h3_resolution` contribute.
 | `meta_category` | string | — | With `meta_type`, include articles with this category value |
 | `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
 | `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
+| `section` | string | — | Include articles with this topic metadata category (editorial section sugar) |
+| `meta` | string | — | Repeatable metadata filter clause (same grammar as `GET …/articles/search`; AND across clauses) |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 
@@ -374,7 +595,7 @@ Cells are ordered by `article_count` descending, then `h3_cell` ascending.
 
 | Status | When |
 |--------|------|
-| `400` | Invalid bbox, inverted bbox bounds, or invalid dates |
+| `400` | Invalid bbox, inverted bbox bounds, invalid dates, or invalid `meta` clause |
 | `401` | Missing or invalid API key |
 | `403` | API key not valid for this project |
 | `404` | Unknown `project_slug` |
@@ -417,12 +638,12 @@ Matching uses the same H3 rollup predicate as `geo-cells`, so `pagination.total`
 | `meta_category` | string | — | With `meta_type`, include articles with this category value |
 | `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
 | `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
+| `section` | string | — | Include articles with this topic metadata category (editorial section sugar) |
+| `meta` | string | — | Repeatable metadata filter clause (same grammar as `GET …/articles/search`; AND across clauses) |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
-| `include_preview` | boolean | `false` | Include truncated text preview per article |
-
 Forward the same filters active on the coverage request so counts stay consistent.
 
 ### Response `200`
@@ -442,7 +663,6 @@ Forward the same filters active on the coverage request so counts stay consisten
       "matching_locations": [
         {
           "mention_id": 10,
-          "substrate_location_id": 4,
           "label": "City Hall",
           "geometry_json": { "type": "Point", "coordinates": [-87.6, 41.8] },
           "h3_cell": "892664c1a97ffff",
@@ -503,13 +723,13 @@ Return **articles** and **in-cell location mentions** for **many H3 cells** in o
 | `meta_category` | string | — | With `meta_type`, include articles with this category value |
 | `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
 | `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
+| `section` | string | — | Include articles with this topic metadata category (editorial section sugar) |
+| `meta` | array of string | `[]` | Advanced metadata filter clauses (same grammar as `GET …/articles/search`; AND across clauses) |
 | `external_source` | string | — | Include articles from this external source (case-insensitive) |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
-| `include_preview` | boolean | `false` | Include truncated text preview per article |
-
 ### Response `200`
 
 ```json
@@ -526,7 +746,6 @@ Return **articles** and **in-cell location mentions** for **many H3 cells** in o
       "matching_locations": [
         {
           "mention_id": 10,
-          "substrate_location_id": 4,
           "label": "City Hall",
           "geometry_json": { "type": "Point", "coordinates": [-87.6, 41.8] },
           "h3_cell": "892664c1a97ffff",
@@ -569,7 +788,7 @@ Return **articles** and **in-cell location mentions** for **many H3 cells** in o
 
 ### Functionality
 
-Return one article by id. Does **not** include full body text. Includes metadata tags and optional short preview.
+Return one article by id. Includes metadata tags, a short preview, and up to 10 inline images. Optional `include=counts` adds mention/canonical totals and the article `embedded` flag. Optional `include=text` adds the full article body in `text` (in addition to `preview`).
 
 ### Path parameters
 
@@ -582,31 +801,42 @@ Return one article by id. Does **not** include full body text. Includes metadata
 
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
-| `include_preview` | boolean | `true` | Include truncated text preview (max 280 characters) |
-| `include` | string | — | Optional embeds: `counts` (entity, custom-record, and image counts) |
+| `include` | string | — | Repeatable include token. Supported: `counts` (mention and canonical entity totals, image count, custom records, `embedded` flag); `text` (full article body) |
 
 ### Response `200`
 
-Same article object shape as search `items[]`, with `external_source`, `external_id`, and `entry_id` populated when present. Includes **`processing`**: distinct Agate **`run_id`** values (and **`processed_item_id`** when known) gathered from the article row, metadata/custom-record provenance, and matching `agate_processed_item` rows. Each entry also includes **`domains`** (what was processed, e.g. `places`, `metadata`). When `include=counts`, adds a `counts` object:
+Same article object shape as search `items[]`, plus inline `images` (up to 10 rows). `counts` and `embedded` appear only when `include=counts`. `text` appears only when `include=text` (alongside the always-included `preview`).
 
 ```json
 {
-  "processing": [
+  "id": 1,
+  "headline": "City council votes on budget",
+  "url": "https://example.com/budget",
+  "author": "Jane Doe",
+  "pub_date": "2024-03-01",
+  "source": { "id": "example.com", "name": "example.com" },
+  "preview": "City council voted Thursday on…",
+  "metadata": [
     {
-      "run_id": "550e8400-e29b-41d4-a716-446655440000",
-      "processed_item_id": 42,
-      "domains": ["places", "people", "metadata"]
-    },
-    {
-      "run_id": "660e8400-e29b-41d4-a716-446655440001",
-      "processed_item_id": null,
-      "domains": ["custom_records"]
+      "meta_type": "topic",
+      "category": "local_government_politics",
+      "confidence": 0.92
     }
   ],
+  "images": [
+    {
+      "id": 10,
+      "image_id": "img-1",
+      "url": "https://example.com/photo.jpg",
+      "caption": "Council chamber"
+    }
+  ],
+  "embedded": true,
   "counts": {
-    "entity_counts": { "locations": 1, "people": 1, "organizations": 0 },
-    "custom_record_counts": { "contracts": 2 },
-    "image_count": 1
+    "mentions": { "locations": 1, "people": 1, "organizations": 1, "total": 3 },
+    "entities": { "locations": 1, "people": 1, "organizations": 1, "total": 3 },
+    "images": 1,
+    "custom_records": { "contracts": 1 }
   }
 }
 ```
@@ -615,6 +845,7 @@ Same article object shape as search `items[]`, with `external_source`, `external
 
 | Status | When |
 |--------|------|
+| `400` | Unknown `include` token |
 | `401` | Missing or invalid API key |
 | `403` | API key not valid for this project |
 | `404` | Unknown project, unknown article, or article not in project |
@@ -632,7 +863,7 @@ Same article object shape as search `items[]`, with `external_source`, `external
 
 ### Functionality
 
-Paginated mention evidence for one article across location, person, and organization entities. Unified index ordered by mention `created_at` descending.
+All mention evidence for one article across location, person, and organization entities. Unified index ordered by mention `created_at` descending. Not paginated.
 
 ### Query parameters
 
@@ -640,12 +871,34 @@ Paginated mention evidence for one article across location, person, and organiza
 |------|------|---------|-------------|
 | `entity_type` | string | — | Filter: `location`, `person`, or `organization` |
 | `nature` | string | — | Filter to mentions with this editorial `nature` (exact match) |
-| `limit` | integer | `25` | Page size (1–100) |
-| `offset` | integer | `0` | Offset for pagination |
+| `quote` | boolean | — | When `true`, return only mentions whose evidence is a quote |
 
 ### Response `200`
 
-Paginated list of mention objects with `entity_type`, `mention_id`, `substrate_entity_id`, `label`, optional `canonical`, and optional `evidence` (mention/quote spans).
+JSON array of mention objects with `entity_type`, `label`, optional `nature`, optional `role_in_story`, optional `canonical`, and optional `evidence`:
+
+```json
+[
+  {
+    "entity_type": "location",
+    "label": "Chicago, IL",
+    "nature": "secondary",
+    "role_in_story": "Chicago is referenced as the site of a court challenge…",
+    "canonical": {
+      "id": "107e8980-2ecf-4b40-90c5-9dff18ff54b8",
+      "slug": "chicago-il",
+      "label": "Chicago, IL",
+      "stylebook_slug": "cpm-stylebook"
+    },
+    "evidence": {
+      "mention_text": "Budget leaders weren't yet counting on revenue…",
+      "quote": false,
+      "start_char": 460,
+      "end_char": 732
+    }
+  }
+]
+```
 
 ---
 
@@ -809,7 +1062,7 @@ List active canonical people in the project's Stylebook. Supports the same filte
       "affiliation": "City Hall",
       "public_figure": true,
       "person_type": "elected_official",
-      "mention_count": 3
+      "counts": { "mentions": 3, "stories": 2 }
     }
   ],
   "pagination": { "limit": 25, "offset": 0, "total": 1 }
@@ -867,7 +1120,7 @@ Distinct person type values for filter dropdowns (union of catalog defaults and 
 
 ### Response `200`
 
-Single person object (same fields as list items, plus **`story_count`**: distinct articles with at least one mention in this project). Use **`GET …/people/{person_id}/articles`** for a deduped story list; **`GET …/people/{person_id}/mentions`** returns passage-level mention rows and may list the same article more than once.
+Single person object (same fields as list items). **`counts.stories`** is the number of distinct articles with at least one mention in this project. Use **`GET …/people/{person_id}/articles`** for a deduped story list; **`GET …/people/{person_id}/mentions`** returns passage-level mention rows and may list the same article more than once.
 
 ### Errors
 
@@ -895,8 +1148,23 @@ Paginated mention evidence for one canonical person, scoped to the project. Incl
 |------|------|---------|-------------|
 | `sort` | string | `created_at` | `created_at` or `article` (headline) |
 | `sort_direction` | string | `desc` | `asc` or `desc` |
-| `limit` | integer | `50` | Page size (1–100) |
+| `nature` | string | — | Filter by mention nature (exact match) |
+| `author` | string | — | Filter by article byline (case-insensitive exact match) |
+| `external_source` | string | — | Filter by publication/outlet name |
+| `source` | string | — | Deprecated alias for `external_source` |
+| `section` | string | — | Include mentions in articles with this subject metadata category |
+| `meta_type` | string | — | Include mentions in articles with this metadata type |
+| `meta_category` | string | — | With `meta_type`, include mentions in articles with this category |
+| `exclude_meta_type` | string | — | Exclude mentions in articles with a metadata row of this type |
+| `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude mentions in articles with this category |
+| `meta` | string | — | Repeatable metadata filter clause on parent articles (same grammar as `GET …/articles/search`; AND across clauses) |
+| `pub_date_from` | string | — | `YYYY-MM-DD`; article publication date lower bound |
+| `pub_date_to` | string | — | `YYYY-MM-DD`; article publication date upper bound |
+| `quote` | boolean | — | When true, return only mentions whose first evidence occurrence is quoted |
+| `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
+
+Article-level filters match `GET …/mentions/search`. Entity mention endpoints additionally support `sort` and `sort_direction`.
 
 ### Response `200`
 
@@ -919,10 +1187,44 @@ Paginated mention evidence for one canonical person, scoped to the project. Incl
       "affiliation": "City Hall",
       "nature": "subject",
       "role_in_story": null,
-      "evidence": { "mention_text": "Jane Doe", "quote_text": null }
+      "evidence": { "mention_text": "Jane Doe", "quote": false, "start_char": null, "end_char": null }
     }
   ],
-  "pagination": { "limit": 50, "offset": 0, "total": 1 }
+  "pagination": { "limit": 25, "offset": 0, "total": 1 }
+}
+```
+
+---
+
+## GET `/public/v1/projects/{project_slug}/people/{person_id}/mentions/timeline`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/people/mentions.py`](../../../apps/core-api/src/core_api/routers/public/entities/people/mentions.py) |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/mention_timeline.py`](../../../packages/backfield-entities/src/backfield_entities/public/mention_timeline.py) |
+| **Auth** | Project API key required |
+
+Mention counts grouped by article publication date for one canonical person. Ordered chronologically by `pub_date`. Articles without a publication date are omitted.
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `pub_date_from` | string | — | `YYYY-MM-DD`; article publication date lower bound |
+| `pub_date_to` | string | — | `YYYY-MM-DD`; article publication date upper bound |
+| `quote` | boolean | — | When true, return only mentions whose first evidence occurrence is quoted |
+
+### Response `200`
+
+```json
+{
+  "person_id": "550e8400-e29b-41d4-a716-446655440000",
+  "label": "Jane Doe",
+  "items": [
+    { "pub_date": "2024-02-01", "mention_count": 1 },
+    { "pub_date": "2024-03-01", "mention_count": 2 }
+  ]
 }
 ```
 
@@ -944,10 +1246,10 @@ Paginated distinct articles mentioning a canonical person in the project. Ordere
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
 | `nature` | string | — | Filter to articles with a mention of this editorial `nature` |
+| `pub_date_from` | string | — | `YYYY-MM-DD`; article publication date lower bound |
+| `pub_date_to` | string | — | `YYYY-MM-DD`; article publication date upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
-| `include_preview` | boolean | `false` | Include a short text preview (max 280 characters) per article |
-
 ### Response `200`
 
 ```json
@@ -961,8 +1263,7 @@ Paginated distinct articles mentioning a canonical person in the project. Ordere
       "url": "https://example.com/budget",
       "author": "Jane Doe",
       "pub_date": "2024-03-01",
-      "source_name": "example.com",
-      "section": "local_government_politics",
+      "source": { "id": "example.com", "name": "example.com" },
       "metadata": []
     }
   ],
@@ -1042,7 +1343,7 @@ List active canonical organizations in the project's Stylebook. Supports the sam
       "slug": "city-council",
       "label": "City Council",
       "organization_type": "government",
-      "mention_count": 3
+      "counts": { "mentions": 3, "stories": 2 }
     }
   ],
   "pagination": { "limit": 25, "offset": 0, "total": 1 }
@@ -1128,8 +1429,23 @@ Paginated mention evidence for one canonical organization, scoped to the project
 |------|------|---------|-------------|
 | `sort` | string | `created_at` | `created_at` or `article` (headline) |
 | `sort_direction` | string | `desc` | `asc` or `desc` |
-| `limit` | integer | `50` | Page size (1–100) |
+| `nature` | string | — | Filter by mention nature (exact match) |
+| `author` | string | — | Filter by article byline (case-insensitive exact match) |
+| `external_source` | string | — | Filter by publication/outlet name |
+| `source` | string | — | Deprecated alias for `external_source` |
+| `section` | string | — | Include mentions in articles with this subject metadata category |
+| `meta_type` | string | — | Include mentions in articles with this metadata type |
+| `meta_category` | string | — | With `meta_type`, include mentions in articles with this category |
+| `exclude_meta_type` | string | — | Exclude mentions in articles with a metadata row of this type |
+| `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude mentions in articles with this category |
+| `meta` | string | — | Repeatable metadata filter clause on parent articles (same grammar as `GET …/articles/search`; AND across clauses) |
+| `pub_date_from` | string | — | `YYYY-MM-DD`; article publication date lower bound |
+| `pub_date_to` | string | — | `YYYY-MM-DD`; article publication date upper bound |
+| `quote` | boolean | — | When true, return only mentions whose first evidence occurrence is quoted |
+| `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
+
+Article-level filters match `GET …/mentions/search`. Entity mention endpoints additionally support `sort` and `sort_direction`.
 
 ### Response `200`
 
@@ -1150,12 +1466,18 @@ Paginated mention evidence for one canonical organization, scoped to the project
       "organization_type": "government",
       "nature": "actor",
       "role_in_story": null,
-      "evidence": { "mention_text": "City Council", "quote_text": null }
+      "evidence": { "mention_text": "City Council", "quote": false, "start_char": null, "end_char": null }
     }
   ],
-  "pagination": { "limit": 50, "offset": 0, "total": 1 }
+  "pagination": { "limit": 25, "offset": 0, "total": 1 }
 }
 ```
+
+---
+
+## GET `/public/v1/projects/{project_slug}/organizations/{organization_id}/mentions/timeline`
+
+Mention counts grouped by article publication date for one canonical organization. Same query parameters and response shape as the people mention timeline (`organization_id` instead of `person_id`).
 
 ---
 
@@ -1280,7 +1602,7 @@ Point mode results are ordered by distance from the center. Provide either point
       "geometry_json": { "type": "Point", "coordinates": [-87.6, 41.8] },
       "h3_cell": "872664c1bffffff",
       "h3_resolution": 11,
-      "mention_count": 3
+      "counts": { "mentions": 3, "stories": 2 }
     }
   ],
   "pagination": { "limit": 25, "offset": 0, "total": 1 }
@@ -1303,7 +1625,35 @@ Single location object (same fields as list items).
 
 ## GET `/public/v1/projects/{project_slug}/locations/{location_id}/mentions`
 
-Paginated mention evidence for one canonical location in the project. Supports `sort` (`created_at` or `article`) and `sort_direction`.
+Paginated mention evidence for one canonical location in the project. Supports the same article-level and mention filters as `GET …/mentions/search`, plus entity-specific `sort` (`created_at` or `article`) and `sort_direction`.
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `sort` | string | `created_at` | `created_at` or `article` (headline) |
+| `sort_direction` | string | `desc` | `asc` or `desc` |
+| `nature` | string | — | Filter by mention nature (exact match) |
+| `author` | string | — | Filter by article byline (case-insensitive exact match) |
+| `external_source` | string | — | Filter by publication/outlet name |
+| `source` | string | — | Deprecated alias for `external_source` |
+| `section` | string | — | Include mentions in articles with this subject metadata category |
+| `meta_type` | string | — | Include mentions in articles with this metadata type |
+| `meta_category` | string | — | With `meta_type`, include mentions in articles with this category |
+| `exclude_meta_type` | string | — | Exclude mentions in articles with a metadata row of this type |
+| `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude mentions in articles with this category |
+| `meta` | string | — | Repeatable metadata filter clause on parent articles (same grammar as `GET …/articles/search`; AND across clauses) |
+| `pub_date_from` | string | — | `YYYY-MM-DD`; article publication date lower bound |
+| `pub_date_to` | string | — | `YYYY-MM-DD`; article publication date upper bound |
+| `quote` | boolean | — | When true, return only mentions whose first evidence occurrence is quoted |
+| `limit` | integer | `25` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+
+---
+
+## GET `/public/v1/projects/{project_slug}/locations/{location_id}/mentions/timeline`
+
+Mention counts grouped by article publication date for one canonical location. Same query parameters and response shape as the people mention timeline (`location_id` instead of `person_id`).
 
 ---
 
@@ -1351,10 +1701,12 @@ Unified, project-scoped mention search across location, person, and organization
 | `meta_category` | string | — | With `meta_type`, include mentions in articles with this category |
 | `exclude_meta_type` | string | — | Exclude mentions in articles with a metadata row of this type |
 | `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude mentions in articles with this category |
+| `meta` | string | — | Repeatable metadata filter clause on parent articles (same grammar as `GET …/articles/search`; AND across clauses) |
 | `location_type` | string | — | Filter location mentions by location type |
 | `person_type` | string | — | Filter person mentions by person type |
 | `organization_type` | string | — | Filter organization mentions by organization type |
 | `public_figure` | boolean | — | Filter person mentions by public figure flag |
+| `quote` | boolean | — | When true, return only mentions whose first evidence occurrence is quoted |
 | `pub_date_from` | string | — | `YYYY-MM-DD`; article publication date lower bound |
 | `pub_date_to` | string | — | `YYYY-MM-DD`; article publication date upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
@@ -1383,7 +1735,7 @@ Results are ordered by article `pub_date` descending (nulls last), then mention 
         "label": "Jane Doe",
         "stylebook_slug": "default"
       },
-      "evidence": { "mention_text": "Jane Doe", "quote_text": null, "start_char": null, "end_char": null },
+      "evidence": { "mention_text": "Jane Doe", "quote": false, "start_char": null, "end_char": null },
       "article": { "id": 1, "headline": "City council votes on budget", "url": "https://example.com/budget", "pub_date": "2024-03-01" }
     }
   ],
@@ -1435,3 +1787,47 @@ Single mention with all non-suppressed occurrence evidence and article context. 
 ### Response `200`
 
 Same fields as search items, but `evidence` is replaced by `occurrences[]` (all non-suppressed spans ordered by `occurrence_order`).
+
+---
+
+## POST `/public/v1/projects/{project_slug}/runs`
+
+| Field | Value |
+|-------|-------|
+| **Status** | Shipped (Phase 7) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/runs/create.py`](../../../apps/core-api/src/core_api/routers/public/runs/create.py) — `create_public_run` |
+| **Auth** | Project API key with **`runs:trigger`** scope |
+
+Trigger an Agate run for a **`public_run_enabled`** graph. See [`runs.md`](runs.md) for ingress alias and per-type input shapes.
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `graph_id` | string | yes | Agate graph id in this project |
+| `inputs` | object | no | Map of `public_alias` → ingress argument (exactly one key when provided) |
+
+### Response `200`
+
+`PublicRunOut`: `run_id`, `status`, `counts` (`total`, `pending`, `running`, `succeeded`, `failed`), `created_at`, `updated_at`, `error_message`.
+
+### Errors
+
+**400** invalid inputs; **403** missing scope or graph not public-enabled; **404** unknown graph.
+
+---
+
+## GET `/public/v1/projects/{project_slug}/runs/{run_id}`
+
+| Field | Value |
+|-------|-------|
+| **Status** | Shipped (Phase 7) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/runs/detail.py`](../../../apps/core-api/src/core_api/routers/public/runs/detail.py) — `get_public_run` |
+| **Auth** | Project API key (read scope) |
+
+Poll run status and item counts. Same response shape as POST create.
+
+### Errors
+
+**404** when the run does not exist or is not in this project.
+

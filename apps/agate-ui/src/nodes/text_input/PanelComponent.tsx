@@ -21,6 +21,8 @@ const nodeMetadata = {
 
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import IngressApiRunsSection from '@/components/node-panel/IngressApiRunsSection'
+import type { GraphPanelContext } from '@/components/NodePanel'
 
 interface TextInputPanelProps {
   node: any
@@ -28,6 +30,7 @@ interface TextInputPanelProps {
   onChange?: (text: string) => void
   editMode?: boolean
   setNodes?: (nodes: any) => void
+  graphContext?: GraphPanelContext
 }
 
 export default function TextInputPanel({
@@ -35,6 +38,7 @@ export default function TextInputPanel({
   onChange,
   editMode,
   setNodes,
+  graphContext,
 }: TextInputPanelProps) {
   const isDisabled = !(editMode && setNodes)
 
@@ -48,15 +52,25 @@ export default function TextInputPanel({
   }
 
   return (
-    <div className="space-y-2">
-      <Label htmlFor="node-text">Input text</Label>
-      <Textarea
-        id="node-text"
-        value={node.data.text || ''}
-        onChange={(e) => handleChange(e.target.value)}
-        placeholder="Enter article text..."
-        className="min-h-[300px] mt-1"
-        disabled={isDisabled}
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="node-text">Input text</Label>
+        <Textarea
+          id="node-text"
+          value={node.data.text || ''}
+          onChange={(e) => handleChange(e.target.value)}
+          placeholder="Enter article text..."
+          className="min-h-[300px] mt-1"
+          disabled={isDisabled}
+        />
+      </div>
+
+      <IngressApiRunsSection
+        node={node}
+        editMode={editMode}
+        setNodes={setNodes}
+        publicRunEnabled={Boolean(graphContext?.publicRunEnabled)}
+        onPublicRunEnabledChange={graphContext?.onPublicRunEnabledChange}
       />
     </div>
   )

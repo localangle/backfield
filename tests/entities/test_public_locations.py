@@ -13,6 +13,7 @@ from backfield_db import (
     SubstrateArticle,
     SubstrateLocation,
     SubstrateLocationMention,
+    SubstrateLocationMentionOccurrence,
 )
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from backfield_entities.public.connections import list_public_entity_connections
@@ -28,8 +29,9 @@ from backfield_entities.public.locations import (
     list_public_location_mentions,
     search_public_locations,
 )
+from backfield_entities.public.mention_filters import PublicEntityMentionListParams
 from backfield_entities.public.stylebook_scope import list_public_location_type_values
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 
 def _seed_locations(session: Session) -> tuple[int, int, str]:
@@ -100,6 +102,20 @@ def _seed_locations(session: Session) -> tuple[int, int, str]:
         )
     )
     session.commit()
+    session.refresh(location)
+    mention = session.exec(
+        select(SubstrateLocationMention).where(
+            SubstrateLocationMention.location_id == int(location.id)  # type: ignore[arg-type]
+        )
+    ).one()
+    session.add(
+        SubstrateLocationMentionOccurrence(
+            location_mention_id=int(mention.id),  # type: ignore[arg-type]
+            mention_text="City Hall",
+            quote_text="debate at City Hall",
+        )
+    )
+    session.commit()
     return stylebook_id, project_id, str(city_hall.id)
 
 
@@ -117,7 +133,7 @@ def test_search_public_locations_filters_by_name_and_type() -> None:
         )
         assert total == 1
         assert items[0].id == city_hall_id
-        assert items[0].mention_count == 1
+        assert items[0].counts.mentions == 1
         assert items[0].geometry_json is not None
 
         items, total = search_public_locations(
@@ -202,6 +218,36 @@ def test_get_public_location_and_mentions() -> None:
         assert total == 1
         assert items[0].article.headline == "Budget vote"
         assert items[0].nature == "primary"
+
+
+def test_list_public_location_mentions_filters_by_quote() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, project_id, city_hall_id = _seed_locations(session)
+
+        unfiltered = list_public_location_mentions(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            location_id=city_hall_id,
+        )
+        assert unfiltered is not None
+        assert unfiltered[1] == 1
+
+        quoted = list_public_location_mentions(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            location_id=city_hall_id,
+            params=PublicEntityMentionListParams(quotes_only=True),
+        )
+        assert quoted is not None
+        items, total = quoted
+        assert total == 1
+        assert items[0].evidence is not None
+        assert items[0].evidence.mention_text == "debate at City Hall"
+        assert items[0].evidence.quote is True
 
 
 def test_list_public_location_articles() -> None:

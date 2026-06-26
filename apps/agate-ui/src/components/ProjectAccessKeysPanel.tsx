@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Key, Plus, Trash2, RefreshCw, AlertCircle, Copy } from "lucide-react"
 import { format } from "date-fns"
@@ -31,6 +32,14 @@ import {
   type ProjectAccessCredential,
   type ProjectAccessCredentialCreated,
 } from "@/lib/core-api"
+import {
+  defaultCreateScopeSelection,
+  normalizeScopeSelectionForType,
+  PROJECT_API_KEY_SCOPE_OPTIONS,
+  scopeOptionLabel,
+  scopesForCreateRequest,
+  type ProjectApiKeyScope,
+} from "@/lib/projectApiKeyScopes"
 
 export type ProjectAccessKeysPanelHandle = {
   openCreateDialog: () => void
@@ -54,6 +63,9 @@ const ProjectAccessKeysPanel = forwardRef<
   const [createOpen, setCreateOpen] = useState(false)
   const [createType, setCreateType] = useState<"user" | "service">("user")
   const [createLabel, setCreateLabel] = useState("")
+  const [createScopes, setCreateScopes] = useState<Set<ProjectApiKeyScope>>(
+    () => defaultCreateScopeSelection(),
+  )
 
   const [rawKeyPayload, setRawKeyPayload] = useState<ProjectAccessCredentialCreated | null>(
     null,
@@ -102,17 +114,47 @@ const ProjectAccessKeysPanel = forwardRef<
     return `Rotated ${row.key_prefix.slice(0, 8)}…`
   }
 
+  const resetCreateForm = () => {
+    setCreateLabel("")
+    setCreateType("user")
+    setCreateScopes(defaultCreateScopeSelection())
+  }
+
+  const openCreateDialog = () => {
+    resetCreateForm()
+    setCreateOpen(true)
+  }
+
+  const handleCreateTypeChange = (nextType: "user" | "service") => {
+    setCreateType(nextType)
+    setCreateScopes((prev) => normalizeScopeSelectionForType(nextType, prev))
+  }
+
+  const toggleCreateScope = (scope: ProjectApiKeyScope, checked: boolean) => {
+    if (scope === "read") return
+    setCreateScopes((prev) => {
+      const next = new Set(prev)
+      if (checked) {
+        next.add(scope)
+      } else {
+        next.delete(scope)
+      }
+      return normalizeScopeSelectionForType(createType, next)
+    })
+  }
+
   const handleCreate = async () => {
     setSaving(true)
     setError(null)
     try {
+      const scopes = scopesForCreateRequest(createType, createScopes)
       const created = await createProjectAccessKey(projectId, {
         credential_type: createType,
         label: createLabel.trim() || null,
+        scopes,
       })
       setCreateOpen(false)
-      setCreateLabel("")
-      setCreateType("user")
+      resetCreateForm()
       setRotateRevokeId(null)
       setRawKeyPayload(created)
       await load()
@@ -160,9 +202,11 @@ const ProjectAccessKeysPanel = forwardRef<
     setSaving(true)
     setError(null)
     try {
+      const scopes = row.scopes?.includes("runs:trigger") ? ["runs:trigger"] : undefined
       const created = await createProjectAccessKey(projectId, {
         credential_type: row.credential_type as "user" | "service",
         label: nextRotatedLabel(row),
+        scopes,
       })
       setRotateRevokeId(row.id)
       setRawKeyPayload(created)
@@ -204,10 +248,7 @@ const ProjectAccessKeysPanel = forwardRef<
   }
 
   useImperativeHandle(ref, () => ({
-    openCreateDialog: () => {
-      setCreateOpen(true)
-      setCreateType("user")
-    },
+    openCreateDialog,
   }))
 
   return (
@@ -237,10 +278,7 @@ const ProjectAccessKeysPanel = forwardRef<
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => {
-              setCreateOpen(true)
-              setCreateType("user")
-            }}
+            onClick={openCreateDialog}
             disabled={saving}
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -286,6 +324,13 @@ const ProjectAccessKeysPanel = forwardRef<
                     {row.label ? (
                       <p className="text-sm font-medium">{row.label}</p>
                     ) : null}
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      {(row.scopes?.length ? row.scopes : ["read"]).map((scope) => (
+                        <Badge key={scope} variant="outline" className="text-[10px] font-normal">
+                          {scopeOptionLabel(scope)}
+                        </Badge>
+                      ))}
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       Created {format(new Date(row.created_at), "MMM d, yyyy HH:mm")}
                     </p>
@@ -326,7 +371,15 @@ const ProjectAccessKeysPanel = forwardRef<
         </div>
       )}
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open)
+          if (!open) {
+            resetCreateForm()
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create API access key</DialogTitle>
@@ -342,7 +395,7 @@ const ProjectAccessKeysPanel = forwardRef<
                 <Label>Key type</Label>
                 <Select
                   value={createType}
-                  onValueChange={(v) => setCreateType(v as "user" | "service")}
+                  onValueChange={(v) => handleCreateTypeChange(v as "user" | "service")}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -362,6 +415,48 @@ const ProjectAccessKeysPanel = forwardRef<
                 onChange={(e) => setCreateLabel(e.target.value)}
                 placeholder="e.g. laptop, CI pipeline"
               />
+            </div>
+            <div className="space-y-3">
+              <Label>Allowed access</Label>
+              <div className="space-y-3 rounded-md border p-3">
+                {PROJECT_API_KEY_SCOPE_OPTIONS.map((option) => {
+                  const hiddenForType =
+                    option.serviceOnly && (createType !== "service" || !isOrgAdmin)
+                  if (hiddenForType) {
+                    return null
+                  }
+                  const checked = option.required || createScopes.has(option.id)
+                  const disabled = option.required
+                  return (
+                    <div key={option.id} className="flex items-start gap-3">
+                      <Checkbox
+                        id={`access-key-scope-${option.id}`}
+                        checked={checked}
+                        disabled={disabled}
+                        onCheckedChange={(value) =>
+                          toggleCreateScope(option.id, value === true)
+                        }
+                        className="mt-0.5"
+                      />
+                      <div className="space-y-0.5">
+                        <Label
+                          htmlFor={`access-key-scope-${option.id}`}
+                          className="text-sm font-medium leading-none cursor-pointer"
+                        >
+                          {option.label}
+                        </Label>
+                        <p className="text-xs text-muted-foreground">{option.description}</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              {createType === "user" ? (
+                <p className="text-xs text-muted-foreground">
+                  Personal keys can read project data only. Use a service key to trigger flows via
+                  API.
+                </p>
+              ) : null}
             </div>
           </div>
           <DialogFooter>
@@ -393,6 +488,13 @@ const ProjectAccessKeysPanel = forwardRef<
           </DialogHeader>
           {rawKeyPayload ? (
             <div className="space-y-3">
+              <div className="flex flex-wrap gap-1.5">
+                {(rawKeyPayload.scopes?.length ? rawKeyPayload.scopes : ["read"]).map((scope) => (
+                  <Badge key={scope} variant="outline" className="text-[10px] font-normal">
+                    {scopeOptionLabel(scope)}
+                  </Badge>
+                ))}
+              </div>
               <div className="flex gap-2">
                 <Input readOnly value={rawKeyPayload.raw_key} className="font-mono text-xs" />
                 <Button

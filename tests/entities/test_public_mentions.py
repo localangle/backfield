@@ -22,6 +22,7 @@ from backfield_db import (
     SubstratePersonMentionOccurrence,
 )
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
+from backfield_entities.public.articles import ArticleMetaClause
 from backfield_entities.public.mentions import (
     PublicMentionSearchParams,
     get_public_mention,
@@ -195,6 +196,26 @@ def test_search_public_mentions_returns_all_types() -> None:
         assert all(item.article.headline == "Budget vote" for item in items)
 
 
+def test_search_public_mentions_filters_by_quote() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project_id, location_mid, _, _, _ = _seed_mentions(session)
+
+        items, total = search_public_mentions(
+            session,
+            project_id=project_id,
+            params=PublicMentionSearchParams(quotes_only=True),
+        )
+        assert total == 1
+        assert len(items) == 1
+        assert items[0].mention_id == location_mid
+        assert items[0].entity_type == "location"
+        assert items[0].evidence is not None
+        assert items[0].evidence.mention_text == "debate"
+    assert items[0].evidence.quote is True
+
+
 def test_search_public_mentions_filters_by_entity_type_and_nature() -> None:
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
@@ -231,6 +252,36 @@ def test_search_public_mentions_filters_by_author_and_section() -> None:
         )
         assert total == 3
         assert len(items) == 3
+
+
+def test_search_public_mentions_filters_by_meta_clauses() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project_id, _, _, _, _ = _seed_mentions(session)
+
+        _, total = search_public_mentions(
+            session,
+            project_id=project_id,
+            params=PublicMentionSearchParams(
+                meta_clauses=(
+                    ArticleMetaClause(
+                        meta_type="topic",
+                        categories=("local_government_politics",),
+                    ),
+                ),
+            ),
+        )
+        assert total == 3
+
+        _, total = search_public_mentions(
+            session,
+            project_id=project_id,
+            params=PublicMentionSearchParams(
+                meta_clauses=(ArticleMetaClause(meta_type="topic", categories=("sports",)),),
+            ),
+        )
+        assert total == 0
 
 
 def test_search_public_mentions_filters_by_has_canonical_and_q() -> None:

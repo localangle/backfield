@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from backfield_db import BackfieldProject
+from backfield_entities.public.article_hub import enrich_articles_with_counts
 from backfield_entities.public.articles import (
-    PublicArticleOut,
     PublicArticleSearchParams,
+    public_article_search_query_out,
+    resolve_public_article_search_params,
     search_public_articles,
 )
 from fastapi import APIRouter, Depends, Query
@@ -13,17 +15,21 @@ from sqlmodel import Session
 
 from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import (
+    INCLUDE_PARAM_DESCRIPTION,
+    META_PARAM_DESCRIPTION,
+    parse_article_includes,
     parse_has_mentions,
-    parse_include,
+    parse_meta_clauses,
     parse_optional_date,
 )
+from core_api.routers.public.articles.responses import PublicArticleSearchOut
 from core_api.routers.public.deps import get_public_project
-from core_api.routers.public.schemas import PaginatedResponse, PaginationOut
+from core_api.routers.public.schemas import PaginationOut
 
 router = APIRouter()
 
 
-@router.get("/search", response_model=PaginatedResponse[PublicArticleOut])
+@router.get("/search", response_model=PublicArticleSearchOut)
 def search_project_articles(
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
@@ -69,41 +75,40 @@ def search_project_articles(
     pub_date_to: str | None = Query(None),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    include_preview: bool = Query(
-        False,
-        description="Include a short text preview (max 280 characters) per article",
-    ),
-    include: str | None = Query(
-        None,
-        description="Optional embeds: counts",
-    ),
-) -> PaginatedResponse[PublicArticleOut]:
+    include: list[str] = Query(default=[], description=INCLUDE_PARAM_DESCRIPTION),
+    meta: list[str] = Query(default=[], description=META_PARAM_DESCRIPTION),
+) -> PublicArticleSearchOut:
     """Search project articles by keyword, metadata tags, and publication date."""
-    include_flags = parse_include(include)
     outlet = external_source or source
-    params = PublicArticleSearchParams(
-        q=q,
-        meta_type=meta_type,
-        meta_category=meta_category,
-        exclude_meta_type=exclude_meta_type,
-        exclude_meta_category=exclude_meta_category,
-        section=section,
-        author=author,
-        external_source=outlet,
-        has_mentions=parse_has_mentions(has_mentions),
-        pub_date_from=parse_optional_date(pub_date_from, param_name="pub_date_from"),
-        pub_date_to=parse_optional_date(pub_date_to, param_name="pub_date_to"),
-        limit=limit,
-        offset=offset,
-        include_preview=include_preview,
-        include_counts="counts" in include_flags,
+    includes = parse_article_includes(include)
+    params = resolve_public_article_search_params(
+        PublicArticleSearchParams(
+            q=q,
+            meta_type=meta_type,
+            meta_category=meta_category,
+            exclude_meta_type=exclude_meta_type,
+            exclude_meta_category=exclude_meta_category,
+            section=section,
+            meta_clauses=parse_meta_clauses(meta),
+            author=author,
+            external_source=outlet,
+            has_mentions=parse_has_mentions(has_mentions),
+            pub_date_from=parse_optional_date(pub_date_from, param_name="pub_date_from"),
+            pub_date_to=parse_optional_date(pub_date_to, param_name="pub_date_to"),
+            limit=limit,
+            offset=offset,
+        )
     )
     items, total = search_public_articles(
         session,
         project_id=int(project.id),  # type: ignore[arg-type]
         params=params,
     )
-    return PaginatedResponse(
+    if "counts" in includes:
+        enrich_articles_with_counts(session, items)
+    query = public_article_search_query_out(params)
+    return PublicArticleSearchOut(
+        **query.model_dump(),
         items=items,
         pagination=PaginationOut(limit=limit, offset=offset, total=total),
     )

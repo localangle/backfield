@@ -510,7 +510,11 @@ def execute_s3_batch_setup(run_id: str) -> None:
             return
 
         try:
-            spec = GraphSpec.model_validate_json(graph.spec_json)
+            spec_json = resolve_run_graph_spec_json(
+                run_result_json=run.result_json,
+                graph_spec_json=graph.spec_json,
+            )
+            spec = GraphSpec.model_validate_json(spec_json)
             params = _first_s3_input_params(spec)
             bucket = str(params.get("bucket") or "").strip()
             folder_path = str(params.get("folder_path") or "").strip()
@@ -535,15 +539,14 @@ def execute_s3_batch_setup(run_id: str) -> None:
                 if run:
                     run.status = "failed"
                     run.error_message = f"No JSON objects found under s3://{bucket}/{prefix or ''}"
-                    run.result_json = json.dumps(
-                        {
-                            "s3_batch": {
-                                "total_json_objects": 0,
-                                "skipped_invalid": 0,
-                                "skipped_cap": 0,
-                                "valid_executed": 0,
-                            }
-                        }
+                    run.result_json = merge_run_result_payload(
+                        run.result_json,
+                        s3_batch={
+                            "total_json_objects": 0,
+                            "skipped_invalid": 0,
+                            "skipped_cap": 0,
+                            "valid_executed": 0,
+                        },
                     )
                     run.updated_at = datetime.now(UTC)
                     session.add(run)
@@ -617,7 +620,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
             run.result_json = merge_run_result_payload(
                 run.result_json,
                 s3_batch=batch_meta,
-                graph_spec_json=graph.spec_json,
+                graph_spec_json=spec_json,
             )
             run.updated_at = datetime.now(UTC)
             session.add(run)

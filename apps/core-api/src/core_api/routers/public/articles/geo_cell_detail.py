@@ -14,7 +14,11 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 from core_api.deps import get_session
-from core_api.routers.public.articles.helpers import parse_optional_date
+from core_api.routers.public.articles.helpers import (
+    META_PARAM_DESCRIPTION,
+    parse_optional_date,
+    resolve_article_metadata_filters,
+)
 from core_api.routers.public.deps import get_public_project
 from core_api.routers.public.schemas import PaginationOut
 
@@ -53,14 +57,21 @@ def list_project_articles_in_geo_cell(
         None,
         description="With exclude_meta_type, exclude articles with this metadata category",
     ),
-    pub_date_from: str | None = Query(None),
-    pub_date_to: str | None = Query(None),
+    section: str | None = Query(
+        None,
+        description="Include articles with this subject metadata category (editorial section)",
+    ),
+    meta: list[str] = Query(default=[], description=META_PARAM_DESCRIPTION),
+    pub_date_from: str | None = Query(
+        None,
+        description="ISO date YYYY-MM-DD, inclusive lower bound on article pub_date",
+    ),
+    pub_date_to: str | None = Query(
+        None,
+        description="ISO date YYYY-MM-DD, inclusive upper bound on article pub_date",
+    ),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    include_preview: bool = Query(
-        False,
-        description="Include a short text preview (max 280 characters) per article",
-    ),
 ) -> PublicArticleGeoCellDetailResponse:
     """Return articles and in-cell location mentions for one H3 coverage cell."""
     normalized_cell = h3_cell.strip()
@@ -70,19 +81,33 @@ def list_project_articles_in_geo_cell(
             detail="Invalid h3_cell.",
         )
 
-    params = PublicArticleGeoCellDetailParams(
-        h3_cell=normalized_cell,
-        location_type=location_type,
-        nature=nature,
+    (
+        resolved_meta_type,
+        resolved_meta_category,
+        resolved_exclude_meta_type,
+        resolved_exclude_meta_category,
+        meta_clauses,
+    ) = resolve_article_metadata_filters(
+        section=section,
         meta_type=meta_type,
         meta_category=meta_category,
         exclude_meta_type=exclude_meta_type,
         exclude_meta_category=exclude_meta_category,
+        meta=meta,
+    )
+    params = PublicArticleGeoCellDetailParams(
+        h3_cell=normalized_cell,
+        location_type=location_type,
+        nature=nature,
+        meta_type=resolved_meta_type,
+        meta_category=resolved_meta_category,
+        exclude_meta_type=resolved_exclude_meta_type,
+        exclude_meta_category=resolved_exclude_meta_category,
+        meta_clauses=meta_clauses,
         pub_date_from=parse_optional_date(pub_date_from, param_name="pub_date_from"),
         pub_date_to=parse_optional_date(pub_date_to, param_name="pub_date_to"),
         limit=limit,
         offset=offset,
-        include_preview=include_preview,
     )
     result = search_public_articles_in_cell(
         session,

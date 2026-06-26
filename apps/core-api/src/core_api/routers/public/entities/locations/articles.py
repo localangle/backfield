@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from core_api.deps import get_session
+from core_api.routers.public.articles.helpers import parse_optional_date
 from core_api.routers.public.deps import get_public_project
 from core_api.routers.public.entities.locations.helpers import (
     parse_location_id,
@@ -36,12 +37,10 @@ def list_project_location_articles(
         None,
         description="Filter to articles with a mention of this editorial nature",
     ),
+    pub_date_from: str | None = Query(None),
+    pub_date_to: str | None = Query(None),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    include_preview: bool = Query(
-        False,
-        description="Include a short text preview (max 280 characters) per article",
-    ),
 ) -> PublicLocationArticlesOut:
     """Return paginated articles mentioning a canonical location in this project."""
     stylebook_id, project_id = resolve_public_locations_scope(session, project)
@@ -52,9 +51,10 @@ def list_project_location_articles(
         project_id=project_id,
         location_id=parsed_id,
         nature=nature,
+        pub_date_from=parse_optional_date(pub_date_from, param_name="pub_date_from"),
+        pub_date_to=parse_optional_date(pub_date_to, param_name="pub_date_to"),
         limit=limit,
         offset=offset,
-        include_preview=include_preview,
     )
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Location not found")

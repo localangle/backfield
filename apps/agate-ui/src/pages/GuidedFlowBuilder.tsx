@@ -240,6 +240,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   const [graphName, setGraphName] = useState('Untitled Flow')
   const graphNameRef = useRef('Untitled Flow')
   const [graphDescription, setGraphDescription] = useState('')
+  const [publicRunEnabled, setPublicRunEnabled] = useState(false)
   const [activeStep, setActiveStep] = useState<FlowBuilderStep>('input')
   const [completedSteps, setCompletedSteps] = useState<Set<FlowBuilderStep>>(new Set())
   const [inputNode, setInputNode] = useState<Node | null>(null)
@@ -414,6 +415,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         setGraphName(graph.name)
         graphNameRef.current = graph.name
         setGraphDescription(graph.description ?? '')
+        setPublicRunEnabled(Boolean(graph.public_run_enabled))
         setResolvedFlowProject(project)
         setScaffoldModel(applyLayoutToModel(model))
         setInputNode(toReactFlowBookend(model.inputNode))
@@ -488,6 +490,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       await updateGraph(existingGraphId, {
         name: current.name,
         description: nextDescription,
+        public_run_enabled: current.public_run_enabled,
         project_id: resolvedFlowProject.id,
         spec: current.spec,
       })
@@ -599,8 +602,16 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       missingWorkspaceStylebook: sid == null && nm == null,
       flowProjectLoading: false,
       fetchProjectAiModels: flowProjectId != null ? fetchProjectAiModels : undefined,
+      publicRunEnabled,
+      onPublicRunEnabledChange: setPublicRunEnabled,
     }
-  }, [resolvedFlowProject, flowProjectLoading, flowProjectId, fetchProjectAiModels])
+  }, [
+    resolvedFlowProject,
+    flowProjectLoading,
+    flowProjectId,
+    fetchProjectAiModels,
+    publicRunEnabled,
+  ])
 
   const canNavigateTo = useCallback(
     (step: FlowBuilderStep) => canNavigateToStep(step, completedStepsReadonly),
@@ -845,17 +856,21 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     await updateGraph(existingGraphId, {
       name: nameToSave,
       description: graphDescription.trim(),
+      public_run_enabled: publicRunEnabled,
       project_id: resolvedFlowProject.id,
       spec: {
         name: nameToSave.toLowerCase().replace(/\s+/g, '_'),
         nodes: draftSpec.nodes.map((node) => ({
           id: node.id,
           type: node.type,
-          params: paramsForGraphSave({
-            id: node.id,
-            type: node.type,
-            data: node.params,
-          }),
+          params: paramsForGraphSave(
+            {
+              id: node.id,
+              type: node.type,
+              data: node.params,
+            },
+            { publicRunEnabled },
+          ),
           position: node.position,
         })),
         edges: draftSpec.edges,
@@ -863,6 +878,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     })
   }, [
     graphDescription,
+    publicRunEnabled,
     existingGraphId,
     resolveGraphNameForSave,
     inputNode,
@@ -1166,15 +1182,19 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       const graphSpec = {
         name: nameToSave,
         description: graphDescription.trim(),
+        public_run_enabled: publicRunEnabled,
         project_id: resolvedFlowProject.id,
         spec: {
           name: nameToSave.toLowerCase().replace(/\s+/g, '_'),
           nodes: draftSpec.nodes.map((node) => {
-            const baseParams = paramsForGraphSave({
-              id: node.id,
-              type: node.type,
-              data: node.params,
-            })
+            const baseParams = paramsForGraphSave(
+              {
+                id: node.id,
+                type: node.type,
+                data: node.params,
+              },
+              { publicRunEnabled },
+            )
             const params =
               validStylebookIds != null
                 ? sanitizeNodeStylebookRef(
@@ -1233,6 +1253,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     outputNode,
     scaffoldModel,
     graphDescription,
+    publicRunEnabled,
     graphName,
     resolveGraphNameForSave,
     existingGraphId,
@@ -1263,6 +1284,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       captureGuidedFlowSnapshot({
         graphName,
         graphDescription,
+        publicRunEnabled,
         activeStep,
         completedSteps: [...completedSteps],
         inputNode,
@@ -1274,6 +1296,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     [
       graphName,
       graphDescription,
+      publicRunEnabled,
       activeStep,
       completedSteps,
       inputNode,
@@ -1304,6 +1327,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         setGraphName(snap.graphName)
         graphNameRef.current = snap.graphName
         setGraphDescription(snap.graphDescription)
+        setPublicRunEnabled(snap.publicRunEnabled)
         setActiveStep(snap.activeStep)
         setCompletedSteps(new Set(snap.completedSteps))
         setInputNode(snap.inputNode)

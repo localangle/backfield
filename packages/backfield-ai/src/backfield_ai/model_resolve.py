@@ -13,6 +13,7 @@ from backfield_db import (
 from sqlmodel import Session, select
 
 from backfield_ai.constants import (
+    AI_DEFAULT_ROLE_GENERATIVE_DEFAULT,
     AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING,
     AI_DEFAULT_ROLE_SEMANTIC_HYDE,
     AI_MODEL_KIND_EMBEDDING,
@@ -323,27 +324,24 @@ def _try_load_semantic_generative_config(
     return config_id
 
 
-def resolve_semantic_hyde_model_config_id(
+def _try_resolve_generative_default_role(
     session: Session,
+    *,
+    organization_id: int,
     project_id: int,
-) -> str:
-    """Resolve the generative model for HyDE query expansion."""
-    proj = session.get(BackfieldProject, project_id)
-    if proj is None:
-        raise EmbeddingConfigurationError("Project not found.")
-    org_id = int(proj.organization_id)
-
+    role: str,
+) -> str | None:
     project_role = session.exec(
         select(BackfieldAiDefaultModelRole).where(
             BackfieldAiDefaultModelRole.project_id == project_id,
             BackfieldAiDefaultModelRole.organization_id.is_(None),
-            BackfieldAiDefaultModelRole.role == AI_DEFAULT_ROLE_SEMANTIC_HYDE,
+            BackfieldAiDefaultModelRole.role == role,
         )
     ).first()
     if project_role is not None:
         loaded = _try_load_semantic_generative_config(
             session,
-            organization_id=org_id,
+            organization_id=organization_id,
             project_id=project_id,
             config_id=str(project_role.model_config_id),
         )
@@ -352,17 +350,39 @@ def resolve_semantic_hyde_model_config_id(
 
     org_role = session.exec(
         select(BackfieldAiDefaultModelRole).where(
-            BackfieldAiDefaultModelRole.organization_id == org_id,
+            BackfieldAiDefaultModelRole.organization_id == organization_id,
             BackfieldAiDefaultModelRole.project_id.is_(None),
-            BackfieldAiDefaultModelRole.role == AI_DEFAULT_ROLE_SEMANTIC_HYDE,
+            BackfieldAiDefaultModelRole.role == role,
         )
     ).first()
     if org_role is not None:
         loaded = _try_load_semantic_generative_config(
             session,
-            organization_id=org_id,
+            organization_id=organization_id,
             project_id=project_id,
             config_id=str(org_role.model_config_id),
+        )
+        if loaded is not None:
+            return loaded
+    return None
+
+
+def resolve_generative_default_model_config_id(
+    session: Session,
+    project_id: int,
+) -> str:
+    """Resolve the project default generative model (HyDE and other headless uses)."""
+    proj = session.get(BackfieldProject, project_id)
+    if proj is None:
+        raise EmbeddingConfigurationError("Project not found.")
+    org_id = int(proj.organization_id)
+
+    for role in (AI_DEFAULT_ROLE_GENERATIVE_DEFAULT, AI_DEFAULT_ROLE_SEMANTIC_HYDE):
+        loaded = _try_resolve_generative_default_role(
+            session,
+            organization_id=org_id,
+            project_id=project_id,
+            role=role,
         )
         if loaded is not None:
             return loaded
@@ -373,9 +393,17 @@ def resolve_semantic_hyde_model_config_id(
     if not enabled:
         raise EmbeddingConfigurationError(
             "No generative model configured. Enable a generative model for this project "
-            "and set a default for semantic HyDE, or enable exactly one generative model.",
+            "and set a default on the project Models tab, or enable exactly one generative model.",
         )
     raise EmbeddingConfigurationError(
-        "Multiple generative models are enabled for this project. Set a default for "
-        "semantic HyDE on the project Models tab.",
+        "Multiple generative models are enabled for this project. Set a default generative "
+        "model on the project Models tab.",
     )
+
+
+def resolve_semantic_hyde_model_config_id(
+    session: Session,
+    project_id: int,
+) -> str:
+    """Resolve the generative model for HyDE query expansion."""
+    return resolve_generative_default_model_config_id(session, project_id)

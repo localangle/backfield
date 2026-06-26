@@ -84,9 +84,14 @@ These were considered and rejected because they conflict with the size-gate mode
 ## Recommended client integration
 
 1. **On map move/zoom:** compute bbox from `map.getBounds()`, map zoom → `resolution`, `GET …/geo-cells?bbox=…&resolution=…`.
-2. **Render:** draw each returned cell at `response.resolution` using `h3_cell` IDs. Do not subdivide or merge on the client.
-3. **Status bar:** when `coarsened`, show that the effective resolution is lower than requested. When `requested_resolution` differs from `resolution` only because of coarsen, explain density — not bbox clamping.
-4. **Expect sparse fine zoom:** block-level cells appear only where extracted locations are point-scale (native res 9–11). City-name mentions stay coarse and correctly disappear when zoomed in.
+2. **Optional article filters:** forward the same metadata and date query params used on article search when the map should reflect a subject or time window:
+   - `section` (topic category sugar), or `meta_type` + `meta_category`
+   - `exclude_meta_type` + optional `exclude_meta_category`
+   - `pub_date_from`, `pub_date_to` (`YYYY-MM-DD`)
+   - Mention filters: `location_type`, `nature`
+3. **Render:** draw each returned cell at `response.resolution` using `h3_cell` IDs. Do not subdivide or merge on the client.
+4. **Status bar:** when `coarsened`, show that the effective resolution is lower than requested. When `requested_resolution` differs from `resolution` only because of coarsen, explain density — not bbox clamping.
+5. **Expect sparse fine zoom:** block-level cells appear only where extracted locations are point-scale (native res 9–11). City-name mentions stay coarse and correctly disappear when zoomed in.
 
 ## Drill-down
 

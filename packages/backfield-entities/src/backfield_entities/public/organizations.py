@@ -5,13 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
-from typing import Literal
 
 from backfield_db import (
     StylebookOrganizationCanonical,
     SubstrateArticle,
     SubstrateOrganization,
     SubstrateOrganizationMention,
+    SubstrateOrganizationMentionOccurrence,
 )
 from pydantic import BaseModel
 from sqlalchemy import case, exists, literal
@@ -23,9 +23,14 @@ from backfield_entities.public.entity_articles import (
     collect_mention_article_pairs,
     paginate_public_articles_from_mention_pairs,
 )
+from backfield_entities.public.entity_counts import PublicEntityCountsOut
 from backfield_entities.public.mention_evidence import (
     PublicMentionEvidenceOut,
     organization_evidence_by_mention_id,
+)
+from backfield_entities.public.mention_filters import (
+    PublicEntityMentionListParams,
+    apply_entity_mention_list_filters,
 )
 from backfield_entities.public.stylebook_scope import (
     get_public_organization_canonical,
@@ -52,7 +57,7 @@ class PublicOrganizationOut(BaseModel):
     label: str
     stylebook_slug: str | None = None
     organization_type: str | None = None
-    mention_count: int = 0
+    counts: PublicEntityCountsOut = PublicEntityCountsOut()
 
 
 class PublicOrganizationMentionArticleOut(BaseModel):
@@ -87,6 +92,7 @@ def _organization_to_public_out(
     canon: StylebookOrganizationCanonical,
     *,
     mention_count: int = 0,
+    story_count: int = 0,
     stylebook_slug: str | None = None,
 ) -> PublicOrganizationOut:
     return PublicOrganizationOut(
@@ -95,7 +101,7 @@ def _organization_to_public_out(
         label=str(canon.label),
         stylebook_slug=stylebook_slug,
         organization_type=canon.organization_type,
-        mention_count=mention_count,
+        counts=PublicEntityCountsOut(mentions=mention_count, stories=story_count),
     )
 
 
@@ -111,6 +117,34 @@ def _mention_counts_by_canonical(
         select(
             SubstrateOrganization.stylebook_organization_canonical_id,
             func.count(col(SubstrateOrganizationMention.id)),
+        )
+        .select_from(SubstrateOrganizationMention)
+        .join(
+            SubstrateOrganization,
+            SubstrateOrganization.id == SubstrateOrganizationMention.organization_id,
+        )
+        .where(
+            SubstrateOrganization.project_id == project_id,
+            col(SubstrateOrganization.stylebook_organization_canonical_id).in_(canonical_ids),
+            SubstrateOrganizationMention.deleted == False,  # noqa: E712
+        )
+        .group_by(SubstrateOrganization.stylebook_organization_canonical_id)
+    ).all()
+    return {str(cid): int(cnt) for cid, cnt in rows if cid is not None}
+
+
+def _story_counts_by_canonical(
+    session: Session,
+    *,
+    project_id: int,
+    canonical_ids: list[str],
+) -> dict[str, int]:
+    if not canonical_ids:
+        return {}
+    rows = session.exec(
+        select(
+            SubstrateOrganization.stylebook_organization_canonical_id,
+            func.count(func.distinct(SubstrateOrganizationMention.article_id)),
         )
         .select_from(SubstrateOrganizationMention)
         .join(
@@ -255,11 +289,17 @@ def search_public_organizations(
         project_id=project_id,
         canonical_ids=canonical_ids,
     )
+    story_counts = _story_counts_by_canonical(
+        session,
+        project_id=project_id,
+        canonical_ids=canonical_ids,
+    )
     stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
     items = [
         _organization_to_public_out(
             row,
             mention_count=mention_counts.get(str(row.id), 0),
+            story_count=story_counts.get(str(row.id), 0),
             stylebook_slug=stylebook_slug,
         )
         for row in rows
@@ -286,10 +326,16 @@ def get_public_organization(
         project_id=project_id,
         canonical_ids=[str(canon.id)],
     )
+    story_counts = _story_counts_by_canonical(
+        session,
+        project_id=project_id,
+        canonical_ids=[str(canon.id)],
+    )
     stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
     return _organization_to_public_out(
         canon,
         mention_count=mention_counts.get(str(canon.id), 0),
+        story_count=story_counts.get(str(canon.id), 0),
         stylebook_slug=stylebook_slug,
     )
 
@@ -300,11 +346,9 @@ def list_public_organization_mentions(
     stylebook_id: int,
     project_id: int,
     organization_id: str,
-    limit: int = 50,
-    offset: int = 0,
-    sort: Literal["article", "created_at"] = "created_at",
-    sort_direction: Literal["asc", "desc"] = "desc",
+    params: PublicEntityMentionListParams | None = None,
 ) -> tuple[list[PublicOrganizationMentionOut], int] | None:
+    list_params = params or PublicEntityMentionListParams()
     canon = get_public_organization_canonical(
         session,
         stylebook_id=stylebook_id,
@@ -321,40 +365,56 @@ def list_public_organization_mentions(
         SubstrateArticle.deleted == False,  # noqa: E712
     ]
 
-    total = int(
-        session.scalar(
-            select(func.count())
-            .select_from(SubstrateOrganizationMention)
-            .join(SubstrateArticle, SubstrateArticle.id == SubstrateOrganizationMention.article_id)
-            .join(
-                SubstrateOrganization,
-                SubstrateOrganization.id == SubstrateOrganizationMention.organization_id,
-            )
-            .where(*base_where)
+    count_stmt = (
+        select(func.count())
+        .select_from(SubstrateOrganizationMention)
+        .join(SubstrateArticle, SubstrateArticle.id == SubstrateOrganizationMention.article_id)
+        .join(
+            SubstrateOrganization,
+            SubstrateOrganization.id == SubstrateOrganizationMention.organization_id,
         )
-        or 0
+        .where(*base_where)
     )
+    count_stmt = apply_entity_mention_list_filters(
+        count_stmt,
+        params=list_params,
+        mention_nature_col=SubstrateOrganizationMention.nature,
+        mention_id_col=SubstrateOrganizationMention.id,
+        occurrence_model=SubstrateOrganizationMentionOccurrence,
+        mention_fk_column="organization_mention_id",
+    )
+    total = int(session.scalar(count_stmt) or 0)
 
-    descending = sort_direction != "asc"
-    if sort == "article":
+    descending = list_params.sort_direction != "asc"
+    if list_params.sort == "article":
         headline_sort = col(SubstrateArticle.headline)
         order_by = headline_sort.desc() if descending else headline_sort.asc()
     else:
         ts = col(SubstrateOrganizationMention.updated_at)
         order_by = ts.desc() if descending else ts.asc()
 
+    select_stmt = (
+        select(SubstrateOrganizationMention, SubstrateArticle, SubstrateOrganization)
+        .join(SubstrateArticle, SubstrateArticle.id == SubstrateOrganizationMention.article_id)
+        .join(
+            SubstrateOrganization,
+            SubstrateOrganization.id == SubstrateOrganizationMention.organization_id,
+        )
+        .where(*base_where)
+    )
+    select_stmt = apply_entity_mention_list_filters(
+        select_stmt,
+        params=list_params,
+        mention_nature_col=SubstrateOrganizationMention.nature,
+        mention_id_col=SubstrateOrganizationMention.id,
+        occurrence_model=SubstrateOrganizationMentionOccurrence,
+        mention_fk_column="organization_mention_id",
+    )
     triples = list(
         session.exec(
-            select(SubstrateOrganizationMention, SubstrateArticle, SubstrateOrganization)
-            .join(SubstrateArticle, SubstrateArticle.id == SubstrateOrganizationMention.article_id)
-            .join(
-                SubstrateOrganization,
-                SubstrateOrganization.id == SubstrateOrganizationMention.organization_id,
-            )
-            .where(*base_where)
-            .order_by(order_by)
-            .offset(offset)
-            .limit(limit)
+            select_stmt.order_by(order_by)
+            .offset(list_params.offset)
+            .limit(list_params.limit)
         ).all()
     )
     mention_ids = [int(m.id) for m, _, _ in triples if m.id is not None]  # type: ignore[union-attr]
@@ -393,7 +453,8 @@ def list_public_organization_articles(
     limit: int = 25,
     offset: int = 0,
     nature: str | None = None,
-    include_preview: bool = False,
+    pub_date_from: date | None = None,
+    pub_date_to: date | None = None,
 ) -> tuple[list[PublicArticleOut], int] | None:
     canon = get_public_organization_canonical(
         session,
@@ -412,12 +473,13 @@ def list_public_organization_articles(
         canonical_id=str(canon.id),
         project_id=project_id,
         nature=nature,
+        pub_date_from=pub_date_from,
+        pub_date_to=pub_date_to,
     )
     items, total = paginate_public_articles_from_mention_pairs(
         session,
         pairs=pairs,
         limit=limit,
         offset=offset,
-        include_preview=include_preview,
     )
     return items, total

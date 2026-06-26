@@ -3,6 +3,7 @@ import {
   isValidJsonInputData,
   stripJsonInputEditorMarkers,
 } from '@/lib/jsonInputValidation'
+import { INGRESS_NODE_TYPES, inferIngressPublicAlias } from '@/lib/ingressApiRuns'
 import { resolvedStylebookId } from '@/lib/nodePanelAiModel'
 import { isValidS3BucketName, normalizeS3BucketName, normalizeS3FolderPath, normalizeS3MaxFilesInput, S3_DEFAULT_MAX_FILES, s3BucketFieldError } from '@/lib/s3InputValidation'
 import { nodeMetadata } from '@/nodes/registry'
@@ -118,7 +119,10 @@ export function validateJsonInputNodes(nodes: FlowGraphNode[]): FlowValidationRe
   return { ok: true }
 }
 
-export function paramsForGraphSave(node: FlowGraphNode): Record<string, unknown> {
+export function paramsForGraphSave(
+  node: FlowGraphNode,
+  options?: { publicRunEnabled?: boolean },
+): Record<string, unknown> {
   let raw = { ...(node.data ?? {}) }
   if (node.type === 'JSONInput') {
     raw = stripJsonInputEditorMarkers(raw)
@@ -143,6 +147,18 @@ export function paramsForGraphSave(node: FlowGraphNode): Record<string, unknown>
       bucket: normalizeS3BucketName(String(raw.bucket ?? '')),
       output_path: normalizeS3FolderPath(String(raw.output_path ?? '')),
       public_read: Boolean(raw.public_read),
+    }
+  }
+  if (node.type && INGRESS_NODE_TYPES.has(node.type)) {
+    if (options?.publicRunEnabled) {
+      const existing =
+        typeof raw.public_alias === 'string' ? raw.public_alias.trim() : ''
+      raw = {
+        ...raw,
+        public_alias: existing || inferIngressPublicAlias(node.type, raw),
+      }
+    } else {
+      delete raw.public_alias
     }
   }
   return raw

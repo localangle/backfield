@@ -23,6 +23,8 @@ const nodeMetadata = {
 
 import { useEffect, useState } from 'react'
 import { FieldLabel } from '@/components/node-panel/FieldLabel'
+import IngressApiRunsSection from '@/components/node-panel/IngressApiRunsSection'
+import type { GraphPanelContext } from '@/components/NodePanel'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import {
@@ -38,6 +40,7 @@ interface S3InputPanelProps {
   currentRun?: any
   editMode?: boolean
   setNodes?: (nodes: any) => void
+  graphContext?: GraphPanelContext
   nodeOutputLookupSpec?: NodeOutputLookupSpec | null
 }
 
@@ -46,6 +49,7 @@ export default function S3InputPanel({
   currentRun,
   editMode,
   setNodes,
+  graphContext,
   nodeOutputLookupSpec,
 }: S3InputPanelProps) {
   const [maxFilesText, setMaxFilesText] = useState(
@@ -171,6 +175,14 @@ export default function S3InputPanel({
           )}
         </div>
       </div>
+
+      <IngressApiRunsSection
+        node={node}
+        editMode={editMode}
+        setNodes={setNodes}
+        publicRunEnabled={Boolean(graphContext?.publicRunEnabled)}
+        onPublicRunEnabledChange={graphContext?.onPublicRunEnabledChange}
+      />
 
       {slice && typeof slice.total_files === 'number' && (
         <div className="pt-4 border-t mt-4">

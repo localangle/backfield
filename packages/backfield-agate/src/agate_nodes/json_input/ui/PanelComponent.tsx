@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
+import IngressApiRunsSection from '@/components/node-panel/IngressApiRunsSection'
+import type { GraphPanelContext } from '@/components/NodePanel'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -15,6 +17,7 @@ interface JSONInputPanelProps {
   currentRun?: any
   editMode?: boolean
   setNodes?: (nodes: any) => void
+  graphContext?: GraphPanelContext
   nodeOutputLookupSpec?: NodeOutputLookupSpec | null
 }
 
@@ -23,6 +26,7 @@ export default function JSONInputPanel({
   currentRun,
   editMode,
   setNodes,
+  graphContext,
   nodeOutputLookupSpec,
 }: JSONInputPanelProps) {
   const [jsonText, setJsonText] = useState('')
@@ -91,6 +95,14 @@ export default function JSONInputPanel({
           />
           {jsonError && <p className="text-xs text-red-500 mt-1">{jsonError}</p>}
         </div>
+
+        <IngressApiRunsSection
+          node={node}
+          editMode={editMode}
+          setNodes={setNodes}
+          publicRunEnabled={Boolean(graphContext?.publicRunEnabled)}
+          onPublicRunEnabledChange={graphContext?.onPublicRunEnabledChange}
+        />
       </NodePanelTabGate>
 
       <NodePanelTabGate tab="info">

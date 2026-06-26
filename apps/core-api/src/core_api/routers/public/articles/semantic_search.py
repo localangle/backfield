@@ -5,6 +5,7 @@ from __future__ import annotations
 from backfield_ai.embeddings import EmbeddingConfigurationError
 from backfield_ai.query_embedding import SemanticQueryEmbedding, embed_semantic_search_query
 from backfield_db import BackfieldProject
+from backfield_entities.public.article_hub import enrich_articles_with_counts
 from backfield_entities.public.article_semantic_search import (
     PublicArticleSemanticSearchItemOut,
     PublicArticleSemanticSearchParams,
@@ -15,7 +16,13 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 from core_api.deps import get_session
-from core_api.routers.public.articles.helpers import parse_optional_date
+from core_api.routers.public.articles.helpers import (
+    INCLUDE_PARAM_DESCRIPTION,
+    META_PARAM_DESCRIPTION,
+    parse_article_includes,
+    parse_meta_clauses,
+    parse_optional_date,
+)
 from core_api.routers.public.deps import get_public_project
 from core_api.routers.public.schemas import PaginationOut
 
@@ -40,14 +47,11 @@ class PublicArticleSemanticSearchIn(BaseModel):
         default=None,
         description="With exclude_meta_type, exclude articles with this metadata category",
     )
+    meta: list[str] = Field(default_factory=list, description=META_PARAM_DESCRIPTION)
     pub_date_from: str | None = None
     pub_date_to: str | None = None
     limit: int = Field(default=25, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
-    include_preview: bool = Field(
-        default=False,
-        description="Include a short text preview (max 280 characters) per article",
-    )
     use_hyde: bool = Field(
         default=False,
         description=(
@@ -55,6 +59,7 @@ class PublicArticleSemanticSearchIn(BaseModel):
             "and search article embeddings against it (HyDE)"
         ),
     )
+    include: list[str] = Field(default_factory=list, description=INCLUDE_PARAM_DESCRIPTION)
 
 
 class PublicArticleSemanticSearchOut(BaseModel):
@@ -88,6 +93,7 @@ def search_project_articles_semantic(
 ) -> PublicArticleSemanticSearchOut:
     """Search project articles by semantic similarity when embeddings exist."""
     query = body.query.strip()
+    includes = parse_article_includes(body.include)
     try:
         embedding: SemanticQueryEmbedding = embed_semantic_search_query(
             session,
@@ -103,11 +109,11 @@ def search_project_articles_semantic(
         meta_category=body.meta_category,
         exclude_meta_type=body.exclude_meta_type,
         exclude_meta_category=body.exclude_meta_category,
+        meta_clauses=parse_meta_clauses(body.meta),
         pub_date_from=parse_optional_date(body.pub_date_from, param_name="pub_date_from"),
         pub_date_to=parse_optional_date(body.pub_date_to, param_name="pub_date_to"),
         limit=body.limit,
         offset=body.offset,
-        include_preview=body.include_preview,
     )
     items, total = search_public_articles_semantic(
         session,
@@ -117,6 +123,8 @@ def search_project_articles_semantic(
         embedding_provider_model_id=_provider_model_id(embedding.embedding_model),
         params=params,
     )
+    if "counts" in includes:
+        enrich_articles_with_counts(session, items)
     return PublicArticleSemanticSearchOut(
         query=query,
         embedding_model=embedding.embedding_model,
