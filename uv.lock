@@ -373,7 +373,6 @@ source = { editable = "packages/backfield-cli" }
 dependencies = [
     { name = "backfield-db" },
     { name = "cryptography" },
-    { name = "httpx" },
     { name = "pydantic" },
 ]
 
@@ -381,7 +380,6 @@ dependencies = [
 requires-dist = [
     { name = "backfield-db", editable = "packages/backfield-db" },
     { name = "cryptography", specifier = ">=42.0.0" },
-    { name = "httpx", specifier = ">=0.27.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
 ]
 

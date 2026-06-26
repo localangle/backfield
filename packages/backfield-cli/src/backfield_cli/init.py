@@ -110,7 +110,7 @@ def run_init(config: InitConfig, *, repo_root: Path) -> int:
         logger.info("Skipping docker compose up (--skip-stack)")
 
     run_compose_migrate(repo_root)
-    wait_for_api_readiness()
+    wait_for_api_readiness(repo_root)
 
     configure_host_database_env()
     admin_password = resolve_admin_password(

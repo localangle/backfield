@@ -4,14 +4,29 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from sqlalchemy.exc import DBAPIError, OperationalError
 
 from backfield_db.ensure_database import ensure_database_exists
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_MIGRATION_ATTEMPTS = 30
+DEFAULT_MIGRATION_RETRY_DELAY_SECONDS = 2.0
+
+_TRANSIENT_DB_ERROR_MARKERS = (
+    "connection refused",
+    "could not connect",
+    "connection timed out",
+    "server closed the connection",
+    "the database system is starting up",
+    "starting up",
+    "too many clients",
+)
 
 
 def alembic_root() -> Path:
@@ -30,10 +45,50 @@ def build_alembic_config() -> Config:
     return cfg
 
 
-def run_migrations() -> None:
+def is_transient_db_error(exc: BaseException) -> bool:
+    """Return True when a migration failure may clear after Postgres finishes starting."""
+    if isinstance(exc, (OperationalError, DBAPIError)):
+        return True
+
+    try:
+        import psycopg
+    except ImportError:
+        psycopg = None
+
+    if psycopg is not None and isinstance(exc, psycopg.OperationalError):
+        return True
+
+    message = str(exc).lower()
+    return any(marker in message for marker in _TRANSIENT_DB_ERROR_MARKERS)
+
+
+def run_migrations(
+    *,
+    max_attempts: int = DEFAULT_MIGRATION_ATTEMPTS,
+    retry_delay_seconds: float = DEFAULT_MIGRATION_RETRY_DELAY_SECONDS,
+) -> None:
     """Ensure the target database exists, then apply Alembic migrations to head."""
-    ensure_database_exists()
-    command.upgrade(build_alembic_config(), "head")
+    last_error: Exception | None = None
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            ensure_database_exists()
+            command.upgrade(build_alembic_config(), "head")
+            return
+        except Exception as exc:
+            last_error = exc
+            if not is_transient_db_error(exc) or attempt >= max_attempts:
+                raise
+            logger.warning(
+                "Database not ready for migrations (attempt %s/%s): %s",
+                attempt,
+                max_attempts,
+                exc,
+            )
+            time.sleep(retry_delay_seconds)
+
+    if last_error is not None:
+        raise last_error
 
 
 def main() -> int:

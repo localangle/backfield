@@ -7,7 +7,13 @@ import uuid
 from pathlib import Path
 
 import pytest
-from backfield_db.migrate import alembic_root, build_alembic_config, main, run_migrations
+from backfield_db.migrate import (
+    alembic_root,
+    build_alembic_config,
+    is_transient_db_error,
+    main,
+    run_migrations,
+)
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 
@@ -40,6 +46,46 @@ def test_migrate_exits_zero_on_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("backfield_db.migrate.ensure_database_exists", lambda: None)
     monkeypatch.setattr("backfield_db.migrate.command.upgrade", lambda _cfg, _rev: None)
     assert main() == 0
+
+
+def test_is_transient_db_error_detects_connection_refused() -> None:
+    assert is_transient_db_error(OperationalError("connection refused", None, None)) is True
+    assert is_transient_db_error(RuntimeError("permission denied")) is False
+
+
+def test_run_migrations_retries_transient_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts = {"count": 0}
+
+    def _ensure() -> None:
+        attempts["count"] += 1
+        if attempts["count"] < 3:
+            raise OperationalError("connection refused", None, None)
+
+    monkeypatch.setattr("backfield_db.migrate.ensure_database_exists", _ensure)
+    monkeypatch.setattr("backfield_db.migrate.command.upgrade", lambda _cfg, _rev: None)
+    monkeypatch.setattr("backfield_db.migrate.time.sleep", lambda _seconds: None)
+
+    run_migrations(max_attempts=5, retry_delay_seconds=0.01)
+
+    assert attempts["count"] == 3
+
+
+def test_run_migrations_does_not_retry_non_transient_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = {"count": 0}
+
+    def _ensure() -> None:
+        attempts["count"] += 1
+        raise RuntimeError("permission denied")
+
+    monkeypatch.setattr("backfield_db.migrate.ensure_database_exists", _ensure)
+    monkeypatch.setattr("backfield_db.migrate.time.sleep", lambda _seconds: None)
+
+    with pytest.raises(RuntimeError, match="permission denied"):
+        run_migrations(max_attempts=5, retry_delay_seconds=0.01)
+
+    assert attempts["count"] == 1
 
 
 def test_run_migrations_against_fresh_postgres_creates_extensions(
