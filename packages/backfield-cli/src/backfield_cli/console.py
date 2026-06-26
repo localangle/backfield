@@ -4,18 +4,22 @@ from __future__ import annotations
 
 import sys
 
-from rich.console import Console
+from rich.align import Align
+from rich.console import Console, Group
 from rich.panel import Panel
+from rich.rule import Rule
 from rich.text import Text
 
 CONSOLE = Console()
 
-BANNER = r"""
- ____             _    __ _ _ _     _
-| __ )  __ _  ___| | __/ _(_) | __| |
-|  _ \ / _` |/ __| |/ / |_| | |/ _` |
-| |_) | (_| | (__|   <|  _| | | (_| |
-|____/ \__,_|\___|_|\_\_| |_|_|\__,_|
+BANNER = """
+░████████                         ░██           ░████ ░██           ░██        ░██
+░██    ░██                        ░██          ░██                  ░██        ░██
+░██    ░██   ░██████    ░███████  ░██    ░██░████████ ░██ ░███████  ░██  ░████████
+░████████         ░██  ░██    ░██ ░██   ░██    ░██    ░██░██    ░██ ░██ ░██    ░██
+░██     ░██  ░███████  ░██        ░███████     ░██    ░██░█████████ ░██ ░██    ░██
+░██     ░██ ░██   ░██  ░██    ░██ ░██   ░██    ░██    ░██░██        ░██ ░██   ░███
+░█████████   ░█████░██  ░███████  ░██    ░██   ░██    ░██ ░███████  ░██  ░█████░██
 """.strip("\n")
 
 AGATE_UI_URL = "http://localhost:5173"
@@ -31,7 +35,21 @@ def is_interactive() -> bool:
 
 
 def print_banner() -> None:
-    CONSOLE.print(Panel(Text(BANNER, style="bold cyan"), border_style="cyan", padding=(0, 2)))
+    logo = Text(BANNER, style="bold cyan", no_wrap=True)
+    subtitle = Text("Local development setup", style="cyan")
+    CONSOLE.print(
+        Panel(
+            Group(
+                Align.center(logo),
+                Text("\n\n"),
+                Align.center(subtitle),
+                Rule(style="bright_cyan"),
+            ),
+            border_style="cyan",
+            padding=(1, 2),
+            expand=True,
+        )
+    )
 
 
 def print_intro() -> None:
