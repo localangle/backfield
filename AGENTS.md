@@ -20,8 +20,8 @@ Use this file as the entry point for working in this repository. Keep it short, 
 ## Canonical commands
 
 - `make bootstrap`: install Python workspace dependencies with `uv` (does not seed DB data; local seeding runs when the stack starts — see `BACKFIELD_LOCAL_BOOTSTRAP` in [docs/OPERATIONS.md](docs/OPERATIONS.md)).
-- `make up` / `make down`: start and stop the local stack (`down` also runs `docker system prune` only — no `docker volume prune`, so Postgres/compose volumes survive across `down`/`up`). Use `make docker-prune-volumes` or `make docker-trim-full` when you explicitly want unused volumes removed.
-- `make logs`: follow compose logs.
+- `make up` / `make down`: start and stop the local stack. These are thin wrappers around the **`backfield` CLI** (`backfield up` / `backfield down`), which is the source of truth for stack operations; `make down` also runs `docker system prune` only — no `docker volume prune`, so Postgres/compose volumes survive across `down`/`up`. Use `make docker-prune-volumes` or `make docker-trim-full` when you explicitly want unused volumes removed.
+- `make logs`: follow stack logs (wraps `backfield logs`). `backfield ps` / `backfield restart` list and restart containers.
 - `make migrate`: run Alembic via the one-off compose **`migrate`** service (`backfield migrate`).
 - `make lint`: run Ruff checks.
 - `make test`: run unit, integration, and structural tests.

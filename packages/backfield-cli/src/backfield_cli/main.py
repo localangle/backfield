@@ -8,6 +8,7 @@ import sys
 from backfield_cli import init as init_cmd
 from backfield_cli import migrate as migrate_cmd
 from backfield_cli import seed as seed_cmd
+from backfield_cli import stack_cmd
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -16,6 +17,7 @@ def main(argv: list[str] | None = None) -> int:
     migrate_cmd.register_subcommand(subparsers)
     seed_cmd.register_subcommand(subparsers)
     init_cmd.register_subcommand(subparsers)
+    stack_cmd.register_subcommands(subparsers)
     args = parser.parse_args(argv)
     handler = getattr(args, "handler", None)
     if handler is None:

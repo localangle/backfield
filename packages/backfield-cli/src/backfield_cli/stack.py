@@ -1,11 +1,15 @@
-"""Docker Compose stack helpers for local init."""
+"""Docker Compose stack helpers for local init and operator commands."""
 
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
+
+from backfield_cli.env_file import find_repo_root
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +23,42 @@ API_READINESS: tuple[tuple[str, int], ...] = (
 )
 
 HOST_DATABASE_URL = "postgresql+psycopg://postgres:postgres@localhost:5433/backfield"
+
+COMPOSE_FILE_ENV = "BACKFIELD_COMPOSE_FILE"
+
+
+@dataclass(frozen=True)
+class ComposeContext:
+    """Resolved location of the compose file, its env file, and the repo root."""
+
+    compose_file: Path
+    env_file: Path
+    repo_root: Path
+
+
+def resolve_compose_context(compose_file: str | None = None) -> ComposeContext:
+    """Resolve the compose file to operate on.
+
+    Precedence: explicit ``--compose-file`` argument, then ``BACKFIELD_COMPOSE_FILE``
+    env var, then repo-root discovery (``find_repo_root() / infra/docker-compose.yml``).
+    """
+    override = compose_file or os.environ.get(COMPOSE_FILE_ENV)
+    if override:
+        resolved = Path(override).expanduser().resolve()
+        if not resolved.is_file():
+            raise FileNotFoundError(f"Compose file not found: {resolved}")
+        repo_root = resolved.parent.parent
+        return ComposeContext(
+            compose_file=resolved,
+            env_file=repo_root / ".env",
+            repo_root=repo_root,
+        )
+    repo_root = find_repo_root()
+    return ComposeContext(
+        compose_file=repo_root / "infra" / "docker-compose.yml",
+        env_file=repo_root / ".env",
+        repo_root=repo_root,
+    )
 
 _READINESS_CHECK = """
 import json
@@ -41,13 +81,22 @@ sys.exit(1)
 
 
 def compose_command(repo_root: Path, *args: str) -> list[str]:
+    context = ComposeContext(
+        compose_file=repo_root / "infra" / "docker-compose.yml",
+        env_file=repo_root / ".env",
+        repo_root=repo_root,
+    )
+    return compose_command_for_context(context, *args)
+
+
+def compose_command_for_context(context: ComposeContext, *args: str) -> list[str]:
     return [
         "docker",
         "compose",
         "-f",
-        str(repo_root / "infra" / "docker-compose.yml"),
+        str(context.compose_file),
         "--env-file",
-        str(repo_root / ".env"),
+        str(context.env_file),
         *args,
     ]
 

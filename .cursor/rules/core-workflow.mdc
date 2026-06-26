@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Core Workflow
 
-- Use `Makefile` targets when they exist instead of inventing new command flows.
+- Use `Makefile` targets when they exist instead of inventing new command flows. For stack operations (`up`, `down`, `logs`, `ps`, `restart`, `reset-db`, `clear-entity-data`) the **`backfield` CLI** is the source of truth and the `make` targets are thin wrappers around it.
 - Keep diffs surgical and tied to the request.
 - Update the matching source-of-truth doc when behavior, architecture, or operations change.
 - Prefer readable, explicit code over cleverness.

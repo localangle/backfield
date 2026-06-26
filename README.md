@@ -37,6 +37,8 @@ make up                # Docker Compose (foreground; Ctrl+C stops all services)
 - Agate: http://localhost:5173 — home opens the **General** project (empty until you create a flow).  
 - Stylebook UI: http://localhost:5175  
 
+Stack operations live in the `backfield` CLI (`uv run backfield up | down | logs | ps | restart`); the `make` targets above wrap it. Use `--compose-file` or `BACKFIELD_COMPOSE_FILE` to point at a non-default compose file.
+
 On first start, Compose runs a one-off **`migrate`** service (`backfield migrate`) so schema is applied before any API serves traffic. When bootstrap is enabled, **`agate-api`** then syncs API keys from the repo-root `.env` into encrypted **General** project secrets.
 
 `make bootstrap` installs Python dependencies only; it does **not** seed the database (that happens when the stack starts).
@@ -70,8 +72,8 @@ If unset, Stylebook geocode accepts unauthenticated requests (dev only).
 | Target | Purpose |
 |--------|---------|
 | `make help` | List commands |
-| `make up` / `make down` | Compose; `down` then `docker system prune` only (keeps compose DB volumes) |
-| `make logs` | Tail logs |
+| `make up` / `make down` | Start/stop the stack (wrap `backfield up` / `backfield down`); `down` then `docker system prune` only (keeps compose DB volumes) |
+| `make logs` | Tail logs (wraps `backfield logs`) |
 | `make migrate` | Re-run Alembic via one-off compose `migrate` service |
 | `make migrate-host` | Run `backfield migrate` on the host (Postgres on `:5433`) |
 | `make reset-db` | `docker compose down -v` (removes Postgres volume) |

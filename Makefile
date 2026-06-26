@@ -10,15 +10,16 @@ DOCKER_PROD_BUILD_ARGS := --build-arg APP_VERSION=$(APP_VERSION) --build-arg GIT
 
 help:
 	@echo "Backfield"
-	@echo "  make up          - Start stack in foreground (logs attached; Ctrl+C stops)"
-	@echo "  make up-detached - Same as up but background (-d)"
-	@echo "  make down        - Stop stack (docker compose down), then docker-trim"
-	@echo "  make logs        - Follow compose logs"
+	@echo "  Operator commands wrap the CLI; run 'uv run backfield --help' for the full list."
+	@echo "  make up          - Start stack in foreground (wraps 'backfield up'; Ctrl+C stops)"
+	@echo "  make up-detached - Same as up but background (wraps 'backfield up --detached')"
+	@echo "  make down        - Stop stack (wraps 'backfield down'), then docker-trim"
+	@echo "  make logs        - Follow stack logs (wraps 'backfield logs')"
 	@echo "  make migrate     - Run Alembic via one-off compose migrate service"
 	@echo "  make migrate-host - Run Alembic on host (uv run backfield migrate; Postgres on :5433)"
 	@echo "                     Seed admin: uv run backfield seed --admin-email ... --admin-password ..."
-	@echo "  make reset-db    - Stop stack and remove compose volumes (Postgres data, etc.)"
-	@echo "  make clear-entity-data - Truncate substrate/stylebook entity + Agate runs (BACKFIELD_CONFIRM_CLEAR=1)"
+	@echo "  make reset-db    - Stop stack and remove compose volumes (wraps 'backfield reset-db --yes')"
+	@echo "  make clear-entity-data - Truncate substrate/stylebook entity + Agate runs (BACKFIELD_CONFIRM_CLEAR=1; wraps 'backfield clear-entity-data --yes')"
 	@echo "  make docker-prune-build   - Free build cache only (docker builder prune -f)"
 	@echo "  make docker-prune-system  - Remove stopped containers, dangling images, unused networks (docker system prune -f)"
 	@echo "  make docker-prune-volumes - Remove unused volumes (docker volume prune -f); can delete DB data after down"
@@ -52,25 +53,23 @@ help:
 	@echo "  make docker-build-prod-apis - Build production targets for agate/core/stylebook APIs"
 	@echo "  make docker-build-prod-worker - Build production target for the Celery worker"
 	@echo "  uv run backfield init - Local first-run setup (env, stack, migrate, seed)"
+	@echo "  uv run backfield ps / restart - List or restart stack containers"
 
 bootstrap:
 	uv sync --all-packages
 
 up:
-	@echo "Starting Backfield stack (foreground)..."
-	$(DC) up --build
+	uv run backfield up
 
 up-detached:
-	@echo "Starting Backfield stack (detached)..."
-	$(DC) up -d --build
+	uv run backfield up --detached
 
 down:
-	@echo "Stopping Backfield stack..."
-	$(DC) down
+	uv run backfield down
 	@$(MAKE) --no-print-directory docker-trim
 
 logs:
-	$(DC) logs -f
+	uv run backfield logs
 
 migrate:
 	$(DC) run --rm migrate
@@ -79,8 +78,7 @@ migrate-host:
 	uv run backfield migrate
 
 reset-db:
-	@echo "Removing Postgres volume (all local Backfield data)."
-	$(DC) down -v
+	uv run backfield reset-db --yes
 
 clear-entity-data:
 	@if [ "$(BACKFIELD_CONFIRM_CLEAR)" != "1" ]; then \
@@ -90,7 +88,7 @@ clear-entity-data:
 		echo "Re-run: BACKFIELD_CONFIRM_CLEAR=1 make clear-entity-data"; \
 		exit 1; \
 	fi
-	BACKFIELD_CONFIRM_CLEAR=1 uv run python packages/backfield-db/scripts/clear_entity_data.py
+	uv run backfield clear-entity-data --yes
 
 docker-prune-build:
 	@echo "Pruning Docker build cache..."
