@@ -10,14 +10,16 @@ COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-agate /app/packages/backfield-agate
 COPY packages/backfield-entities /app/packages/backfield-entities
 COPY packages/backfield-auth /app/packages/backfield-auth
+COPY packages/backfield-cli /app/packages/backfield-cli
 COPY apps/agate-api /app/apps/agate-api
 
-# Local packages are not on PyPI: db → ai → entities → agate → auth → app.
+# Local packages are not on PyPI: db → ai → entities → agate → auth → cli → app.
 RUN pip install --no-cache-dir -e /app/packages/backfield-db \
     && pip install --no-cache-dir -e /app/packages/backfield-ai \
     && pip install --no-cache-dir -e /app/packages/backfield-entities \
     && pip install --no-cache-dir -e /app/packages/backfield-agate \
     && pip install --no-cache-dir -e /app/packages/backfield-auth \
+    && pip install --no-cache-dir -e /app/packages/backfield-cli \
     && pip install --no-cache-dir \
         "fastapi>=0.109.0" \
         "uvicorn[standard]>=0.27.0" \

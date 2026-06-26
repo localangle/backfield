@@ -7,6 +7,7 @@ dependencies = [
     "fastapi>=0.109.0",
     "itsdangerous>=2.1.0",
     "backfield-db",
+    "redis>=5.0.0",
 ]
 
 [build-system]

@@ -64,6 +64,18 @@ services:
       timeout: 5s
       retries: 5
 
+  migrate:
+    build:
+      context: ..
+      dockerfile: apps/agate-api/Dockerfile
+    environment:
+      BACKFIELD_DATABASE_URL_DIRECT: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+    command: ["backfield-migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   stylebook-api:
     build:
       context: ..
@@ -86,6 +98,8 @@ services:
       # STYLEBOOK_BUNDLE_* comes from env_file (../.env); do not set empty ${...} here or it
       # overrides env_file when host-side interpolation is unset.
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       pgbouncer:
         condition: service_healthy
       postgres:
@@ -126,13 +140,14 @@ services:
       retries: 12
       start_period: 40s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       pgbouncer:
         condition: service_healthy
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      # Alembic runs in agate-api's entrypoint before uvicorn; core-api env bootstrap needs identity tables.
       agate-api:
         condition: service_healthy
 
@@ -149,16 +164,13 @@ services:
       <<: [*shared-env, *pooled-database-env]
       UI_ORIGIN: http://localhost:5173
       REDIS_URL: redis://redis:6379/0
-      # Alembic and ensure_database connect directly (DDL / CREATE DATABASE bypass PgBouncer).
-      BACKFIELD_DATABASE_URL_DIRECT: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
       BACKFIELD_SQLALCHEMY_POOL_SIZE: ${BACKFIELD_SQLALCHEMY_POOL_SIZE:-3}
       BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-2}
       BACKFIELD_PG_STATEMENT_TIMEOUT_MS: ${BACKFIELD_PG_STATEMENT_TIMEOUT_MS:-30000}
       BACKFIELD_PG_LOCK_TIMEOUT_MS: ${BACKFIELD_PG_LOCK_TIMEOUT_MS:-5000}
       STYLEBOOK_API_URL: http://stylebook-api:8003
-      # Dev-only Fernet key for encrypting backfield_project_secret; override in production.
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
-      # After migrations: sync .env LLM keys into General project secrets (no graphs).
+      # After migrations (migrate service): sync .env LLM keys into General project secrets (no graphs).
       BACKFIELD_LOCAL_BOOTSTRAP: ${BACKFIELD_LOCAL_BOOTSTRAP:-1}
       # LLM / geocoder keys: set in repo-root .env (see .env.example); loaded via env_file above.
     healthcheck:
@@ -168,6 +180,8 @@ services:
       retries: 15
       start_period: 90s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       pgbouncer:
         condition: service_healthy
       postgres:
@@ -221,6 +235,8 @@ services:
       TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-900}
       TASK_HARD_TIME_LIMIT: ${TASK_HARD_TIME_LIMIT:-1080}
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       pgbouncer:
         condition: service_healthy
       postgres:

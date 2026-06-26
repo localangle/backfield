@@ -94,7 +94,31 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
 def test_health(client: TestClient):
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"ok": True}
+    assert response.json() == {"ok": True, "service": "agate-api"}
+
+
+def test_healthz(client: TestClient):
+    response = client.get("/healthz")
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "service": "agate-api"}
+
+
+def test_readyz(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("backfield_auth.service_health.check_redis", lambda redis_url=None: "ok")
+    response = client.get("/readyz")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["checks"]["database"] == "ok"
+    assert body["checks"]["redis"] == "ok"
+
+
+def test_version(client: TestClient):
+    response = client.get("/version")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["service"] == "agate-api"
+    assert {"version", "git_sha", "build_time"} <= set(body)
 
 
 def test_project_estimated_ai_cost_includes_model_breakdown(tmp_path):

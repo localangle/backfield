@@ -66,7 +66,7 @@ jobs:
           : > .env
           [ -n "${OPENAI_API_KEY:-}" ] && printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> .env
           [ -n "${ANTHROPIC_API_KEY:-}" ] && printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" >> .env
-          docker compose -f infra/docker-compose.yml up -d --build postgres redis stylebook-api core-api agate-api worker
+          docker compose -f infra/docker-compose.yml up -d --build postgres redis migrate stylebook-api core-api agate-api worker
       - name: Wait for API health
         run: |
           for _ in $(seq 1 60); do
@@ -129,7 +129,7 @@ jobs:
           : > .env
           [ -n "${OPENAI_API_KEY:-}" ] && printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> .env
           [ -n "${ANTHROPIC_API_KEY:-}" ] && printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" >> .env
-          docker compose -f infra/docker-compose.yml up -d --build postgres redis stylebook-api core-api agate-api worker
+          docker compose -f infra/docker-compose.yml up -d --build postgres redis migrate stylebook-api core-api agate-api worker
       - name: Wait for API health
         run: |
           for _ in $(seq 1 60); do

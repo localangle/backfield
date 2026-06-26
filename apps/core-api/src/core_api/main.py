@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 
+from backfield_auth.health_router import create_health_router
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -65,11 +66,7 @@ app.include_router(credentials_router.router, prefix="/v1")
 app.include_router(project_ai_models_router.router, prefix="/v1")
 app.include_router(me_router.router, prefix="/v1")
 app.include_router(auth_router.router, prefix="/v1")
-
-
-@app.get("/health")
-def health() -> dict[str, str | bool]:
-    return {"ok": True, "service": "core-api"}
+app.include_router(create_health_router("core-api", include_redis=True))
 
 
 @app.get("/")

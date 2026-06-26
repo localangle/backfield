@@ -1,10 +1,3 @@
-from __future__ import annotations
+from backfield_auth.health_router import create_health_router
 
-from fastapi import APIRouter
-
-router = APIRouter(tags=["health"])
-
-
-@router.get("/health")
-def health() -> dict[str, object]:
-    return {"ok": True, "service": "stylebook-api"}
+router = create_health_router("stylebook-api", include_redis=True)

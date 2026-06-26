@@ -207,7 +207,31 @@ def editor_client(
 def test_health(client: TestClient) -> None:
     r = client.get("/health")
     assert r.status_code == 200
-    assert r.json().get("ok") is True
+    assert r.json() == {"ok": True, "service": "stylebook-api"}
+
+
+def test_healthz(client: TestClient) -> None:
+    r = client.get("/healthz")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "service": "stylebook-api"}
+
+
+def test_readyz(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("backfield_auth.service_health.check_redis", lambda redis_url=None: "ok")
+    r = client.get("/readyz")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["checks"]["database"] == "ok"
+    assert body["checks"]["redis"] == "ok"
+
+
+def test_version(client: TestClient) -> None:
+    r = client.get("/version")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["service"] == "stylebook-api"
+    assert {"version", "git_sha", "build_time"} <= set(body)
 
 
 def test_geocode_resolve_requires_auth(client: TestClient) -> None:

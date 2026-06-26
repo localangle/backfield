@@ -15,14 +15,14 @@ Primary local services are defined in `infra/docker-compose.yml`:
 
 `agate-ui` is ordered **after** `core-api` and `agate-api` report **healthy** (HTTP `/health` checks) so the Vite dev proxy does not hit `ECONNREFUSED` while Uvicorn is still binding (notably when `agate-api` uses the reload worker).
 
-`core-api` and the **`worker`** likewise wait until **`agate-api` is healthy** so its entrypoint has finished **`alembic upgrade head`** (and optional `BACKFIELD_LOCAL_BOOTSTRAP`) before those services touch the database. Otherwise `core-api` can log *Env bootstrap skipped: identity tables missing* on a cold volume because Postgres was ready while migrations had not run yet.
+`core-api` and the **`worker`** wait until the one-off **`migrate`** service has completed successfully and **`agate-api`** is healthy before they touch the database. Otherwise `core-api` can log *Env bootstrap skipped: identity tables missing* on a cold volume because Postgres was ready while migrations had not run yet.
 
 ## Canonical commands
 
 - `make up`: bring up the local stack in the foreground. It does **not** run `docker volume prune` or `docker system prune` (only `docker compose up`).
 - `make down`: `docker compose down` (stops and removes app containers, **not** Compose-managed volumes) then `docker-trim` (`docker system prune -f` only, no `--remove-orphans`). The Postgres data directory lives on the **`postgres_data`** named volume, so `make down` then `make up` keeps your local database. Run `make docker-prune-volumes` or `make docker-trim-full` explicitly when you want to reclaim unused volume disk.
 - `make logs`: inspect compose logs.
-- `make migrate`: run Alembic inside `agate-api`.
+- `make migrate`: run Alembic via the one-off compose **`migrate`** service. Use `make migrate-host` (`uv run backfield migrate`) when Postgres is reachable on the host (e.g. `:5433`).
 - `make reset-db`: tear down containers and volumes.
 - `make clear-entity-data`: truncate **`substrate_*`**, **`stylebook_*`** entity tables, and Agate **runs** (`agate_run`, `agate_processed_item`, plus run-linked **`backfield_ai_call_record`** rows) while the stack is running (local dev only). Requires **`BACKFIELD_CONFIRM_CLEAR=1`**. Preserves Stylebook catalog shells (`stylebook`, `stylebook_membership`, `stylebook_slug_redirect`) and Agate **graphs/templates** (`agate_graph`, `agate_template`); does **not** remove **`backfield_*`** identity rows. Use when you want a clean entity/run slate without wiping Postgres entirely. Implementation: `packages/backfield-db/scripts/clear_entity_data.py` (connects to **`localhost:5433`** by default, same as smoke helpers).
 
@@ -62,7 +62,7 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
 ## Environment variables
 
 - `BACKFIELD_DATABASE_URL` / `DATABASE_URL`: runtime database connection string for `agate-api`, **`stylebook-api`**, `worker`, and **`core-api`**. Local Compose routes these through **PgBouncer** (`...@pgbouncer:6432/backfield`) so many client connections multiplex onto a bounded pool of Postgres backends.
-- `BACKFIELD_DATABASE_URL_DIRECT`: optional direct Postgres URL for **migrations and admin** (`...@postgres:5432/backfield` in Compose). Alembic, `ensure_database_exists`, and `make migrate` prefer this when set so DDL and `CREATE DATABASE` bypass PgBouncer transaction pooling. Set on **`agate-api`** only in local Compose; runtime app code still uses the pooled URL.
+- `BACKFIELD_DATABASE_URL_DIRECT`: optional direct Postgres URL for **migrations and admin** (`...@postgres:5432/backfield` in Compose). Alembic, `ensure_database_exists`, and `backfield migrate` prefer this when set so DDL and `CREATE DATABASE` bypass PgBouncer transaction pooling. Set on the **`migrate`** service in local Compose; runtime app code still uses the pooled URL.
 - `BACKFIELD_SQLALCHEMY_POOL_SIZE` / `BACKFIELD_SQLALCHEMY_MAX_OVERFLOW`: optional SQLAlchemy pool sizing for `backfield_db.session.get_engine()` (defaults follow SQLAlchemy when unset: **5** / **10**). The local **`worker`** Compose service sets conservative defaults (**2** / **3**) so many Celery child processes plus API Uvicorn processes are less likely to hit Postgres **`max_connections`**. Raise these on the worker if you see pool timeouts under heavy parallel load.
 - `BACKFIELD_STRICT_CANONICAL_GATES`: when **`1`** (default) or unset, DBOutput ingest applies deterministic Stylebook autolink gates in `entities.location.policy` (type deny-list, container-vs-POI, jurisdiction vs canonical columns, components vs formatted-address sanity, distance vs cached container city when a **`substrate_location_cache`** hit exists, polygon bbox size). Set to **`0`**, **`false`**, **`no`**, or **`off`** to disable those gates (use only for diagnosis—expect more wrong merges when off). See [docs/ARCHITECTURE.md](ARCHITECTURE.md).
 - `REDIS_URL`: Celery broker and backend (required for **agate-api** enqueue, **core-api** public run trigger enqueue, **worker** execution, and **stylebook-api** when using async stylebook bundle export/import jobs).
@@ -111,7 +111,7 @@ For `make smoke` / `make smoke-runtime`, set whichever LLM credentials match the
 
 ## Database guidance
 
-- Use Alembic for schema changes (single chain in `packages/backfield-db`; **`make migrate` runs inside `agate-api`** — do not also auto-migrate from `core-api` on startup).
+- Use Alembic for schema changes (single chain in `packages/backfield-db`; run via **`backfield migrate`** / **`make migrate`** — do not auto-migrate from API startup).
 - The local `postgres` service builds from `infra/postgres/Dockerfile` (PostGIS + **pgvector** + **h3-pg**) because location tables store geometry, semantic document tables store embedding vectors, and H3 spatial indexing supports map aggregation queries.
 - Agate execution tables use the `agate_` prefix; tenancy and project tables use `backfield_`.
 - Do not let multiple services race to run migrations for the same revision path.

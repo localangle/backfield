@@ -37,7 +37,7 @@ make up                # Docker Compose (foreground; Ctrl+C stops all services)
 - Agate: http://localhost:5173 — home opens the **General** project (empty until you create a flow).  
 - Stylebook UI: http://localhost:5175  
 
-`agate-api` runs `alembic upgrade head` on container start so migrations apply, then (when bootstrap is enabled) syncs API keys from the repo-root `.env` into encrypted **General** project secrets.
+On first start, Compose runs a one-off **`migrate`** service (`backfield migrate`) so schema is applied before any API serves traffic. When bootstrap is enabled, **`agate-api`** then syncs API keys from the repo-root `.env` into encrypted **General** project secrets.
 
 `make bootstrap` installs Python dependencies only; it does **not** seed the database (that happens when the stack starts).
 
@@ -72,7 +72,8 @@ If unset, Stylebook geocode accepts unauthenticated requests (dev only).
 | `make help` | List commands |
 | `make up` / `make down` | Compose; `down` then `docker system prune` only (keeps compose DB volumes) |
 | `make logs` | Tail logs |
-| `make migrate` | Re-run Alembic inside `agate-api` |
+| `make migrate` | Re-run Alembic via one-off compose `migrate` service |
+| `make migrate-host` | Run `backfield migrate` on the host (Postgres on `:5433`) |
 | `make reset-db` | `docker compose down -v` (removes Postgres volume) |
 | `make docker-trim` | `docker system prune -f` when Docker is low on disk (does not run `docker volume prune`) |
 | `make docker-trim-full` | `docker-trim` then `docker volume prune -f` for aggressive reclaim |

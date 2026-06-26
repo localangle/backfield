@@ -150,6 +150,28 @@ def wait_for_run_status(
     raise RuntimeError(f"Timed out waiting for run {run_id} to reach one of: {allowed}")
 
 
+def _assert_service_health_endpoints(client: httpx.Client, label: str) -> None:
+    health = assert_object(client.get("/health"), f"{label} health")
+    if health.get("ok") is not True:
+        raise RuntimeError(f"{label} health failed: {health}")
+
+    healthz = assert_object(client.get("/healthz"), f"{label} healthz")
+    if healthz.get("ok") is not True:
+        raise RuntimeError(f"{label} healthz failed: {healthz}")
+
+    readyz = assert_object(client.get("/readyz"), f"{label} readyz")
+    if readyz.get("ok") is not True:
+        raise RuntimeError(f"{label} readyz failed: {readyz}")
+    checks = readyz.get("checks")
+    if not isinstance(checks, dict):
+        raise RuntimeError(f"{label} readyz missing checks: {readyz!r}")
+
+    version = assert_object(client.get("/version"), f"{label} version")
+    for key in ("service", "version", "git_sha", "build_time"):
+        if key not in version:
+            raise RuntimeError(f"{label} version missing {key!r}: {version!r}")
+
+
 def ensure_health(
     *,
     agate_base: str,
@@ -160,23 +182,17 @@ def ensure_health(
 ) -> None:
     if core_base:
         with httpx.Client(base_url=core_base, timeout=10.0) as core:
-            payload = assert_object(core.get("/health"), "Core health")
-            if payload.get("ok") is not True:
-                raise RuntimeError(f"Core health failed: {payload}")
+            _assert_service_health_endpoints(core, "Core")
 
     with httpx.Client(base_url=agate_base, timeout=10.0, headers=agate_headers) as agate:
-        agate_payload = assert_object(agate.get("/health"), "Agate health")
-        if agate_payload.get("ok") is not True:
-            raise RuntimeError(f"Agate health failed: {agate_payload}")
+        _assert_service_health_endpoints(agate, "Agate")
 
     with httpx.Client(
         base_url=stylebook_base,
         timeout=10.0,
         headers=stylebook_headers,
     ) as stylebook:
-        stylebook_payload = assert_object(stylebook.get("/health"), "Stylebook health")
-        if stylebook_payload.get("ok") is not True:
-            raise RuntimeError(f"Stylebook health failed: {stylebook_payload}")
+        _assert_service_health_endpoints(stylebook, "Stylebook")
 
 
 def session_cookie_headers(session_token: str) -> dict[str, str]:

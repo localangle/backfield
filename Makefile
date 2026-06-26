@@ -10,7 +10,8 @@ help:
 	@echo "  make up-detached - Same as up but background (-d)"
 	@echo "  make down        - Stop stack (docker compose down), then docker-trim"
 	@echo "  make logs        - Follow compose logs"
-	@echo "  make migrate     - Run Alembic (agate-api container)"
+	@echo "  make migrate     - Run Alembic via one-off compose migrate service"
+	@echo "  make migrate-host - Run Alembic on host (uv run backfield migrate; Postgres on :5433)"
 	@echo "  make reset-db    - Stop stack and remove compose volumes (Postgres data, etc.)"
 	@echo "  make clear-entity-data - Truncate substrate/stylebook entity + Agate runs (BACKFIELD_CONFIRM_CLEAR=1)"
 	@echo "  make docker-prune-build   - Free build cache only (docker builder prune -f)"
@@ -62,7 +63,10 @@ logs:
 	$(DC) logs -f
 
 migrate:
-	$(DC) exec agate-api sh -c 'export PYTHONPATH=/app/packages/backfield-db/src && cd /app/packages/backfield-db && python -m alembic upgrade head'
+	$(DC) run --rm migrate
+
+migrate-host:
+	uv run backfield migrate
 
 reset-db:
 	@echo "Removing Postgres volume (all local Backfield data)."
@@ -101,7 +105,7 @@ docker-trim-full: docker-trim docker-prune-volumes
 test: test-unit test-integration
 
 test-unit:
-	uv run pytest packages/backfield-agate/tests packages/backfield-auth/tests -q
+	uv run pytest packages/backfield-agate/tests packages/backfield-auth/tests packages/backfield-db/tests packages/backfield-cli/tests -q
 
 test-integration:
 	uv run pytest tests -q

@@ -102,6 +102,36 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
         app.dependency_overrides.clear()
 
 
+def test_health(client: TestClient) -> None:
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "service": "core-api"}
+
+
+def test_healthz(client: TestClient) -> None:
+    r = client.get("/healthz")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "service": "core-api"}
+
+
+def test_readyz(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("backfield_auth.service_health.check_redis", lambda redis_url=None: "ok")
+    r = client.get("/readyz")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["checks"]["database"] == "ok"
+    assert body["checks"]["redis"] == "ok"
+
+
+def test_version(client: TestClient) -> None:
+    r = client.get("/version")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["service"] == "core-api"
+    assert {"version", "git_sha", "build_time"} <= set(body)
+
+
 def test_public_ping(client: TestClient) -> None:
     r = client.get("/v1/public/ping")
     assert r.status_code == 200
