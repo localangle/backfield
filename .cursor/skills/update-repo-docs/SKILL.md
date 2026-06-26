@@ -9,7 +9,7 @@ description: Keep Backfield repository docs in sync with code and workflows. Use
 
 1. Identify the source-of-truth doc for the change.
 2. Update that doc first instead of only patching `README.md`.
-3. Keep terminology aligned with `AGENTS.md` (including **Reference implementation: agate-ai-platform** when the change relates to parity or ports).
+3. Keep terminology aligned with `AGENTS.md`.
 4. Add concise guidance, not a long narrative.
 
 ## Source-Of-Truth Map
@@ -21,4 +21,4 @@ description: Keep Backfield repository docs in sync with code and workflows. Use
 - `docs/DATABASE.md`: schema, migrations, indexing
 - `docs/OPERATIONS.md`: compose, env vars, troubleshooting
 - `docs/TESTING.md`: validation ladder and smoke flow
-- `docs/AGENT_WORKFLOWS.md`: task-based checklists
+- `docs/AGENTIC.md`: agentic orientation, per-task-type checklists, and planning guidance

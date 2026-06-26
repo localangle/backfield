@@ -166,7 +166,7 @@ class StreetRoad(Area):
 
         try:
             query = _query_string(self.name, self.city, self.state_abbr, self.country)
-            raw_json = geocode_address_raw(address=query, user_agent="agate-ai-platform/1.0", limit=20)
+            raw_json = geocode_address_raw(address=query, user_agent="agate/1.0", limit=20)
             if not raw_json:
                 logger.warning("No response from Nominatim for: %s", query)
                 return None

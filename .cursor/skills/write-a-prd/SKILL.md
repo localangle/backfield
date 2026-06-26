@@ -46,7 +46,7 @@ Also ask for the **slug**: the directory name **`prd/<slug>/`** (kebab-case, sta
 - Existing patterns, conventions, and abstractions to follow or build on
 - Anything that contradicts or complicates the user's description of the current state
 
-Use `AGENTS.md`, `docs/`, and code search as needed. For Backfield, treat **agate-ai-platform** as the reference implementation when parity matters (see `AGENTS.md`).
+Use `AGENTS.md`, `docs/`, and code search as needed.
 
 ### 3. Interview the user
 
@@ -144,4 +144,4 @@ Any context, constraints, or decisions that do not fit the above sections.
 ## Out of scope for this skill
 
 - This skill produces **`prd/<slug>/prd.md`**, not production code or migrations.
-- It does **not** replace `docs/PLANS.md` for large refactors unless the user explicitly wants the PRD to live there or to align with it.
+- It does **not** replace `docs/AGENTIC.md` → **Planning multi-step work** for large refactors unless the user explicitly wants the PRD to live there or to align with it.

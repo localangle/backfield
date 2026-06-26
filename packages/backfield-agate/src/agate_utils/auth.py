@@ -1,4 +1,4 @@
-"""Shared authentication utilities for Agate AI Platform APIs."""
+"""Shared authentication utilities for Agate APIs."""
 
 import os
 import logging

@@ -60,7 +60,7 @@ class Point(Location):
 
         # Fall back to Nominatim
         try:
-            result = geocode_address(address=prep_data["text"], user_agent="agate-ai-platform/1.0")
+            result = geocode_address(address=prep_data["text"], user_agent="agate/1.0")
             if result and self._is_good_point_result(result):
                 logger.info("Nominatim success for %s", self.name)
                 return result

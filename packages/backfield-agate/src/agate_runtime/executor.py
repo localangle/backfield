@@ -98,7 +98,7 @@ _INPUT_NODE_TYPES = frozenset({"TextInput", "JSONInput", "S3Input"})
 
 
 def build_execution_levels(spec: GraphSpec) -> list[list[str]]:
-    """Group node ids by graph depth (legacy level-barrier helper; agate-ai-platform parity)."""
+    """Group node ids by graph depth (legacy level-barrier helper)."""
     sorted_ids = _topo_order(spec)
     node_ids = {n.id for n in spec.nodes}
     depths: dict[str, int] = {}
@@ -220,7 +220,7 @@ def _namespaced_upstream_inputs(
     node_outputs: dict[str, dict[str, Any]],
     by_id: dict[str, NodeConfig],
 ) -> dict[str, Any]:
-    """Match agate-ai-platform worker: one namespace key per direct upstream node id."""
+    """One namespace key per direct upstream node id."""
     state: dict[str, Any] = {}
     for edge in edges:
         if edge.target != target_id:

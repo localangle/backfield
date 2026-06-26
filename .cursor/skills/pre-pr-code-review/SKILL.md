@@ -21,7 +21,7 @@ Make the change set cleaner, smaller, and easier to understand before anyone els
 ## How to run the review
 
 1. Inspect the actual diff first. Confirm it matches the task and does not include unrelated cleanup.
-2. Compare against nearby patterns in Backfield and, when relevant, agate-ai-platform.
+2. Compare against nearby patterns in Backfield.
 3. Prefer actionable findings over broad praise.
 4. If a cleanup is obviously correct and local, propose or make it before PR creation.
 5. If intent is unclear or the cleanup has trade-offs, raise it interactively before proceeding.

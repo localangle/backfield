@@ -4,7 +4,7 @@
 
 Primary local services are defined in `infra/docker-compose.yml`:
 
-- PostGIS-enabled `postgres` on `localhost:5433` (data directory on the **`postgres_data`** named volume, same persistence pattern as agate-ai-platform)
+- PostGIS-enabled `postgres` on `localhost:5433` (data directory on the **`postgres_data`** named volume)
 - `redis` on `localhost:6379`
 - `agate-api` on `localhost:8000`
 - `stylebook-api` on `localhost:8003`
@@ -20,7 +20,7 @@ Primary local services are defined in `infra/docker-compose.yml`:
 ## Canonical commands
 
 - `make up`: bring up the local stack in the foreground. It does **not** run `docker volume prune` or `docker system prune` (only `docker compose up`).
-- `make down`: `docker compose down` (stops and removes app containers, **not** Compose-managed volumes) then `docker-trim` (`docker system prune -f` only). Matches agate-ai-platform local `make down` (no `--remove-orphans`). The Postgres data directory lives on the **`postgres_data`** named volume, so `make down` then `make up` keeps your local database. Run `make docker-prune-volumes` or `make docker-trim-full` explicitly when you want to reclaim unused volume disk.
+- `make down`: `docker compose down` (stops and removes app containers, **not** Compose-managed volumes) then `docker-trim` (`docker system prune -f` only, no `--remove-orphans`). The Postgres data directory lives on the **`postgres_data`** named volume, so `make down` then `make up` keeps your local database. Run `make docker-prune-volumes` or `make docker-trim-full` explicitly when you want to reclaim unused volume disk.
 - `make logs`: inspect compose logs.
 - `make migrate`: run Alembic inside `agate-api`.
 - `make reset-db`: tear down containers and volumes.
@@ -91,7 +91,7 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
 
 ### Flow execution (PlaceExtract, GeocodeAgent)
 
-Graph nodes are executed in the worker using the vendored `agate-runtime` package (ported from agate-ai-platform). The worker builds the effective environment with **`merge_project_and_org_llm_api_keys`** (`packages/backfield-ai`): organization **AI provider** integration secrets (`ai.provider.*` on `backfield_organization_integration_secret`), then organization **platform** presets (`platform.geocode.*`, `platform.search.*`, `platform.storage.*` — configured in Agate **Settings → Integrations** via Core API), then decrypted **`backfield_project_secret`** rows for the graph’s project (**project values win** when the same env name appears at multiple layers). S3 **bucket, prefix, and region** stay on S3Input (and related) node parameters, not in the Integrations panels.
+Graph nodes are executed in the worker using the vendored `agate-runtime` package. The worker builds the effective environment with **`merge_project_and_org_llm_api_keys`** (`packages/backfield-ai`): organization **AI provider** integration secrets (`ai.provider.*` on `backfield_organization_integration_secret`), then organization **platform** presets (`platform.geocode.*`, `platform.search.*`, `platform.storage.*` — configured in Agate **Settings → Integrations** via Core API), then decrypted **`backfield_project_secret`** rows for the graph’s project (**project values win** when the same env name appears at multiple layers). S3 **bucket, prefix, and region** stay on S3Input (and related) node parameters, not in the Integrations panels.
 
 - **Required for LLM PlaceExtract**: depends on the catalog model — typically `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, and/or `AZURE_API_KEY` plus **`AZURE_API_BASE`** (resource endpoint URL from project secrets / bootstrap `.env`, not an organization integration slot) for Azure OpenAI (see `agate_utils.llm.call_llm`). PlaceExtract writes **`geocode_hints`** when extra story context helps geocoding. **GeocodeAgent** uses them on **`place`** (web search + best-address prompts), passes them into the **`route_strategy`** LLM prompt (with **`geocode_hints_snippet`** on router audit), and into **Region**, **NaturalPlace**, **StreetRoad**, **Intersection**, **Span** (including inner endpoints), and **Address** (Pelias multi-candidate LLM picker after structured miss). Router strategies are **`web_search`** (Brave when configured, then DuckDuckGo fallback for addressable **place** flows) vs **`no_web_search`** (**neither** Brave nor DDG); addressable places without a street line should route to **`web_search`** so hints shape the query rather than skipping retrieval.
 - **GeocodeAgent** may use `OPENAI_API_KEY`, `PELIAS_API_KEY`, `GEOCODIO_API_KEY`, `BRAVE_SEARCH_API_KEY`, and optional Stylebook cache via `STYLEBOOK_API_URL` + `PROJECT_SLUG` + `SERVICE_API_TOKEN`.

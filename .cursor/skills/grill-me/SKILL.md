@@ -21,5 +21,5 @@ description: >-
 
 ## Out of scope
 
-- This skill does **not** replace `docs/PLANS.md` or project planning docs; it sharpens the plan interactively.
+- This skill does **not** replace `docs/AGENTIC.md` → **Planning multi-step work** or project planning docs; it sharpens the plan interactively.
 - Once the user switches to implementation-only work, default back to normal agent behavior unless they invoke grilling again.

@@ -8,7 +8,7 @@ help:
 	@echo "Backfield"
 	@echo "  make up          - Start stack in foreground (logs attached; Ctrl+C stops)"
 	@echo "  make up-detached - Same as up but background (-d)"
-	@echo "  make down        - Stop stack (docker compose down; same as agate-ai-platform), then docker-trim"
+	@echo "  make down        - Stop stack (docker compose down), then docker-trim"
 	@echo "  make logs        - Follow compose logs"
 	@echo "  make migrate     - Run Alembic (agate-api container)"
 	@echo "  make reset-db    - Stop stack and remove compose volumes (Postgres data, etc.)"
@@ -91,7 +91,7 @@ docker-prune-volumes:
 	docker volume prune -f
 
 # After `compose down`, Postgres (and other compose) volumes are unreferenced; `volume prune` can delete them.
-# Default trim matches agate-ai-platform local dev: system prune only so `make down` then `make up` keeps DB data.
+# Default trim: system prune only so `make down` then `make up` keeps DB data.
 docker-trim: docker-prune-system
 	@echo "docker-trim done."
 

@@ -48,8 +48,6 @@ Branch implementation and review work by profile. Every node folder declares a p
 | Processed-item review | `apps/agate-ui/src/lib/review/` + `apps/agate-api/src/api/processed_item/` | Only when review tier requires (below) |
 | Unit tests | `packages/backfield-agate/tests/` or `tests/agate_nodes/` | Focused tests per node behavior |
 
-Reference implementation: sibling **agate-ai-platform** — copy-then-adapt per [`AGENTS.md`](../AGENTS.md).
-
 ## Persistence and substrate
 
 Most nodes **only emit JSON** into `node_outputs` / consolidated payloads. Durable writes normally flow **`… → DBOutput → worker/substrate/orchestration.py`**, keyed by consolidated domains (`places`, `people`, `organizations`).
@@ -83,7 +81,7 @@ Processed-item detail tabs today: `info`, `places`, `people`, `organizations`, `
 
 ## Checklist: net-new node
 
-Use after a PRD exists (via [`add-agate-node`](../.cursor/skills/add-agate-node/SKILL.md)) or when porting a known node from agate-ai-platform.
+Use after a PRD exists (via [`add-agate-node`](../.cursor/skills/add-agate-node/SKILL.md)).
 
 ### 1. Runtime (issue 01)
 

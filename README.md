@@ -20,8 +20,8 @@ Reconstruction of the Agate-style platform focused on **Agate** (visual pipeline
 The canonical **Starter flow** spec lives in code (`starter_geocode_flow_graph_spec`) for smoke tests and templates:
 
 1. **TextInput** — parameter text out (non-empty validation)  
-2. **PlaceExtract** — LLM extraction (ported from agate-ai-platform; needs `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` on the worker)  
-3. **GeocodeAgent** — LangGraph + external geocoders / LLM (ported; optional Stylebook cache)  
+2. **PlaceExtract** — LLM extraction (needs `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` on the worker)  
+3. **GeocodeAgent** — LangGraph + external geocoders / LLM (optional Stylebook cache)  
 4. **DBOutput** (Backfield Output in the palette) — persists consolidated upstream JSON into shared **`substrate_*`** tables (worker-local). Wire **GeocodeAgent → DBOutput** directly; add **Output** (JSON Output) if you want a `consolidated` JSON view on the canvas.  
 
 Create graphs in the Agate UI or from the **Geocode pipeline** template (`agate_template`, seeded by migration).
@@ -70,7 +70,7 @@ If unset, Stylebook geocode accepts unauthenticated requests (dev only).
 | Target | Purpose |
 |--------|---------|
 | `make help` | List commands |
-| `make up` / `make down` | Compose; `down` then `docker system prune` only (keeps compose DB volumes; same idea as agate-ai-platform local `down`) |
+| `make up` / `make down` | Compose; `down` then `docker system prune` only (keeps compose DB volumes) |
 | `make logs` | Tail logs |
 | `make migrate` | Re-run Alembic inside `agate-api` |
 | `make reset-db` | `docker compose down -v` (removes Postgres volume) |
@@ -87,13 +87,10 @@ If unset, Stylebook geocode accepts unauthenticated requests (dev only).
 - [docs/API.md](docs/API.md) — Agate API conventions and orchestration  
 - [docs/PUBLIC_API.md](docs/PUBLIC_API.md) — public `/public/v1` API design and rollout plan  
 - [docs/FRONTEND.md](docs/FRONTEND.md) — frontend conventions and node sync flow  
-- [docs/LAYOUT.md](docs/LAYOUT.md) — monorepo structure and naming  
 - [docs/DATABASE.md](docs/DATABASE.md) — schema ownership and redesign space  
 - [docs/OPERATIONS.md](docs/OPERATIONS.md) — compose, env vars, and troubleshooting  
 - [docs/TESTING.md](docs/TESTING.md) — testing layers  
-- [docs/AGENT_WORKFLOWS.md](docs/AGENT_WORKFLOWS.md) — task-specific validation guidance  
-- [docs/AGENTIC.md](docs/AGENTIC.md) — agentic workflow orientation (rules, skills, branch/validation habits)  
-- [docs/PLANS.md](docs/PLANS.md) — planning expectations for larger changes  
+- [docs/AGENTIC.md](docs/AGENTIC.md) — agentic workflow orientation: rules/skills, per-task checklists, and planning  
 
 ## Layout
 

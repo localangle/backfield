@@ -41,7 +41,7 @@ class NominatimGeocoder:
     
     def __init__(
         self,
-        user_agent: str = "agate-ai-platform/1.0",
+        user_agent: str = "agate/1.0",
         timeout: int = 10,
         rate_limit: float = 1.0
     ):
@@ -292,7 +292,7 @@ class NominatimGeocoder:
 
 def geocode_address(
     address: str,
-    user_agent: str = "agate-ai-platform/1.0",
+    user_agent: str = "agate/1.0",
     country_codes: Optional[List[str]] = None,
     placetype: Optional[str] = None
 ) -> Optional[GeocodingResult]:
@@ -313,7 +313,7 @@ def geocode_address(
 
 def search_places(
     query: str,
-    user_agent: str = "agate-ai-platform/1.0",
+    user_agent: str = "agate/1.0",
     limit: int = 10,
     addressdetails: bool = True,
     extratags: bool = True,
@@ -334,7 +334,7 @@ def search_places(
 
 def geocode_address_raw(
     address: str,
-    user_agent: str = "agate-ai-platform/1.0",
+    user_agent: str = "agate/1.0",
     limit: int = 20
 ) -> Optional[str]:
     """

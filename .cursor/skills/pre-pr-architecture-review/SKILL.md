@@ -22,7 +22,7 @@ Check that the change still fits the repo's intended shape: package boundaries, 
 
 1. Read the relevant source-of-truth docs first (`AGENTS.md`, `docs/ARCHITECTURE.md`, plus API/DB/FRONTEND/OPERATIONS as needed).
 2. Inspect the diff and map it to affected layers.
-3. Compare to existing repo conventions and, when parity matters, agate-ai-platform.
+3. Compare to existing repo conventions.
 4. Identify architectural mismatches, missing doc updates, hidden coupling, or misplaced ownership.
 5. Raise concerns interactively before PR creation when the right answer is not obvious.
 
@@ -38,4 +38,3 @@ Check that the change still fits the repo's intended shape: package boundaries, 
 Ask focused questions when a design choice is unresolved. Good examples:
 - Should this live in `agate-runtime`, or is it really app-specific behavior?
 - Is this a one-off env var, or should it be part of a documented operational contract?
-- Are we intentionally diverging from agate-ai-platform here, and if so where should that be recorded?

@@ -278,7 +278,7 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 - JSON body with `cells[]` and shared `resolution`, plus the same mention/metadata/date filters as single-cell drill-down and optional `external_source`
 - Returns deduplicated `items[]` with `article`, `matching_locations`, and `matched_cells`; global pagination over the merged set
 - Includes `per_cell_totals[]` for cross-checking coverage counts
-- Cap: 200 cells per request. See [`docs/batch-geo-cells-query-spec.md`](batch-geo-cells-query-spec.md)
+- Cap: 200 cells per request. See [`docs/public-api/reference/endpoints.md`](public-api/reference/endpoints.md) for the shipped contract
 
 See [`docs/public-api/reference/geo-cells-map-clients.md`](public-api/reference/geo-cells-map-clients.md) for map-client integration guidance.
 

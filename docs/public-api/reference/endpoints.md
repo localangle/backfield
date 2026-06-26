@@ -700,7 +700,6 @@ Results are ordered by article `pub_date` descending (nulls last), then `id` des
 | **Module** | [`apps/core-api/src/core_api/routers/public/articles/geo_cells_batch.py`](../../../apps/core-api/src/core_api/routers/public/articles/geo_cells_batch.py) — `query_project_articles_in_geo_cells` |
 | **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_geo_cells_batch.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_geo_cells_batch.py) |
 | **Auth** | Project API key required |
-| **Spec** | [`docs/batch-geo-cells-query-spec.md`](../../../docs/batch-geo-cells-query-spec.md) |
 
 ### Functionality
 
