@@ -23,9 +23,14 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: apps/stylebook-ui/package-lock.json
-      - name: Stylebook UI build
-        run: make stylebook-ui-build
+          cache-dependency-path: |
+            apps/agate-ui/package-lock.json
+            apps/stylebook-ui/package-lock.json
+            packages/backfield-ui/package-lock.json
+      - name: Production UI builds (same-origin)
+        run: make ui-build
+      - name: UI same-origin bundle checks
+        run: uv run pytest tests/test_ui_same_origin_builds.py -q
       - name: Build production API images
         run: |
           make docker-build-prod-apis \

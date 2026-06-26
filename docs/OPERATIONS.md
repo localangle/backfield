@@ -62,6 +62,16 @@ make docker-build-prod-worker \
   BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 ```
 
+**Production UI bundles** (`agate-ui`, `stylebook-ui`) use relative API paths (`/api/agate`, `/api/stylebook`, empty auth base → `/v1/...` on the same origin). Build from the repo root:
+
+```bash
+make ui-build          # both apps → apps/*/dist/
+make agate-ui-build    # Agate only
+make stylebook-ui-build
+```
+
+Each app ships [`.env.production`](../apps/agate-ui/.env.production) defaults loaded by `vite build`. Sync `dist/` to S3 (or any static host); path routing on the origin must forward `/v1`, `/api/agate`, and `/api/stylebook` to the matching APIs. See [`apps/agate-ui/DEPLOY.md`](../apps/agate-ui/DEPLOY.md) and [`docs/FRONTEND.md`](FRONTEND.md) → **Production static builds**.
+
 **`agate-api`**, **`worker`**, and **`core-api` images** copy `packages/backfield-ai` and install editable wheels in dependency order (`backfield-db` → `backfield-ai` → …) because that package name is not published on PyPI (`agate-api` / `worker` continue with `agate-runtime` → `backfield-entities` → … as before).
 
 ## Runtime contracts

@@ -14,7 +14,7 @@
 1. **Fast local gate**
   - `make lint`
   - `make test`
-  - When changing `**apps/stylebook-ui`** or `**packages/backfield-ui**`, also run `**make stylebook-ui-build**` (`npm ci` in `**packages/backfield-ui**` then `**apps/stylebook-ui**`, then `tsc` + `vite build`).
+  - When changing **`apps/agate-ui`**, **`apps/stylebook-ui`**, or **`packages/backfield-ui`**, also run **`make ui-build`** (or the single-app target). Production bundles use relative API bases from each app's **`.env.production`**.
 2. **Structural checks**
   Runtime contract and schema-prefix assertions live in the test suite and run as part of `make test`.
 3. **Smoke suite**
