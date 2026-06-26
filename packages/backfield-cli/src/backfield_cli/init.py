@@ -118,7 +118,6 @@ def run_init(config: InitConfig, *, repo_root: Path) -> int:
         password_file=config.admin_password_file,
     )
     report = run_init_seed(
-        org_slug=config.org_slug,
         org_name=config.org_name,
         stylebook_name=config.stylebook_name,
         admin_email=config.admin_email,

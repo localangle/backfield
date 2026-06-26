@@ -17,11 +17,13 @@ from backfield_db.models import (
 )
 from backfield_db.passwords import hash_password
 from backfield_db.session import get_engine
+from backfield_db.slugify import slugify_display_name
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_ORG_SLUG = "default"
 DEFAULT_ORG_NAME = "Backfield"
+DEFAULT_STYLEBOOK_SLUG = "default"
 DEFAULT_STYLEBOOK_NAME = "Default Stylebook"
 ORG_ADMIN_ROLE = "org_admin"
 
@@ -111,6 +113,45 @@ def ensure_initial_org_and_admin(
     )
 
 
+def _allocate_unique_stylebook_slug(
+    session: Session,
+    organization_id: int,
+    base: str,
+    *,
+    ignore_stylebook_id: int | None = None,
+) -> str:
+    slug = base
+    n = 2
+    while True:
+        existing = session.exec(
+            select(Stylebook).where(
+                Stylebook.organization_id == organization_id,
+                Stylebook.slug == slug,
+            )
+        ).first()
+        if existing is None or (
+            ignore_stylebook_id is not None and existing.id == ignore_stylebook_id
+        ):
+            return slug
+        suffix = f"-{n}"
+        max_base = 100 - len(suffix)
+        truncated = base[:max_base].rstrip("-") if max_base > 0 else "sb"
+        slug = f"{truncated}{suffix}"
+        n += 1
+
+
+def _org_slug_available(
+    session: Session,
+    slug: str,
+    *,
+    organization_id: int,
+) -> bool:
+    existing = session.exec(
+        select(BackfieldOrganization).where(BackfieldOrganization.slug == slug)
+    ).first()
+    return existing is None or existing.id == organization_id
+
+
 def apply_init_display_names(
     session: Session,
     *,
@@ -118,19 +159,22 @@ def apply_init_display_names(
     org_name: str,
     stylebook_name: str,
 ) -> None:
-    """Apply init-chosen display names when rows still use migration defaults."""
+    """Apply init-chosen display names and slugs when rows still use migration defaults."""
     desired_org_name = org_name.strip()
     desired_stylebook_name = stylebook_name.strip()
 
     org = session.get(BackfieldOrganization, organization_id)
-    if (
-        org is not None
-        and desired_org_name
-        and org.name == DEFAULT_ORG_NAME
-        and desired_org_name != org.name
-    ):
-        org.name = desired_org_name
-        session.add(org)
+    if org is not None and desired_org_name:
+        if org.slug == DEFAULT_ORG_SLUG and org.name in (DEFAULT_ORG_NAME, desired_org_name):
+            new_org_slug = slugify_display_name(
+                desired_org_name,
+                fallback=DEFAULT_ORG_SLUG,
+            )
+            if _org_slug_available(session, new_org_slug, organization_id=organization_id):
+                org.slug = new_org_slug
+            if org.name == DEFAULT_ORG_NAME:
+                org.name = desired_org_name
+            session.add(org)
 
     stylebook = session.exec(
         select(Stylebook).where(
@@ -142,31 +186,44 @@ def apply_init_display_names(
         stylebook = session.exec(
             select(Stylebook).where(
                 Stylebook.organization_id == organization_id,
-                Stylebook.slug == "default",
+                Stylebook.slug == DEFAULT_STYLEBOOK_SLUG,
             )
         ).first()
     if stylebook is None:
+        stylebook_label = desired_stylebook_name or DEFAULT_STYLEBOOK_NAME
+        stylebook_slug = _allocate_unique_stylebook_slug(
+            session,
+            organization_id,
+            slugify_display_name(stylebook_label, fallback=DEFAULT_STYLEBOOK_SLUG),
+        )
         stylebook = Stylebook(
             organization_id=organization_id,
-            slug="default",
-            name=desired_stylebook_name or DEFAULT_STYLEBOOK_NAME,
+            slug=stylebook_slug,
+            name=stylebook_label,
             is_default=True,
         )
         session.add(stylebook)
-    elif (
-        desired_stylebook_name
-        and stylebook.name == DEFAULT_STYLEBOOK_NAME
-        and desired_stylebook_name != stylebook.name
-    ):
-        stylebook.name = desired_stylebook_name
-        session.add(stylebook)
+    elif desired_stylebook_name and stylebook.slug == DEFAULT_STYLEBOOK_SLUG:
+        if stylebook.name in (DEFAULT_STYLEBOOK_NAME, desired_stylebook_name):
+            new_stylebook_slug = _allocate_unique_stylebook_slug(
+                session,
+                organization_id,
+                slugify_display_name(
+                    desired_stylebook_name,
+                    fallback=DEFAULT_STYLEBOOK_SLUG,
+                ),
+                ignore_stylebook_id=int(stylebook.id) if stylebook.id is not None else None,
+            )
+            stylebook.slug = new_stylebook_slug
+            if stylebook.name == DEFAULT_STYLEBOOK_NAME:
+                stylebook.name = desired_stylebook_name
+            session.add(stylebook)
 
     session.commit()
 
 
 def run_init_seed(
     *,
-    org_slug: str = DEFAULT_ORG_SLUG,
     org_name: str = DEFAULT_ORG_NAME,
     stylebook_name: str = DEFAULT_STYLEBOOK_NAME,
     admin_email: str,
@@ -176,7 +233,7 @@ def run_init_seed(
     with Session(get_engine()) as session:
         report = ensure_initial_org_and_admin(
             session,
-            org_slug=org_slug,
+            org_slug=DEFAULT_ORG_SLUG,
             org_name=org_name,
             admin_email=admin_email,
             admin_password=admin_password,
@@ -188,7 +245,16 @@ def run_init_seed(
             org_name=org_name,
             stylebook_name=stylebook_name,
         )
-        return report
+        org = session.get(BackfieldOrganization, report.organization_id)
+        final_slug = org.slug if org is not None and org.slug else report.organization_slug
+        return SeedReport(
+            organization_id=report.organization_id,
+            organization_slug=final_slug,
+            organization_created=report.organization_created,
+            admin_user_id=report.admin_user_id,
+            admin_email=report.admin_email,
+            admin_created=report.admin_created,
+        )
 
 
 def run_seed(

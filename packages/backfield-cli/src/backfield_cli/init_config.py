@@ -13,7 +13,6 @@ class InitConfig(BaseModel):
     admin_password: str | None = None
     admin_password_file: str | None = None
     admin_display_name: str | None = None
-    org_slug: str = "default"
     org_name: str = "Backfield"
     stylebook_name: str = "Default Stylebook"
     skip_stack: bool = False
