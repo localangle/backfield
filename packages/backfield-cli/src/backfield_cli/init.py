@@ -5,11 +5,26 @@ from __future__ import annotations
 import argparse
 import getpass
 import logging
+import os
 import subprocess
+import webbrowser
+from contextlib import nullcontext
 from pathlib import Path
 
 from backfield_db.seed import DEFAULT_ORG_NAME, DEFAULT_STYLEBOOK_NAME, run_init_seed
+from rich.logging import RichHandler
+from rich.status import Status
 
+from backfield_cli.console import (
+    CONSOLE,
+    INIT_STEP_COUNT,
+    INTEGRATIONS_URL,
+    is_interactive,
+    print_banner,
+    print_intro,
+    print_next_steps,
+    print_step,
+)
 from backfield_cli.credentials import resolve_admin_password
 from backfield_cli.env_file import ensure_repo_env_file, find_repo_root, load_env_into_process
 from backfield_cli.init_config import InitConfig, load_init_config
@@ -22,9 +37,7 @@ from backfield_cli.stack import (
 
 logger = logging.getLogger(__name__)
 
-AGATE_UI_URL = "http://localhost:5173"
-STYLEBOOK_UI_URL = "http://localhost:5175"
-INTEGRATIONS_URL = f"{AGATE_UI_URL}/settings/integrations"
+_NO_BROWSER_ENV_VALUES = frozenset({"1", "true", "yes"})
 
 
 def register_subcommand(subparsers) -> None:
@@ -47,7 +60,44 @@ def register_subcommand(subparsers) -> None:
         action="store_true",
         help="Skip docker compose up (stack already running)",
     )
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Do not open Settings → Integrations in a browser after setup",
+    )
     parser.set_defaults(handler=_run_init)
+
+
+def _configure_logging(*, use_rich: bool) -> None:
+    root = logging.getLogger()
+    root.handlers.clear()
+    if use_rich:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(message)s",
+            handlers=[RichHandler(console=CONSOLE, show_path=False, markup=False)],
+        )
+    else:
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
+
+def _browser_disabled_by_env() -> bool:
+    return os.environ.get("BACKFIELD_NO_BROWSER", "").strip().lower() in _NO_BROWSER_ENV_VALUES
+
+
+def _resolve_open_browser(config: InitConfig, *, no_browser_flag: bool) -> bool:
+    if no_browser_flag or _browser_disabled_by_env():
+        return False
+    return config.open_browser
+
+
+def _maybe_open_browser(url: str, *, enabled: bool) -> None:
+    if not enabled:
+        return
+    try:
+        webbrowser.open(url)
+    except Exception as exc:
+        logger.debug("Could not open browser for %s: %s", url, exc)
 
 
 def _prompt(text: str, *, default: str | None = None) -> str:
@@ -77,7 +127,6 @@ def _load_config(args: argparse.Namespace) -> InitConfig:
     if args.config:
         return load_init_config(Path(args.config))
 
-    print("Backfield local init")
     admin_email = _prompt("Admin email")
     admin_password = _prompt_password("Admin password")
     admin_display_name = _prompt("Admin display name", default="Admin")
@@ -93,7 +142,12 @@ def _load_config(args: argparse.Namespace) -> InitConfig:
     )
 
 
-def run_init(config: InitConfig, *, repo_root: Path) -> int:
+def run_init(config: InitConfig, *, repo_root: Path, interactive: bool = False) -> int:
+    if interactive:
+        CONSOLE.print()
+
+    if interactive:
+        print_step(1, INIT_STEP_COUNT, "Prepare environment secrets")
     env_report = ensure_repo_env_file(repo_root)
     if env_report.created_env_file:
         logger.info("Created %s", env_report.env_path)
@@ -105,13 +159,30 @@ def run_init(config: InitConfig, *, repo_root: Path) -> int:
     load_env_into_process(env_report.env_path)
 
     if not config.skip_stack:
+        if interactive:
+            print_step(2, INIT_STEP_COUNT, "Start Docker Compose stack")
         bring_up_stack(repo_root)
     else:
+        if interactive:
+            print_step(2, INIT_STEP_COUNT, "Start Docker Compose stack (skipped)")
         logger.info("Skipping docker compose up (--skip-stack)")
 
+    if interactive:
+        print_step(3, INIT_STEP_COUNT, "Run database migrations")
     run_compose_migrate(repo_root)
-    wait_for_api_readiness(repo_root)
 
+    if interactive:
+        print_step(4, INIT_STEP_COUNT, "Wait for API readiness")
+    readiness_context: Status | nullcontext
+    if interactive:
+        readiness_context = CONSOLE.status("[bold cyan]Waiting for APIs to become ready...[/]")
+    else:
+        readiness_context = nullcontext()
+    with readiness_context:
+        wait_for_api_readiness(repo_root)
+
+    if interactive:
+        print_step(5, INIT_STEP_COUNT, "Seed organization and admin user")
     configure_host_database_env()
     admin_password = resolve_admin_password(
         password=config.admin_password,
@@ -132,29 +203,27 @@ def run_init(config: InitConfig, *, repo_root: Path) -> int:
         report.admin_created,
         report.admin_email,
     )
-    _print_success(config.admin_email)
+    print_next_steps(config.admin_email)
+    _maybe_open_browser(INTEGRATIONS_URL, enabled=config.open_browser and interactive)
     return 0
 
 
-def _print_success(admin_email: str) -> None:
-    print()
-    print("Backfield is ready.")
-    print(f"  Agate UI:        {AGATE_UI_URL}")
-    print(f"  Stylebook UI:    {STYLEBOOK_UI_URL}")
-    print(f"  Integrations:    {INTEGRATIONS_URL}")
-    print(f"  Admin login:     {admin_email}")
-    print()
-    print("Add API keys under Settings → Integrations in the Agate UI.")
-
-
 def _run_init(args: argparse.Namespace) -> int:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    interactive = is_interactive() and not args.non_interactive
+    _configure_logging(use_rich=interactive)
     try:
         repo_root = find_repo_root()
+        if interactive:
+            print_banner()
+            print_intro()
         config = _load_config(args)
+        updates: dict[str, object] = {}
         if args.skip_stack:
-            config = config.model_copy(update={"skip_stack": True})
-        return run_init(config, repo_root=repo_root)
+            updates["skip_stack"] = True
+        updates["open_browser"] = _resolve_open_browser(config, no_browser_flag=args.no_browser)
+        if updates:
+            config = config.model_copy(update=updates)
+        return run_init(config, repo_root=repo_root, interactive=interactive)
     except ValueError as exc:
         logger.error("%s", exc)
         return 1

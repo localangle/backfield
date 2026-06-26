@@ -16,6 +16,7 @@ class InitConfig(BaseModel):
     org_name: str = "Backfield"
     stylebook_name: str = "Default Stylebook"
     skip_stack: bool = False
+    open_browser: bool = True
 
     @model_validator(mode="after")
     def _validate_password_source(self) -> InitConfig:
