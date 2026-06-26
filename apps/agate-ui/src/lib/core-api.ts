@@ -568,6 +568,7 @@ export interface ProjectAccessCredential {
   credential_type: string
   key_prefix: string
   label: string | null
+  scopes: string[]
   created_at: string
   revoked_at: string | null
   user_id: number | null
@@ -585,13 +586,18 @@ export async function listProjectAccessKeys(
 
 export async function createProjectAccessKey(
   projectId: number,
-  body: { credential_type: "user" | "service"; label?: string | null },
+  body: {
+    credential_type: 'user' | 'service'
+    label?: string | null
+    scopes?: string[]
+  },
 ): Promise<ProjectAccessCredentialCreated> {
   return jsonFetch(`/v1/projects/${projectId}/api-keys`, {
-    method: "POST",
+    method: 'POST',
     body: JSON.stringify({
       credential_type: body.credential_type,
       label: body.label ?? null,
+      ...(body.scopes?.length ? { scopes: body.scopes } : {}),
     }),
   })
 }
