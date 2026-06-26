@@ -116,3 +116,73 @@ def test_ensure_initial_org_and_admin_uses_existing_org(sqlite_engine) -> None:
             select(BackfieldOrganization).where(BackfieldOrganization.slug == "default")
         ).one()
         assert org.name == "Backfield"
+
+
+def test_apply_init_display_names_updates_migration_defaults(sqlite_engine) -> None:
+    with Session(sqlite_engine) as session:
+        org = BackfieldOrganization(name="Backfield", slug="default")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        organization_id = int(org.id)
+
+    with Session(sqlite_engine) as session:
+        from backfield_db import Stylebook
+        from backfield_db.seed import DEFAULT_STYLEBOOK_NAME, apply_init_display_names
+
+        session.add(
+            Stylebook(
+                organization_id=organization_id,
+                slug="default",
+                name=DEFAULT_STYLEBOOK_NAME,
+                is_default=True,
+            )
+        )
+        session.commit()
+
+    with Session(sqlite_engine) as session:
+        from backfield_db.seed import apply_init_display_names
+
+        apply_init_display_names(
+            session,
+            organization_id=organization_id,
+            org_name="Acme News",
+            stylebook_name="Acme Stylebook",
+        )
+
+    with Session(sqlite_engine) as session:
+        from backfield_db import Stylebook
+
+        org = session.exec(
+            select(BackfieldOrganization).where(BackfieldOrganization.slug == "default")
+        ).one()
+        stylebook = session.exec(
+            select(Stylebook).where(Stylebook.organization_id == org.id)
+        ).one()
+        assert org.name == "Acme News"
+        assert stylebook.name == "Acme Stylebook"
+
+
+def test_apply_init_display_names_leaves_renamed_org_unchanged(sqlite_engine) -> None:
+    with Session(sqlite_engine) as session:
+        org = BackfieldOrganization(name="Renamed Org", slug="default")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        organization_id = int(org.id)
+
+    with Session(sqlite_engine) as session:
+        from backfield_db.seed import apply_init_display_names
+
+        apply_init_display_names(
+            session,
+            organization_id=organization_id,
+            org_name="Acme News",
+            stylebook_name="Acme Stylebook",
+        )
+
+    with Session(sqlite_engine) as session:
+        org = session.exec(
+            select(BackfieldOrganization).where(BackfieldOrganization.slug == "default")
+        ).one()
+        assert org.name == "Renamed Org"

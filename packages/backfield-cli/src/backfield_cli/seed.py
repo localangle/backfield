@@ -5,26 +5,12 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from pathlib import Path
 
 from backfield_db.seed import DEFAULT_ORG_NAME, DEFAULT_ORG_SLUG, run_seed
 
+from backfield_cli.credentials import resolve_admin_password
+
 logger = logging.getLogger(__name__)
-
-
-def resolve_admin_password(
-    *,
-    password: str | None,
-    password_file: str | None,
-    env_password: str | None = None,
-) -> str:
-    if password_file:
-        return Path(password_file).read_text(encoding="utf-8").strip()
-    if password is not None:
-        return password
-    if env_password is not None:
-        return env_password
-    raise ValueError("admin password is required (--admin-password, --admin-password-file, or env)")
 
 
 def register_subcommand(subparsers) -> None:

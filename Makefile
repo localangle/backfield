@@ -49,6 +49,7 @@ help:
 	@echo "  make stylebook-ui-build - Typecheck and production-build apps/stylebook-ui"
 	@echo "  make docker-build-prod-apis - Build production targets for agate/core/stylebook APIs"
 	@echo "  make docker-build-prod-worker - Build production target for the Celery worker"
+	@echo "  uv run backfield init - Local first-run setup (env, stack, migrate, seed)"
 
 bootstrap:
 	uv sync --all-packages
