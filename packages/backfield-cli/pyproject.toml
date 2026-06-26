@@ -10,6 +10,7 @@ dependencies = [
 [project.scripts]
 backfield = "backfield_cli.main:main"
 backfield-migrate = "backfield_cli.migrate:main"
+backfield-seed = "backfield_cli.seed:main"
 
 [build-system]
 requires = ["hatchling"]

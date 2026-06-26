@@ -16,6 +16,7 @@ help:
 	@echo "  make logs        - Follow compose logs"
 	@echo "  make migrate     - Run Alembic via one-off compose migrate service"
 	@echo "  make migrate-host - Run Alembic on host (uv run backfield migrate; Postgres on :5433)"
+	@echo "                     Seed admin: uv run backfield seed --admin-email ... --admin-password ..."
 	@echo "  make reset-db    - Stop stack and remove compose volumes (Postgres data, etc.)"
 	@echo "  make clear-entity-data - Truncate substrate/stylebook entity + Agate runs (BACKFIELD_CONFIRM_CLEAR=1)"
 	@echo "  make docker-prune-build   - Free build cache only (docker builder prune -f)"

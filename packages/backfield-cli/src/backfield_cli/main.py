@@ -6,12 +6,14 @@ import argparse
 import sys
 
 from backfield_cli import migrate as migrate_cmd
+from backfield_cli import seed as seed_cmd
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="backfield", description="Backfield operator CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
     migrate_cmd.register_subcommand(subparsers)
+    seed_cmd.register_subcommand(subparsers)
     args = parser.parse_args(argv)
     handler = getattr(args, "handler", None)
     if handler is None:
