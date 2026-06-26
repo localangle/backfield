@@ -51,6 +51,15 @@ make docker-build-prod-apis \
 
 Each production image bakes `APP_VERSION`, `GIT_SHA`, and `BUILD_TIME` into the environment; `GET /version` on a running container reports those values. Local Compose uses `target: dev` explicitly.
 
+**Production worker image** uses the same build-arg pattern. The worker is not an HTTP service; startup logs a JSON line with `event=worker_startup`, version metadata, and the resolved `CELERY_WORKER_CONCURRENCY`. Concurrency, prefetch, and child-process limits are driven from environment variables in `apps/worker/scripts/entrypoint.sh` (Compose default concurrency **16** via `CELERY_WORKER_CONCURRENCY`).
+
+```bash
+make docker-build-prod-worker \
+  APP_VERSION=v0.1.0 \
+  GIT_SHA=$(git rev-parse HEAD) \
+  BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+```
+
 **`agate-api`**, **`worker`**, and **`core-api` images** copy `packages/backfield-ai` and install editable wheels in dependency order (`backfield-db` → `backfield-ai` → …) because that package name is not published on PyPI (`agate-api` / `worker` continue with `agate-runtime` → `backfield-entities` → … as before).
 
 ## Runtime contracts
