@@ -257,6 +257,8 @@ services:
       - ../apps/agate-ui:/app/apps/agate-ui
       - ../packages:/app/packages
       - /app/apps/agate-ui/node_modules
+      # Preserve image-built deps when packages/backfield-ui is bind-mounted.
+      - /app/packages/backfield-ui/node_modules
     depends_on:
       core-api:
         condition: service_healthy
@@ -285,6 +287,8 @@ services:
       - ../apps/stylebook-ui:/app/apps/stylebook-ui
       - ../packages:/app/packages
       - /app/apps/stylebook-ui/node_modules
+      # Preserve image-built deps when packages/backfield-ui is bind-mounted.
+      - /app/packages/backfield-ui/node_modules
     depends_on:
       core-api:
         condition: service_healthy
