@@ -26,7 +26,7 @@ You need [Docker and Docker Compose](https://docs.docker.com/compose/) and [uv](
 git clone git@github.com:localangle/backfield.git
 cd backfield
 make bootstrap          # install Python tooling
-uv run backfield init   # set up env, start the stack, migrate, and seed
+./scripts/backfield init   # set up env, start the stack, migrate, and seed
 ```
 
 `backfield init` walks you through first-run setup and, when it finishes, opens the app in your browser:
@@ -34,7 +34,7 @@ uv run backfield init   # set up env, start the stack, migrate, and seed
 - Agate: [http://localhost:5173](http://localhost:5173)
 - Stylebook: [http://localhost:5175](http://localhost:5175)
 
-To manage the stack afterward, use `uv run backfield up | down | logs | ps | restart`.
+To manage the stack afterward, use `make up`, `make down`, `make logs`, or `./scripts/backfield ps | restart`.
 
 ## License
 

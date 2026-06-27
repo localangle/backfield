@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Run the Backfield operator CLI with a self-healing repo-root .venv.
+#
+# `uv run backfield` can leave a broken editable install in place (console script
+# present, import fails). This wrapper reinstalls CLI packages when needed, then
+# execs the CLI module directly.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+if [[ -n "${VIRTUAL_ENV:-}" && "${VIRTUAL_ENV}" != "$ROOT/.venv" ]]; then
+  echo "warning: VIRTUAL_ENV is active ($VIRTUAL_ENV) but does not match $ROOT/.venv; using repo .venv for backfield." >&2
+fi
+
+VENV_PY="$ROOT/.venv/bin/python"
+if [[ ! -x "$VENV_PY" ]] || ! "$VENV_PY" -c "import backfield_cli" 2>/dev/null; then
+  if ! command -v uv >/dev/null 2>&1; then
+    echo "error: backfield_cli is missing from .venv and uv is not on PATH." >&2
+    echo "Run 'make bootstrap' from the repo root, then retry." >&2
+    exit 1
+  fi
+  uv sync --all-packages \
+    --reinstall-package backfield-cli \
+    --reinstall-package backfield-db \
+    --quiet
+  if ! "$VENV_PY" -c "import backfield_cli" 2>/dev/null; then
+    echo "error: could not repair the Backfield CLI in .venv." >&2
+    echo "Run 'make bootstrap' from the repo root, then retry." >&2
+    exit 1
+  fi
+fi
+
+exec "$VENV_PY" -m backfield_cli "$@"

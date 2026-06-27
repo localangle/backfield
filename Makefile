@@ -1,6 +1,7 @@
 # Backfield — minimal developer surface (see `make help`)
 COMPOSE_FILE := infra/docker-compose.yml
 DC := docker compose -f $(COMPOSE_FILE) --env-file .env
+BACKFIELD := ./scripts/backfield
 APP_VERSION ?= 0.0.0-dev
 GIT_SHA ?= unknown
 BUILD_TIME ?= unknown
@@ -10,14 +11,14 @@ DOCKER_PROD_BUILD_ARGS := --build-arg APP_VERSION=$(APP_VERSION) --build-arg GIT
 
 help:
 	@echo "Backfield"
-	@echo "  Operator commands wrap the CLI; run 'uv run backfield --help' for the full list."
+	@echo "  Operator commands wrap the CLI; run './scripts/backfield --help' for the full list."
 	@echo "  make up          - Start stack in foreground (wraps 'backfield up'; Ctrl+C stops)"
 	@echo "  make up-detached - Same as up but background (wraps 'backfield up --detached')"
 	@echo "  make down        - Stop stack (wraps 'backfield down'), then docker-trim"
 	@echo "  make logs        - Follow stack logs (wraps 'backfield logs')"
 	@echo "  make migrate     - Run Alembic via one-off compose migrate service"
-	@echo "  make migrate-host - Run Alembic on host (uv run backfield migrate; Postgres on :5433)"
-	@echo "                     Seed admin: uv run backfield seed --admin-email ... --admin-password ..."
+	@echo "  make migrate-host - Run Alembic on host (./scripts/backfield migrate; Postgres on :5433)"
+	@echo "                     Seed admin: ./scripts/backfield seed --admin-email ... --admin-password ..."
 	@echo "  make reset-db    - Stop stack and remove compose volumes (wraps 'backfield reset-db --yes')"
 	@echo "  make clear-entity-data - Truncate substrate/stylebook entity + Agate runs (BACKFIELD_CONFIRM_CLEAR=1; wraps 'backfield clear-entity-data --yes')"
 	@echo "  make docker-prune-build   - Free build cache only (docker builder prune -f)"
@@ -52,33 +53,33 @@ help:
 	@echo "  make ui-build           - Production-build both UIs"
 	@echo "  make docker-build-prod-apis - Build production targets for agate/core/stylebook APIs"
 	@echo "  make docker-build-prod-worker - Build production target for the Celery worker"
-	@echo "  uv run backfield init - Local first-run setup (env, stack, migrate, seed)"
-	@echo "  uv run backfield ps / restart - List or restart stack containers"
+	@echo "  ./scripts/backfield init - Local first-run setup (env, stack, migrate, seed)"
+	@echo "  ./scripts/backfield ps / restart - List or restart stack containers"
 
 bootstrap:
 	uv sync --all-packages --reinstall-package backfield-cli --reinstall-package backfield-db
 
 up:
-	uv run backfield up
+	$(BACKFIELD) up
 
 up-detached:
-	uv run backfield up --detached
+	$(BACKFIELD) up --detached
 
 down:
-	uv run backfield down
+	$(BACKFIELD) down
 	@$(MAKE) --no-print-directory docker-trim
 
 logs:
-	uv run backfield logs
+	$(BACKFIELD) logs
 
 migrate:
 	$(DC) run --rm migrate
 
 migrate-host:
-	uv run backfield migrate
+	$(BACKFIELD) migrate
 
 reset-db:
-	uv run backfield reset-db --yes
+	$(BACKFIELD) reset-db --yes
 
 clear-entity-data:
 	@if [ "$(BACKFIELD_CONFIRM_CLEAR)" != "1" ]; then \
@@ -88,7 +89,7 @@ clear-entity-data:
 		echo "Re-run: BACKFIELD_CONFIRM_CLEAR=1 make clear-entity-data"; \
 		exit 1; \
 	fi
-	uv run backfield clear-entity-data --yes
+	$(BACKFIELD) clear-entity-data --yes
 
 docker-prune-build:
 	@echo "Pruning Docker build cache..."
