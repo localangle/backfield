@@ -20,15 +20,18 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.integration_helpers import patch_test_engine
+
 
 @pytest.fixture
-def client(tmp_path) -> Generator[TestClient, None, None]:
+def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None, None]:
     database_path = tmp_path / "core-api-test.db"
     engine = create_engine(
         f"sqlite:///{database_path}",
         connect_args={"check_same_thread": False},
     )
     SQLModel.metadata.create_all(engine)
+    patch_test_engine(monkeypatch, engine)
 
     with Session(engine) as s:
         org = BackfieldOrganization(name="Backfield", slug="default")
@@ -100,6 +103,36 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
         yield TestClient(app)
     finally:
         app.dependency_overrides.clear()
+
+
+def test_health(client: TestClient) -> None:
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "service": "core-api"}
+
+
+def test_healthz(client: TestClient) -> None:
+    r = client.get("/healthz")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "service": "core-api"}
+
+
+def test_readyz(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("backfield_auth.service_health.check_redis", lambda redis_url=None: "ok")
+    r = client.get("/readyz")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["checks"]["database"] == "ok"
+    assert body["checks"]["redis"] == "ok"
+
+
+def test_version(client: TestClient) -> None:
+    r = client.get("/version")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["service"] == "core-api"
+    assert {"version", "git_sha", "build_time"} <= set(body)
 
 
 def test_public_ping(client: TestClient) -> None:

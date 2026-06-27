@@ -1,8 +1,3 @@
-from fastapi import APIRouter
+from backfield_auth.health_router import create_health_router
 
-router = APIRouter(tags=["health"])
-
-
-@router.get("/health")
-def health():
-    return {"ok": True}
+router = create_health_router("agate-api", include_redis=True)

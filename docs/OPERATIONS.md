@@ -4,7 +4,7 @@
 
 Primary local services are defined in `infra/docker-compose.yml`:
 
-- PostGIS-enabled `postgres` on `localhost:5433` (data directory on the **`postgres_data`** named volume, same persistence pattern as agate-ai-platform)
+- PostGIS-enabled `postgres` on `localhost:5433` (data directory on the **`postgres_data`** named volume)
 - `redis` on `localhost:6379`
 - `agate-api` on `localhost:8000`
 - `stylebook-api` on `localhost:8003`
@@ -15,16 +15,21 @@ Primary local services are defined in `infra/docker-compose.yml`:
 
 `agate-ui` is ordered **after** `core-api` and `agate-api` report **healthy** (HTTP `/health` checks) so the Vite dev proxy does not hit `ECONNREFUSED` while Uvicorn is still binding (notably when `agate-api` uses the reload worker).
 
-`core-api` and the **`worker`** likewise wait until **`agate-api` is healthy** so its entrypoint has finished **`alembic upgrade head`** (and optional `BACKFIELD_LOCAL_BOOTSTRAP`) before those services touch the database. Otherwise `core-api` can log *Env bootstrap skipped: identity tables missing* on a cold volume because Postgres was ready while migrations had not run yet.
+`core-api` and the **`worker`** wait until the one-off **`migrate`** service has completed successfully and **`agate-api`** is healthy before they touch the database. Otherwise `core-api` can log *Env bootstrap skipped: identity tables missing* on a cold volume because Postgres was ready while migrations had not run yet.
 
 ## Canonical commands
 
-- `make up`: bring up the local stack in the foreground. It does **not** run `docker volume prune` or `docker system prune` (only `docker compose up`).
-- `make down`: `docker compose down` (stops and removes app containers, **not** Compose-managed volumes) then `docker-trim` (`docker system prune -f` only). Matches agate-ai-platform local `make down` (no `--remove-orphans`). The Postgres data directory lives on the **`postgres_data`** named volume, so `make down` then `make up` keeps your local database. Run `make docker-prune-volumes` or `make docker-trim-full` explicitly when you want to reclaim unused volume disk.
-- `make logs`: inspect compose logs.
-- `make migrate`: run Alembic inside `agate-api`.
-- `make reset-db`: tear down containers and volumes.
-- `make clear-entity-data`: truncate **`substrate_*`**, **`stylebook_*`** entity tables, and Agate **runs** (`agate_run`, `agate_processed_item`, plus run-linked **`backfield_ai_call_record`** rows) while the stack is running (local dev only). Requires **`BACKFIELD_CONFIRM_CLEAR=1`**. Preserves Stylebook catalog shells (`stylebook`, `stylebook_membership`, `stylebook_slug_redirect`) and Agate **graphs/templates** (`agate_graph`, `agate_template`); does **not** remove **`backfield_*`** identity rows. Use when you want a clean entity/run slate without wiping Postgres entirely. Implementation: `packages/backfield-db/scripts/clear_entity_data.py` (connects to **`localhost:5433`** by default, same as smoke helpers).
+Operator stack commands live in the **`backfield` CLI** (the source of truth); the matching `make` targets are thin wrappers that call it. The CLI discovers `infra/docker-compose.yml` from the repo root by default; override with `--compose-file` or `BACKFIELD_COMPOSE_FILE`.
+
+- `uv run backfield up` (or `make up`): bring up the local stack in the foreground (`up --build`). Add `--detached`/`-d` for background, `--no-build` to skip the image build. It does **not** run `docker volume prune` or `docker system prune`.
+- `uv run backfield down` (or `make down`): `docker compose down` (stops and removes app containers, **not** Compose-managed volumes). The `make down` wrapper additionally runs `docker-trim` (`docker system prune -f` only). The Postgres data directory lives on the **`postgres_data`** named volume, so `down` then `up` keeps your local database. Run `make docker-prune-volumes` or `make docker-trim-full` explicitly when you want to reclaim unused volume disk.
+- `uv run backfield logs` (or `make logs`): follow stack logs (`logs -f`). Pass service names to filter and `--no-follow` to print-and-exit.
+- `uv run backfield ps` / `uv run backfield restart [service ...]`: list or restart stack containers.
+- `make migrate`: run Alembic via the one-off compose **`migrate`** service. Use `make migrate-host` (`uv run backfield migrate`) when Postgres is reachable on the host (e.g. `:5433`).
+- **Production provisioning seed:** after migrations, run `uv run backfield seed --admin-email … --admin-password …` (or `--admin-password-file`). The command ensures the organization (by slug, default `default`) and admin user (by email) exist; re-runs are a no-op and never change an existing admin password or role. Use `BACKFIELD_DATABASE_URL_DIRECT` when set (same as migrations). Local/CI env-flag bootstrap and `POST /v1/bootstrap/first-user` remain for development; prefer `backfield seed` in production.
+- **Local first run:** `uv run backfield init` (interactive) or `uv run backfield init --non-interactive --config init.json` ensures repo-root `.env`, generates `MASTER_ENCRYPTION_KEY` / `SESSION_SECRET` when absent, starts Compose, runs migrations, waits for API `/readyz`, seeds admin/org/stylebook display names, and prints Agate UI URLs with numbered next steps (AI models, then Integrations, then [docs.backfield.news](https://docs.backfield.news)). Interactive runs show a banner, step-by-step progress, and **open Settings → AI models in your default browser** when complete. Disable auto-open with `--no-browser` or `BACKFIELD_NO_BROWSER=1`. Re-runs leave existing secrets and admin credentials unchanged.
+- `uv run backfield reset-db` (or `make reset-db`): tear down containers and volumes (`down -v`). The CLI prompts for confirmation unless `--yes` is passed (and refuses without `--yes` in a non-interactive shell); the `make` wrapper passes `--yes`.
+- `uv run backfield clear-entity-data` (or `make clear-entity-data`): truncate **`substrate_*`**, **`stylebook_*`** entity tables, and Agate **runs** (`agate_run`, `agate_processed_item`, plus run-linked **`backfield_ai_call_record`** rows) while the stack is running (local dev only). The CLI prompts unless `--yes` is passed; the `make` target additionally keeps its **`BACKFIELD_CONFIRM_CLEAR=1`** gate. Preserves Stylebook catalog shells (`stylebook`, `stylebook_membership`, `stylebook_slug_redirect`) and Agate **graphs/templates** (`agate_graph`, `agate_template`); does **not** remove **`backfield_*`** identity rows. Use when you want a clean entity/run slate without wiping Postgres entirely. Implementation: `packages/backfield-db/scripts/clear_entity_data.py` (connects to **`localhost:5433`** by default, same as smoke helpers).
 
 When a migration is **destructive** toward existing Stylebook catalog data (for example revision **`019_stylebook_loc_canon_uuid`**), wipe the Postgres volume with **`make reset-db`** before **`make up`** / **`make migrate`** so Alembic applies cleanly; do not expect in-place upgrades from pre-UUID canonical integer ids.
 - `make smoke-fast`: run the fast live-stack smoke bundle (`smoke-auth`, `smoke-agate-basic`, `smoke-stylebook-basic`).
@@ -40,9 +45,41 @@ When a migration is **destructive** toward existing Stylebook catalog data (for 
 
 Docker builds use the repo root as context; [.dockerignore](../.dockerignore) excludes optional large local `*.db` files under `packages/backfield-agate/.../geocoding/data/` so image builds do not copy multi-gigabyte artifacts if present on a developer machine.
 
+**Production API images** (`agate-api`, `core-api`, `stylebook-api`) expose a multi-stage Dockerfile with a **`prod`** target (non-editable installs, no `--reload`) and a **`dev`** target (editable installs for local Compose). Build production images from the repo root:
+
+```bash
+make docker-build-prod-apis \
+  APP_VERSION=v0.1.0 \
+  GIT_SHA=$(git rev-parse HEAD) \
+  BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+```
+
+Each production image bakes `APP_VERSION`, `GIT_SHA`, and `BUILD_TIME` into the environment; `GET /version` on a running container reports those values. Local Compose uses `target: dev` explicitly.
+
+**Production worker image** uses the same build-arg pattern. The worker is not an HTTP service; startup logs a JSON line with `event=worker_startup`, version metadata, and the resolved `CELERY_WORKER_CONCURRENCY`. Concurrency, prefetch, and child-process limits are driven from environment variables in `apps/worker/scripts/entrypoint.sh` (Compose default concurrency **16** via `CELERY_WORKER_CONCURRENCY`).
+
+```bash
+make docker-build-prod-worker \
+  APP_VERSION=v0.1.0 \
+  GIT_SHA=$(git rev-parse HEAD) \
+  BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+```
+
+**Production UI bundles** (`agate-ui`, `stylebook-ui`) use relative API paths (`/api/agate`, `/api/stylebook`, empty auth base → `/v1/...` on the same origin). Build from the repo root:
+
+```bash
+make ui-build          # both apps → apps/*/dist/
+make agate-ui-build    # Agate only
+make stylebook-ui-build
+```
+
+Each app ships [`.env.production`](../apps/agate-ui/.env.production) defaults loaded by `vite build`. Sync `dist/` to S3 (or any static host); path routing on the origin must forward `/v1`, `/api/agate`, and `/api/stylebook` to the matching APIs. See [`apps/agate-ui/DEPLOY.md`](../apps/agate-ui/DEPLOY.md) and [`docs/FRONTEND.md`](FRONTEND.md) → **Production static builds**.
+
 **`agate-api`**, **`worker`**, and **`core-api` images** copy `packages/backfield-ai` and install editable wheels in dependency order (`backfield-db` → `backfield-ai` → …) because that package name is not published on PyPI (`agate-api` / `worker` continue with `agate-runtime` → `backfield-entities` → … as before).
 
 ## Runtime contracts
+
+- Structured logs: all HTTP APIs and the worker emit **JSON lines** to stderr with shared fields (`service`, `environment`, `version`, `git_sha`, `request_id`, `client`, `run_id`, `job_id`, `event`, …). APIs log one `http_request` line per request (health/version paths excluded); Celery tasks log `task_start` / `task_end`. Set `BACKFIELD_ENV` or `ENVIRONMENT` (default `development`). Implementation: `packages/backfield-auth` (`structured_logging`, `request_logging_middleware`, worker `celery_logging` hooks).
 
 - Agate worker queue: `agate`
 - Worker task names:
@@ -61,8 +98,27 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
 
 ## Environment variables
 
+- `BACKFIELD_ENV` / `ENVIRONMENT`: deployment label included on every structured log line (default **`development`** in local Compose).
+
+### Runtime configuration surface (production)
+
+All runtime connectivity and secrets are **environment-driven** — no hardcoded production hosts in application code. Confirm these are set in deployment (not only Compose dev defaults):
+
+| Concern | Primary variables | Notes |
+|--------|-------------------|-------|
+| Database | `BACKFIELD_DATABASE_URL`, `DATABASE_URL`, `BACKFIELD_DATABASE_URL_DIRECT` | Runtime traffic uses the pooled URL; migrations use `_DIRECT` when set. |
+| Redis / Celery | `REDIS_URL`, `CELERY_QUEUE`, `CELERY_WORKER_CONCURRENCY` | Required for async runs and worker execution. |
+| Encryption | `MASTER_ENCRYPTION_KEY` | Required on **agate-api**, **worker**, **core-api**, **stylebook-api** for project/org secrets. |
+| Session auth | `SESSION_SECRET` | Shared across services that verify the session cookie. |
+| Service auth | `SERVICE_API_TOKEN` | Bearer token for service-to-service calls. |
+| S3 bundles | `STYLEBOOK_BUNDLE_S3_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, optional `AWS_S3_ENDPOINT_URL` | Bundle import/export only; unset bucket disables bundle routes. |
+| Stylebook worker access | `STYLEBOOK_API_URL` | Worker → Stylebook API base URL. |
+| Build identity | `APP_VERSION`, `GIT_SHA`, `BUILD_TIME` | Baked into prod images; surfaced on `/version` and startup logs. |
+
+**Local-only gaps (do not rely on in production):** Compose dev defaults for `MASTER_ENCRYPTION_KEY` and `SESSION_SECRET`; `BACKFIELD_LOCAL_BOOTSTRAP` project secret sync; `BACKFIELD_BOOTSTRAP_ADMIN_*` first-user creation; `POST /v1/bootstrap/first-user`. Production provisioning uses **`backfield migrate`** + **`backfield seed`** instead.
+
 - `BACKFIELD_DATABASE_URL` / `DATABASE_URL`: runtime database connection string for `agate-api`, **`stylebook-api`**, `worker`, and **`core-api`**. Local Compose routes these through **PgBouncer** (`...@pgbouncer:6432/backfield`) so many client connections multiplex onto a bounded pool of Postgres backends.
-- `BACKFIELD_DATABASE_URL_DIRECT`: optional direct Postgres URL for **migrations and admin** (`...@postgres:5432/backfield` in Compose). Alembic, `ensure_database_exists`, and `make migrate` prefer this when set so DDL and `CREATE DATABASE` bypass PgBouncer transaction pooling. Set on **`agate-api`** only in local Compose; runtime app code still uses the pooled URL.
+- `BACKFIELD_DATABASE_URL_DIRECT`: optional direct Postgres URL for **migrations and admin** (`...@postgres:5432/backfield` in Compose). Alembic, `ensure_database_exists`, and `backfield migrate` prefer this when set so DDL and `CREATE DATABASE` bypass PgBouncer transaction pooling. Set on the **`migrate`** service in local Compose; runtime app code still uses the pooled URL.
 - `BACKFIELD_SQLALCHEMY_POOL_SIZE` / `BACKFIELD_SQLALCHEMY_MAX_OVERFLOW`: optional SQLAlchemy pool sizing for `backfield_db.session.get_engine()` (defaults follow SQLAlchemy when unset: **5** / **10**). The local **`worker`** Compose service sets conservative defaults (**2** / **3**) so many Celery child processes plus API Uvicorn processes are less likely to hit Postgres **`max_connections`**. Raise these on the worker if you see pool timeouts under heavy parallel load.
 - `BACKFIELD_STRICT_CANONICAL_GATES`: when **`1`** (default) or unset, DBOutput ingest applies deterministic Stylebook autolink gates in `entities.location.policy` (type deny-list, container-vs-POI, jurisdiction vs canonical columns, components vs formatted-address sanity, distance vs cached container city when a **`substrate_location_cache`** hit exists, polygon bbox size). Set to **`0`**, **`false`**, **`no`**, or **`off`** to disable those gates (use only for diagnosis—expect more wrong merges when off). See [docs/ARCHITECTURE.md](ARCHITECTURE.md).
 - `REDIS_URL`: Celery broker and backend (required for **agate-api** enqueue, **core-api** public run trigger enqueue, **worker** execution, and **stylebook-api** when using async stylebook bundle export/import jobs).
@@ -91,7 +147,7 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
 
 ### Flow execution (PlaceExtract, GeocodeAgent)
 
-Graph nodes are executed in the worker using the vendored `agate-runtime` package (ported from agate-ai-platform). The worker builds the effective environment with **`merge_project_and_org_llm_api_keys`** (`packages/backfield-ai`): organization **AI provider** integration secrets (`ai.provider.*` on `backfield_organization_integration_secret`), then organization **platform** presets (`platform.geocode.*`, `platform.search.*`, `platform.storage.*` — configured in Agate **Settings → Integrations** via Core API), then decrypted **`backfield_project_secret`** rows for the graph’s project (**project values win** when the same env name appears at multiple layers). S3 **bucket, prefix, and region** stay on S3Input (and related) node parameters, not in the Integrations panels.
+Graph nodes are executed in the worker using the vendored `agate-runtime` package. The worker builds the effective environment with **`merge_project_and_org_llm_api_keys`** (`packages/backfield-ai`): organization **AI provider** integration secrets (`ai.provider.*` on `backfield_organization_integration_secret`), then organization **platform** presets (`platform.geocode.*`, `platform.search.*`, `platform.storage.*` — configured in Agate **Settings → Integrations** via Core API), then decrypted **`backfield_project_secret`** rows for the graph’s project (**project values win** when the same env name appears at multiple layers). S3 **bucket, prefix, and region** stay on S3Input (and related) node parameters, not in the Integrations panels.
 
 - **Required for LLM PlaceExtract**: depends on the catalog model — typically `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, and/or `AZURE_API_KEY` plus **`AZURE_API_BASE`** (resource endpoint URL from project secrets / bootstrap `.env`, not an organization integration slot) for Azure OpenAI (see `agate_utils.llm.call_llm`). PlaceExtract writes **`geocode_hints`** when extra story context helps geocoding. **GeocodeAgent** uses them on **`place`** (web search + best-address prompts), passes them into the **`route_strategy`** LLM prompt (with **`geocode_hints_snippet`** on router audit), and into **Region**, **NaturalPlace**, **StreetRoad**, **Intersection**, **Span** (including inner endpoints), and **Address** (Pelias multi-candidate LLM picker after structured miss). Router strategies are **`web_search`** (Brave when configured, then DuckDuckGo fallback for addressable **place** flows) vs **`no_web_search`** (**neither** Brave nor DDG); addressable places without a street line should route to **`web_search`** so hints shape the query rather than skipping retrieval.
 - **GeocodeAgent** may use `OPENAI_API_KEY`, `PELIAS_API_KEY`, `GEOCODIO_API_KEY`, `BRAVE_SEARCH_API_KEY`, and optional Stylebook cache via `STYLEBOOK_API_URL` + `PROJECT_SLUG` + `SERVICE_API_TOKEN`.
@@ -111,7 +167,7 @@ For `make smoke` / `make smoke-runtime`, set whichever LLM credentials match the
 
 ## Database guidance
 
-- Use Alembic for schema changes (single chain in `packages/backfield-db`; **`make migrate` runs inside `agate-api`** — do not also auto-migrate from `core-api` on startup).
+- Use Alembic for schema changes (single chain in `packages/backfield-db`; run via **`backfield migrate`** / **`make migrate`** — do not auto-migrate from API startup).
 - The local `postgres` service builds from `infra/postgres/Dockerfile` (PostGIS + **pgvector** + **h3-pg**) because location tables store geometry, semantic document tables store embedding vectors, and H3 spatial indexing supports map aggregation queries.
 - Agate execution tables use the `agate_` prefix; tenancy and project tables use `backfield_`.
 - Do not let multiple services race to run migrations for the same revision path.
@@ -122,6 +178,7 @@ For `make smoke` / `make smoke-runtime`, set whichever LLM credentials match the
 
 ## Troubleshooting
 
+- If **`backfield init`** times out waiting for APIs, run `docker compose -f infra/docker-compose.yml ps` and inspect logs for the failing service (for example `docker compose -f infra/docker-compose.yml logs agate-api`). Init checks `/readyz` **inside each API container**, so another process on host port `8000` does not block init; if browser or curl to `http://localhost:8000` still fails while the container is healthy, another listener is answering on that host port—stop it or change the Compose port mapping.
 - If Stylebook or Agate pages **hang or time out during a heavy run**, check worker logs for long DBOutput transactions; API services use **`lock_timeout`** / **`statement_timeout`** (see **API Postgres timeouts** above) so contended reads should fail in seconds with a database error rather than blocking indefinitely.
 - If Postgres logs **`FATAL: sorry, too many clients already`**, check PgBouncer **`SHOW POOLS`** / **`SHOW STATS`** first (local Compose). Every service process that imports `backfield_db.session` holds one pooled engine: reduce **`CELERY_WORKER_CONCURRENCY`**, lower **`BACKFIELD_SQLALCHEMY_POOL_SIZE`** / **`BACKFIELD_SQLALCHEMY_MAX_OVERFLOW`** on the worker (Compose defaults are already small), tune PgBouncer **`MAX_DB_CONNECTIONS`**, or raise Postgres **`max_connections`** in your deployment config. Avoid ad-hoc `create_engine` in long-lived workers — use **`get_engine()`** so each process has a single pool.
 - If DBOutput fails with **`deadlock detected`** while many batch articles run in parallel, workers are likely updating the same shared **`substrate_location`** row (for example a shared city or county polygon). The worker **retries DBOutput** a few times with backoff and takes row locks on existing location rows during upsert; persist handlers now **commit before parallel adjudication LLM** so locks are not held across multi-second LLM batches. Persistent failures usually clear on retry. If they continue, lower **`CELERY_WORKER_CONCURRENCY`** temporarily.

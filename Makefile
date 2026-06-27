@@ -1,18 +1,25 @@
 # Backfield — minimal developer surface (see `make help`)
 COMPOSE_FILE := infra/docker-compose.yml
 DC := docker compose -f $(COMPOSE_FILE) --env-file .env
+APP_VERSION ?= 0.0.0-dev
+GIT_SHA ?= unknown
+BUILD_TIME ?= unknown
+DOCKER_PROD_BUILD_ARGS := --build-arg APP_VERSION=$(APP_VERSION) --build-arg GIT_SHA=$(GIT_SHA) --build-arg BUILD_TIME=$(BUILD_TIME)
 
-.PHONY: help up up-detached down logs migrate reset-db clear-entity-data docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full test test-unit test-integration lint format bootstrap smoke smoke-auth smoke-agate-basic smoke-stylebook-basic smoke-agate-stylebook-handoff smoke-worker-async smoke-stylebook-editorial smoke-s3-batch smoke-stylebook-import-export smoke-fast smoke-runtime smoke-slower smoke-place-geocode smoke-place-geocode-stack smoke-people smoke-people-stack smoke-organizations smoke-organizations-stack smoke-article-metadata smoke-article-metadata-stack smoke-custom-extract smoke-custom-extract-stack smoke-parallel-graph smoke-parallel-graph-stack stylebook-ui-build
+.PHONY: help up up-detached down logs migrate reset-db clear-entity-data docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full docker-build-prod-apis docker-build-prod-agate-api docker-build-prod-core-api docker-build-prod-stylebook-api docker-build-prod-worker test test-unit test-integration lint format bootstrap smoke smoke-auth smoke-agate-basic smoke-stylebook-basic smoke-agate-stylebook-handoff smoke-worker-async smoke-stylebook-editorial smoke-s3-batch smoke-stylebook-import-export smoke-fast smoke-runtime smoke-slower smoke-place-geocode smoke-place-geocode-stack smoke-people smoke-people-stack smoke-organizations smoke-organizations-stack smoke-article-metadata smoke-article-metadata-stack smoke-custom-extract smoke-custom-extract-stack smoke-parallel-graph smoke-parallel-graph-stack agate-ui-build stylebook-ui-build ui-build
 
 help:
 	@echo "Backfield"
-	@echo "  make up          - Start stack in foreground (logs attached; Ctrl+C stops)"
-	@echo "  make up-detached - Same as up but background (-d)"
-	@echo "  make down        - Stop stack (docker compose down; same as agate-ai-platform), then docker-trim"
-	@echo "  make logs        - Follow compose logs"
-	@echo "  make migrate     - Run Alembic (agate-api container)"
-	@echo "  make reset-db    - Stop stack and remove compose volumes (Postgres data, etc.)"
-	@echo "  make clear-entity-data - Truncate substrate/stylebook entity + Agate runs (BACKFIELD_CONFIRM_CLEAR=1)"
+	@echo "  Operator commands wrap the CLI; run 'uv run backfield --help' for the full list."
+	@echo "  make up          - Start stack in foreground (wraps 'backfield up'; Ctrl+C stops)"
+	@echo "  make up-detached - Same as up but background (wraps 'backfield up --detached')"
+	@echo "  make down        - Stop stack (wraps 'backfield down'), then docker-trim"
+	@echo "  make logs        - Follow stack logs (wraps 'backfield logs')"
+	@echo "  make migrate     - Run Alembic via one-off compose migrate service"
+	@echo "  make migrate-host - Run Alembic on host (uv run backfield migrate; Postgres on :5433)"
+	@echo "                     Seed admin: uv run backfield seed --admin-email ... --admin-password ..."
+	@echo "  make reset-db    - Stop stack and remove compose volumes (wraps 'backfield reset-db --yes')"
+	@echo "  make clear-entity-data - Truncate substrate/stylebook entity + Agate runs (BACKFIELD_CONFIRM_CLEAR=1; wraps 'backfield clear-entity-data --yes')"
 	@echo "  make docker-prune-build   - Free build cache only (docker builder prune -f)"
 	@echo "  make docker-prune-system  - Remove stopped containers, dangling images, unused networks (docker system prune -f)"
 	@echo "  make docker-prune-volumes - Remove unused volumes (docker volume prune -f); can delete DB data after down"
@@ -40,33 +47,38 @@ help:
 	@echo "  make smoke-custom-extract-stack - Same script --via-agate-api (Custom Extract starter)"
 	@echo "  make smoke-parallel-graph - Fan-out level parallelism timing (in-process, not CI)"
 	@echo "  make smoke-parallel-graph-stack - Same script --via-agate-api (level + multi-item timing)"
-	@echo "  make stylebook-ui-build - Typecheck and production-build apps/stylebook-ui"
+	@echo "  make agate-ui-build     - Sync nodes, then production-build apps/agate-ui (same-origin)"
+	@echo "  make stylebook-ui-build - Typecheck and production-build apps/stylebook-ui (same-origin)"
+	@echo "  make ui-build           - Production-build both UIs"
+	@echo "  make docker-build-prod-apis - Build production targets for agate/core/stylebook APIs"
+	@echo "  make docker-build-prod-worker - Build production target for the Celery worker"
+	@echo "  uv run backfield init - Local first-run setup (env, stack, migrate, seed)"
+	@echo "  uv run backfield ps / restart - List or restart stack containers"
 
 bootstrap:
 	uv sync --all-packages
 
 up:
-	@echo "Starting Backfield stack (foreground)..."
-	$(DC) up --build
+	uv run backfield up
 
 up-detached:
-	@echo "Starting Backfield stack (detached)..."
-	$(DC) up -d --build
+	uv run backfield up --detached
 
 down:
-	@echo "Stopping Backfield stack..."
-	$(DC) down
+	uv run backfield down
 	@$(MAKE) --no-print-directory docker-trim
 
 logs:
-	$(DC) logs -f
+	uv run backfield logs
 
 migrate:
-	$(DC) exec agate-api sh -c 'export PYTHONPATH=/app/packages/backfield-db/src && cd /app/packages/backfield-db && python -m alembic upgrade head'
+	$(DC) run --rm migrate
+
+migrate-host:
+	uv run backfield migrate
 
 reset-db:
-	@echo "Removing Postgres volume (all local Backfield data)."
-	$(DC) down -v
+	uv run backfield reset-db --yes
 
 clear-entity-data:
 	@if [ "$(BACKFIELD_CONFIRM_CLEAR)" != "1" ]; then \
@@ -76,7 +88,7 @@ clear-entity-data:
 		echo "Re-run: BACKFIELD_CONFIRM_CLEAR=1 make clear-entity-data"; \
 		exit 1; \
 	fi
-	BACKFIELD_CONFIRM_CLEAR=1 uv run python packages/backfield-db/scripts/clear_entity_data.py
+	uv run backfield clear-entity-data --yes
 
 docker-prune-build:
 	@echo "Pruning Docker build cache..."
@@ -91,17 +103,31 @@ docker-prune-volumes:
 	docker volume prune -f
 
 # After `compose down`, Postgres (and other compose) volumes are unreferenced; `volume prune` can delete them.
-# Default trim matches agate-ai-platform local dev: system prune only so `make down` then `make up` keeps DB data.
+# Default trim: system prune only so `make down` then `make up` keeps DB data.
 docker-trim: docker-prune-system
 	@echo "docker-trim done."
 
 docker-trim-full: docker-trim docker-prune-volumes
 	@echo "docker-trim-full done."
 
+docker-build-prod-agate-api:
+	docker build -f apps/agate-api/Dockerfile --target prod $(DOCKER_PROD_BUILD_ARGS) -t backfield-agate-api:prod .
+
+docker-build-prod-core-api:
+	docker build -f apps/core-api/Dockerfile --target prod $(DOCKER_PROD_BUILD_ARGS) -t backfield-core-api:prod .
+
+docker-build-prod-stylebook-api:
+	docker build -f apps/stylebook-api/Dockerfile --target prod $(DOCKER_PROD_BUILD_ARGS) -t backfield-stylebook-api:prod .
+
+docker-build-prod-apis: docker-build-prod-agate-api docker-build-prod-core-api docker-build-prod-stylebook-api
+
+docker-build-prod-worker:
+	docker build -f apps/worker/Dockerfile --target prod $(DOCKER_PROD_BUILD_ARGS) -t backfield-worker:prod .
+
 test: test-unit test-integration
 
 test-unit:
-	uv run pytest packages/backfield-agate/tests packages/backfield-auth/tests -q
+	uv run pytest packages/backfield-agate/tests packages/backfield-auth/tests packages/backfield-db/tests packages/backfield-cli/tests -q
 
 test-integration:
 	uv run pytest tests -q
@@ -180,6 +206,12 @@ smoke-parallel-graph:
 smoke-parallel-graph-stack:
 	uv run python -u tests/smoke/smoke_parallel_graph.py --via-agate-api
 
+agate-ui-build:
+	cd packages/backfield-ui && npm ci
+	cd apps/agate-ui && npm ci && npm run build
+
 stylebook-ui-build:
 	cd packages/backfield-ui && npm ci
 	cd apps/stylebook-ui && npm ci && npm run build
+
+ui-build: agate-ui-build stylebook-ui-build

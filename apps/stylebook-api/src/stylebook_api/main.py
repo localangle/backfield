@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 
+from backfield_auth.request_logging_middleware import RequestLoggingMiddleware
+from backfield_auth.structured_logging import configure_structured_logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -33,6 +35,8 @@ from stylebook_api.routers import (
     ui_stubs,
 )
 
+configure_structured_logging("stylebook-api")
+
 UI_ORIGIN = os.getenv("UI_ORIGIN", "http://localhost:5175")
 if UI_ORIGIN.startswith("http://localhost"):
     ALLOWED = [
@@ -55,6 +59,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestLoggingMiddleware, service_name="stylebook-api")
 
 app.include_router(health.router)
 app.include_router(taxonomy.router)

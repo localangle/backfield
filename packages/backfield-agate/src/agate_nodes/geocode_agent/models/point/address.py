@@ -247,7 +247,7 @@ class Address(Point):
 
         # Nominatim fallback
         try:
-            result = geocode_address(address=full_address, user_agent="agate-ai-platform/1.0")
+            result = geocode_address(address=full_address, user_agent="agate/1.0")
             if result and self._is_good_point_result(result):
                 logger.info("Nominatim success for %s", self.name)
                 self.geocoding_result = result

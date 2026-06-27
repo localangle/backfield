@@ -1,4 +1,4 @@
-"""JSONInput node — structured params with required ``text`` (ported from agate-ai-platform).
+"""JSONInput node — structured params with required ``text``.
 
 All top-level keys from the node's stored ``params`` are passed through to downstream nodes
 unchanged (except optional stripping of React-only keys). PlaceExtract and similar nodes

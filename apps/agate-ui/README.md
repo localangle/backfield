@@ -1,34 +1,38 @@
-# Flowbuilder UI
+# Agate UI
 
-React/TypeScript frontend for the Agate flow builder: visual pipeline editor, runs, and project management. Talks to Flowbuilder API and Auth API.
+React/TypeScript frontend for the Agate flow builder: visual pipeline editor, runs, and project management. Talks to Agate, Stylebook, and Core APIs through same-origin paths in production.
 
 ## Local development
 
 From repo root with Docker:
 
 ```bash
-make up   # includes flowbuilder-ui
+make up   # includes agate-ui on :5173
 ```
 
 Or run the UI only (with APIs available):
 
 ```bash
-make dev-ui
-# or: cd apps/flowbuilder-ui && npm run dev
+cd apps/agate-ui && npm run dev
 ```
 
-- **UI**: http://localhost:5173  
+- **UI**: http://localhost:5173
+- **APIs (dev proxy)**: `/v1` → Core API, `/api/agate` → Agate API, `/api/stylebook` → Stylebook API
 
-Default API base URLs are set for local (see `apps/flowbuilder-ui/Makefile` for build env vars).
+## Production build
 
-## Make commands (from repo root)
+From repo root:
 
-| Command | Description |
-|---------|-------------|
-| `make dev-ui` | Run Flowbuilder UI dev server |
-| `make build-flowbuilder-ui-prd` | Build production bundle (set `VITE_API_BASE`, `VITE_AUTH_API_BASE`) |
-| `make deploy-flowbuilder-ui-prd` | Sync dist to S3 and invalidate CloudFront |
+```bash
+make agate-ui-build
+```
 
-## Production
+Or from this directory:
 
-See [DEPLOY.md](./DEPLOY.md) for building and deploying to S3/CloudFront.
+```bash
+make build-prd
+```
+
+The bundle uses relative API bases (`/api/agate`, `/api/stylebook`, `/v1` for auth) so one build serves every client behind a path-routing origin. Output is written to `dist/`.
+
+See [DEPLOY.md](./DEPLOY.md) for deployment notes.

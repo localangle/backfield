@@ -32,6 +32,8 @@ from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_or
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.integration_helpers import patch_test_engine
+
 
 def _minimal_text_input_spec(
     *,
@@ -65,13 +67,14 @@ def _insert_pending_run(session: Session, graph_id: str) -> AgateRun:
 
 
 @pytest.fixture
-def client(tmp_path) -> Generator[TestClient, None, None]:
+def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None, None]:
     database_path = tmp_path / "agate-api-test.db"
     engine = create_engine(
         f"sqlite:///{database_path}",
         connect_args={"check_same_thread": False},
     )
     SQLModel.metadata.create_all(engine)
+    patch_test_engine(monkeypatch, engine)
 
     with Session(engine) as s:
         s.add(BackfieldOrganization(name="Backfield", slug="default"))
@@ -94,7 +97,31 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
 def test_health(client: TestClient):
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"ok": True}
+    assert response.json() == {"ok": True, "service": "agate-api"}
+
+
+def test_healthz(client: TestClient):
+    response = client.get("/healthz")
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "service": "agate-api"}
+
+
+def test_readyz(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("backfield_auth.service_health.check_redis", lambda redis_url=None: "ok")
+    response = client.get("/readyz")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["checks"]["database"] == "ok"
+    assert body["checks"]["redis"] == "ok"
+
+
+def test_version(client: TestClient):
+    response = client.get("/version")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["service"] == "agate-api"
+    assert {"version", "git_sha", "build_time"} <= set(body)
 
 
 def test_project_estimated_ai_cost_includes_model_breakdown(tmp_path):

@@ -425,7 +425,7 @@ class Area(Location):
             if "nominatim" in prep_data:
                 result = geocode_address(
                     address=prep_data["nominatim"]["query"],
-                    user_agent="agate-ai-platform/1.0",
+                    user_agent="agate/1.0",
                     placetype=self._get_placetype()
                 )
                 if result:

@@ -91,8 +91,8 @@ def run_env_bootstrap_if_configured() -> None:
         except ProgrammingError as e:
             if _is_missing_identity_schema_error(e):
                 logger.warning(
-                    "Env bootstrap skipped: identity tables missing; run `make migrate` "
-                    "(or start agate-api so Alembic applies), then restart core-api."
+                    "Env bootstrap skipped: identity tables missing; run `backfield migrate` "
+                    "(or `make migrate`), then restart core-api."
                 )
                 return
             raise

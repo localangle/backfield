@@ -5,7 +5,10 @@ export function agateUiOrigin(): string {
   if (typeof raw === 'string' && raw.trim() !== '') {
     return raw.trim().replace(/\/$/, '')
   }
-  return 'http://localhost:5173'
+  if (typeof window !== 'undefined') {
+    return window.location.origin
+  }
+  return ''
 }
 
 export function stylebookUiOrigin(): string {
@@ -13,7 +16,10 @@ export function stylebookUiOrigin(): string {
   if (typeof raw === 'string' && raw.trim() !== '') {
     return raw.trim().replace(/\/$/, '')
   }
-  return typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5175'
+  if (typeof window !== 'undefined') {
+    return window.location.origin
+  }
+  return ''
 }
 
 export function helpHref(): string {

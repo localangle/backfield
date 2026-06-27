@@ -2,17 +2,6 @@
 
 Use this file as the entry point for working in this repository. Keep it short, then follow the linked docs for details.
 
-## Reference implementation: agate-ai-platform
-
-Backfield is **based on** and is an ongoing **refactor** of the **agate-ai-platform** codebase. Treat that repository as the primary source of truth for behavior, structure, and UX unless this repo’s docs or an explicit task say otherwise.
-
-- **Location (canonical on this machine):** `/Users/cjdd3b/apps/agate-ai-platform`  
-If your clone lives elsewhere, use your local path; the intent is always “the sibling agate-ai-platform repo,” not a vague memory of it.
-- **Default assumption:** When adding or changing flows, nodes, API shapes, worker behavior, or UI patterns, **look up the corresponding area in agate-ai-platform first**. Prefer **copying and then adapting** (with imports and package names fixed for Backfield) over reimplementing from scratch when parity matters.
-- **Fidelity:** Aim for **maximum fidelity** to agate-ai-platform—file layout, naming, algorithms, prompts, and user-visible behavior—except where Backfield intentionally differs (monorepo layout, `agate_`* tables, `packages/backfield-*`, etc.). When you must diverge, say so in the PR or doc update.
-
-See also `docs/ARCHITECTURE.md` (reference section).
-
 ## Repo map
 
 - `apps/agate-api`: FastAPI control plane for projects, graphs, runs, templates, and node metadata.
@@ -21,7 +10,7 @@ See also `docs/ARCHITECTURE.md` (reference section).
 - `apps/stylebook-api`: Companion FastAPI service for geocode and future Stylebook entities.
 - `apps/stylebook-ui`: Minimal Stylebook shell UI.
 - `apps/core-api`: Core domain HTTP API (article import and shared endpoints later); auth/session testing today.
-- `packages/backfield-agate`: Agate graph types, executor, node definitions (including `src/agate_nodes/*/ui/` — the **source of truth** for synced Agate UI node panels), vendored PlaceExtract/GeocodeAgent runtime, and geocoding/LLM utilities (ported from agate-ai-platform).
+- `packages/backfield-agate`: Agate graph types, executor, node definitions (including `src/agate_nodes/*/ui/` — the **source of truth** for synced Agate UI node panels), vendored PlaceExtract/GeocodeAgent runtime, and geocoding/LLM utilities.
 - `packages/backfield-ui`: Shared shell components and `@backfield/ui/nodeOutputs` (executor output-key helpers for TS panels).
 - `packages/backfield-auth`: Shared session cookies and service Bearer token dependencies for FastAPI apps.
 - `packages/backfield-db`: SQLModel models, crypto helpers, engine/session helpers, and Alembic migrations.
@@ -31,29 +20,26 @@ See also `docs/ARCHITECTURE.md` (reference section).
 ## Canonical commands
 
 - `make bootstrap`: install Python workspace dependencies with `uv` (does not seed DB data; local seeding runs when the stack starts — see `BACKFIELD_LOCAL_BOOTSTRAP` in [docs/OPERATIONS.md](docs/OPERATIONS.md)).
-- `make up` / `make down`: start and stop the local stack (`down` also runs `docker system prune` only, matching agate-ai-platform local `down` — no `docker volume prune`, so Postgres/compose volumes survive across `down`/`up`). Use `make docker-prune-volumes` or `make docker-trim-full` when you explicitly want unused volumes removed.
-- `make logs`: follow compose logs.
-- `make migrate`: run Alembic in the `agate-api` container.
+- `make up` / `make down`: start and stop the local stack. These are thin wrappers around the **`backfield` CLI** (`backfield up` / `backfield down`), which is the source of truth for stack operations; `make down` also runs `docker system prune` only — no `docker volume prune`, so Postgres/compose volumes survive across `down`/`up`. Use `make docker-prune-volumes` or `make docker-trim-full` when you explicitly want unused volumes removed.
+- `make logs`: follow stack logs (wraps `backfield logs`). `backfield ps` / `backfield restart` list and restart containers.
+- `make migrate`: run Alembic via the one-off compose **`migrate`** service (`backfield migrate`).
 - `make lint`: run Ruff checks.
 - `make test`: run unit, integration, and structural tests.
 - `make smoke`: run the golden-path HTTP smoke against a live stack.
 
 ## Docs map
 
-- `docs/AGENTIC.md`: orientation for agentic workflows (rules, skills, branch/validation habits); links here and to task checklists.
+- `docs/AGENTIC.md`: orientation for agentic workflows — rules/skills overview, per-task-type checklists (backend, DB, frontend, runtime, review), and planning guidance.
 - `README.md`: quick start, ports, and top-level layout.
 - `docs/ARCHITECTURE.md`: package boundaries, runtime flow, and dependency direction.
 - `docs/ENTITY_TYPES.md`: entity layout, catalog transfer, **per-type implementation patterns** (required shell vs opt-in); use with `.cursor/skills/add-entity-type` when adding types.
 - `docs/NODES.md`: Agate pipeline node profiles, end-to-end layer map, review tiers, and checklists; use with `.cursor/skills/add-agate-node` when adding net-new nodes.
 - `docs/API.md`: Agate API conventions, route responsibilities, and run orchestration.
 - `docs/PUBLIC_API.md`: consumer-facing `/public/v1` design (Core API), endpoint taxonomy, and rollout phases; see `docs/public-api/reference/` for agent-ready route docs.
-- `docs/OUTBOUND_DELIVERY.md`: design recommendation for pushing reconciled run output to client webhooks/SQS (outbound counterpart to the public read API and run trigger).
 - `docs/FRONTEND.md`: Agate UI conventions, node sync flow, and API client usage.
 - `docs/DATABASE.md`: schema ownership, prefixes, migrations, and indexing expectations.
 - `docs/OPERATIONS.md`: compose lifecycle, env vars, queue names, and troubleshooting.
 - `docs/TESTING.md`: validation ladder and when to run which checks.
-- `docs/AGENT_WORKFLOWS.md`: task-specific guidance for backend, frontend, DB, docs, and review work.
-- `docs/PLANS.md`: how to track larger changes and refactors.
 
 ## Engineering posture
 

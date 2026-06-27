@@ -18,7 +18,6 @@ Use this skill when adding a **canonical entity type** (person, organization, wo
 1. [`docs/ENTITY_TYPES.md`](../../docs/ENTITY_TYPES.md) — layout, Issue 00 foundation, issue order, **Per-type implementation patterns** (required shell vs opt-in)
 2. [`docs/DATABASE.md`](../../docs/DATABASE.md) — shared field contracts
 3. [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md) — package boundaries
-4. **agate-ai-platform** sibling repo — copy-then-adapt per `AGENTS.md`
 
 **Related skills:** [`add-agate-node`](../add-agate-node/SKILL.md) (non-entity pipeline nodes), [`write-a-prd`](../write-a-prd/SKILL.md), [`prd-to-issues`](../prd-to-issues/SKILL.md)
 

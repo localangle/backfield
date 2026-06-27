@@ -40,6 +40,8 @@ from stylebook_api.deps import get_auth as get_auth_dep
 from stylebook_api.deps import get_session
 from stylebook_api.main import app
 
+from tests.integration_helpers import patch_test_engine
+
 
 @pytest.fixture
 def _stylebook_test_stack(
@@ -62,6 +64,7 @@ def _stylebook_test_stack(
         connect_args={"check_same_thread": False},
     )
     SQLModel.metadata.create_all(engine)
+    patch_test_engine(monkeypatch, engine)
 
     with Session(engine) as s:
         org = BackfieldOrganization(name="Backfield", slug="default")
@@ -207,7 +210,31 @@ def editor_client(
 def test_health(client: TestClient) -> None:
     r = client.get("/health")
     assert r.status_code == 200
-    assert r.json().get("ok") is True
+    assert r.json() == {"ok": True, "service": "stylebook-api"}
+
+
+def test_healthz(client: TestClient) -> None:
+    r = client.get("/healthz")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "service": "stylebook-api"}
+
+
+def test_readyz(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("backfield_auth.service_health.check_redis", lambda redis_url=None: "ok")
+    r = client.get("/readyz")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["checks"]["database"] == "ok"
+    assert body["checks"]["redis"] == "ok"
+
+
+def test_version(client: TestClient) -> None:
+    r = client.get("/version")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["service"] == "stylebook-api"
+    assert {"version", "git_sha", "build_time"} <= set(body)
 
 
 def test_geocode_resolve_requires_auth(client: TestClient) -> None:

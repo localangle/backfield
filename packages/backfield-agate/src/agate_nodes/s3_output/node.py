@@ -1,9 +1,8 @@
 """S3Output node — write consolidated flow results as JSON files to S3.
 
-Ported from agate-ai-platform ``flowbuilder_nodes/s3_output`` and adapted to the
-Backfield runner contract: the executor hands S3Output every completed node
-output (DBOutput-style namespaced inputs) and the node consolidates them with
-the same path as JSON Output / DBOutput before uploading.
+The executor hands S3Output every completed node output (DBOutput-style
+namespaced inputs) and the node consolidates them with the same path as
+JSON Output / DBOutput before uploading.
 
 The run JSON contribution is ``{"consolidated": <file body>, "s3_bucket", "s3_key"}``
 so processed-item review merges (places, people, organizations, metadata, custom

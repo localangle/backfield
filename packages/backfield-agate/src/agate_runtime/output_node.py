@@ -1,4 +1,4 @@
-"""Output node — consolidated from agate-ai-platform flowbuilder (no flowbuilder_core)."""
+"""JSON Output node — consolidates upstream node outputs into a single body."""
 
 from __future__ import annotations
 

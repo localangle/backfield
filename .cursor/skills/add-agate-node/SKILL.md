@@ -9,7 +9,7 @@ description: >-
 
 # Add Agate node
 
-Use this skill when adding a **net-new Agate pipeline node** or re-planning a port from agate-ai-platform.
+Use this skill when adding a **net-new Agate pipeline node**.
 
 **Not for canonical entity types.** If the node is an extract that produces Stylebook substrate (people, organizations, works, locations), stop and use [`add-entity-type`](../add-entity-type/SKILL.md).
 
@@ -22,7 +22,6 @@ Use this skill when adding a **net-new Agate pipeline node** or re-planning a po
 1. [`docs/NODES.md`](../../docs/NODES.md) — profiles, layers, review tiers, persistence gate, checklists
 2. [`docs/FRONTEND.md`](../../docs/FRONTEND.md) — panel design system and sync flow
 3. [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md) — package boundaries
-4. **agate-ai-platform** sibling repo — copy-then-adapt per `AGENTS.md`
 
 **Related skills:** [`add-entity-type`](../add-entity-type/SKILL.md), [`backfield-db-change`](../backfield-db-change/SKILL.md), [`write-a-prd`](../write-a-prd/SKILL.md), [`prd-to-issues`](../prd-to-issues/SKILL.md), [`update-repo-docs`](../update-repo-docs/SKILL.md)
 
@@ -58,7 +57,7 @@ Ask in this order (skip N/A):
 7. **Review tier** — None | Panel+JSON (default for non-entity) | Feeds entity review (which tab: places / people / organizations) | New review surface (flag as out-of-scope unless product insists)
 8. **LLM / AI** — Models, prompt files, capabilities (skip for non-LLM profiles)
 9. **Visualization** — Custom viz component, or panel output only?
-10. **Port source** — Greenfield vs copy from agate-ai-platform (which node path?)
+10. **Source** — Greenfield vs adapted from an existing node (which node path?)
 11. **Smoke acceptance** — Minimal graph + expected output to prove the node works
 
 ### Persistence gate (substrate block)
@@ -115,7 +114,7 @@ After the interview, write `prd/<slug>/prd.md` using [`write-a-prd`](../write-a-
 - **LLM / AI** (models, prompts, cost tracking)
 - **Visualization** (if any)
 - **Persistence / substrate** (if gate fired)
-- **Port source** (agate-ai-platform path or greenfield)
+- **Source** (existing node path or greenfield)
 - **Smoke acceptance** criteria
 - **Issue ordering** (below)
 

@@ -32,7 +32,7 @@ class NaturalPlace(Area):
         default=False, description="Whether the upstream place component flagged this as natural"
     )
 
-    _USER_AGENT = "agate-ai-platform/1.0"
+    _USER_AGENT = "agate/1.0"
     _prep_cache: Optional[Dict[str, Any]] = None
 
     ########## PRIVATE/HELPER METHODS ##########

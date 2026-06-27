@@ -1,27 +1,48 @@
-# Flowbuilder UI – Production deployment
+# Agate UI — production static bundle
 
-Build the production bundle and deploy to S3, then invalidate CloudFront. Requires Terraform to have created the Flowbuilder UI bucket and CloudFront distribution; see root [DEPLOY.md](../../DEPLOY.md).
+Build a same-origin bundle suitable for syncing to S3 (or any static host) behind CloudFront or another CDN.
 
 ## Build
 
-Point the build at your production API and Auth API URLs:
+From repo root:
 
 ```bash
-make build-flowbuilder-ui-prd \
-  VITE_API_BASE=https://flowbuilder-api.agate.localangle.co \
-  VITE_AUTH_API_BASE=https://auth-api.agate.localangle.co
+make agate-ui-build
 ```
 
-Optional: `VITE_TIMEZONE=America/Chicago` (default).
+From this app:
+
+```bash
+make build-prd
+# or: npm ci && npm run build
+```
+
+Production env defaults live in [`.env.production`](./.env.production):
+
+- `VITE_API_BASE=/api/agate`
+- `VITE_STYLEBOOK_API_BASE=/api/stylebook`
+- `VITE_AUTH_API_BASE=` (empty — browser calls `/v1/...` on the same origin)
+
+Override only when your routing layout differs (for example split hostnames):
+
+```bash
+VITE_AGATE_UI_ORIGIN=https://app.example.com \
+VITE_STYLEBOOK_UI_ORIGIN=https://app.example.com \
+make build-prd
+```
+
+Optional: `VITE_TIMEZONE=America/Chicago` (default in app code).
 
 ## Deploy
 
-```bash
-make deploy-flowbuilder-ui-prd
-```
+Backfield Cloud (or your operator) syncs `apps/agate-ui/dist/` to the static bucket:
 
-This syncs `apps/flowbuilder-ui/dist/` to the Terraform-created S3 bucket and invalidates CloudFront. The bucket and distribution ID come from Terraform outputs.
+- Long-cache hashed assets (`*.js`, `*.css`, …)
+- `index.html` with `Cache-Control: no-cache` so SPA routing updates propagate
 
-## DNS
+Path routing on the origin must forward:
 
-Point your UI domain (e.g. `flowbuilder.agate.localangle.co`) to the CloudFront domain from Terraform output `flowbuilder_ui_cloudfront_domain`.
+- `/v1/*` → Core API
+- `/api/agate/*` → Agate API (strip prefix)
+- `/api/stylebook/*` → Stylebook API (strip prefix)
+- all other paths → this SPA (`index.html` fallback)

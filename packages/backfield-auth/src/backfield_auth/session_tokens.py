@@ -1,4 +1,4 @@
-"""Signed session tokens (browser cookies), compatible with agate-ai-platform style."""
+"""Signed session tokens (browser cookies)."""
 
 from __future__ import annotations
 

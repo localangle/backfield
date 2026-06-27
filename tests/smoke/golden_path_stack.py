@@ -308,7 +308,7 @@ def run_service_bearer_flow() -> int:
         if general is None:
             raise RuntimeError(
                 "Smoke needs the seeded 'General' project (slug general). "
-                "Run migrations (agate-api entrypoint or make migrate)."
+                "Run migrations (`make migrate` or `backfield migrate`)."
             )
         project_id = int(general["id"])
         with smoke_db_session() as session:

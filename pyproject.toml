@@ -10,12 +10,14 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "ruff>=0.6.0",
     "agate-runtime",
+    "backfield-cli",
 ]
 
 [tool.uv.workspace]
 members = [
     "packages/backfield-ai",
     "packages/backfield-auth",
+    "packages/backfield-cli",
     "packages/backfield-entities",
     "packages/backfield-agate",
     "packages/backfield-db",
@@ -28,13 +30,14 @@ members = [
 [tool.uv.sources]
 backfield-ai = { workspace = true }
 backfield-auth = { workspace = true }
+backfield-cli = { workspace = true }
 agate-runtime = { workspace = true }
 backfield-db = { workspace = true }
 backfield-entities = { workspace = true }
 core-api = { workspace = true }
 
 [tool.pytest.ini_options]
-testpaths = ["packages/backfield-agate/tests", "packages/backfield-auth/tests", "tests"]
+testpaths = ["packages/backfield-agate/tests", "packages/backfield-auth/tests", "packages/backfield-db/tests", "packages/backfield-cli/tests", "tests"]
 pythonpath = [
     "packages/backfield-ai/src",
     "packages/backfield-auth/src",
