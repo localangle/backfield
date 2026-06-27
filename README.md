@@ -2,11 +2,13 @@
 
 Backfield is a platform for turning unstructured news articles into structured, reusable editorial data.
 
-## Key components
+## Key applications
+
+Backfield is composed of three interconnected applications:
 
 ### Agate
 
-Agate allows users to build workflows that extract arbitrary data from articles and enrich them with useful metadata. It also comes packaged with a robust human review interface, which editors can use to refine and correct the results.
+Agate allows users to build workflows that extract arbitrary data from articles and enrich them with useful metadata. It also includes a robust human review interface, which editors can use to refine and correct the results.
 
 ### Stylebook
 
@@ -14,7 +16,7 @@ Stylebook serves as a canonical store of people, places and organizations that a
 
 ### Chronicle
 
-*Coming soon.*
+Chronicle is an editorial intelligence tool that allows users to explore YYY.
 
 ## Quick start
 
