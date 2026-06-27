@@ -56,7 +56,7 @@ help:
 	@echo "  uv run backfield ps / restart - List or restart stack containers"
 
 bootstrap:
-	uv sync --all-packages
+	uv sync --all-packages --reinstall-package backfield-cli --reinstall-package backfield-db
 
 up:
 	uv run backfield up

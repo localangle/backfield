@@ -27,6 +27,7 @@ from backfield_cli.console import (
 )
 from backfield_cli.credentials import resolve_admin_password
 from backfield_cli.env_file import ensure_repo_env_file, find_repo_root, load_env_into_process
+from backfield_cli.host_tooling import ensure_host_python_tooling
 from backfield_cli.init_config import InitConfig, load_init_config
 from backfield_cli.stack import (
     bring_up_stack,
@@ -156,6 +157,8 @@ def _load_config(args: argparse.Namespace) -> InitConfig:
 
 
 def run_init(config: InitConfig, *, repo_root: Path, interactive: bool = False) -> int:
+    ensure_host_python_tooling(repo_root, quiet=True)
+
     if interactive:
         CONSOLE.print()
 
@@ -218,6 +221,7 @@ def run_init(config: InitConfig, *, repo_root: Path, interactive: bool = False) 
     )
     print_next_steps(config.admin_email)
     _maybe_open_browser(MODELS_URL, enabled=config.open_browser and interactive)
+    ensure_host_python_tooling(repo_root, quiet=True)
     return 0
 
 
