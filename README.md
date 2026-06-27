@@ -50,7 +50,12 @@ To manage the stack afterward, use `backfield up`, `backfield down`, `backfield 
 
 ## License
 
-Licensed under the [Apache License, Version 2.0](LICENSE.md).
+Copyright 2026 Local Angle
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this
+software except in compliance with the License. You may obtain a copy of the License
+in [LICENSE.md](LICENSE.md) or at
+[apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0).
 
 ## Support
 
