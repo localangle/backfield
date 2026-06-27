@@ -50,7 +50,7 @@ To manage the stack afterward, use `backfield up`, `backfield down`, `backfield 
 
 ## License
 
-*TBD.*
+Licensed under the [Apache License, Version 2.0](LICENSE.md).
 
 ## Support
 
