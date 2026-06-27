@@ -10,7 +10,7 @@ from pathlib import Path
 from backfield_cli.console import CONSOLE
 from backfield_cli.env_file import find_repo_root
 from backfield_cli.host_tooling import (
-    cli_import_works,
+    cli_runtime_works,
     cli_shim_source,
     cli_shim_target,
     venv_python,
@@ -55,17 +55,19 @@ def run_checks(start: Path | None = None) -> tuple[Path | None, list[CheckResult
     )
 
     if python.is_file():
-        import_ok = cli_import_works(repo_root)
+        import_ok = cli_runtime_works(repo_root)
         results.append(
             CheckResult(
-                "backfield_cli import",
+                "CLI runtime imports",
                 import_ok,
-                "importable" if import_ok else "not importable from .venv",
+                "backfield_cli and backfield_db importable"
+                if import_ok
+                else "backfield_cli or backfield_db not importable from .venv",
             ),
         )
     else:
         results.append(
-            CheckResult("backfield_cli import", False, ".venv python missing"),
+            CheckResult("CLI runtime imports", False, ".venv python missing"),
         )
 
     env_path = repo_root / ".env"

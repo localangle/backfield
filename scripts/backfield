@@ -18,6 +18,13 @@ find_repo_root() {
   return 1
 }
 
+# Probe string must match host_tooling.CLI_RUNTIME_IMPORT_PROBE in backfield-cli.
+CLI_RUNTIME_IMPORT_PROBE='import backfield_cli, backfield_db'
+
+cli_runtime_works() {
+  "$VENV_PY" -c "$CLI_RUNTIME_IMPORT_PROBE" >/dev/null 2>&1
+}
+
 repair_python_cli() {
   echo "Backfield CLI install looks stale. Re-syncing..."
   if ! command -v uv >/dev/null 2>&1; then
@@ -25,7 +32,7 @@ repair_python_cli() {
     exit 1
   fi
   uv sync --all-packages --quiet
-  if ! "$VENV_PY" -c "import backfield_cli" >/dev/null 2>&1; then
+  if ! cli_runtime_works; then
     uv sync --all-packages \
       --reinstall-package backfield-cli \
       --reinstall-package backfield-db \
@@ -49,9 +56,9 @@ if [[ ! -x "$VENV_PY" ]]; then
   VENV_PY="$ROOT/.venv/bin/python"
 fi
 
-if ! "$VENV_PY" -c "import backfield_cli" >/dev/null 2>&1; then
+if ! cli_runtime_works; then
   repair_python_cli
-  if ! "$VENV_PY" -c "import backfield_cli" >/dev/null 2>&1; then
+  if ! cli_runtime_works; then
     echo "error: could not repair the Backfield CLI in .venv." >&2
     echo "Run 'make bootstrap' from the repo root, then retry." >&2
     exit 1

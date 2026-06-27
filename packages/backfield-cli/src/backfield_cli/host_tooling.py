@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 
 _TOOLING_PACKAGES = ("backfield-cli", "backfield-db")
 
+# Keep in sync with scripts/backfield (cli_runtime_works).
+CLI_RUNTIME_IMPORT_PROBE = "import backfield_cli, backfield_db"
+
 
 def venv_python(repo_root: Path) -> Path:
     if sys.platform == "win32":
@@ -42,16 +45,22 @@ def install_cli_shim(repo_root: Path) -> None:
     target.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def cli_import_works(repo_root: Path) -> bool:
+def cli_runtime_works(repo_root: Path) -> bool:
+    """Return True when workspace CLI packages import from the repo ``.venv``."""
     python = venv_python(repo_root)
     if not python.is_file():
         return False
     result = subprocess.run(
-        [str(python), "-c", "import backfield_cli"],
+        [str(python), "-c", CLI_RUNTIME_IMPORT_PROBE],
         capture_output=True,
         text=True,
     )
     return result.returncode == 0
+
+
+def cli_import_works(repo_root: Path) -> bool:
+    """Alias for :func:`cli_runtime_works`."""
+    return cli_runtime_works(repo_root)
 
 
 def _repair_cli_import(repo_root: Path, *, quiet: bool) -> None:
@@ -68,7 +77,7 @@ def _repair_cli_import(repo_root: Path, *, quiet: bool) -> None:
     logger.info("Repairing workspace Python tooling (uv sync --all-packages)...")
     subprocess.run(base_cmd, cwd=repo_root, check=True)
 
-    if cli_import_works(repo_root):
+    if cli_runtime_works(repo_root):
         return
 
     reinstall_cmd = [
@@ -78,7 +87,7 @@ def _repair_cli_import(repo_root: Path, *, quiet: bool) -> None:
     logger.info("Reinstalling backfield-cli and backfield-db...")
     subprocess.run(reinstall_cmd, cwd=repo_root, check=True)
 
-    if not cli_import_works(repo_root):
+    if not cli_runtime_works(repo_root):
         raise RuntimeError(
             "Could not repair the Backfield CLI in .venv. "
             "Run `make bootstrap` from the repo root and retry."
@@ -91,7 +100,7 @@ def ensure_host_python_tooling(repo_root: Path, *, quiet: bool = False) -> None:
     Called from ``backfield init`` — repairs a stale editable install only when
     the import probe fails, then copies ``scripts/backfield`` into the venv.
     """
-    if not cli_import_works(repo_root):
+    if not cli_runtime_works(repo_root):
         _repair_cli_import(repo_root, quiet=quiet)
 
     install_cli_shim(repo_root)

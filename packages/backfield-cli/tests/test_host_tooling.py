@@ -21,7 +21,7 @@ def test_ensure_host_python_tooling_skips_sync_when_import_ok(
     def _install_shim(root: Path) -> None:
         shim_calls.append(root)
 
-    monkeypatch.setattr(host_tooling, "cli_import_works", lambda _root: True)
+    monkeypatch.setattr(host_tooling, "cli_runtime_works", lambda _root: True)
     monkeypatch.setattr(host_tooling, "install_cli_shim", _install_shim)
 
     def _fail(*_args, **_kwargs):
@@ -75,7 +75,7 @@ def test_ensure_host_python_tooling_reinstalls_when_import_broken(
     def _install_shim(root: Path) -> None:
         shim_calls.append(root)
 
-    monkeypatch.setattr(host_tooling, "cli_import_works", _import_ok)
+    monkeypatch.setattr(host_tooling, "cli_runtime_works", _import_ok)
     monkeypatch.setattr(host_tooling, "install_cli_shim", _install_shim)
     monkeypatch.setattr(host_tooling.shutil, "which", lambda _name: "/usr/bin/uv")
     monkeypatch.setattr(host_tooling.subprocess, "run", _run)
@@ -91,7 +91,7 @@ def test_ensure_host_python_tooling_raises_when_uv_missing(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(host_tooling, "cli_import_works", lambda _root: False)
+    monkeypatch.setattr(host_tooling, "cli_runtime_works", lambda _root: False)
     monkeypatch.setattr(host_tooling.shutil, "which", lambda _name: None)
 
     try:
