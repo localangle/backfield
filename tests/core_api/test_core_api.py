@@ -20,15 +20,18 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.integration_helpers import patch_test_engine
+
 
 @pytest.fixture
-def client(tmp_path) -> Generator[TestClient, None, None]:
+def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None, None]:
     database_path = tmp_path / "core-api-test.db"
     engine = create_engine(
         f"sqlite:///{database_path}",
         connect_args={"check_same_thread": False},
     )
     SQLModel.metadata.create_all(engine)
+    patch_test_engine(monkeypatch, engine)
 
     with Session(engine) as s:
         org = BackfieldOrganization(name="Backfield", slug="default")

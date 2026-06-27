@@ -32,6 +32,8 @@ from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_or
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.integration_helpers import patch_test_engine
+
 
 def _minimal_text_input_spec(
     *,
@@ -65,13 +67,14 @@ def _insert_pending_run(session: Session, graph_id: str) -> AgateRun:
 
 
 @pytest.fixture
-def client(tmp_path) -> Generator[TestClient, None, None]:
+def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None, None]:
     database_path = tmp_path / "agate-api-test.db"
     engine = create_engine(
         f"sqlite:///{database_path}",
         connect_args={"check_same_thread": False},
     )
     SQLModel.metadata.create_all(engine)
+    patch_test_engine(monkeypatch, engine)
 
     with Session(engine) as s:
         s.add(BackfieldOrganization(name="Backfield", slug="default"))

@@ -40,6 +40,8 @@ from stylebook_api.deps import get_auth as get_auth_dep
 from stylebook_api.deps import get_session
 from stylebook_api.main import app
 
+from tests.integration_helpers import patch_test_engine
+
 
 @pytest.fixture
 def _stylebook_test_stack(
@@ -62,6 +64,7 @@ def _stylebook_test_stack(
         connect_args={"check_same_thread": False},
     )
     SQLModel.metadata.create_all(engine)
+    patch_test_engine(monkeypatch, engine)
 
     with Session(engine) as s:
         org = BackfieldOrganization(name="Backfield", slug="default")

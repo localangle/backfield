@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from backfield_db.session import get_engine
 from fastapi import APIRouter, Response
 from sqlalchemy.engine import Engine
 
@@ -23,8 +22,15 @@ def create_health_router(
     engine_factory: Callable[[], Engine] | None = None,
 ) -> APIRouter:
     """Mount liveness, readiness, and version routes for a Backfield API service."""
+
+    def _default_engine_factory() -> Engine:
+        # Import at call time so integration tests can monkeypatch get_engine.
+        from backfield_db.session import get_engine
+
+        return get_engine()
+
     router = APIRouter(tags=["health"])
-    _engine_factory = engine_factory or get_engine
+    _engine_factory = engine_factory or _default_engine_factory
 
     def _liveness() -> dict[str, str | bool]:
         return liveness_payload(service_name)
