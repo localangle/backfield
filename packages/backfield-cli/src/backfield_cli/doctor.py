@@ -10,6 +10,7 @@ from pathlib import Path
 from backfield_cli.console import CONSOLE
 from backfield_cli.env_file import find_repo_root
 from backfield_cli.host_tooling import (
+    cli_entrypoint_works,
     cli_runtime_works,
     cli_shim_source,
     cli_shim_target,
@@ -55,17 +56,30 @@ def run_checks(start: Path | None = None) -> tuple[Path | None, list[CheckResult
     )
 
     if python.is_file():
-        import_ok = cli_runtime_works(repo_root)
+        entrypoint_ok = cli_entrypoint_works(repo_root)
+        results.append(
+            CheckResult(
+                "CLI entrypoint",
+                entrypoint_ok,
+                "backfield_cli.main importable"
+                if entrypoint_ok
+                else "backfield_cli.main not importable from .venv",
+            ),
+        )
+        runtime_ok = cli_runtime_works(repo_root)
         results.append(
             CheckResult(
                 "CLI runtime imports",
-                import_ok,
+                runtime_ok,
                 "backfield_cli and backfield_db importable"
-                if import_ok
-                else "backfield_cli or backfield_db not importable from .venv",
+                if runtime_ok
+                else "backfield_db not importable (run make bootstrap)",
             ),
         )
     else:
+        results.append(
+            CheckResult("CLI entrypoint", False, ".venv python missing"),
+        )
         results.append(
             CheckResult("CLI runtime imports", False, ".venv python missing"),
         )

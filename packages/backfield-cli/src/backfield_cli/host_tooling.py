@@ -13,7 +13,10 @@ logger = logging.getLogger(__name__)
 
 _TOOLING_PACKAGES = ("backfield-cli", "backfield-db")
 
-# Keep in sync with scripts/backfield (cli_runtime_works).
+# Keep in sync with scripts/backfield (cli_entrypoint_works).
+CLI_ENTRYPOINT_PROBE = "import backfield_cli.main"
+
+# Full workspace probe for doctor and backfield init.
 CLI_RUNTIME_IMPORT_PROBE = "import backfield_cli, backfield_db"
 
 
@@ -45,17 +48,26 @@ def install_cli_shim(repo_root: Path) -> None:
     target.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def cli_runtime_works(repo_root: Path) -> bool:
-    """Return True when workspace CLI packages import from the repo ``.venv``."""
+def _probe_imports(repo_root: Path, probe: str) -> bool:
     python = venv_python(repo_root)
     if not python.is_file():
         return False
     result = subprocess.run(
-        [str(python), "-c", CLI_RUNTIME_IMPORT_PROBE],
+        [str(python), "-c", probe],
         capture_output=True,
         text=True,
     )
     return result.returncode == 0
+
+
+def cli_entrypoint_works(repo_root: Path) -> bool:
+    """Return True when ``backfield_cli.main`` imports (stack/doctor commands)."""
+    return _probe_imports(repo_root, CLI_ENTRYPOINT_PROBE)
+
+
+def cli_runtime_works(repo_root: Path) -> bool:
+    """Return True when workspace CLI packages import from the repo ``.venv``."""
+    return _probe_imports(repo_root, CLI_RUNTIME_IMPORT_PROBE)
 
 
 def cli_import_works(repo_root: Path) -> bool:
@@ -95,7 +107,7 @@ def _repair_cli_import(repo_root: Path, *, quiet: bool) -> None:
 
 
 def ensure_host_python_tooling(repo_root: Path, *, quiet: bool = False) -> None:
-    """Ensure ``.venv`` can import ``backfield_cli`` and expose the project launcher.
+    """Ensure ``.venv`` can import CLI packages and expose the project launcher.
 
     Called from ``backfield init`` — repairs a stale editable install only when
     the import probe fails, then copies ``scripts/backfield`` into the venv.

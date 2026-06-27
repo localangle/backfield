@@ -33,6 +33,8 @@ Run **`backfield doctor`** to check repo root, `uv`, Docker, `.venv`, `backfield
 
 The launcher discovers `infra/docker-compose.yml` from the repo root by default; override with `--compose-file` or `BACKFIELD_COMPOSE_FILE`.
 
+Before each command, the launcher checks that `backfield_cli.main` imports from `.venv` (a lightweight probe — stack commands like `up`/`down`/`doctor` do not need `backfield_db` at startup). If that check fails — for example after a partial `uv sync` from an app package directory — it runs a one-time `uv sync` repair and refreshes the venv shim. You should not see **Repairing Backfield Python environment...** on every command after a successful `make bootstrap`. Commands that touch the database (`init`, `migrate`, `seed`) additionally require `backfield_db`; `backfield doctor` reports that separately.
+
 - `make up` / `backfield up` / `./scripts/backfield up`: bring up the local stack in the foreground (`up --build`). Add `--detached`/`-d` for background, `--no-build` to skip the image build. It does **not** run `docker volume prune` or `docker system prune`.
 - `make down` / `backfield down`: `docker compose down` (stops and removes app containers, **not** Compose-managed volumes). The `make down` wrapper additionally runs `docker-trim` (`docker system prune -f` only). The Postgres data directory lives on the **`postgres_data`** named volume, so `down` then `up` keeps your local database. Run `make docker-prune-volumes` or `make docker-trim-full` explicitly when you want to reclaim unused volume disk.
 - `make logs` / `backfield logs`: follow stack logs (`logs -f`). Pass service names to filter and `--no-follow` to print-and-exit.

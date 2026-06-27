@@ -11,7 +11,6 @@ import webbrowser
 from contextlib import nullcontext
 from pathlib import Path
 
-from backfield_db.seed import DEFAULT_ORG_NAME, DEFAULT_STYLEBOOK_NAME, run_init_seed
 from rich.logging import RichHandler
 from rich.status import Status
 
@@ -144,6 +143,8 @@ def _load_config(args: argparse.Namespace) -> InitConfig:
         default=DEFAULT_SUPERUSER_PASSWORD,
     )
     admin_display_name = _prompt("Superuser username", default=DEFAULT_SUPERUSER_USERNAME)
+    from backfield_db.seed import DEFAULT_ORG_NAME, DEFAULT_STYLEBOOK_NAME
+
     org_name = _prompt("Organization name", default=DEFAULT_ORG_NAME)
     stylebook_name = _prompt("Default Stylebook name", default=DEFAULT_STYLEBOOK_NAME)
     return InitConfig(
@@ -204,6 +205,8 @@ def run_init(config: InitConfig, *, repo_root: Path, interactive: bool = False) 
         password=config.admin_password,
         password_file=config.admin_password_file,
     )
+    from backfield_db.seed import run_init_seed
+
     report = run_init_seed(
         org_name=config.org_name,
         stylebook_name=config.stylebook_name,

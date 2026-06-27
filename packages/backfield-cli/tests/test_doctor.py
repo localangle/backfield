@@ -23,6 +23,7 @@ def test_run_checks_passes_in_real_repo() -> None:
     assert "uv" in names
     assert "docker" in names
     assert ".venv" in names
+    assert "CLI entrypoint" in names
     assert "CLI runtime imports" in names
     assert "compose file" in names
     assert "project launcher" in names

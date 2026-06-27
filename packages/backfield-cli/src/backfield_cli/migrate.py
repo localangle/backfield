@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import argparse
 
-from backfield_db.migrate import main as run_migrate_main
-
 
 def register_subcommand(subparsers) -> None:
     parser = subparsers.add_parser(
@@ -16,8 +14,12 @@ def register_subcommand(subparsers) -> None:
 
 
 def _run_migrate(_args: argparse.Namespace) -> int:
+    from backfield_db.migrate import main as run_migrate_main
+
     return run_migrate_main()
 
 
 def main() -> int:
+    from backfield_db.migrate import main as run_migrate_main
+
     return run_migrate_main()

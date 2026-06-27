@@ -18,27 +18,35 @@ find_repo_root() {
   return 1
 }
 
-# Probe string must match host_tooling.CLI_RUNTIME_IMPORT_PROBE in backfield-cli.
-CLI_RUNTIME_IMPORT_PROBE='import backfield_cli, backfield_db'
+# Probe string must match host_tooling.CLI_ENTRYPOINT_PROBE in backfield-cli.
+CLI_ENTRYPOINT_PROBE='import backfield_cli.main'
 
-cli_runtime_works() {
-  "$VENV_PY" -c "$CLI_RUNTIME_IMPORT_PROBE" >/dev/null 2>&1
+cli_entrypoint_works() {
+  "$VENV_PY" -c "$CLI_ENTRYPOINT_PROBE" >/dev/null 2>&1
+}
+
+install_cli_shim_if_needed() {
+  local source="$ROOT/scripts/backfield"
+  local target="$ROOT/.venv/bin/backfield"
+  if [[ ! -f "$target" ]] || ! cmp -s "$source" "$target"; then
+    ./scripts/install-cli-shim.sh
+  fi
 }
 
 repair_python_cli() {
-  echo "Backfield CLI install looks stale. Re-syncing..."
+  echo "Repairing Backfield Python environment..."
   if ! command -v uv >/dev/null 2>&1; then
     echo "error: uv is not on PATH. Install uv, then run 'make bootstrap' from the repo root." >&2
     exit 1
   fi
   uv sync --all-packages --quiet
-  if ! cli_runtime_works; then
+  if ! cli_entrypoint_works; then
     uv sync --all-packages \
       --reinstall-package backfield-cli \
       --reinstall-package backfield-db \
       --quiet
   fi
-  ./scripts/install-cli-shim.sh
+  install_cli_shim_if_needed
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,13 +64,15 @@ if [[ ! -x "$VENV_PY" ]]; then
   VENV_PY="$ROOT/.venv/bin/python"
 fi
 
-if ! cli_runtime_works; then
+if ! cli_entrypoint_works; then
   repair_python_cli
-  if ! cli_runtime_works; then
+  if ! cli_entrypoint_works; then
     echo "error: could not repair the Backfield CLI in .venv." >&2
     echo "Run 'make bootstrap' from the repo root, then retry." >&2
     exit 1
   fi
+else
+  install_cli_shim_if_needed
 fi
 
 exec "$VENV_PY" -m backfield_cli "$@"
