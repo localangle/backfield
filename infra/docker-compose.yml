@@ -253,6 +253,8 @@ services:
       VITE_STYLEBOOK_API_PROXY_TARGET: http://stylebook-api:8003
       VITE_CORE_API_PROXY_TARGET: http://core-api:8004
       VITE_AGATE_API_PROXY_TARGET: http://agate-api:8000
+      # Browser opens Stylebook on host :5175; Agate dev server is :5173.
+      VITE_STYLEBOOK_UI_ORIGIN: http://localhost:5175
     volumes:
       - ../apps/agate-ui:/app/apps/agate-ui
       - ../packages:/app/packages
@@ -283,6 +285,8 @@ services:
       VITE_CORE_API_PROXY_TARGET: http://core-api:8004
       VITE_AGATE_API_PROXY_TARGET: http://agate-api:8000
       VITE_STYLEBOOK_API_PROXY_TARGET: http://stylebook-api:8003
+      # Browser opens Agate on host :5173; Stylebook dev server is :5175.
+      VITE_AGATE_UI_ORIGIN: http://localhost:5173
     volumes:
       - ../apps/stylebook-ui:/app/apps/stylebook-ui
       - ../packages:/app/packages

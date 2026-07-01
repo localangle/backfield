@@ -124,7 +124,7 @@ Both UIs ship same-origin bundles for CloudFront/S3 deployment: API calls use re
 | Stylebook UI | `make stylebook-ui-build` | `apps/stylebook-ui/dist/` | [`apps/stylebook-ui/.env.production`](../apps/stylebook-ui/.env.production) |
 | Both | `make ui-build` | both `dist/` trees | — |
 
-Cross-app links (`platformUrls.ts`) use `VITE_*_UI_ORIGIN` when set; otherwise `window.location.origin` in the browser (no baked localhost in production builds). Override only when Agate and Stylebook are on different hostnames.
+Cross-app links (`platformUrls.ts`) use `VITE_*_UI_ORIGIN` when set; otherwise `window.location.origin` in the browser (no baked localhost in production builds). **Local multi-port dev:** [`apps/agate-ui/.env.development`](../apps/agate-ui/.env.development) sets `VITE_STYLEBOOK_UI_ORIGIN=http://localhost:5175`; [`apps/stylebook-ui/.env.development`](../apps/stylebook-ui/.env.development) sets `VITE_AGATE_UI_ORIGIN=http://localhost:5173`. Compose sets the same vars on the UI services. **Production:** leave unset for same-origin routing behind one hostname, or set both at build time when Agate and Stylebook are on different hosts (see [`apps/agate-ui/DEPLOY.md`](../apps/agate-ui/DEPLOY.md)).
 
 Deploy notes: [`apps/agate-ui/DEPLOY.md`](../apps/agate-ui/DEPLOY.md). CI runs `make ui-build` and asserts bundles do not embed absolute API hosts (`tests/test_ui_same_origin_builds.py`).
 
