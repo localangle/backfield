@@ -18,13 +18,20 @@ import os
 import re
 import time
 from typing import List, Dict, Any, Optional, Union
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 
 from agate_runtime.context import AgateEnvContext
 from agate_utils.llm import call_llm
 
 from agate_nodes.place_extract.llm_location_parse import place_from_llm_location_entry
 from agate_nodes.place_extract.place_schemas import Place
+from agate_nodes.place_extract.article_context import extract_article_context
+from agate_nodes.place_extract.compact_array_parse import (
+    is_compact_array_entry,
+    row_to_entry,
+)
+from agate_nodes.place_extract.compact_expand import expand_compact_entry
+from agate_nodes.place_extract.compact_prompt import COMPACT_OUTPUT_INSTRUCTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +68,21 @@ class PlaceExtractParams(BaseModel):
         le=1800,
         description="Timeout in seconds for the LLM call (default: 10 minutes, max: 30 minutes)"
     )
+    output_mode: str = Field(
+        default="compact",
+        description=(
+            "'compact' (LLM emits array rows; Python reconstructs components/mentions) "
+            "or 'full' (LLM emits full JSON)."
+        ),
+    )
+
+    @field_validator("output_mode", mode="before")
+    @classmethod
+    def _normalize_output_mode(cls, value: object) -> str:
+        mode = str(value or "").strip().lower()
+        if mode not in {"full", "compact"}:
+            return "compact"
+        return mode
 
     @model_validator(mode="after")
     def _coerce_empty_model_string(self) -> "PlaceExtractParams":
@@ -270,13 +292,19 @@ class PlaceExtractNode:
         # Build prompt using JSON path placeholders
         prompt = self._build_prompt(flattened_input, prompt_template)
         
-        # Concrete JSON example (prompts/_output_format.json), appended after placeholders are filled.
-        # No brace escaping: ``_build_prompt`` already ran on ``prompt_template`` only; this JSON is
-        # concatenated as literal text (unlike ``str.format`` on a single string containing both).
-        output_format = self._load_output_format_template()
+        # Concrete JSON example appended after placeholders are filled.
+        use_compact = params.output_mode == "compact"
+        if use_compact:
+            output_format = self._load_compact_output_format_template()
+            output_instructions = COMPACT_OUTPUT_INSTRUCTIONS
+        else:
+            output_format = self._load_output_format_template()
+            output_instructions = (
+                "The results should be returned in a JSON that looks like the following."
+            )
         prompt = (
             f"{prompt}\n\n"
-            "The results should be returned in a JSON that looks like the following.\n\n"
+            f"{output_instructions}\n\n"
             f"{output_format}"
         )
 
@@ -337,12 +365,13 @@ class PlaceExtractNode:
 
         logger.info(
             "[PlaceExtract] LLM call starting model=%s prompt_chars=%d timeout_s=%.1f "
-            "model_config_id=%s project_prompt_overlay=%s",
+            "model_config_id=%s project_prompt_overlay=%s output_mode=%s",
             resolved_model,
             len(prompt),
             effective_timeout,
             place_model_config_id or "none",
             "yes" if ctx.project_system_prompt else "no",
+            params.output_mode,
         )
 
         # Call the LLM with API keys from context, wrapped in asyncio timeout
@@ -405,12 +434,31 @@ class PlaceExtractNode:
                 raise ValueError("Expected a list of locations")
 
             parse_errors: list[str] = []
+            article_context = extract_article_context(text) if use_compact else None
             for raw_entry in locations_data:
-                if not isinstance(raw_entry, dict):
-                    parse_errors.append("location entry must be an object")
-                    continue
                 try:
-                    locations.append(place_from_llm_location_entry(raw_entry))
+                    if use_compact:
+                        if isinstance(raw_entry, list):
+                            entry = row_to_entry(raw_entry)
+                        elif isinstance(raw_entry, dict):
+                            entry = raw_entry
+                        else:
+                            parse_errors.append("location entry must be an object or array")
+                            continue
+                        if is_compact_array_entry(entry):
+                            expanded = expand_compact_entry(
+                                text,
+                                entry,
+                                context=article_context,
+                            )
+                            locations.append(place_from_llm_location_entry(expanded))
+                        else:
+                            locations.append(place_from_llm_location_entry(entry))
+                    else:
+                        if not isinstance(raw_entry, dict):
+                            parse_errors.append("location entry must be an object")
+                            continue
+                        locations.append(place_from_llm_location_entry(raw_entry))
                 except (ValueError, TypeError) as entry_err:
                     msg = str(entry_err)
                     parse_errors.append(msg)
@@ -519,3 +567,13 @@ class PlaceExtractNode:
                 return f.read()
         except FileNotFoundError:
             raise FileNotFoundError(f"Output format template not found at {path}") from None
+
+    def _load_compact_output_format_template(self) -> str:
+        """Load the compact array JSON example for compact output mode."""
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(current_dir, "prompts", "_output_format_compact.json")
+        try:
+            with open(path, encoding="utf-8") as f:
+                return f.read()
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Compact output format template not found at {path}") from None
