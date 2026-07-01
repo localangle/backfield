@@ -188,6 +188,34 @@ def normalize_organization_type(value: str | None) -> str | None:
     return "other"
 
 
+# Editorial near-equivalences for canonical link when name/alias already matches.
+_ORGANIZATION_TYPE_LINK_COMPATIBILITY_GROUPS: tuple[frozenset[str], ...] = (
+    frozenset({"company", "local_business"}),
+    frozenset({"nonprofit", "community_group", "religious_org"}),
+    frozenset({"financial_institution", "company", "local_business"}),
+    frozenset({"real_estate", "company", "local_business"}),
+    frozenset({"media", "company"}),
+    frozenset({"culture_arts", "nonprofit", "community_group"}),
+)
+
+
+def organization_types_are_link_compatible(
+    left: str | None,
+    right: str | None,
+) -> bool:
+    """True when two organization_type slugs may denote the same institution."""
+    left_norm = normalize_organization_type(left)
+    right_norm = normalize_organization_type(right)
+    if not left_norm or not right_norm:
+        return False
+    if left_norm == right_norm:
+        return True
+    for group in _ORGANIZATION_TYPE_LINK_COMPATIBILITY_GROUPS:
+        if left_norm in group and right_norm in group:
+            return True
+    return False
+
+
 def organization_identity_fingerprint(
     *,
     normalized_name: str,

@@ -217,6 +217,46 @@ def test_decide_organization_defers_when_type_differs_on_alias() -> None:
         assert str(canon.id) in mismatch["recall_canonical_ids"]
 
 
+def test_decide_organization_links_compatible_type_on_alias() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed_stylebook(session)
+        canon = StylebookOrganizationCanonical(
+            stylebook_id=sb_id,
+            label="Brutalist Brewing",
+            slug="brutalist-brewing",
+            organization_type="company",
+        )
+        session.add(canon)
+        session.flush()
+        upsert_alias_for_canonical_text(
+            session,
+            canon_id=str(canon.id),
+            alias_text="Brutalist Brewing",
+            normalized_alias="brutalist brewing",
+            provenance="seed",
+        )
+        organization = SubstrateOrganization(
+            project_id=pid,
+            name="Brutalist Brewing",
+            normalized_name="brutalist brewing",
+            organization_type="local_business",
+        )
+        session.add(organization)
+        session.commit()
+        session.refresh(organization)
+
+        plan = decide_organization_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            organization=organization,
+        )
+        assert plan.decision == CanonicalPersistDecision.LINK_EXISTING
+        assert plan.existing_canonical_id == str(canon.id)
+        match = plan.resolution_reasons[0]
+        assert match["match_basis"] == "name_and_compatible_organization_type"
+
+
 def test_decide_organization_defers_on_ambiguous_strong_matches() -> None:
     engine = _engine()
     with Session(engine) as session:

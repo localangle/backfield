@@ -14,6 +14,7 @@ from backfield_db import (
     SubstrateOrganization,
 )
 from backfield_entities.canonical.plan_types import (
+    ADJUDICATION_COMPATIBLE_TYPE_LINK_MIN_CONFIDENCE,
     ADJUDICATION_LINK_MIN_CONFIDENCE,
     CanonicalPersistDecision,
     CanonicalPersistPlan,
@@ -30,6 +31,7 @@ from backfield_entities.entities.organization.types import (
     multiword_organization_names_share_ambiguous_acronym,
     normalize_organization_text,
     normalize_organization_type,
+    organization_types_are_link_compatible,
 )
 from sqlmodel import Session, select
 
@@ -254,10 +256,18 @@ def prepare_organization_adjudication(
     type_mismatch = plan_has_organization_canonical_type_mismatch(plan)
     if type_mismatch:
         type_rules = (
-            "- The substrate row matched a catalog alias but organization_type differed; "
-            "cross-type link is allowed when the candidate is clearly the SAME institution.\n"
-            "- Set canonical_id to null when types indicate different entities with a similar "
-            "name or alias, or when uncertain.\n"
+            "- The substrate row matched a catalog alias but organization_type differed.\n"
+            "- When the name or alias match is exact and types differ only within editorially "
+            "compatible pairs, link with high confidence — these are labeling differences, not "
+            "different institutions. Examples: local_business vs company for a named shop or "
+            "brewery; nonprofit vs community_group for the same named group; "
+            "financial_institution vs company for a named bank.\n"
+            "- Compatible pairs include company↔local_business, nonprofit↔community_group, "
+            "financial_institution↔company, media↔company.\n"
+            f"- Use confidence {floor} or higher when name/alias match and types are compatible.\n"
+            "- Set canonical_id to null only when types indicate genuinely different entities "
+            "with a similar name (e.g. sports_team vs government, school_district vs "
+            "public_services), or when uncertain.\n"
         )
     else:
         type_rules = (
@@ -383,15 +393,27 @@ def resolve_organization_adjudication_plan(
             resolution_reasons=merged,
         )
 
-    if chosen is None or confidence < ADJUDICATION_LINK_MIN_CONFIDENCE:
+    candidate_row = candidates_by_id.get(str(chosen)) if chosen is not None else None
+
+    allow_cross_type = plan_has_organization_canonical_type_mismatch(plan)
+    min_confidence = ADJUDICATION_LINK_MIN_CONFIDENCE
+    if (
+        allow_cross_type
+        and candidate_row is not None
+        and organization_types_are_link_compatible(
+            organization.organization_type,
+            candidate_row[2],
+        )
+    ):
+        min_confidence = ADJUDICATION_COMPATIBLE_TYPE_LINK_MIN_CONFIDENCE
+
+    if chosen is None or confidence < min_confidence:
         return _reject_link()
 
-    candidate_row = candidates_by_id.get(str(chosen))
     if candidate_row is None:
         return _reject_link()
 
     _cid, canon_label, canon_org_type, _aliases = candidate_row
-    allow_cross_type = plan_has_organization_canonical_type_mismatch(plan)
     if not allow_cross_type and not _organization_type_matches_candidate(
         organization,
         canon_organization_type=canon_org_type,

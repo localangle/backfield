@@ -21,6 +21,7 @@ from backfield_entities.entities.organization.types import (
     normalize_organization_type,
     organization_looks_like_acronym,
     organization_tier1_identity_compatible,
+    organization_types_are_link_compatible,
 )
 
 AMBIGUOUS_ORGANIZATION_CANONICAL_MATCH = "ambiguous_organization_canonical_match"
@@ -180,6 +181,39 @@ def _alias_type_mismatch_adjudication_plan(
         return None
     if not type_mismatched:
         return None
+
+    compatible_mismatches = [
+        (cid, canon)
+        for cid, canon in type_mismatched
+        if organization_types_are_link_compatible(
+            organization.organization_type,
+            canon.organization_type,
+        )
+    ]
+    incompatible_mismatches = [
+        (cid, canon)
+        for cid, canon in type_mismatched
+        if not organization_types_are_link_compatible(
+            organization.organization_type,
+            canon.organization_type,
+        )
+    ]
+    if len(compatible_mismatches) == 1 and not incompatible_mismatches:
+        cid, canon = compatible_mismatches[0]
+        return CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.LINK_EXISTING,
+            existing_canonical_id=cid,
+            resolution_reasons=(
+                {
+                    "code": "linked_exact_identity",
+                    "canonical_id": cid,
+                    "match_basis": "name_and_compatible_organization_type",
+                    "substrate_type": normalize_organization_type(organization.organization_type),
+                    "canonical_type": normalize_organization_type(canon.organization_type),
+                },
+            ),
+        )
+
     recall_ids = [cid for cid, _ in type_mismatched]
     cid, canon = type_mismatched[0]
     return CanonicalPersistPlan(
