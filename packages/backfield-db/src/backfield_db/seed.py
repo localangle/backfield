@@ -28,6 +28,29 @@ DEFAULT_STYLEBOOK_NAME = "Default Stylebook"
 ORG_ADMIN_ROLE = "org_admin"
 
 
+def _legacy_org_slugs() -> frozenset[str]:
+    """Slugs produced by migrations or a prior init that kept factory-default names."""
+    return frozenset(
+        {
+            DEFAULT_ORG_SLUG,
+            slugify_display_name(DEFAULT_ORG_NAME, fallback=DEFAULT_ORG_SLUG),
+        }
+    )
+
+
+def _legacy_stylebook_slugs() -> frozenset[str]:
+    """Slugs produced by migrations or a prior init that kept factory-default names."""
+    return frozenset(
+        {
+            DEFAULT_STYLEBOOK_SLUG,
+            slugify_display_name(
+                DEFAULT_STYLEBOOK_NAME,
+                fallback=DEFAULT_STYLEBOOK_SLUG,
+            ),
+        }
+    )
+
+
 @dataclass(frozen=True)
 class SeedReport:
     organization_id: int
@@ -165,15 +188,17 @@ def apply_init_display_names(
 
     org = session.get(BackfieldOrganization, organization_id)
     if org is not None and desired_org_name:
-        if org.slug == DEFAULT_ORG_SLUG and org.name in (DEFAULT_ORG_NAME, desired_org_name):
-            new_org_slug = slugify_display_name(
-                desired_org_name,
-                fallback=DEFAULT_ORG_SLUG,
-            )
-            if _org_slug_available(session, new_org_slug, organization_id=organization_id):
-                org.slug = new_org_slug
-            if org.name == DEFAULT_ORG_NAME:
+        org_customized = org.name not in (DEFAULT_ORG_NAME, desired_org_name)
+        if not org_customized:
+            if org.name != desired_org_name:
                 org.name = desired_org_name
+            if org.slug in _legacy_org_slugs():
+                new_org_slug = slugify_display_name(
+                    desired_org_name,
+                    fallback=DEFAULT_ORG_SLUG,
+                )
+                if _org_slug_available(session, new_org_slug, organization_id=organization_id):
+                    org.slug = new_org_slug
             session.add(org)
 
     stylebook = session.exec(
@@ -203,20 +228,24 @@ def apply_init_display_names(
             is_default=True,
         )
         session.add(stylebook)
-    elif desired_stylebook_name and stylebook.slug == DEFAULT_STYLEBOOK_SLUG:
-        if stylebook.name in (DEFAULT_STYLEBOOK_NAME, desired_stylebook_name):
-            new_stylebook_slug = _allocate_unique_stylebook_slug(
-                session,
-                organization_id,
-                slugify_display_name(
-                    desired_stylebook_name,
-                    fallback=DEFAULT_STYLEBOOK_SLUG,
-                ),
-                ignore_stylebook_id=int(stylebook.id) if stylebook.id is not None else None,
-            )
-            stylebook.slug = new_stylebook_slug
-            if stylebook.name == DEFAULT_STYLEBOOK_NAME:
+    elif desired_stylebook_name:
+        stylebook_customized = stylebook.name not in (
+            DEFAULT_STYLEBOOK_NAME,
+            desired_stylebook_name,
+        )
+        if not stylebook_customized:
+            if stylebook.name != desired_stylebook_name:
                 stylebook.name = desired_stylebook_name
+            if stylebook.slug in _legacy_stylebook_slugs():
+                stylebook.slug = _allocate_unique_stylebook_slug(
+                    session,
+                    organization_id,
+                    slugify_display_name(
+                        desired_stylebook_name,
+                        fallback=DEFAULT_STYLEBOOK_SLUG,
+                    ),
+                    ignore_stylebook_id=int(stylebook.id) if stylebook.id is not None else None,
+                )
             session.add(stylebook)
 
     session.commit()

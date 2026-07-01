@@ -6,11 +6,13 @@ import argparse
 import logging
 import sys
 
-from backfield_db.seed import DEFAULT_ORG_NAME, DEFAULT_ORG_SLUG, run_seed
-
 from backfield_cli.credentials import resolve_admin_password
 
 logger = logging.getLogger(__name__)
+
+# Match backfield_db.seed defaults; keep argparse registration free of backfield_db imports.
+_DEFAULT_ORG_SLUG = "default"
+_DEFAULT_ORG_NAME = "Backfield"
 
 
 def register_subcommand(subparsers) -> None:
@@ -20,13 +22,13 @@ def register_subcommand(subparsers) -> None:
     )
     parser.add_argument(
         "--org-slug",
-        default=DEFAULT_ORG_SLUG,
-        help=f"Organization slug to ensure (default: {DEFAULT_ORG_SLUG})",
+        default=_DEFAULT_ORG_SLUG,
+        help=f"Organization slug to ensure (default: {_DEFAULT_ORG_SLUG})",
     )
     parser.add_argument(
         "--org-name",
-        default=DEFAULT_ORG_NAME,
-        help=f"Organization display name when creating (default: {DEFAULT_ORG_NAME})",
+        default=_DEFAULT_ORG_NAME,
+        help=f"Organization display name when creating (default: {_DEFAULT_ORG_NAME})",
     )
     parser.add_argument("--admin-email", required=True, help="Admin user email to ensure")
     parser.add_argument(
@@ -53,6 +55,8 @@ def register_subcommand(subparsers) -> None:
 
 
 def _run_seed(args: argparse.Namespace) -> int:
+    from backfield_db.seed import run_seed
+
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     try:
         admin_password = resolve_admin_password(

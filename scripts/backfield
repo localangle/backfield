@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# Backfield project launcher — repo-aware wrapper around python -m backfield_cli.
+#
+# Source of truth:     scripts/backfield
+# Bootstrap exposes:  .venv/bin/backfield   (copy via install-cli-shim.sh)
+# Optional global:     ~/.local/bin/backfield (symlink via make install-user-cli)
+set -euo pipefail
+
+find_repo_root() {
+  local dir="$1"
+  while [[ -n "$dir" && "$dir" != "/" ]]; do
+    if [[ -f "$dir/Makefile" && -f "$dir/infra/docker-compose.yml" ]]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+    dir="$(dirname "$dir")"
+  done
+  return 1
+}
+
+# Probe string must match host_tooling.CLI_ENTRYPOINT_PROBE in backfield-cli.
+CLI_ENTRYPOINT_PROBE='import backfield_cli.main'
+
+cli_entrypoint_works() {
+  "$VENV_PY" -c "$CLI_ENTRYPOINT_PROBE" >/dev/null 2>&1
+}
+
+install_cli_shim_if_needed() {
+  local source="$ROOT/scripts/backfield"
+  local target="$ROOT/.venv/bin/backfield"
+  if [[ ! -f "$target" ]] || ! cmp -s "$source" "$target"; then
+    ./scripts/install-cli-shim.sh
+  fi
+}
+
+repair_python_cli() {
+  echo "Repairing Backfield Python environment..."
+  if ! command -v uv >/dev/null 2>&1; then
+    echo "error: uv is not on PATH. Install uv, then run 'make bootstrap' from the repo root." >&2
+    exit 1
+  fi
+  uv sync --all-packages --quiet
+  if ! cli_entrypoint_works; then
+    uv sync --all-packages \
+      --reinstall-package backfield-cli \
+      --reinstall-package backfield-db \
+      --quiet
+  fi
+  install_cli_shim_if_needed
+}
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(find_repo_root "$SCRIPT_DIR")" || {
+  echo "error: could not find Backfield repo root (expected Makefile and infra/docker-compose.yml)" >&2
+  exit 1
+}
+cd "$ROOT"
+
+VENV_PY="$ROOT/.venv/bin/python"
+
+if [[ ! -x "$VENV_PY" ]]; then
+  echo "Backfield environment not found. Running bootstrap..."
+  make bootstrap
+  VENV_PY="$ROOT/.venv/bin/python"
+fi
+
+if ! cli_entrypoint_works; then
+  repair_python_cli
+  if ! cli_entrypoint_works; then
+    echo "error: could not repair the Backfield CLI in .venv." >&2
+    echo "Run 'make bootstrap' from the repo root, then retry." >&2
+    exit 1
+  fi
+else
+  install_cli_shim_if_needed
+fi
+
+exec "$VENV_PY" -m backfield_cli "$@"

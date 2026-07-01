@@ -21,7 +21,15 @@ def _write_repo_root(tmp_path) -> None:
     (tmp_path / ".env.example").write_text("# example\n", encoding="utf-8")
 
 
+def _noop_host_tooling(*_args, **_kwargs) -> None:
+    return None
+
+
 def _patch_init_stack(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        "backfield_cli.init.ensure_host_python_tooling",
+        _noop_host_tooling,
+    )
     monkeypatch.setattr("backfield_cli.init.bring_up_stack", lambda _repo_root: None)
     monkeypatch.setattr("backfield_cli.init.run_compose_migrate", lambda _repo_root: None)
     monkeypatch.setattr(
@@ -29,7 +37,7 @@ def _patch_init_stack(monkeypatch, tmp_path) -> None:
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "backfield_cli.init.run_init_seed",
+        "backfield_db.seed.run_init_seed",
         lambda **_kwargs: SeedReport(
             organization_id=1,
             organization_slug="acme-news",
@@ -73,7 +81,8 @@ def test_run_init_non_interactive_orchestration(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("backfield_cli.init.bring_up_stack", _up)
     monkeypatch.setattr("backfield_cli.init.run_compose_migrate", _migrate)
     monkeypatch.setattr("backfield_cli.init.wait_for_api_readiness", _ready)
-    monkeypatch.setattr("backfield_cli.init.run_init_seed", _seed)
+    monkeypatch.setattr("backfield_db.seed.run_init_seed", _seed)
+    monkeypatch.setattr("backfield_cli.init.ensure_host_python_tooling", _noop_host_tooling)
 
     config = InitConfig.model_validate(
         {
@@ -97,8 +106,9 @@ def test_run_init_skip_stack(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("backfield_cli.init.bring_up_stack", _fail)
     monkeypatch.setattr("backfield_cli.init.run_compose_migrate", lambda _repo_root: None)
     monkeypatch.setattr("backfield_cli.init.wait_for_api_readiness", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("backfield_cli.init.ensure_host_python_tooling", _noop_host_tooling)
     monkeypatch.setattr(
-        "backfield_cli.init.run_init_seed",
+        "backfield_db.seed.run_init_seed",
         lambda **_kwargs: SeedReport(
             organization_id=1,
             organization_slug="default",
@@ -138,8 +148,9 @@ def test_backfield_init_cli_non_interactive(monkeypatch, tmp_path, capsys) -> No
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("backfield_cli.init.run_compose_migrate", lambda _repo_root: None)
     monkeypatch.setattr("backfield_cli.init.wait_for_api_readiness", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("backfield_cli.init.ensure_host_python_tooling", _noop_host_tooling)
     monkeypatch.setattr(
-        "backfield_cli.init.run_init_seed",
+        "backfield_db.seed.run_init_seed",
         lambda **_kwargs: SeedReport(
             organization_id=1,
             organization_slug="default",

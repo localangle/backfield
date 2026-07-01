@@ -39,7 +39,7 @@ def test_backfield_seed_subcommand_delegates(monkeypatch, capsys) -> None:
             admin_created=True,
         )
 
-    monkeypatch.setattr("backfield_cli.seed.run_seed", _fake_run_seed)
+    monkeypatch.setattr("backfield_db.seed.run_seed", _fake_run_seed)
     assert (
         main(
             [
@@ -59,5 +59,5 @@ def test_backfield_seed_subcommand_delegates(monkeypatch, capsys) -> None:
 
 
 def test_backfield_seed_subcommand_requires_password(monkeypatch) -> None:
-    monkeypatch.setattr("backfield_cli.seed.run_seed", lambda **_kwargs: None)
+    monkeypatch.setattr("backfield_db.seed.run_seed", lambda **_kwargs: None)
     assert main(["seed", "--admin-email", "admin@example.com"]) == 1

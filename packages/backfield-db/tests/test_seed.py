@@ -165,6 +165,56 @@ def test_apply_init_display_names_updates_migration_defaults(sqlite_engine) -> N
         assert stylebook.slug == "acme-stylebook"
 
 
+def test_apply_init_display_names_updates_legacy_default_stylebook_slug(
+    sqlite_engine,
+) -> None:
+    """Bootstrap or a prior init may slugify the factory-default stylebook name."""
+    with Session(sqlite_engine) as session:
+        org = BackfieldOrganization(name="Backfield", slug="default")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        organization_id = int(org.id)
+
+    with Session(sqlite_engine) as session:
+        from backfield_db import Stylebook
+        from backfield_db.seed import DEFAULT_STYLEBOOK_NAME, apply_init_display_names
+
+        session.add(
+            Stylebook(
+                organization_id=organization_id,
+                slug="default-stylebook",
+                name=DEFAULT_STYLEBOOK_NAME,
+                is_default=True,
+            )
+        )
+        session.commit()
+
+    with Session(sqlite_engine) as session:
+        from backfield_db.seed import apply_init_display_names
+
+        apply_init_display_names(
+            session,
+            organization_id=organization_id,
+            org_name="Acme News",
+            stylebook_name="Acme Stylebook",
+        )
+
+    with Session(sqlite_engine) as session:
+        from backfield_db import Stylebook
+
+        org = session.exec(
+            select(BackfieldOrganization).where(BackfieldOrganization.id == organization_id)
+        ).one()
+        stylebook = session.exec(
+            select(Stylebook).where(Stylebook.organization_id == org.id)
+        ).one()
+        assert org.name == "Acme News"
+        assert org.slug == "acme-news"
+        assert stylebook.name == "Acme Stylebook"
+        assert stylebook.slug == "acme-stylebook"
+
+
 def test_apply_init_display_names_leaves_renamed_org_unchanged(sqlite_engine) -> None:
     with Session(sqlite_engine) as session:
         org = BackfieldOrganization(name="Renamed Org", slug="default")

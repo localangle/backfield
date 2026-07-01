@@ -30,6 +30,22 @@ DOCS_URL = "https://docs.backfield.news"
 
 INIT_STEP_COUNT = 5
 
+CLI_COMMANDS: tuple[tuple[str, str], ...] = (
+    ("backfield up", "Start the local stack"),
+    ("backfield down", "Stop the local stack"),
+    ("backfield logs", "Follow service logs"),
+    ("backfield ps", "List running containers"),
+    ("backfield restart", "Restart services"),
+    ("backfield doctor", "Check your local setup"),
+    ("backfield migrate", "Apply database migrations"),
+    ("backfield seed", "Ensure org and admin user exist"),
+    ("backfield reset-db", "Wipe local database and volumes"),
+    (
+        "backfield clear-entity-data",
+        "Clear locations, canonicals, and run history",
+    ),
+)
+
 
 def is_interactive() -> bool:
     """True when stdout is a TTY (local terminal session)."""
@@ -80,6 +96,11 @@ def print_next_steps(admin_email: str) -> None:
     CONSOLE.print(f"  Agate UI:      [link={AGATE_UI_URL}]{AGATE_UI_URL}[/link]")
     CONSOLE.print(f"  Stylebook UI:  [link={STYLEBOOK_UI_URL}]{STYLEBOOK_UI_URL}[/link]")
     CONSOLE.print(f"  Admin login:   [cyan]{admin_email}[/cyan]")
+    CONSOLE.print()
+    CONSOLE.print("[bold]CLI commands[/bold]")
+    command_width = max(len(command) for command, _ in CLI_COMMANDS)
+    for command, description in CLI_COMMANDS:
+        CONSOLE.print(f"  {command.ljust(command_width + 2)}{description}")
     CONSOLE.print()
     CONSOLE.print("[bold]Next steps[/bold]")
     CONSOLE.print(

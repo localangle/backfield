@@ -25,20 +25,37 @@ You need [Docker and Docker Compose](https://docs.docker.com/compose/) and [uv](
 ```bash
 git clone git@github.com:localangle/backfield.git
 cd backfield
-make bootstrap          # install Python tooling
-uv run backfield init   # set up env, start the stack, migrate, and seed
+make bootstrap               # uv sync + install project launcher into .venv/bin
+source .venv/bin/activate    # once per shell
+backfield init               # set up env, start the stack, migrate, and seed
 ```
+
+`backfield` is a **project launcher** (shell wrapper at `scripts/backfield`), not a Python package entry point. Bootstrap copies it to `.venv/bin/backfield` so it is available after you activate the venv. You can also run `./scripts/backfield` or `make up` without activating.
+
+Optional — use `backfield` from any directory without activating the venv:
+
+```bash
+make install-user-cli        # symlinks ~/.local/bin/backfield -> scripts/backfield
+backfield up                 # requires ~/.local/bin on PATH
+```
+
+Run `backfield doctor` to verify repo root, uv, Docker, `.venv`, and `.env`.
 
 `backfield init` walks you through first-run setup and, when it finishes, opens the app in your browser:
 
 - Agate: [http://localhost:5173](http://localhost:5173)
 - Stylebook: [http://localhost:5175](http://localhost:5175)
 
-To manage the stack afterward, use `uv run backfield up | down | logs | ps | restart`.
+To manage the stack afterward, use `backfield up`, `backfield down`, `backfield logs`, or `make up` / `make down` / `make logs`.
 
 ## License
 
-*TBD.*
+Copyright 2026 Local Angle
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this
+software except in compliance with the License. You may obtain a copy of the License
+in [LICENSE.md](LICENSE.md) or at
+[apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0).
 
 ## Support
 

@@ -2,6 +2,7 @@ import { ReactNode } from "react"
 import { useNavigate } from "react-router-dom"
 import { AgateProductMark, ShellProductBrand, UserAccountMenu } from "@backfield/ui"
 import AppSidebar from "./AppSidebar"
+import OrganizationSetupBanner from "./OrganizationSetupBanner"
 import { useAuth } from "@/lib/auth"
 
 interface HubLayoutProps {
@@ -37,7 +38,10 @@ export default function HubLayout({ children }: HubLayoutProps) {
       <div className="flex flex-1 min-h-0">
         <AppSidebar />
         <main className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-y-contain">
-          <div className="w-full max-w-none px-4 sm:px-6 lg:px-8 py-8">{children}</div>
+          <div className="w-full max-w-none px-4 sm:px-6 lg:px-8 py-8">
+            <OrganizationSetupBanner />
+            {children}
+          </div>
         </main>
       </div>
     </div>

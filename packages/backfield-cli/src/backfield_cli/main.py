@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from backfield_cli import doctor as doctor_cmd
 from backfield_cli import init as init_cmd
 from backfield_cli import migrate as migrate_cmd
 from backfield_cli import seed as seed_cmd
@@ -17,6 +18,7 @@ def main(argv: list[str] | None = None) -> int:
     migrate_cmd.register_subcommand(subparsers)
     seed_cmd.register_subcommand(subparsers)
     init_cmd.register_subcommand(subparsers)
+    doctor_cmd.register_subcommand(subparsers)
     stack_cmd.register_subcommands(subparsers)
     args = parser.parse_args(argv)
     handler = getattr(args, "handler", None)

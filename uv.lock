@@ -442,6 +442,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "agate-runtime" },
     { name = "backfield-cli" },
+    { name = "backfield-db" },
     { name = "httpx" },
     { name = "pytest" },
     { name = "python-dotenv" },
@@ -452,6 +453,7 @@ dependencies = [
 requires-dist = [
     { name = "agate-runtime", editable = "packages/backfield-agate" },
     { name = "backfield-cli", editable = "packages/backfield-cli" },
+    { name = "backfield-db", editable = "packages/backfield-db" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },

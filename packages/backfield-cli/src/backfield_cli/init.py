@@ -11,7 +11,6 @@ import webbrowser
 from contextlib import nullcontext
 from pathlib import Path
 
-from backfield_db.seed import DEFAULT_ORG_NAME, DEFAULT_STYLEBOOK_NAME, run_init_seed
 from rich.logging import RichHandler
 from rich.status import Status
 
@@ -27,6 +26,7 @@ from backfield_cli.console import (
 )
 from backfield_cli.credentials import resolve_admin_password
 from backfield_cli.env_file import ensure_repo_env_file, find_repo_root, load_env_into_process
+from backfield_cli.host_tooling import ensure_host_python_tooling
 from backfield_cli.init_config import InitConfig, load_init_config
 from backfield_cli.stack import (
     bring_up_stack,
@@ -143,6 +143,8 @@ def _load_config(args: argparse.Namespace) -> InitConfig:
         default=DEFAULT_SUPERUSER_PASSWORD,
     )
     admin_display_name = _prompt("Superuser username", default=DEFAULT_SUPERUSER_USERNAME)
+    from backfield_db.seed import DEFAULT_ORG_NAME, DEFAULT_STYLEBOOK_NAME
+
     org_name = _prompt("Organization name", default=DEFAULT_ORG_NAME)
     stylebook_name = _prompt("Default Stylebook name", default=DEFAULT_STYLEBOOK_NAME)
     return InitConfig(
@@ -156,6 +158,8 @@ def _load_config(args: argparse.Namespace) -> InitConfig:
 
 
 def run_init(config: InitConfig, *, repo_root: Path, interactive: bool = False) -> int:
+    ensure_host_python_tooling(repo_root, quiet=True)
+
     if interactive:
         CONSOLE.print()
 
@@ -201,6 +205,8 @@ def run_init(config: InitConfig, *, repo_root: Path, interactive: bool = False) 
         password=config.admin_password,
         password_file=config.admin_password_file,
     )
+    from backfield_db.seed import run_init_seed
+
     report = run_init_seed(
         org_name=config.org_name,
         stylebook_name=config.stylebook_name,
@@ -218,6 +224,7 @@ def run_init(config: InitConfig, *, repo_root: Path, interactive: bool = False) 
     )
     print_next_steps(config.admin_email)
     _maybe_open_browser(MODELS_URL, enabled=config.open_browser and interactive)
+    ensure_host_python_tooling(repo_root, quiet=True)
     return 0
 
 

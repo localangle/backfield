@@ -80,7 +80,7 @@ When adding a Stylebook entity type, follow the **Tests per issue** table in [`E
 ## CI suggestion
 
 ```bash
-uv sync
+uv sync --all-packages
 make lint
 make test
 ```

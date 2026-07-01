@@ -1,23 +1,24 @@
 # Backfield — minimal developer surface (see `make help`)
 COMPOSE_FILE := infra/docker-compose.yml
 DC := docker compose -f $(COMPOSE_FILE) --env-file .env
+BACKFIELD := ./scripts/backfield
 APP_VERSION ?= 0.0.0-dev
 GIT_SHA ?= unknown
 BUILD_TIME ?= unknown
 DOCKER_PROD_BUILD_ARGS := --build-arg APP_VERSION=$(APP_VERSION) --build-arg GIT_SHA=$(GIT_SHA) --build-arg BUILD_TIME=$(BUILD_TIME)
 
-.PHONY: help up up-detached down logs migrate reset-db clear-entity-data docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full docker-build-prod-apis docker-build-prod-agate-api docker-build-prod-core-api docker-build-prod-stylebook-api docker-build-prod-worker test test-unit test-integration lint format bootstrap smoke smoke-auth smoke-agate-basic smoke-stylebook-basic smoke-agate-stylebook-handoff smoke-worker-async smoke-stylebook-editorial smoke-s3-batch smoke-stylebook-import-export smoke-fast smoke-runtime smoke-slower smoke-place-geocode smoke-place-geocode-stack smoke-people smoke-people-stack smoke-organizations smoke-organizations-stack smoke-article-metadata smoke-article-metadata-stack smoke-custom-extract smoke-custom-extract-stack smoke-parallel-graph smoke-parallel-graph-stack agate-ui-build stylebook-ui-build ui-build
+.PHONY: help up up-detached down logs migrate reset-db clear-entity-data docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full docker-build-prod-apis docker-build-prod-agate-api docker-build-prod-core-api docker-build-prod-stylebook-api docker-build-prod-worker test test-unit test-integration lint format bootstrap install-cli-shim install-user-cli uninstall-user-cli smoke smoke-auth smoke-agate-basic smoke-stylebook-basic smoke-agate-stylebook-handoff smoke-worker-async smoke-stylebook-editorial smoke-s3-batch smoke-stylebook-import-export smoke-fast smoke-runtime smoke-slower smoke-place-geocode smoke-place-geocode-stack smoke-people smoke-people-stack smoke-organizations smoke-organizations-stack smoke-article-metadata smoke-article-metadata-stack smoke-custom-extract smoke-custom-extract-stack smoke-parallel-graph smoke-parallel-graph-stack agate-ui-build stylebook-ui-build ui-build
 
 help:
 	@echo "Backfield"
-	@echo "  Operator commands wrap the CLI; run 'uv run backfield --help' for the full list."
+	@echo "  Operator commands use the project launcher (scripts/backfield)."
 	@echo "  make up          - Start stack in foreground (wraps 'backfield up'; Ctrl+C stops)"
 	@echo "  make up-detached - Same as up but background (wraps 'backfield up --detached')"
 	@echo "  make down        - Stop stack (wraps 'backfield down'), then docker-trim"
 	@echo "  make logs        - Follow stack logs (wraps 'backfield logs')"
 	@echo "  make migrate     - Run Alembic via one-off compose migrate service"
-	@echo "  make migrate-host - Run Alembic on host (uv run backfield migrate; Postgres on :5433)"
-	@echo "                     Seed admin: uv run backfield seed --admin-email ... --admin-password ..."
+	@echo "  make migrate-host - Run Alembic on host (backfield migrate; Postgres on :5433)"
+	@echo "                     Seed admin: backfield seed --admin-email ... --admin-password ..."
 	@echo "  make reset-db    - Stop stack and remove compose volumes (wraps 'backfield reset-db --yes')"
 	@echo "  make clear-entity-data - Truncate substrate/stylebook entity + Agate runs (BACKFIELD_CONFIRM_CLEAR=1; wraps 'backfield clear-entity-data --yes')"
 	@echo "  make docker-prune-build   - Free build cache only (docker builder prune -f)"
@@ -30,7 +31,9 @@ help:
 	@echo "  make test-integration - API smoke tests"
 	@echo "  make lint        - Ruff check"
 	@echo "  make format      - Ruff format"
-	@echo "  make bootstrap   - uv sync (root) for local tooling"
+	@echo "  make bootstrap   - uv sync, then install backfield launcher into .venv/bin"
+	@echo "  make install-user-cli   - Symlink launcher to ~/.local/bin/backfield (optional)"
+	@echo "  make uninstall-user-cli - Remove ~/.local/bin/backfield symlink"
 	@echo "  make smoke       - Agate-to-Stylebook handoff smoke against a live stack"
 	@echo "  make smoke-fast  - Auth + basic Agate + basic Stylebook smoke bundle"
 	@echo "  make smoke-runtime - Handoff + worker lifecycle smoke bundle"
@@ -52,33 +55,53 @@ help:
 	@echo "  make ui-build           - Production-build both UIs"
 	@echo "  make docker-build-prod-apis - Build production targets for agate/core/stylebook APIs"
 	@echo "  make docker-build-prod-worker - Build production target for the Celery worker"
-	@echo "  uv run backfield init - Local first-run setup (env, stack, migrate, seed)"
-	@echo "  uv run backfield ps / restart - List or restart stack containers"
+	@echo "  backfield init   - Local first-run setup (env, stack, migrate, seed; after activate)"
+	@echo "  backfield doctor - Check repo, uv, docker, .venv, .env, compose file"
+	@echo "  backfield ps / restart - List or restart stack containers"
 
 bootstrap:
-	uv sync --all-packages
+	uv sync --all-packages --reinstall-package backfield-cli --reinstall-package backfield-db
+	@$(MAKE) --no-print-directory install-cli-shim
+	@echo ""
+	@echo "Project launcher ready. In this shell, run:"
+	@echo "  source .venv/bin/activate"
+	@echo "Then: backfield init | up | down | doctor | ..."
+	@echo "Optional (no venv activate): make install-user-cli"
+
+install-cli-shim:
+	@test -d .venv/bin || (echo "error: .venv missing; run 'uv sync' or 'make bootstrap' first." >&2 && exit 1)
+	@chmod +x scripts/backfield scripts/install-cli-shim.sh
+	@./scripts/install-cli-shim.sh
+
+install-user-cli:
+	@chmod +x scripts/backfield scripts/install-user-cli.sh
+	@./scripts/install-user-cli.sh
+
+uninstall-user-cli:
+	@chmod +x scripts/uninstall-user-cli.sh
+	@./scripts/uninstall-user-cli.sh
 
 up:
-	uv run backfield up
+	$(BACKFIELD) up
 
 up-detached:
-	uv run backfield up --detached
+	$(BACKFIELD) up --detached
 
 down:
-	uv run backfield down
+	$(BACKFIELD) down
 	@$(MAKE) --no-print-directory docker-trim
 
 logs:
-	uv run backfield logs
+	$(BACKFIELD) logs
 
 migrate:
 	$(DC) run --rm migrate
 
 migrate-host:
-	uv run backfield migrate
+	$(BACKFIELD) migrate
 
 reset-db:
-	uv run backfield reset-db --yes
+	$(BACKFIELD) reset-db --yes
 
 clear-entity-data:
 	@if [ "$(BACKFIELD_CONFIRM_CLEAR)" != "1" ]; then \
@@ -88,7 +111,7 @@ clear-entity-data:
 		echo "Re-run: BACKFIELD_CONFIRM_CLEAR=1 make clear-entity-data"; \
 		exit 1; \
 	fi
-	uv run backfield clear-entity-data --yes
+	$(BACKFIELD) clear-entity-data --yes
 
 docker-prune-build:
 	@echo "Pruning Docker build cache..."

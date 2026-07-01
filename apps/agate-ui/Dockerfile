@@ -4,6 +4,13 @@ FROM node:18-alpine
 # `file:../../packages/backfield-ui` resolves.
 WORKDIR /app
 
+# Install shared UI deps first so Vite can resolve imports from mounted
+# packages/backfield-ui/src (e.g. @radix-ui/react-dropdown-menu).
+COPY packages/backfield-ui/package.json packages/backfield-ui/package-lock.json* ./packages/backfield-ui/
+WORKDIR /app/packages/backfield-ui
+RUN npm install
+
+WORKDIR /app
 COPY packages/backfield-ui ./packages/backfield-ui
 COPY apps/agate-ui/package.json apps/agate-ui/package-lock.json* ./apps/agate-ui/
 
