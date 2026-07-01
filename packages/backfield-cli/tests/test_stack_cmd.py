@@ -47,6 +47,17 @@ def test_up_foreground_builds(monkeypatch, tmp_path, captured_commands) -> None:
     assert captured_commands == [_compose_prefix(repo_root) + ["up", "--build"]]
 
 
+def test_up_keyboard_interrupt_exits_cleanly(monkeypatch, tmp_path) -> None:
+    repo_root = _make_repo(tmp_path)
+    monkeypatch.chdir(repo_root)
+
+    def _interrupt(_command, **_kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(stack_cmd.subprocess, "run", _interrupt)
+    assert main(["up"]) == 130
+
+
 def test_up_detached(monkeypatch, tmp_path, captured_commands) -> None:
     repo_root = _make_repo(tmp_path)
     monkeypatch.chdir(repo_root)
