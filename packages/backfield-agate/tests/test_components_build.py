@@ -55,3 +55,18 @@ def test_state_inferred_from_article_context() -> None:
     components = build_components("Springfield", "city", ctx)
     assert components["city"] == "Springfield"
     assert components["state"]["abbr"] in {"", "IL"}
+
+
+def test_place_with_embedded_street_address() -> None:
+    ctx = extract_article_context("A festival was held at Humboldt Park in Chicago.")
+    components = build_components(
+        "Humboldt Park, 2800 W. Division St., Chicago, IL",
+        "place",
+        ctx,
+    )
+    assert components["place"]["name"] == "Humboldt Park"
+    assert components["place"]["natural"] is True
+    assert components["place"]["addressable"] is True
+    assert "2800" in components["address"]
+    assert "Division" in components["address"]
+    assert components["city"] == "Chicago"

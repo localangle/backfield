@@ -128,13 +128,46 @@ def _format_usaddress(tagged: dict[str, str]) -> str:
     return " ".join(parts).strip()
 
 
-def _has_address_number(label: str) -> bool:
-    return "AddressNumber" in (label or "")
+def _has_address_number(tagged: dict[str, str]) -> bool:
+    return bool(tagged.get("AddressNumber"))
 
 
 def _is_natural_place(name: str) -> bool:
     lowered = name.lower()
     return any(token in lowered for token in NATURAL_PLACE_TOKENS)
+
+
+def _extract_address_from_location(
+    location: str,
+    *,
+    city: str,
+    state_abbr: str,
+    extra_segments: list[str] | None = None,
+) -> str:
+    """Find a mailing-style address in a location string or its middle segments."""
+    candidates: list[str] = []
+    for segment in extra_segments or []:
+        cleaned = segment.strip()
+        if not cleaned:
+            continue
+        candidates.append(cleaned)
+        with_city = ", ".join(part for part in [cleaned, city, state_abbr] if part)
+        if with_city != cleaned:
+            candidates.append(with_city)
+    if location.strip():
+        candidates.append(location.strip())
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        tagged, label = _usaddress_tag(candidate)
+        if _has_address_number(tagged):
+            formatted = _format_usaddress(tagged)
+            if formatted:
+                return formatted
+    return ""
 
 
 def _span_endpoints(primary: str, city: str, state_abbr: str) -> dict[str, Any]:
@@ -213,16 +246,25 @@ def build_components(
 
     if location_type == "place":
         place_name = primary or location.split(",")[0].strip()
+        embedded_address = _extract_address_from_location(
+            location,
+            city=components["city"],
+            state_abbr=state_abbr,
+            extra_segments=parts[1:],
+        )
+        is_natural = _is_natural_place(place_name)
         components["place"] = {
             "name": place_name,
-            "natural": _is_natural_place(place_name),
-            "addressable": not _is_natural_place(place_name),
+            "natural": is_natural,
+            "addressable": bool(embedded_address) or not is_natural,
         }
+        if embedded_address:
+            components["address"] = embedded_address
     elif location_type == "street_road":
         street_name = primary
         boundary = ", ".join(part for part in [components["city"], state_abbr] if part)
         components["street_road"] = {"name": street_name, "boundary": boundary}
-        if formatted_address and _has_address_number(label):
+        if formatted_address and _has_address_number(tagged):
             components["address"] = formatted_address
         elif street_name:
             components["address"] = street_name
@@ -234,7 +276,7 @@ def build_components(
         if span:
             components["span"] = span
     elif location_type in {"address", "intersection_road", "intersection_highway"}:
-        if _has_address_number(label) and formatted_address:
+        if _has_address_number(tagged) and formatted_address:
             components["address"] = formatted_address
         elif location_type == "address" and primary:
             components["address"] = primary
