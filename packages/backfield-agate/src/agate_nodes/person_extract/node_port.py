@@ -265,18 +265,25 @@ class PersonExtractNode:
             parse_errors: list[str] = []
             for raw_entry in people_data:
                 if use_compact:
-                    if not isinstance(raw_entry, list):
-                        parse_errors.append("person entry must be an array")
-                        continue
-                    try:
-                        entry = expand_compact_person_row(raw_entry)
-                    except (ValueError, TypeError) as expand_err:
-                        msg = str(expand_err)
-                        parse_errors.append(msg)
+                    if isinstance(raw_entry, list):
+                        try:
+                            entry = expand_compact_person_row(raw_entry)
+                        except (ValueError, TypeError) as expand_err:
+                            msg = str(expand_err)
+                            parse_errors.append(msg)
+                            logger.warning(
+                                "[PersonExtract] skipping invalid compact person row: %s",
+                                msg,
+                            )
+                            continue
+                    elif isinstance(raw_entry, dict):
                         logger.warning(
-                            "[PersonExtract] skipping invalid compact person row: %s",
-                            msg,
+                            "[PersonExtract] compact mode received object entry; "
+                            "using full dict parse fallback"
                         )
+                        entry = raw_entry
+                    else:
+                        parse_errors.append("person entry must be an array or object")
                         continue
                 else:
                     if not isinstance(raw_entry, dict):

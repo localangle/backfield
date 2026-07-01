@@ -123,6 +123,36 @@ def test_person_extract_compact_matches_full_mode_output() -> None:
     assert compact_out["person_extract"]["people"] == full_out["person_extract"]["people"]
 
 
+def test_person_extract_compact_accepts_full_object_fallback() -> None:
+    spec = GraphSpec(
+        name="compact-person-object-fallback",
+        nodes=[
+            NodeConfig(
+                id="a",
+                type="TextInput",
+                params={"text": "Mayor John Smith announced a new park initiative Monday."},
+            ),
+            NodeConfig(
+                id="b",
+                type="PersonExtract",
+                params={"output_mode": "compact"},
+            ),
+        ],
+        edges=[
+            Edge(source="a", target="b", sourceHandle="text", targetHandle="text"),
+        ],
+    )
+    with patch(
+        "agate_nodes.person_extract.node_port.call_llm",
+        return_value=_full_llm_response(),
+    ):
+        out = execute_graph(spec)
+
+    people = out["person_extract"]["people"]
+    assert len(people) == 1
+    assert people[0]["name"] == "John Smith"
+
+
 def test_person_extract_default_output_mode_is_compact() -> None:
     from agate_nodes.person_extract.node_port import PersonExtractParams
 

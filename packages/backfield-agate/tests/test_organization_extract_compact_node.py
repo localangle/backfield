@@ -119,6 +119,36 @@ def test_organization_extract_compact_matches_full_mode_output() -> None:
     )
 
 
+def test_organization_extract_compact_accepts_full_object_fallback() -> None:
+    spec = GraphSpec(
+        name="compact-organization-object-fallback",
+        nodes=[
+            NodeConfig(
+                id="a",
+                type="TextInput",
+                params={"text": "Chicago City Hall announced a new park initiative Monday."},
+            ),
+            NodeConfig(
+                id="b",
+                type="OrganizationExtract",
+                params={"output_mode": "compact"},
+            ),
+        ],
+        edges=[
+            Edge(source="a", target="b", sourceHandle="text", targetHandle="text"),
+        ],
+    )
+    with patch(
+        "agate_nodes.organization_extract.node_port.call_llm",
+        return_value=_full_llm_response(),
+    ):
+        out = execute_graph(spec)
+
+    organizations = out["organization_extract"]["organizations"]
+    assert len(organizations) == 1
+    assert organizations[0]["name"] == "Chicago City Hall"
+
+
 def test_organization_extract_default_output_mode_is_compact() -> None:
     from agate_nodes.organization_extract.node_port import OrganizationExtractParams
 
