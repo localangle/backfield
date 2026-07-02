@@ -85,3 +85,48 @@ def test_try_claim_keeps_active_running_without_redelivery() -> None:
 
     assert not worker_tasks._try_claim_processed_item(_Session(), item)
     assert item.started_at == started
+
+
+def test_reap_stale_running_items_for_run_only_affects_stale_rows() -> None:
+    now = datetime(2026, 6, 17, 12, 0, 0, tzinfo=UTC)
+    stale = AgateProcessedItem(
+        id=1,
+        run_id="run-1",
+        status="running",
+        started_at=now - timedelta(seconds=worker_tasks._STALE_RUNNING_AFTER_S + 5),
+    )
+    active = AgateProcessedItem(
+        id=2,
+        run_id="run-1",
+        status="running",
+        started_at=now - timedelta(seconds=30),
+    )
+    other_run = AgateProcessedItem(
+        id=3,
+        run_id="run-2",
+        status="running",
+        started_at=now - timedelta(seconds=worker_tasks._STALE_RUNNING_AFTER_S + 5),
+    )
+
+    class _ExecResult:
+        def __init__(self, rows: list[AgateProcessedItem]) -> None:
+            self._rows = rows
+
+        def all(self) -> list[AgateProcessedItem]:
+            return self._rows
+
+    added: list[AgateProcessedItem] = []
+
+    class _Session:
+        def exec(self, _stmt: object) -> _ExecResult:
+            return _ExecResult([stale, active])
+
+        def add(self, row: AgateProcessedItem) -> None:
+            added.append(row)
+
+    reaped = worker_tasks._reap_stale_running_items_for_run(_Session(), "run-1", now=now)
+    assert reaped == 1
+    assert stale.status == "failed"
+    assert stale.error_message == worker_tasks._STALE_RUNNING_MESSAGE
+    assert active.status == "running"
+    assert other_run.status == "running"

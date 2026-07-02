@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+from unittest.mock import patch
 
-from worker.startup import log_worker_startup, read_worker_build_info
+from worker.startup import log_worker_startup, read_worker_build_info, warm_worker_process
 
 
 def test_read_worker_build_info_uses_env_with_defaults(monkeypatch) -> None:
@@ -50,3 +51,9 @@ def test_log_worker_startup_emits_json(caplog) -> None:
     assert record.git_sha == "unknown"
     assert record.build_time == "unknown"
     assert record.concurrency == "16"
+
+
+def test_warm_worker_process_calls_litellm_warmup() -> None:
+    with patch("backfield_ai.litellm_warmup.warm_litellm_imports") as warm:
+        warm_worker_process()
+    warm.assert_called_once()

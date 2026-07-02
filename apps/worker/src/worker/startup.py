@@ -29,3 +29,11 @@ def read_worker_build_info() -> dict[str, str]:
 def log_worker_startup() -> None:
     configure_structured_logging("worker")
     log_event(logger, "worker_startup", **read_worker_build_info())
+
+
+def warm_worker_process() -> None:
+    """Prepare each Celery child process before it accepts tasks."""
+    from backfield_ai.litellm_warmup import warm_litellm_imports
+
+    warm_litellm_imports()
+    logger.info("worker_process_warmup_complete")

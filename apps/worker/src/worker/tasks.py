@@ -115,9 +115,14 @@ def _is_stale_running_item(item: AgateProcessedItem, *, now: datetime | None = N
     return (now - touch).total_seconds() > _STALE_RUNNING_AFTER_S
 
 
-def _reap_stale_running_items(session: Session, items: list[AgateProcessedItem]) -> None:
+def _reap_stale_running_items(
+    session: Session,
+    items: list[AgateProcessedItem],
+    *,
+    now: datetime | None = None,
+) -> None:
     """Mark zombie ``running`` rows terminal so batch runs can finalize after worker loss."""
-    now = datetime.now(UTC)
+    now = now or datetime.now(UTC)
     for row in items:
         if not _is_stale_running_item(row, now=now):
             continue
@@ -125,6 +130,29 @@ def _reap_stale_running_items(session: Session, items: list[AgateProcessedItem])
         row.error_message = _STALE_RUNNING_MESSAGE
         row.updated_at = now
         session.add(row)
+
+
+def _reap_stale_running_items_for_run(
+    session: Session,
+    run_id: str,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Reap stale ``running`` rows for one parent run (batch progress helper)."""
+    now = now or datetime.now(UTC)
+    rows = list(
+        session.exec(
+            select(AgateProcessedItem).where(
+                AgateProcessedItem.run_id == run_id,
+                AgateProcessedItem.status == "running",
+            )
+        ).all()
+    )
+    stale_rows = [row for row in rows if _is_stale_running_item(row, now=now)]
+    if not stale_rows:
+        return 0
+    _reap_stale_running_items(session, stale_rows, now=now)
+    return len(stale_rows)
 
 
 def _item_blocks_run_finalization(item: AgateProcessedItem) -> bool:
@@ -235,6 +263,19 @@ celery_app = Celery(
 )
 celery_app.conf.task_acks_late = True
 celery_app.conf.task_reject_on_worker_lost = True
+
+
+def _register_worker_process_hooks() -> None:
+    from celery.signals import worker_process_init
+
+    from worker.startup import warm_worker_process
+
+    @worker_process_init.connect
+    def _warm_celery_child_process(**_kwargs: Any) -> None:
+        warm_worker_process()
+
+
+_register_worker_process_hooks()
 
 
 @contextmanager
@@ -765,6 +806,14 @@ def execute_processed_item(item_id: int) -> None:
         item = session.get(AgateProcessedItem, item_id)
         if not item:
             return
+        reaped = _reap_stale_running_items_for_run(session, item.run_id)
+        if reaped:
+            logger.info(
+                "Reaped %d stale running processed_item row(s) for run_id=%s",
+                reaped,
+                item.run_id,
+            )
+            session.commit()
         if not _try_claim_processed_item(
             session,
             item,
