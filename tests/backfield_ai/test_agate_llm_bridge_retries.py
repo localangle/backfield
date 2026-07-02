@@ -23,7 +23,6 @@ def _rejected_result() -> LiteLLMCompletionResult:
         cost_estimate_incomplete=False,
         cost_estimate_source="litellm",
         latency_ms=56000,
-        raw_response=None,
     )
 
 

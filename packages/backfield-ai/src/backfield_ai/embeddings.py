@@ -57,7 +57,6 @@ class LiteLLMEmbeddingBatchResult:
     cost_estimate_source: str
     latency_ms: int
     batch_error: str | None = None
-    raw_response: Any | None = None
 
 
 def assert_model_config_is_embedding(cfg: BackfieldAiModelConfig) -> None:
@@ -250,7 +249,6 @@ def embed_texts_sync(
             cost_estimate_source=COST_ESTIMATE_SOURCE_UNAVAILABLE,
             latency_ms=latency_ms,
             batch_error=msg,
-            raw_response=None,
         )
         if track_attempt:
             _persist_embedding_attempt_if_tracked(result, model_config_id=model_config_id)
@@ -291,7 +289,6 @@ def embed_texts_sync(
             cost_estimate_source=cost_source,
             latency_ms=latency_ms,
             batch_error=msg,
-            raw_response=resp,
         )
         if track_attempt:
             _persist_embedding_attempt_if_tracked(result, model_config_id=model_config_id)
@@ -321,7 +318,6 @@ def embed_texts_sync(
         cost_estimate_source=cost_source,
         latency_ms=latency_ms,
         batch_error=None,
-        raw_response=resp,
     )
     if track_attempt:
         _persist_embedding_attempt_if_tracked(result, model_config_id=model_config_id)

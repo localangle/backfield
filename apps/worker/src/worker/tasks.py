@@ -278,15 +278,27 @@ celery_app.conf.task_reject_on_worker_lost = True
 
 
 def _register_worker_process_hooks() -> None:
-    from celery.signals import task_failure, worker_process_init, worker_process_shutdown
+    from celery.signals import (
+        task_failure,
+        worker_init,
+        worker_process_init,
+        worker_process_shutdown,
+    )
 
-    from worker.startup import warm_worker_process
+    from worker.startup import prepare_worker_parent_for_fork, warm_worker_process
 
-    @worker_process_init.connect
+    # weak=False is required: Celery signals hold receivers via weakref by default, and these
+    # closures have no other strong reference, so they would be garbage-collected immediately.
+
+    @worker_init.connect(weak=False)
+    def _freeze_parent_heap_before_fork(**_kwargs: Any) -> None:
+        prepare_worker_parent_for_fork()
+
+    @worker_process_init.connect(weak=False)
     def _warm_celery_child_process(**_kwargs: Any) -> None:
         warm_worker_process()
 
-    @worker_process_shutdown.connect
+    @worker_process_shutdown.connect(weak=False)
     def _release_claim_on_child_shutdown(**_kwargs: Any) -> None:
         item_id = _current_processed_item_id.get()
         if item_id is None:
@@ -306,7 +318,7 @@ def _register_worker_process_hooks() -> None:
                 item_id,
             )
 
-    @task_failure.connect
+    @task_failure.connect(weak=False)
     def _release_claim_on_task_failure(
         sender: object | None = None,
         args: tuple[Any, ...] | None = None,
