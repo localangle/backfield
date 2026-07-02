@@ -121,7 +121,7 @@ export default function AppSidebar() {
   useEffect(() => {
     void loadWorkspaces()
     void loadProjects()
-  }, [loadWorkspaces, loadProjects, location.pathname])
+  }, [loadWorkspaces, loadProjects])
 
   useEffect(() => {
     const onChanged = () => {

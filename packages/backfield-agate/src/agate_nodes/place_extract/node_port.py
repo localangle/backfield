@@ -21,6 +21,7 @@ from typing import List, Dict, Any, Optional, Union
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 
 from agate_runtime.context import AgateEnvContext
+from agate_runtime.upstream_input import flatten_upstream_inputs
 from agate_utils.llm import call_llm
 
 from agate_nodes.place_extract.llm_location_parse import place_from_llm_location_entry
@@ -32,6 +33,7 @@ from agate_nodes.place_extract.compact_array_parse import (
 )
 from agate_nodes.place_extract.compact_expand import expand_compact_entry
 from agate_nodes.place_extract.compact_prompt import COMPACT_OUTPUT_INSTRUCTIONS
+from agate_nodes.place_extract.schedule_school_normalize import normalize_location_entries
 
 logger = logging.getLogger(__name__)
 
@@ -237,19 +239,8 @@ class PlaceExtractNode:
         CELERY_TIMEOUT_BUFFER = 300  # Stop 5 minutes before Celery timeout to allow cleanup
         
         input_dict = inp.model_dump()
-        
-        # Flatten namespaced input to make JSON paths easier (similar to LLMEnrich)
-        # Only unwrap namespaced node-* dictionaries; preserve normal dict fields (like meta_* objects)
-        flattened_input: Dict[str, Any] = {}
-        for key, value in input_dict.items():
-            is_node_key = key.startswith("node-") and len(key) > 5 and key[5:].isdigit()
-            if is_node_key and isinstance(value, dict):
-                flattened_input.update(value)
-            elif isinstance(value, dict):
-                # Backfield executor namespaces by arbitrary upstream node ids (e.g. n1, a).
-                flattened_input.update(value)
-            else:
-                flattened_input[key] = value
+
+        flattened_input = flatten_upstream_inputs(input_dict)
         
         # Debug logging to trace meta fields
         try:
@@ -434,7 +425,8 @@ class PlaceExtractNode:
                 raise ValueError("Expected a list of locations")
 
             parse_errors: list[str] = []
-            article_context = extract_article_context(text) if use_compact else None
+            article_context = extract_article_context(text)
+            expanded_entries: list[dict[str, Any]] = []
             for raw_entry in locations_data:
                 try:
                     if use_compact:
@@ -446,24 +438,41 @@ class PlaceExtractNode:
                             parse_errors.append("location entry must be an object or array")
                             continue
                         if is_compact_array_entry(entry):
-                            expanded = expand_compact_entry(
-                                text,
-                                entry,
-                                context=article_context,
+                            expanded_entries.append(
+                                expand_compact_entry(
+                                    text,
+                                    entry,
+                                    context=article_context,
+                                )
                             )
-                            locations.append(place_from_llm_location_entry(expanded))
                         else:
-                            locations.append(place_from_llm_location_entry(entry))
+                            expanded_entries.append(entry)
                     else:
                         if not isinstance(raw_entry, dict):
                             parse_errors.append("location entry must be an object")
                             continue
-                        locations.append(place_from_llm_location_entry(raw_entry))
+                        expanded_entries.append(raw_entry)
                 except (ValueError, TypeError) as entry_err:
                     msg = str(entry_err)
                     parse_errors.append(msg)
                     logger.warning(
                         "[PlaceExtract] skipping invalid LLM location entry: %s",
+                        msg,
+                    )
+
+            normalized_entries = normalize_location_entries(
+                text,
+                expanded_entries,
+                context=article_context,
+            )
+            for entry in normalized_entries:
+                try:
+                    locations.append(place_from_llm_location_entry(entry))
+                except (ValueError, TypeError) as entry_err:
+                    msg = str(entry_err)
+                    parse_errors.append(msg)
+                    logger.warning(
+                        "[PlaceExtract] skipping invalid normalized location entry: %s",
                         msg,
                     )
 

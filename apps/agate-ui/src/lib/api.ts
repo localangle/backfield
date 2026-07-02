@@ -90,12 +90,16 @@ export interface ProjectStats {
   avg_estimated_ai_cost_incomplete?: boolean
 }
 
-export interface Graph {
+export interface GraphSummary {
   id: string
   name: string
   description: string
   public_run_enabled: boolean
   project_id: number
+  created_at: string
+}
+
+export interface Graph extends GraphSummary {
   spec: {
     name: string
     nodes: Array<{
@@ -292,8 +296,21 @@ interface RawGraph {
   description?: string | null
   public_run_enabled?: boolean | null
   project_id: number
-  spec: Graph['spec']
+  spec?: Graph['spec']
   created_at: string
+}
+
+export interface ListGraphsOptions {
+  projectId?: number
+  includeSpec?: boolean
+}
+
+export interface ListRunsOptions {
+  projectId?: number
+  limit?: number
+  offset?: number
+  includeResult?: boolean
+  includeGraphSpecSnapshot?: boolean
 }
 
 interface RawProcessedItem {
@@ -347,15 +364,24 @@ function _currencyFromRaw(v: unknown, fallback: string): string {
   return typeof v === 'string' && v.trim() ? v.trim().toUpperCase() : fallback
 }
 
-function normalizeGraph(raw: RawGraph): Graph {
+function normalizeGraphSummary(raw: RawGraph): GraphSummary {
   return {
     id: raw.id,
     name: raw.name,
     description: typeof raw.description === 'string' ? raw.description : '',
     public_run_enabled: Boolean(raw.public_run_enabled),
     project_id: raw.project_id,
-    spec: raw.spec,
     created_at: raw.created_at,
+  }
+}
+
+function normalizeGraph(raw: RawGraph): Graph {
+  if (!raw.spec) {
+    throw new Error(`Graph ${raw.id} is missing spec`)
+  }
+  return {
+    ...normalizeGraphSummary(raw),
+    spec: raw.spec,
   }
 }
 
@@ -577,9 +603,24 @@ export async function createGraph(data: GraphCreate): Promise<Graph> {
   return normalizeGraph(raw)
 }
 
-export async function listGraphs(): Promise<Graph[]> {
-  const raw = (await fetchAPI('/graphs')) as RawGraph[]
+export async function listGraphs(options: ListGraphsOptions = {}): Promise<Graph[] | GraphSummary[]> {
+  const params = new URLSearchParams()
+  if (options.projectId != null) {
+    params.set('project_id', String(options.projectId))
+  }
+  if (options.includeSpec === false) {
+    params.set('include_spec', 'false')
+  }
+  const query = params.toString()
+  const raw = (await fetchAPI(`/graphs${query ? `?${query}` : ''}`)) as RawGraph[]
+  if (options.includeSpec === false) {
+    return raw.map(normalizeGraphSummary)
+  }
   return raw.map(normalizeGraph)
+}
+
+export async function listGraphSummaries(projectId?: number): Promise<GraphSummary[]> {
+  return listGraphs({ projectId, includeSpec: false }) as Promise<GraphSummary[]>
 }
 
 export async function getGraph(id: string | number): Promise<Graph> {
@@ -624,9 +665,25 @@ export async function replayRun(runId: string): Promise<Run> {
   return normalizeRun(raw)
 }
 
-export async function listRuns(projectId?: number): Promise<Run[]> {
-  const query = projectId != null ? `?project_id=${encodeURIComponent(String(projectId))}` : ''
-  const raw = (await fetchAPI(`/runs${query}`)) as RawRun[]
+export async function listRuns(options: ListRunsOptions = {}): Promise<Run[]> {
+  const params = new URLSearchParams()
+  if (options.projectId != null) {
+    params.set('project_id', String(options.projectId))
+  }
+  if (options.limit != null) {
+    params.set('limit', String(options.limit))
+  }
+  if (options.offset != null) {
+    params.set('offset', String(options.offset))
+  }
+  if (options.includeResult === false) {
+    params.set('include_result', 'false')
+  }
+  if (options.includeGraphSpecSnapshot === false) {
+    params.set('include_graph_spec_snapshot', 'false')
+  }
+  const query = params.toString()
+  const raw = (await fetchAPI(`/runs${query ? `?${query}` : ''}`)) as RawRun[]
   return raw.map(normalizeRun)
 }
 

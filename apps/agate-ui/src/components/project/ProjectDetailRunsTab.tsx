@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { listRuns, listGraphs, cancelRun, type Run, type Graph } from '@/lib/api'
+import { listRuns, listGraphSummaries, cancelRun, type Run, type GraphSummary } from '@/lib/api'
 import { formatRunEstimatedAiCost } from '@/lib/formatRunEstimatedCost'
 import { formatDate } from '@/lib/utils'
 import {
@@ -32,11 +32,13 @@ export type ProjectDetailRunsTabHandle = {
   refresh: () => Promise<void>
 }
 
+const RUNS_PAGE_SIZE = 100
+
 const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetailRunsTabProps>(
   function ProjectDetailRunsTab({ projectId, onDataChanged }, ref) {
   const { showConfirm, showError } = useAppMessage()
   const [runs, setRuns] = useState<Run[]>([])
-  const [graphs, setGraphs] = useState<Graph[]>([])
+  const [graphs, setGraphs] = useState<GraphSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedFlow, setSelectedFlow] = useState<string>('all')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
@@ -52,8 +54,13 @@ const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetai
     try {
       setLoading(true)
       const [runsData, graphsData] = await Promise.all([
-        listRuns(projectId),
-        listGraphs(),
+        listRuns({
+          projectId,
+          limit: RUNS_PAGE_SIZE,
+          includeResult: false,
+          includeGraphSpecSnapshot: false,
+        }),
+        listGraphSummaries(projectId),
       ])
       setRuns(runsData)
       setGraphs(graphsData)
@@ -70,7 +77,12 @@ const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetai
 
   const handleRefresh = useCallback(async () => {
     try {
-      const runsData = await listRuns(projectId)
+      const runsData = await listRuns({
+        projectId,
+        limit: RUNS_PAGE_SIZE,
+        includeResult: false,
+        includeGraphSpecSnapshot: false,
+      })
       setRuns(runsData)
       onDataChanged?.()
     } catch (e) {
@@ -91,7 +103,12 @@ const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetai
     setCancellingRuns((prev) => new Set(prev).add(runId))
     try {
       await cancelRun(runId)
-      const runsData = await listRuns(projectId)
+      const runsData = await listRuns({
+        projectId,
+        limit: RUNS_PAGE_SIZE,
+        includeResult: false,
+        includeGraphSpecSnapshot: false,
+      })
       setRuns(runsData)
       onDataChanged?.()
     } catch (error) {

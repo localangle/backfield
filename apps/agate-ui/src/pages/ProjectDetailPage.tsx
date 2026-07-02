@@ -87,6 +87,8 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<Project | null>(null)
   const [stats, setStats] = useState<ProjectStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [overviewLoading, setOverviewLoading] = useState(true)
+  const [overviewError, setOverviewError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [workspaceTab, setWorkspaceTab] = useState('flows')
   const runsTabRef = useRef<ProjectDetailRunsTabHandle>(null)
@@ -100,26 +102,56 @@ export default function ProjectDetailPage() {
   const workspaceTabPanelMinHeightRef = useRef<number | null>(null)
   const [aiCost, setAiCost] = useState<ProjectEstimatedAiCost | null>(null)
   const [projectWorkspace, setProjectWorkspace] = useState<WorkspaceWithProjects | null>(null)
+  const reloadOverview = useCallback(async (projectId: number) => {
+    if (!slug) return
+    setOverviewLoading(true)
+    setOverviewError(null)
+    let statsLoaded = false
+    let aiCostLoaded = false
+    try {
+      const statsPromise = getProjectStatsBySlug(slug)
+        .then((s) => {
+          setStats(s)
+          statsLoaded = true
+        })
+        .catch((e) => {
+          console.error(e)
+          setStats(null)
+        })
+      const aiCostPromise = getProjectEstimatedAiCost(projectId)
+        .then((c) => {
+          setAiCost(c)
+          aiCostLoaded = true
+        })
+        .catch((e) => {
+          console.error(e)
+          setAiCost(null)
+        })
+      await Promise.all([statsPromise, aiCostPromise])
+      if (!statsLoaded && !aiCostLoaded) {
+        setOverviewError('Failed to load project overview stats')
+      }
+    } finally {
+      setOverviewLoading(false)
+    }
+  }, [slug])
+
   const reload = useCallback(async () => {
     if (!slug) return
     try {
       setError(null)
       const p = await getProjectBySlug(slug)
-      const [s, c] = await Promise.all([
-        getProjectStatsBySlug(slug),
-        getProjectEstimatedAiCost(p.id),
-      ])
       setProject(p)
-      setStats(s)
-      setAiCost(c)
+      void reloadOverview(p.id)
     } catch (e) {
       console.error(e)
       setError('Failed to load project')
       setProject(null)
       setStats(null)
       setAiCost(null)
+      setOverviewLoading(false)
     }
-  }, [slug])
+  }, [slug, reloadOverview])
 
   useEffect(() => {
     if (!slug) {
@@ -280,12 +312,23 @@ export default function ProjectDetailPage() {
     )
   }
 
-  if (error || !project || !stats) {
+  if (error || !project) {
     return <p className="text-muted-foreground">{error || 'Project not found.'}</p>
+  }
+
+  const overviewPending = overviewLoading && !stats
+
+  const runCountDisplay = (value: number | undefined) => {
+    if (overviewPending) return '…'
+    if (stats == null) return '—'
+    return value ?? 0
   }
 
   return (
     <div className="w-full max-w-none min-w-0 space-y-10">
+      {overviewError ? (
+        <p className="text-sm text-destructive">{overviewError}</p>
+      ) : null}
       <div className="space-y-2">
         <PageBreadcrumbs
           items={[
@@ -333,21 +376,27 @@ export default function ProjectDetailPage() {
                   <span aria-hidden="true">🟢</span>
                   Completed
                 </span>
-                <span className="text-2xl font-semibold tabular-nums">{stats.runs_succeeded}</span>
+                <span className="text-2xl font-semibold tabular-nums">
+                  {runCountDisplay(stats?.runs_succeeded)}
+                </span>
               </div>
               <div className="flex items-baseline justify-between gap-4">
                 <span className="text-sm text-muted-foreground inline-flex items-center gap-2">
                   <span aria-hidden="true">🟡</span>
                   In progress
                 </span>
-                <span className="text-2xl font-semibold tabular-nums">{stats.runs_in_progress}</span>
+                <span className="text-2xl font-semibold tabular-nums">
+                  {runCountDisplay(stats?.runs_in_progress)}
+                </span>
               </div>
               <div className="flex items-baseline justify-between gap-4">
                 <span className="text-sm text-muted-foreground inline-flex items-center gap-2">
                   <span aria-hidden="true">🔴</span>
                   Stopped
                 </span>
-                <span className="text-2xl font-semibold tabular-nums">{stats.runs_failed}</span>
+                <span className="text-2xl font-semibold tabular-nums">
+                  {runCountDisplay(stats?.runs_failed)}
+                </span>
               </div>
               <p className="text-xs text-muted-foreground pt-1 border-t border-border">
                 Stopped includes runs that ended with an error or were cancelled.
@@ -417,7 +466,8 @@ export default function ProjectDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {stats.runs_succeeded > 0 &&
+              {stats &&
+              stats.runs_succeeded > 0 &&
               stats.avg_estimated_ai_cost_per_run != null &&
               stats.avg_estimated_ai_cost_currency ? (
                 <>
@@ -452,8 +502,12 @@ export default function ProjectDetailPage() {
                 </>
               ) : (
                 <>
-                  <p className="text-3xl font-semibold tabular-nums text-muted-foreground">—</p>
-                  <p className="text-xs text-muted-foreground mt-1">No completed runs yet</p>
+                  <p className="text-3xl font-semibold tabular-nums text-muted-foreground">
+                    {overviewPending ? '…' : '—'}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {overviewPending ? 'Loading run stats…' : 'No completed runs yet'}
+                  </p>
                 </>
               )}
             </CardContent>
@@ -466,12 +520,12 @@ export default function ProjectDetailPage() {
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-semibold tabular-nums">
-                {formatDurationMs(stats.avg_duration_ms_per_run)}
+                {overviewPending ? '…' : formatDurationMs(stats?.avg_duration_ms_per_run)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
                 Wall time per completed run
               </p>
-              {stats.slowest_flows && stats.slowest_flows.length > 0 ? (
+              {stats?.slowest_flows && stats.slowest_flows.length > 0 ? (
                 <StatMinMaxRange
                   title="Flows"
                   rows={stats.slowest_flows.map((row) => ({

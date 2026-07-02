@@ -949,6 +949,10 @@ def replay_run(
 def list_runs(
     graph_id: str | None = None,
     project_id: int | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+    include_result: bool = True,
+    include_graph_spec_snapshot: bool = True,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ):
@@ -959,6 +963,10 @@ def list_runs(
         require_project_access(session, auth, int(g.project_id))
     if project_id is not None:
         require_project_access(session, auth, project_id)
+    if limit is not None and limit < 1:
+        raise HTTPException(400, "limit must be at least 1")
+    if offset < 0:
+        raise HTTPException(400, "offset must be non-negative")
     q = select(AgateRun).order_by(desc(AgateRun.created_at))
     if graph_id:
         q = q.where(AgateRun.graph_id == graph_id)
@@ -966,29 +974,47 @@ def list_runs(
         q = q.join(AgateGraph, AgateRun.graph_id == AgateGraph.id).where(
             AgateGraph.project_id == project_id
         )
+    if offset:
+        q = q.offset(offset)
+    if limit is not None:
+        q = q.limit(limit)
     rows = session.exec(q).all()
     visible = visible_project_ids(session, auth)
+    graph_project_map: dict[str, int] = {}
+    if rows:
+        graph_rows = session.exec(
+            select(AgateGraph).where(
+                AgateGraph.id.in_({r.graph_id for r in rows})
+            )
+        ).all()
+        graph_project_map = {g.id: int(g.project_id) for g in graph_rows}
     if visible is not None:
         allowed = set(visible)
-        rows = [r for r in rows if _graph_project_id(session, r.graph_id) in allowed]
+        rows = [
+            r
+            for r in rows
+            if graph_project_map.get(r.graph_id) in allowed
+        ]
     cost_map = _rollup_ai_cost_totals_for_run_ids(session, [r.id for r in rows])
     item_count_map = _processed_item_counts_for_run_ids(session, [r.id for r in rows])
     out: list[RunOut] = []
     for r in rows:
         result = None
-        if r.result_json:
+        if include_result and r.result_json:
             try:
                 result = json.loads(r.result_json)
             except json.JSONDecodeError:
                 result = {"raw": r.result_json}
-        pid = _graph_project_id(session, r.graph_id)
+        pid = graph_project_map.get(r.graph_id, 0)
         total_est, total_inc, cur = cost_map.get(
             r.id, (Decimal("0"), False, DEFAULT_AI_COST_CURRENCY)
         )
         total_items, pending_items, running_items, succeeded_items, failed_items = (
             item_count_map.get(r.id) or _synthetic_whole_run_counts(session, r)
         )
-        snapshot_json = _run_graph_spec_snapshot_json(r)
+        snapshot_json = (
+            _run_graph_spec_snapshot_json(r) if include_graph_spec_snapshot else None
+        )
         out.append(
             RunOut(
                 id=r.id,

@@ -53,7 +53,7 @@ Examples:
 - `role_in_story`: short plain-language reason it matters
 - `nature`: `primary`, `actor`, `source`, `subject`, `affected`, `regulator`, `context`, `other`
 - `nature_secondary_tags`: optional 0–2 tags from the same nature vocabulary
-- `mentions`: at least one object with `text` (verbatim snippet) and `quote` (true only for direct quotations) per organization
+- `mentions`: at least one object with `text` (verbatim **sentence or paragraph** from the story that contains the organization—not the organization name alone unless the name is the entire sentence) and `quote` (true only for direct quotations) per organization
 
 ## Output
 

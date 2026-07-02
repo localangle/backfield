@@ -18,7 +18,8 @@ Rules for compact output:
   1. type_code — short type code (see legend); use "oth" for other
   2. role_in_story — brief phrase
   3. nature_code — short nature code (see legend)
-  4. mentions — array of [text, quote] pairs where quote is 0 or 1
+  4. mentions — array of [text, quote] pairs where quote is 0 or 1; **text** must be the full
+     **sentence or paragraph** from the story containing the organization (not the name alone)
   5. extras — optional object; omit entirely when empty (see legend)
 - Do NOT emit nature_secondary_tags or organization_boundary in the core array.
 - Put organization_boundary in extras.b only for borderline cousin mentions.

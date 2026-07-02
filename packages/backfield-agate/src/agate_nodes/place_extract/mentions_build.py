@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from agate_nodes.place_extract.location_utils import split_location_parts
+from agate_nodes.place_extract.schedule_matchups import find_schedule_line_for_school
 
 MAX_MENTIONS_PER_LOCATION = 8
 _PRIMARY_NEEDLE_BOUNDARY_MAX_LEN = 20
@@ -209,6 +210,27 @@ def sentence_containing_span(text: str, start: int, end: int) -> str:
     return text[sent_start:sent_end].strip()
 
 
+def mention_context_containing_span(text: str, start: int, end: int) -> str:
+    """Return the best verbatim mention context: sentence when possible, else paragraph block."""
+    if not text or start < 0 or end <= start or end > len(text):
+        return text[start:end].strip() if 0 <= start < end <= len(text) else ""
+
+    para_start = text.rfind("\n\n", 0, start)
+    para_start = para_start + 2 if para_start >= 0 else 0
+    para_end = text.find("\n\n", end)
+    para_end = para_end if para_end >= 0 else len(text)
+    paragraph = text[para_start:para_end].strip()
+    if not paragraph:
+        return text[start:end].strip()
+
+    rel_start = max(0, start - para_start)
+    rel_end = min(len(paragraph), end - para_start)
+    sentence = sentence_containing_span(paragraph, rel_start, rel_end).strip()
+    if sentence and len(sentence) < len(paragraph):
+        return sentence
+    return paragraph
+
+
 def _dedupe_preserve_order(values: list[str]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
@@ -230,7 +252,11 @@ def _needle_case_variants(text: str) -> list[str]:
     return variants
 
 
-def mention_needles(location: str, location_type: str) -> list[tuple[str, bool]]:
+def mention_needles(
+    location: str,
+    location_type: str,
+    article_text: str = "",
+) -> list[tuple[str, bool]]:
     """Search phrases and whether each requires word-boundary matching."""
     parts = split_location_parts(location)
     primary = parts[0] if parts else location.strip()
@@ -255,6 +281,11 @@ def mention_needles(location: str, location_type: str) -> list[tuple[str, bool]]
                 side = side.strip()
                 if side:
                     needles.append((side, len(side) < _PRIMARY_NEEDLE_BOUNDARY_MAX_LEN))
+    elif location_type == "place" and article_text:
+        for side in (primary, full_location.split(",")[0].strip()):
+            schedule_line = find_schedule_line_for_school(article_text, side)
+            if schedule_line:
+                needles.insert(0, (schedule_line, False))
 
     deduped: list[tuple[str, bool]] = []
     seen: set[str] = set()
@@ -272,7 +303,7 @@ def _mention_records_for_spans(article_text: str, spans: list[tuple[int, int]]) 
     mentions: list[dict[str, str]] = []
     seen_sentences: set[str] = set()
     for start, end in spans:
-        text = sentence_containing_span(article_text, start, end)
+        text = mention_context_containing_span(article_text, start, end)
         if not text:
             text = article_text[start:end].strip()
         key = text.strip().lower()
@@ -289,7 +320,7 @@ def build_mentions(article_text: str, location: str, location_type: str) -> list
     """Reconstruct ``[{text}]`` mentions by locating the place in the article."""
     spans: list[tuple[int, int]] = []
     seen_spans: set[tuple[int, int]] = set()
-    for needle, require_boundary in mention_needles(location, location_type):
+    for needle, require_boundary in mention_needles(location, location_type, article_text):
         for span in find_all_mention_spans(
             article_text,
             needle,
@@ -304,7 +335,7 @@ def build_mentions(article_text: str, location: str, location_type: str) -> list
     if mentions:
         return mentions
 
-    for needle, require_boundary in mention_needles(location, location_type):
+    for needle, require_boundary in mention_needles(location, location_type, article_text):
         span = find_mention_span(
             article_text,
             needle,

@@ -63,25 +63,34 @@ class GraphCreate(BaseModel):
     public_run_enabled: bool = False
 
 
-class GraphOut(BaseModel):
+class GraphSummaryOut(BaseModel):
     id: str
     name: str
     description: str
     project_id: int
-    spec: GraphSpec
     public_run_enabled: bool
     created_at: datetime
 
 
-def _graph_out(graph: AgateGraph) -> GraphOut:
-    return GraphOut(
+class GraphOut(GraphSummaryOut):
+    spec: GraphSpec
+
+
+def _graph_summary_out(graph: AgateGraph) -> GraphSummaryOut:
+    return GraphSummaryOut(
         id=graph.id,
         name=graph.name,
         description=graph.description or "",
         project_id=graph.project_id,
-        spec=GraphSpec.model_validate_json(graph.spec_json),
         public_run_enabled=bool(graph.public_run_enabled),
         created_at=graph.created_at,
+    )
+
+
+def _graph_out(graph: AgateGraph) -> GraphOut:
+    return GraphOut(
+        **_graph_summary_out(graph).model_dump(),
+        spec=GraphSpec.model_validate_json(graph.spec_json),
     )
 
 
@@ -116,22 +125,31 @@ def create_graph(
     return _graph_out(g)
 
 
-@router.get("", response_model=list[GraphOut])
+@router.get("", response_model=list[GraphOut] | list[GraphSummaryOut])
 def list_graphs(
+    project_id: int | None = None,
+    include_spec: bool = True,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ):
-    rows = session.exec(select(AgateGraph).order_by(desc(AgateGraph.created_at))).all()
+    if project_id is not None:
+        require_project_access(session, auth, project_id)
+    q = select(AgateGraph).order_by(desc(AgateGraph.created_at))
+    if project_id is not None:
+        q = q.where(AgateGraph.project_id == project_id)
+    rows = session.exec(q).all()
     visible = visible_project_ids(session, auth)
     if visible is not None:
         allowed = set(visible)
         rows = [r for r in rows if r.project_id in allowed]
-    out: list[GraphOut] = []
-    for row in rows:
-        graph = _graph_out_or_none(row)
-        if graph is not None:
-            out.append(graph)
-    return out
+    if include_spec:
+        out: list[GraphOut] = []
+        for row in rows:
+            graph = _graph_out_or_none(row)
+            if graph is not None:
+                out.append(graph)
+        return out
+    return [_graph_summary_out(row) for row in rows]
 
 
 @router.get("/{graph_id}", response_model=GraphOut)

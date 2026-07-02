@@ -349,6 +349,27 @@ def _avg_terminal_processed_item_duration_ms(
     return max(float(avg), 0.0)
 
 
+def _avg_terminal_processed_item_duration_ms_for_graphs(
+    session: Session,
+    graph_ids: list[str],
+) -> float | None:
+    if not graph_ids:
+        return None
+    succeeded_run_ids = select(AgateRun.id).where(
+        AgateRun.graph_id.in_(graph_ids),
+        AgateRun.status == "succeeded",
+    )
+    filters = (
+        AgateProcessedItem.run_id.in_(succeeded_run_ids),
+        col(AgateProcessedItem.status).in_(_ITEM_TERMINAL_STATUSES),
+    )
+    duration_ms = _processed_item_duration_ms_expr()
+    avg = session.exec(select(func.avg(duration_ms)).where(*filters)).one()
+    if avg is None:
+        return None
+    return max(float(avg), 0.0)
+
+
 def _run_wall_duration_ms_expr():
     return func.extract("epoch", AgateRun.updated_at - AgateRun.created_at) * 1000.0
 
@@ -471,6 +492,45 @@ def _per_run_ai_cost_totals(
     return list(totals.values()), incomplete, currency
 
 
+def _avg_ai_cost_stats_for_succeeded_runs(
+    session: Session,
+    project_id: int,
+    graph_ids: list[str],
+) -> tuple[Decimal | None, bool, str | None]:
+    if not graph_ids:
+        return None, False, None
+    per_run_cost = func.coalesce(func.sum(BackfieldAiCallRecord.estimated_cost), 0)
+    per_run_subq = (
+        select(
+            BackfieldAiCallRecord.run_id.label("run_id"),
+            per_run_cost.label("total_cost"),
+            _ai_cost_incomplete_aggregate().label("incomplete"),
+            func.max(BackfieldAiCallRecord.currency).label("currency"),
+        )
+        .where(BackfieldAiCallRecord.project_id == project_id)
+        .group_by(BackfieldAiCallRecord.run_id)
+        .subquery()
+    )
+    run_total = func.coalesce(per_run_subq.c.total_cost, 0)
+    row = session.exec(
+        select(
+            func.avg(run_total),
+            func.max(case((per_run_subq.c.incomplete > 0, 1), else_=0)),
+            func.max(per_run_subq.c.currency),
+        )
+        .select_from(AgateRun)
+        .outerjoin(per_run_subq, per_run_subq.c.run_id == AgateRun.id)
+        .where(
+            AgateRun.graph_id.in_(graph_ids),
+            AgateRun.status == "succeeded",
+        )
+    ).one()
+    avg_cost, incomplete_flag, currency = row
+    if avg_cost is None:
+        return None, bool(incomplete_flag), currency
+    return Decimal(str(avg_cost)), bool(incomplete_flag), currency
+
+
 def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
     graphs = session.exec(
         select(AgateGraph).where(AgateGraph.project_id == p.id)
@@ -478,49 +538,61 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
     graph_ids = [g.id for g in graphs]
     if not graph_ids:
         return ProjectStatsOut(total_runs=0, articles_processed=0)
-    runs = session.exec(select(AgateRun).where(AgateRun.graph_id.in_(graph_ids))).all()
-    total_runs = len(runs)
 
-    runs_succeeded = 0
-    runs_in_progress = 0
-    runs_failed = 0
-    succeeded_ids: list[str] = []
-    for r in runs:
-        st = r.status
-        if st == "succeeded":
-            runs_succeeded += 1
-            succeeded_ids.append(r.id)
-        elif st in ("pending", "running"):
-            runs_in_progress += 1
-        elif st == "failed":
-            runs_failed += 1
-        else:
-            runs_failed += 1
-
+    base_filter = AgateRun.graph_id.in_(graph_ids)
+    status_row = session.exec(
+        select(
+            func.count(AgateRun.id),
+            func.sum(case((AgateRun.status == "succeeded", 1), else_=0)),
+            func.sum(case((col(AgateRun.status).in_(["pending", "running"]), 1), else_=0)),
+            func.sum(case((AgateRun.status == "failed", 1), else_=0)),
+            func.sum(
+                case(
+                    (
+                        ~col(AgateRun.status).in_(
+                            ["succeeded", "pending", "running", "failed"]
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ),
+        ).where(base_filter)
+    ).one()
+    total_runs = int(status_row[0] or 0)
+    runs_succeeded = int(status_row[1] or 0)
+    runs_in_progress = int(status_row[2] or 0)
+    runs_failed = int(status_row[3] or 0) + int(status_row[4] or 0)
     articles_processed = runs_succeeded
 
-    dur_success: list[float] = []
-    for r in runs:
-        if r.status != "succeeded":
-            continue
-        ms = (r.updated_at - r.created_at).total_seconds() * 1000
-        if ms < 0:
-            ms = 0.0
-        dur_success.append(ms)
-    avg_run_duration = _mean_ms(dur_success)
-    min_run_duration = _min_ms(dur_success)
-    max_run_duration = _max_ms(dur_success)
+    run_duration_ms = _run_wall_duration_ms_expr()
+    duration_row = session.exec(
+        select(
+            func.avg(run_duration_ms),
+            func.min(run_duration_ms),
+            func.max(run_duration_ms),
+        ).where(base_filter, AgateRun.status == "succeeded")
+    ).one()
+    avg_run_duration = (
+        max(float(duration_row[0]), 0.0) if duration_row[0] is not None else None
+    )
+    min_run_duration = (
+        max(float(duration_row[1]), 0.0) if duration_row[1] is not None else None
+    )
+    max_run_duration = (
+        max(float(duration_row[2]), 0.0) if duration_row[2] is not None else None
+    )
 
-    avg_item_duration = _avg_terminal_processed_item_duration_ms(session, succeeded_ids)
+    avg_item_duration = _avg_terminal_processed_item_duration_ms_for_graphs(
+        session, graph_ids
+    )
     if avg_item_duration is None:
         avg_item_duration = avg_run_duration
 
     pid = int(p.id) if p.id is not None else 0
-    succeeded_frozen = frozenset(succeeded_ids)
-    per_run_costs, ai_incomplete, ai_currency = _per_run_ai_cost_totals(
-        session, pid, succeeded_frozen
+    avg_ai, ai_incomplete, ai_currency = _avg_ai_cost_stats_for_succeeded_runs(
+        session, pid, graph_ids
     )
-    avg_ai = _mean_decimal(per_run_costs)
     slowest_flows = _slowest_flows_for_project(session, graph_ids)
     top_flows_by_cost = _top_flows_by_avg_ai_cost_for_project(session, pid, graph_ids)
 

@@ -8,6 +8,8 @@ from typing import List, Dict, Any, Optional, Tuple
 from pydantic import AliasChoices, BaseModel, Field, ConfigDict, model_validator
 
 from agate_runtime.context import AgateEnvContext
+from agate_runtime.upstream_input import flatten_upstream_inputs
+from agate_nodes.place_extract.schedule_school_normalize import prepare_location_dict_for_geocode
 
 from .agent import run_advanced_geocoding_agent
 
@@ -18,23 +20,8 @@ TASK_SOFT_TIME_LIMIT = int(os.getenv("TASK_SOFT_TIME_LIMIT", "3600"))  # 60 minu
 
 
 def _flatten_executor_upstream_inputs(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Hoist per-upstream payloads to top level (parity with PlaceExtract / Backfield executor).
-
-    The graph executor namespaces each direct upstream output by source node id. Without
-    flattening, article fields like ``headline`` and ``url`` stay nested and DBOutput's
-    shallow merge never sees them for ``substrate_article`` upserts.
-    """
-
-    flattened: Dict[str, Any] = {}
-    for key, value in state.items():
-        is_node_key = key.startswith("node-") and len(key) > 5 and key[5:].isdigit()
-        if is_node_key and isinstance(value, dict):
-            flattened.update(value)
-        elif isinstance(value, dict):
-            flattened.update(value)
-        else:
-            flattened[key] = value
-    return flattened
+    """Hoist per-upstream payloads to top level (parity with PlaceExtract / Backfield executor)."""
+    return flatten_upstream_inputs(state)
 
 
 ########## AGENT MODELS ##########
@@ -243,6 +230,13 @@ async def run_geocode_agent_pipeline(
         return GeocodeAgentOutput(**output_data)
         
     # Filter for supported types
+    article_text = text or ""
+    locations_data = [
+        prepare_location_dict_for_geocode(loc, article_text)
+        if isinstance(loc, dict)
+        else loc
+        for loc in locations_data
+    ]
     supported_types = [
         "state",
         "county",

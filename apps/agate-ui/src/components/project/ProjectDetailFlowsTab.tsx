@@ -11,10 +11,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
-  listGraphs,
+  listGraphSummaries,
+  getGraph,
   deleteGraph,
   createGraph,
-  type Graph,
+  type GraphSummary,
   type GraphCreate,
 } from '@/lib/api'
 import { flowDescriptionTableText } from '@/components/flow-builder/FlowDescriptionField'
@@ -32,17 +33,17 @@ export default function ProjectDetailFlowsTab({
   projectSlug,
   onDataChanged,
 }: ProjectDetailFlowsTabProps) {
-  const [graphs, setGraphs] = useState<Graph[]>([])
+  const [graphs, setGraphs] = useState<GraphSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [flowToDelete, setFlowToDelete] = useState<Graph | null>(null)
+  const [flowToDelete, setFlowToDelete] = useState<GraphSummary | null>(null)
   const navigate = useNavigate()
 
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const graphsData = await listGraphs()
-      setGraphs(graphsData.filter((g) => g.project_id === projectId))
+      const graphsData = await listGraphSummaries(projectId)
+      setGraphs(graphsData)
     } catch (error) {
       console.error('Failed to load flows:', error)
     } finally {
@@ -54,18 +55,19 @@ export default function ProjectDetailFlowsTab({
     void loadData()
   }, [loadData])
 
-  const handleDeleteFlow = (flow: Graph) => {
+  const handleDeleteFlow = (flow: GraphSummary) => {
     setFlowToDelete(flow)
     setDeleteDialogOpen(true)
   }
 
-  const handleDuplicateFlow = async (flow: Graph) => {
+  const handleDuplicateFlow = async (flow: GraphSummary) => {
     try {
+      const fullFlow = await getGraph(flow.id)
       const duplicateData: GraphCreate = {
         name: `Copy of ${flow.name}`,
         description: flow.description ?? '',
         project_id: flow.project_id,
-        spec: flow.spec,
+        spec: fullFlow.spec,
       }
       const newGraph = await createGraph(duplicateData)
       setGraphs((prev) => [...prev, newGraph])

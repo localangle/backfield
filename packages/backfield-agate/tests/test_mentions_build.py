@@ -42,3 +42,21 @@ def test_mention_cap() -> None:
     article = " ".join(sentence for _ in range(MAX_MENTIONS_PER_LOCATION + 3))
     mentions = build_mentions(article, "Chicago, IL", "city")
     assert len(mentions) <= MAX_MENTIONS_PER_LOCATION
+
+
+def test_schedule_place_mention_uses_schedule_line() -> None:
+    article = "Beacon at Northtown\n\nHinsdale Adventist at Calvary Christian\n"
+    mentions = build_mentions(article, "Hinsdale Adventist, IL", "place")
+    assert mentions == [{"text": "Hinsdale Adventist at Calvary Christian"}]
+
+
+def test_mention_context_prefers_sentence_within_paragraph() -> None:
+    article = (
+        "MINNEAPOLIS — City leaders announced a pilot.\n\n"
+        "Standing near the Midtown Greenway, Mayor Frey said the program would begin in Powderhorn."
+    )
+    mentions = build_mentions(article, "Powderhorn, Minneapolis, MN", "neighborhood")
+    assert len(mentions) == 1
+    assert "Powderhorn" in mentions[0]["text"]
+    assert "Midtown Greenway" in mentions[0]["text"]
+    assert "MINNEAPOLIS" not in mentions[0]["text"]

@@ -430,6 +430,48 @@ def test_project_graph_and_run_creation(monkeypatch, client: TestClient):
     assert len(list_response.json()) == 1
 
 
+def test_list_graphs_summary_and_project_filter(client: TestClient):
+    project = client.post("/projects", json={"name": "General", "slug": "general-perf"}).json()
+    client.post(
+        "/graphs",
+        json={
+            "name": "Perf Flow",
+            "project_id": project["id"],
+            "spec": _minimal_text_input_spec(name="perf_flow"),
+        },
+    )
+    summary = client.get(
+        f"/graphs?project_id={project['id']}&include_spec=false",
+    ).json()
+    assert len(summary) == 1
+    assert summary[0]["name"] == "Perf Flow"
+    assert "spec" not in summary[0]
+
+    stats = client.get(f"/projects/by-slug/{project['slug']}/stats").json()
+    assert stats["total_runs"] == 0
+
+
+def test_list_runs_supports_lightweight_list(client: TestClient):
+    project = client.post("/projects", json={"name": "Runs", "slug": "runs-perf"}).json()
+    graph = client.post(
+        "/graphs",
+        json={
+            "name": "Run Flow",
+            "project_id": project["id"],
+            "spec": _minimal_text_input_spec(name="run_flow"),
+        },
+    ).json()
+    run = client.post("/runs", json={"graph_id": graph["id"]}).json()
+    rows = client.get(
+        f"/runs?project_id={project['id']}&limit=10&include_result=false"
+        "&include_graph_spec_snapshot=false",
+    ).json()
+    assert len(rows) == 1
+    assert rows[0]["id"] == run["id"]
+    assert rows[0]["result"] is None
+    assert rows[0]["graph_spec_snapshot_json"] is None
+
+
 def test_run_graph_spec_snapshot_and_flow_changed(monkeypatch, client: TestClient):
     monkeypatch.setattr(runs.celery_app, "send_task", lambda *args, **kwargs: None)
 
