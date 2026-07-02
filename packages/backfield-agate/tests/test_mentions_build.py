@@ -44,7 +44,7 @@ def test_mention_cap() -> None:
     assert len(mentions) <= MAX_MENTIONS_PER_LOCATION
 
 
-def test_schedule_place_mention_uses_schedule_line() -> None:
+def test_place_mention_finds_name_in_schedule_style_line() -> None:
     article = "Beacon at Northtown\n\nHinsdale Adventist at Calvary Christian\n"
     mentions = build_mentions(article, "Hinsdale Adventist, IL", "place")
     assert mentions == [{"text": "Hinsdale Adventist at Calvary Christian"}]

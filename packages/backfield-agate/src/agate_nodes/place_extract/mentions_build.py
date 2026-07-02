@@ -6,7 +6,6 @@ import re
 from typing import Any
 
 from agate_nodes.place_extract.location_utils import split_location_parts
-from agate_nodes.place_extract.schedule_matchups import find_schedule_line_for_school
 
 MAX_MENTIONS_PER_LOCATION = 8
 _PRIMARY_NEEDLE_BOUNDARY_MAX_LEN = 20
@@ -255,7 +254,6 @@ def _needle_case_variants(text: str) -> list[str]:
 def mention_needles(
     location: str,
     location_type: str,
-    article_text: str = "",
 ) -> list[tuple[str, bool]]:
     """Search phrases and whether each requires word-boundary matching."""
     parts = split_location_parts(location)
@@ -281,12 +279,6 @@ def mention_needles(
                 side = side.strip()
                 if side:
                     needles.append((side, len(side) < _PRIMARY_NEEDLE_BOUNDARY_MAX_LEN))
-    elif location_type == "place" and article_text:
-        for side in (primary, full_location.split(",")[0].strip()):
-            schedule_line = find_schedule_line_for_school(article_text, side)
-            if schedule_line:
-                needles.insert(0, (schedule_line, False))
-
     deduped: list[tuple[str, bool]] = []
     seen: set[str] = set()
     for needle, require_boundary in needles:
@@ -320,7 +312,7 @@ def build_mentions(article_text: str, location: str, location_type: str) -> list
     """Reconstruct ``[{text}]`` mentions by locating the place in the article."""
     spans: list[tuple[int, int]] = []
     seen_spans: set[tuple[int, int]] = set()
-    for needle, require_boundary in mention_needles(location, location_type, article_text):
+    for needle, require_boundary in mention_needles(location, location_type):
         for span in find_all_mention_spans(
             article_text,
             needle,
@@ -335,7 +327,7 @@ def build_mentions(article_text: str, location: str, location_type: str) -> list
     if mentions:
         return mentions
 
-    for needle, require_boundary in mention_needles(location, location_type, article_text):
+    for needle, require_boundary in mention_needles(location, location_type):
         span = find_mention_span(
             article_text,
             needle,

@@ -33,7 +33,6 @@ from agate_nodes.place_extract.compact_array_parse import (
 )
 from agate_nodes.place_extract.compact_expand import expand_compact_entry
 from agate_nodes.place_extract.compact_prompt import COMPACT_OUTPUT_INSTRUCTIONS
-from agate_nodes.place_extract.schedule_school_normalize import normalize_location_entries
 
 logger = logging.getLogger(__name__)
 
@@ -460,19 +459,14 @@ class PlaceExtractNode:
                         msg,
                     )
 
-            normalized_entries = normalize_location_entries(
-                text,
-                expanded_entries,
-                context=article_context,
-            )
-            for entry in normalized_entries:
+            for entry in expanded_entries:
                 try:
                     locations.append(place_from_llm_location_entry(entry))
                 except (ValueError, TypeError) as entry_err:
                     msg = str(entry_err)
                     parse_errors.append(msg)
                     logger.warning(
-                        "[PlaceExtract] skipping invalid normalized location entry: %s",
+                        "[PlaceExtract] skipping invalid location entry: %s",
                         msg,
                     )
 
