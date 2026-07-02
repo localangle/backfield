@@ -313,6 +313,13 @@ export interface ListRunsOptions {
   includeGraphSpecSnapshot?: boolean
 }
 
+export interface ListProcessedItemsOptions {
+  limit?: number
+  offset?: number
+  sort?: 'id' | 'source' | 'status' | 'duration' | 'estimated_cost' | 'created_at'
+  direction?: 'asc' | 'desc'
+}
+
 interface RawProcessedItem {
   id: number
   run_id: string
@@ -351,6 +358,45 @@ interface RawRun {
   estimated_ai_cost_total_incomplete?: boolean
   graph_spec_snapshot_json?: string | null
   flow_changed_since_run?: boolean | null
+}
+
+interface RawRunStatus {
+  id: string
+  graph_id: string
+  project_id: number
+  status: string
+  error_message?: string | null
+  created_at: string
+  updated_at: string
+  total_items: number
+  pending_items: number
+  running_items: number
+  succeeded_items: number
+  failed_items: number
+  estimated_ai_cost_total?: string | number | null
+  estimated_ai_cost_total_incomplete?: boolean
+  graph_spec_snapshot_json?: string | null
+  flow_changed_since_run?: boolean | null
+}
+
+interface RawProcessedItemsPage {
+  run_id: string
+  total: number
+  limit: number
+  offset: number
+  sort: string
+  direction: 'asc' | 'desc'
+  items: RawProcessedItem[]
+}
+
+export interface ProcessedItemsPage {
+  run_id: string
+  total: number
+  limit: number
+  offset: number
+  sort: string
+  direction: 'asc' | 'desc'
+  items: ProcessedItemSummary[]
 }
 
 function _parseCostAmount(v: unknown): number {
@@ -538,11 +584,11 @@ function normalizeRun(raw: RawRun): Run {
     status: st,
     created_at: raw.created_at,
     updated_at: raw.updated_at,
-    total_items: hasServerItemCounts ? raw.total_items : items.length,
-    pending_items: hasServerItemCounts ? raw.pending_items : pending_items,
-    running_items: hasServerItemCounts ? raw.running_items : running_items,
-    succeeded_items: hasServerItemCounts ? raw.succeeded_items : succeeded,
-    failed_items: hasServerItemCounts ? raw.failed_items : failed,
+    total_items: hasServerItemCounts ? (raw.total_items ?? 0) : items.length,
+    pending_items: hasServerItemCounts ? (raw.pending_items ?? 0) : pending_items,
+    running_items: hasServerItemCounts ? (raw.running_items ?? 0) : running_items,
+    succeeded_items: hasServerItemCounts ? (raw.succeeded_items ?? 0) : succeeded,
+    failed_items: hasServerItemCounts ? (raw.failed_items ?? 0) : failed,
     items,
     node_outputs: outputs,
     whole_run_ai_cost_estimate: wrEst,
@@ -554,6 +600,32 @@ function normalizeRun(raw: RawRun): Run {
           estimated_ai_cost_total_incomplete: Boolean(raw.estimated_ai_cost_total_incomplete),
         }
       : {}),
+    ...(raw.graph_spec_snapshot_json != null
+      ? { graph_spec_snapshot_json: raw.graph_spec_snapshot_json }
+      : {}),
+    ...(raw.flow_changed_since_run === true || raw.flow_changed_since_run === false
+      ? { flow_changed_since_run: raw.flow_changed_since_run }
+      : {}),
+  }
+}
+
+function normalizeRunStatus(raw: RawRunStatus): Run {
+  return {
+    id: raw.id,
+    graph_id: raw.graph_id,
+    project_id: raw.project_id,
+    status: mapRunStatus(raw.status),
+    created_at: raw.created_at,
+    updated_at: raw.updated_at,
+    total_items: raw.total_items,
+    pending_items: raw.pending_items,
+    running_items: raw.running_items,
+    succeeded_items: raw.succeeded_items,
+    failed_items: raw.failed_items,
+    items: null,
+    node_outputs: null,
+    estimated_ai_cost_total: _parseCostAmount(raw.estimated_ai_cost_total),
+    estimated_ai_cost_total_incomplete: Boolean(raw.estimated_ai_cost_total_incomplete),
     ...(raw.graph_spec_snapshot_json != null
       ? { graph_spec_snapshot_json: raw.graph_spec_snapshot_json }
       : {}),
@@ -690,6 +762,38 @@ export async function listRuns(options: ListRunsOptions = {}): Promise<Run[]> {
 export async function getRun(id: string | number): Promise<Run> {
   const raw = (await fetchAPI(`/runs/${id}`)) as RawRun
   return normalizeRun(raw)
+}
+
+export async function getRunStatus(id: string | number): Promise<Run> {
+  const raw = (await fetchAPI(`/runs/${id}/status`)) as RawRunStatus
+  return normalizeRunStatus(raw)
+}
+
+export async function getRunProcessedItemsPage(
+  runId: string | number,
+  options: ListProcessedItemsOptions = {},
+): Promise<ProcessedItemsPage> {
+  const params = new URLSearchParams()
+  if (options.limit != null) {
+    params.set('limit', String(options.limit))
+  }
+  if (options.offset != null) {
+    params.set('offset', String(options.offset))
+  }
+  if (options.sort) {
+    params.set('sort', options.sort)
+  }
+  if (options.direction) {
+    params.set('direction', options.direction)
+  }
+  const query = params.toString()
+  const raw = (await fetchAPI(
+    `/runs/${runId}/items${query ? `?${query}` : ''}`,
+  )) as RawProcessedItemsPage
+  return {
+    ...raw,
+    items: raw.items.map(_mapDbProcessedItem),
+  }
 }
 
 export interface RunEstimatedAiCost {

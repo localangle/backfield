@@ -451,7 +451,9 @@ def test_list_graphs_summary_and_project_filter(client: TestClient):
     assert stats["total_runs"] == 0
 
 
-def test_list_runs_supports_lightweight_list(client: TestClient):
+def test_list_runs_supports_lightweight_list(monkeypatch, client: TestClient):
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
+
     project = client.post("/projects", json={"name": "Runs", "slug": "runs-perf"}).json()
     graph = client.post(
         "/graphs",
@@ -814,6 +816,24 @@ def test_list_runs_includes_processed_item_counts(monkeypatch, tmp_path):
         processed = detail.json()["processed_items"]
         assert processed[0]["input_preview"] == "hello from a very long manual…"
         assert processed[1]["input_preview"] == "world"
+
+        status = tc.get(f"/runs/{run['id']}/status")
+        assert status.status_code == 200
+        status_body = status.json()
+        assert "processed_items" not in status_body
+        assert status_body["total_items"] == 2
+        assert status_body["succeeded_items"] == 1
+        assert status_body["failed_items"] == 1
+
+        page = tc.get(f"/runs/{run['id']}/items?limit=1&offset=1")
+        assert page.status_code == 200
+        page_body = page.json()
+        assert page_body["total"] == 2
+        assert page_body["limit"] == 1
+        assert page_body["offset"] == 1
+        assert len(page_body["items"]) == 1
+        assert page_body["items"][0]["source_file"] == "b.json"
+        assert page_body["items"][0]["input_preview"] == "world"
     finally:
         app.dependency_overrides.clear()
 

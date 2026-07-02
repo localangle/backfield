@@ -6,6 +6,8 @@ import logging
 import os
 import random
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from agate_runtime.output_node import consolidated_body_from_dboutput
@@ -35,6 +37,63 @@ from worker.substrate.canonical.llm_call_policy import (
 logger = logging.getLogger(__name__)
 
 _DBOUTPUT_DEADLOCK_MAX_ATTEMPTS = 4
+_DBOUTPUT_PERSIST_LOCK_TTL_S = int(os.getenv("DBOUTPUT_PERSIST_LOCK_TTL_S", "1800"))
+
+
+def _dboutput_max_concurrent_persists() -> int:
+    raw = os.getenv("DBOUTPUT_MAX_CONCURRENT_PERSISTS", "8")
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 8
+
+
+@contextmanager
+def _dboutput_persist_slot() -> Iterator[None]:
+    max_concurrent = _dboutput_max_concurrent_persists()
+    if max_concurrent <= 0:
+        yield
+        return
+
+    try:
+        import redis
+
+        client = redis.from_url(
+            os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+            socket_connect_timeout=2,
+            socket_timeout=2,
+        )
+    except Exception:
+        logger.warning("DBOutput persist gate unavailable; continuing without concurrency cap")
+        yield
+        return
+
+    lock = None
+    try:
+        while lock is None:
+            for slot in range(max_concurrent):
+                candidate = client.lock(
+                    f"backfield:dboutput:persist:{slot}",
+                    timeout=_DBOUTPUT_PERSIST_LOCK_TTL_S,
+                    blocking_timeout=0,
+                )
+                if candidate.acquire(blocking=False):
+                    lock = candidate
+                    break
+            if lock is None:
+                time.sleep(0.05)
+    except Exception:
+        logger.warning("DBOutput persist gate acquire failed; continuing without concurrency cap")
+        yield
+        return
+
+    try:
+        yield
+    finally:
+        try:
+            lock.release()
+        except Exception:
+            logger.debug("DBOutput persist gate lock release failed", exc_info=True)
 
 
 def _persist_db_output_in_session(
@@ -211,35 +270,36 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
     from backfield_db.session import get_engine
 
     last_exc: SQLAlchemyError | None = None
-    for attempt in range(_DBOUTPUT_DEADLOCK_MAX_ATTEMPTS):
-        try:
-            with Session(get_engine()) as session:
-                result = _persist_db_output_in_session(
-                    session,
-                    body=body,
-                    params=persist_params,
-                    project_id=project_id,
-                    graph_id=graph_id,
-                    run_id=run_id,
-                    replace_geography=replace_geography,
-                    processed_item_id=processed_item_id,
-                    settings=settings,
+    with _dboutput_persist_slot():
+        for attempt in range(_DBOUTPUT_DEADLOCK_MAX_ATTEMPTS):
+            try:
+                with Session(get_engine()) as session:
+                    result = _persist_db_output_in_session(
+                        session,
+                        body=body,
+                        params=persist_params,
+                        project_id=project_id,
+                        graph_id=graph_id,
+                        run_id=run_id,
+                        replace_geography=replace_geography,
+                        processed_item_id=processed_item_id,
+                        settings=settings,
+                    )
+                    session.commit()
+                return result
+            except SQLAlchemyError as exc:
+                last_exc = exc
+                if not is_postgres_deadlock(exc) or attempt >= _DBOUTPUT_DEADLOCK_MAX_ATTEMPTS - 1:
+                    raise
+                delay_s = 0.05 * (2**attempt) + random.uniform(0, 0.05)
+                logger.warning(
+                    "DBOutput deadlock on attempt %s/%s for run_id=%s; retrying in %.2fs",
+                    attempt + 1,
+                    _DBOUTPUT_DEADLOCK_MAX_ATTEMPTS,
+                    run_id,
+                    delay_s,
                 )
-                session.commit()
-            return result
-        except SQLAlchemyError as exc:
-            last_exc = exc
-            if not is_postgres_deadlock(exc) or attempt >= _DBOUTPUT_DEADLOCK_MAX_ATTEMPTS - 1:
-                raise
-            delay_s = 0.05 * (2**attempt) + random.uniform(0, 0.05)
-            logger.warning(
-                "DBOutput deadlock on attempt %s/%s for run_id=%s; retrying in %.2fs",
-                attempt + 1,
-                _DBOUTPUT_DEADLOCK_MAX_ATTEMPTS,
-                run_id,
-                delay_s,
-            )
-            time.sleep(delay_s)
+                time.sleep(delay_s)
 
     if last_exc is not None:
         raise last_exc

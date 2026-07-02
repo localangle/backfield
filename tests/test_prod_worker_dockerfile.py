@@ -56,6 +56,14 @@ def test_compose_worker_uses_dev_target_and_entrypoint() -> None:
     worker_block = compose.split("  worker:", 1)[1].split("\n\n", 1)[0]
     assert "target: dev" in worker_block
     assert "command:" not in worker_block
+    assert (
+        "BACKFIELD_SQLALCHEMY_POOL_SIZE: ${WORKER_BACKFIELD_SQLALCHEMY_POOL_SIZE:-1}"
+        in worker_block
+    )
+    assert (
+        "BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${WORKER_BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-0}"
+        in worker_block
+    )
 
 
 def test_prod_worker_image_logs_version_and_respects_concurrency() -> None:

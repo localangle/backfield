@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useAppMessage } from '@/components/AppMessageProvider'
 import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
-  getRun,
+  getRunStatus,
+  getRunProcessedItemsPage,
   getGraph,
   getProject,
   replayRun,
@@ -42,11 +43,10 @@ import {
   resolveRunGraphSpecForDisplay,
   s3InputSourceForRun,
 } from '@/lib/runGraphSpec'
-import { ArrowLeft, ArrowRight, ArrowUpDown, ChevronDown, ChevronUp, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, Play, StopCircle, RotateCcw } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ArrowUpDown, ChevronDown, ChevronUp, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, Play, StopCircle, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
-  sortProcessedItems,
   type ProcessedItemSortColumn,
   type ProcessedItemSortDirection,
 } from '@/lib/processedItemTableSort'
@@ -60,6 +60,9 @@ export default function RunDetail() {
   const [project, setProject] = useState<Project | null>(null)
   const [projectWorkspace, setProjectWorkspace] = useState<WorkspaceWithProjects | null>(null)
   const [loading, setLoading] = useState(true)
+  const [itemsLoading, setItemsLoading] = useState(false)
+  const [processedItems, setProcessedItems] = useState<ProcessedItemSummary[]>([])
+  const [processedItemsTotal, setProcessedItemsTotal] = useState(0)
   const [runningAgain, setRunningAgain] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
@@ -92,9 +95,15 @@ export default function RunDetail() {
         if (!runId) return
         
         try {
-          // Only call getRun once, then use the result to get the graph
-          const newRun = await getRun(runId)
-          const graphData = await getGraph(newRun.graph_id)
+          const newRun = await getRunStatus(runId)
+          const [graphData] = await Promise.all([
+            graph && graph.id === newRun.graph_id ? Promise.resolve(graph) : getGraph(newRun.graph_id),
+            loadProcessedItemsPage({
+              page: currentPage,
+              sortColumn,
+              sortDirection,
+            }),
+          ])
           
           // Only update state if data has actually changed
           if (JSON.stringify(newRun) !== JSON.stringify(run)) {
@@ -111,7 +120,12 @@ export default function RunDetail() {
     }
     // Return empty cleanup function if no interval was created
     return () => {}
-  }, [run?.status, runId]) // Only depend on run.status and runId, not the entire run/graph objects
+  }, [run?.status, runId, currentPage, sortColumn, sortDirection]) // Poll compact status and current page while active.
+
+  useEffect(() => {
+    if (!runId || !run || loading) return
+    void loadProcessedItemsPage()
+  }, [runId, currentPage, sortColumn, sortDirection])
 
   useEffect(() => {
     if (project?.workspace_id == null) {
@@ -133,16 +147,42 @@ export default function RunDetail() {
     }
   }, [project?.workspace_id])
 
+  async function loadProcessedItemsPage(options?: {
+    page?: number
+    sortColumn?: ProcessedItemSortColumn
+    sortDirection?: ProcessedItemSortDirection
+  }) {
+    if (!runId) return
+
+    const page = options?.page ?? currentPage
+    const pageSortColumn = options?.sortColumn ?? sortColumn
+    const pageSortDirection = options?.sortDirection ?? sortDirection
+    const offset = (page - 1) * itemsPerPage
+    setItemsLoading(true)
+    try {
+      const pageData = await getRunProcessedItemsPage(runId, {
+        limit: itemsPerPage,
+        offset,
+        sort: pageSortColumn,
+        direction: pageSortDirection,
+      })
+      setProcessedItems(pageData.items)
+      setProcessedItemsTotal(pageData.total)
+    } finally {
+      setItemsLoading(false)
+    }
+  }
+
   async function loadRunData() {
     if (!runId) return
 
     try {
       setLoading(true)
-      // Only call getRun once, then use the result to get the graph
-      const runData = await getRun(runId)
+      const runData = await getRunStatus(runId)
       const [graphData, projectData] = await Promise.all([
         getGraph(runData.graph_id),
         getProject(runData.project_id).catch(() => null),
+        loadProcessedItemsPage({ page: 1 }),
       ])
       setRun(runData)
       setGraph(graphData)
@@ -233,10 +273,10 @@ export default function RunDetail() {
   }
 
   function handleSelectAll() {
-    if (!run?.items) return
-    // Select all items across all pages
-    const allItemIds = new Set(run.items.map(item => item.id))
-    setSelectedItems(allItemIds)
+    const pageItemIds = processedItems
+      .filter((item) => item.status !== 'pending' && item.status !== 'running' && item.status !== 'skipped')
+      .map(item => item.id)
+    setSelectedItems(prev => new Set([...prev, ...pageItemIds]))
   }
 
   function handleDeselectAll() {
@@ -244,13 +284,12 @@ export default function RunDetail() {
   }
 
   function handleSelectFailed() {
-    if (!run?.items) return
     const failedItemIds = new Set(
-      run.items
+      processedItems
         .filter(item => item.status === 'failed' || item.status === 'timed_out')
         .map(item => item.id)
     )
-    setSelectedItems(failedItemIds)
+    setSelectedItems(prev => new Set([...prev, ...failedItemIds]))
   }
 
   async function handleBulkRerun() {
@@ -321,14 +360,6 @@ export default function RunDetail() {
     }
   }
 
-  const formatJson = (data: any) => {
-    try {
-      return JSON.stringify(data, null, 2)
-    } catch {
-      return String(data)
-    }
-  }
-
   const summarizePreviewText = (value: unknown, maxWords = 6): string | null => {
     if (typeof value !== 'string') return null
     const normalized = value.replace(/\s+/g, ' ').trim()
@@ -362,11 +393,6 @@ export default function RunDetail() {
   const flowChangedSinceRunStart =
     run &&
     flowChangedSinceRun(snapshotJson, graph?.spec ? JSON.stringify(graph.spec) : null, run.flow_changed_since_run)
-
-  const sortedItems = useMemo(
-    () => (run?.items ? sortProcessedItems(run.items, sortColumn, sortDirection) : []),
-    [run?.items, sortColumn, sortDirection],
-  )
 
   if (loading) {
     return (
@@ -403,11 +429,46 @@ export default function RunDetail() {
   const hasAPIInput = graph?.spec?.nodes?.some((node: any) => node.type === 'APIInput') || false
 
   // Pagination calculations
-  const totalItems = run.items?.length || 0
+  const syntheticRunItems: ProcessedItemSummary[] =
+    processedItems.length === 0 && processedItemsTotal === 0 && run.total_items === 1
+      ? [
+          {
+            id: 1,
+            run_id: run.id,
+            synthetic: true,
+            source_file: null,
+            input_preview: syntheticInputPreview,
+            status:
+              run.status === 'pending'
+                ? 'pending'
+                : run.status === 'running'
+                  ? 'running'
+                  : run.status === 'completed'
+                    ? 'succeeded'
+                    : 'failed',
+            error: null,
+            created_at: run.created_at,
+            updated_at: run.updated_at,
+            started_at: null,
+            duration_ms: null,
+            output_s3_bucket: null,
+            output_s3_key: null,
+            input_article_id: null,
+            input_headline: null,
+            current_node_types: null,
+            is_array_splitter_item: false,
+            estimated_ai_cost: run.estimated_ai_cost_total ?? 0,
+            estimated_ai_cost_incomplete: run.estimated_ai_cost_total_incomplete,
+            estimated_ai_cost_currency: 'USD',
+          },
+        ]
+      : []
+  const displayedItems = processedItems.length > 0 ? processedItems : syntheticRunItems
+  const totalItems = processedItemsTotal || run.total_items || displayedItems.length
   const totalPages = Math.ceil(totalItems / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
-  const endIndex = startIndex + itemsPerPage
-  const paginatedItems = sortedItems.slice(startIndex, endIndex)
+  const endIndex = startIndex + displayedItems.length
+  const paginatedItems = displayedItems
   const preparingItems = isRunPreparingItems(run)
 
   return (
@@ -593,7 +654,7 @@ export default function RunDetail() {
       ) : null}
 
       {/* Processed Items Table */}
-      {run.items && run.items.length > 0 && (
+      {totalItems > 0 && (
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -637,16 +698,17 @@ export default function RunDetail() {
                   variant="outline"
                   size="sm"
                   onClick={handleSelectFailed}
-                  disabled={run.failed_items === 0}
+                  disabled={run.failed_items === 0 || processedItems.length === 0}
                 >
-                  Select Failed ({run.failed_items})
+                  Select failed on page
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleSelectAll}
+                  disabled={processedItems.length === 0}
                 >
-                  Select All
+                  Select page
                 </Button>
               </div>
             </div>
@@ -732,7 +794,13 @@ export default function RunDetail() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedItems.map((item) => (
+                {itemsLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
+                      Loading items…
+                    </TableCell>
+                  </TableRow>
+                ) : paginatedItems.map((item) => (
                   <TableRow 
                     key={item.id}
                     className={`cursor-pointer hover:bg-muted/[0.07] ${selectedItems.has(item.id) ? 'bg-muted' : ''}`}

@@ -333,6 +333,39 @@ class RunOut(BaseModel):
     flow_changed_since_run: bool | None = None
 
 
+class RunStatusOut(BaseModel):
+    """Compact status for active-run polling without processed-item rows."""
+
+    id: str
+    graph_id: str
+    project_id: int
+    status: str
+    error_message: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    total_items: int = 0
+    pending_items: int = 0
+    running_items: int = 0
+    succeeded_items: int = 0
+    failed_items: int = 0
+    estimated_ai_cost_total: Decimal = Decimal("0")
+    estimated_ai_cost_total_incomplete: bool = False
+    graph_spec_snapshot_json: str | None = None
+    flow_changed_since_run: bool | None = None
+
+
+class ProcessedItemsPageOut(BaseModel):
+    """Paged processed-item summary rows for a run detail table."""
+
+    run_id: str
+    total: int
+    limit: int
+    offset: int
+    sort: str
+    direction: Literal["asc", "desc"]
+    items: list[ProcessedItemOut]
+
+
 def _run_graph_spec_snapshot_json(run: AgateRun) -> str | None:
     snap = parse_run_result_payload(run.result_json).get(GRAPH_SPEC_JSON_KEY)
     if isinstance(snap, str) and snap.strip():
@@ -510,6 +543,37 @@ def _rollup_ai_costs_for_run(
             by_item[int(processed_item_id)] = (est, inc)
 
     return by_item, (null_total, null_inc), currency
+
+
+def _rollup_ai_costs_for_processed_item_ids(
+    session: Session,
+    *,
+    run_id: str,
+    item_ids: list[int],
+) -> dict[int, tuple[Decimal, bool, str]]:
+    if not item_ids:
+        return {}
+    rows = session.exec(
+        select(
+            BackfieldAiCallRecord.processed_item_id,
+            func.sum(func.coalesce(BackfieldAiCallRecord.estimated_cost, 0)),
+            _ai_cost_incomplete_aggregate(),
+            func.max(BackfieldAiCallRecord.currency),
+        )
+        .where(
+            BackfieldAiCallRecord.run_id == run_id,
+            BackfieldAiCallRecord.processed_item_id.in_(item_ids),
+        )
+        .group_by(BackfieldAiCallRecord.processed_item_id)
+    ).all()
+    out: dict[int, tuple[Decimal, bool, str]] = {}
+    for processed_item_id, total, incomplete_flag, row_currency in rows:
+        if processed_item_id is None:
+            continue
+        currency = str(row_currency) if row_currency else DEFAULT_AI_COST_CURRENCY
+        est = Decimal(str(total)) if total is not None else Decimal("0")
+        out[int(processed_item_id)] = (est, bool(incomplete_flag), currency)
+    return out
 
 
 def _total_ai_cost_from_rollup(
@@ -722,6 +786,134 @@ def _processed_items_for_run(
             )
         )
     return out
+
+
+def _processed_item_sort_expr(sort: str, cost_expr: Any) -> Any:
+    if sort == "source":
+        return AgateProcessedItem.source_file
+    if sort == "status":
+        return AgateProcessedItem.status
+    if sort == "created_at":
+        return AgateProcessedItem.created_at
+    if sort == "estimated_cost":
+        return cost_expr
+    if sort == "duration":
+        # Cross-database duration arithmetic is awkward under SQLite tests and Postgres
+        # runtime; updated_at keeps completed rows broadly ordered by finish time.
+        return AgateProcessedItem.updated_at
+    return AgateProcessedItem.id
+
+
+def _processed_items_page_for_run(
+    session: Session,
+    run_id: str,
+    *,
+    limit: int,
+    offset: int,
+    sort: str,
+    direction: Literal["asc", "desc"],
+) -> ProcessedItemsPageOut:
+    total = int(
+        session.exec(
+            select(func.count()).select_from(AgateProcessedItem).where(
+                AgateProcessedItem.run_id == run_id
+            )
+        ).one()
+        or 0
+    )
+    cost_rows = None
+    cost_expr: Any = 0
+    if sort == "estimated_cost":
+        cost_rows = (
+            select(
+                BackfieldAiCallRecord.processed_item_id.label("processed_item_id"),
+                func.sum(func.coalesce(BackfieldAiCallRecord.estimated_cost, 0)).label(
+                    "estimated_cost"
+                ),
+            )
+            .where(
+                BackfieldAiCallRecord.run_id == run_id,
+                BackfieldAiCallRecord.processed_item_id.is_not(None),
+            )
+            .group_by(BackfieldAiCallRecord.processed_item_id)
+            .subquery()
+        )
+        cost_expr = func.coalesce(cost_rows.c.estimated_cost, 0)
+    sort_expr = _processed_item_sort_expr(sort, cost_expr)
+    primary_order = desc(sort_expr) if direction == "desc" else asc(sort_expr)
+
+    stmt = select(
+        AgateProcessedItem.id,
+        AgateProcessedItem.run_id,
+        AgateProcessedItem.source_file,
+        AgateProcessedItem.input_json,
+        AgateProcessedItem.status,
+        AgateProcessedItem.error_message,
+        AgateProcessedItem.created_at,
+        AgateProcessedItem.updated_at,
+        AgateProcessedItem.started_at,
+    ).where(AgateProcessedItem.run_id == run_id)
+    if cost_rows is not None:
+        stmt = stmt.outerjoin(cost_rows, cost_rows.c.processed_item_id == AgateProcessedItem.id)
+    rows = session.exec(
+        stmt.order_by(primary_order, asc(AgateProcessedItem.id)).offset(offset).limit(limit)
+    ).all()
+    cost_by_item = _rollup_ai_costs_for_processed_item_ids(
+        session,
+        run_id=run_id,
+        item_ids=[int(row[0]) for row in rows if row[0] is not None],
+    )
+
+    items: list[ProcessedItemOut] = []
+    for (
+        row_id,
+        row_run_id,
+        source_file,
+        input_json,
+        item_status,
+        error_message,
+        created_at,
+        updated_at,
+        started_at,
+    ) in rows:
+        if row_id is None:
+            continue
+        estimated_cost, cost_incomplete, row_currency = cost_by_item.get(
+            int(row_id),
+            (Decimal("0"), False, DEFAULT_AI_COST_CURRENCY),
+        )
+        items.append(
+            ProcessedItemOut(
+                id=int(row_id),
+                run_id=str(row_run_id),
+                source_file=source_file,
+                input_preview=_processed_item_input_preview(input_json),
+                status=item_status,
+                error_message=error_message,
+                created_at=created_at,
+                updated_at=updated_at,
+                started_at=started_at,
+                duration_ms=_processed_item_processing_duration_ms_fields(
+                    status=item_status,
+                    started_at=started_at,
+                    created_at=created_at,
+                    updated_at=updated_at,
+                ),
+                estimated_ai_cost=Decimal(str(estimated_cost or 0)),
+                estimated_ai_cost_incomplete=bool(cost_incomplete),
+                estimated_ai_cost_currency=str(row_currency or DEFAULT_AI_COST_CURRENCY),
+            )
+        )
+
+    return ProcessedItemsPageOut(
+        run_id=run_id,
+        total=total,
+        limit=limit,
+        offset=offset,
+        sort=sort,
+        direction=direction,
+        items=items,
+    )
 
 
 def _count_processed_items(
@@ -2294,6 +2486,39 @@ def _serialize_run(session: Session, r: AgateRun) -> RunOut:
     )
 
 
+def _serialize_run_status(session: Session, r: AgateRun) -> RunStatusOut:
+    pid = _graph_project_id(session, r.graph_id)
+    total_items, pending_items, running_items, succeeded_items, failed_items = (
+        _processed_item_counts_for_run_ids(session, [r.id]).get(r.id)
+        or _synthetic_whole_run_counts(session, r)
+    )
+    cost_map = _rollup_ai_cost_totals_for_run_ids(session, [r.id])
+    total_est, total_inc, _currency = cost_map.get(
+        r.id, (Decimal("0"), False, DEFAULT_AI_COST_CURRENCY)
+    )
+    snapshot_json, flow_changed = _run_configuration_fields(
+        session, r, include_flow_changed=True
+    )
+    return RunStatusOut(
+        id=r.id,
+        graph_id=r.graph_id,
+        project_id=pid,
+        status=r.status,
+        error_message=r.error_message,
+        created_at=r.created_at,
+        updated_at=r.updated_at,
+        total_items=total_items,
+        pending_items=pending_items,
+        running_items=running_items,
+        succeeded_items=succeeded_items,
+        failed_items=failed_items,
+        estimated_ai_cost_total=total_est,
+        estimated_ai_cost_total_incomplete=total_inc,
+        graph_spec_snapshot_json=snapshot_json,
+        flow_changed_since_run=flow_changed,
+    )
+
+
 @router.post("/{run_id}/cancel", response_model=RunOut)
 def cancel_run(
     run_id: str,
@@ -2343,6 +2568,53 @@ def cancel_run(
     session.commit()
     session.refresh(r)
     return _serialize_run(session, r)
+
+
+@router.get("/{run_id}/status", response_model=RunStatusOut)
+def get_run_status(
+    run_id: str,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    r = session.get(AgateRun, run_id)
+    if not r:
+        raise HTTPException(404, "Run not found")
+    pid = _graph_project_id(session, r.graph_id)
+    if pid:
+        require_project_access(session, auth, pid)
+    return _serialize_run_status(session, r)
+
+
+@router.get("/{run_id}/items", response_model=ProcessedItemsPageOut)
+def list_run_processed_items(
+    run_id: str,
+    limit: int = 100,
+    offset: int = 0,
+    sort: str = "id",
+    direction: Literal["asc", "desc"] = "asc",
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    r = session.get(AgateRun, run_id)
+    if not r:
+        raise HTTPException(404, "Run not found")
+    pid = _graph_project_id(session, r.graph_id)
+    if pid:
+        require_project_access(session, auth, pid)
+    if limit < 1 or limit > 500:
+        raise HTTPException(400, "limit must be between 1 and 500")
+    if offset < 0:
+        raise HTTPException(400, "offset must be non-negative")
+    allowed_sorts = {"id", "source", "status", "duration", "estimated_cost", "created_at"}
+    sort_key = sort if sort in allowed_sorts else "id"
+    return _processed_items_page_for_run(
+        session,
+        run_id,
+        limit=limit,
+        offset=offset,
+        sort=sort_key,
+        direction=direction,
+    )
 
 
 @router.get("/{run_id}", response_model=RunOut)
