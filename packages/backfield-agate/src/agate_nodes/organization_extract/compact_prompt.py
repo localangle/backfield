@@ -16,7 +16,8 @@ Rules for compact output:
 - Each organization is ONE JSON array with fields in this order:
   0. name — required string; institution or group name only (never an individual person's name).
      In prep scorelines, never a bare token—expand to full school/team name per rules above.
-  1. type_code — short type code (see legend); use "oth" for other
+  1. type_code — short type code (see legend); use "oth" for other only when a named institution
+     clearly fits no listed type; omit the row instead of using "oth" for laws, places, or topics
   2. role_in_story — brief phrase
   3. nature_code — short nature code (see legend)
   4. mentions — array of [text, quote] pairs where quote is 0 or 1; prefer full sentences or

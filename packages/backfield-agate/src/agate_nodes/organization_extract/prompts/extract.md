@@ -15,7 +15,9 @@ Require a **specific proper-noun institution** (agency, company, school, team, n
 - **Descriptive or relational person phrases** — omit entirely when the text describes a **person's relationship, wealth, or role** rather than naming an institution (e.g. `"billionaire father of Bill Conway"`, `"his brother"`, `"the victim's mother"`). These are not organizations.
 - Generic staff or role groups without a named institution ("prosecutors," "coaches," "detectives")
 - Unnamed groups ("residents," "witnesses," "officials")
-- Geography-only places (street, city, building) unless the story treats them as institutions
+- Geography-only places (street, city, building, **landmark, monument, region, or area**) unless the story treats them as institutions—e.g. **Arc de Triomphe**, **the Chicago area**, **downtown**, **the lakefront** belong in location extraction, not organizations
+- **Laws, statutes, acts, bills, regulations, programs, and policies** named as rules or coverage topics—not organizations (`Affordable Care Act`, `No Child Left Behind`, `the tax bill`). Extract an **administering agency or department** only when that **institution** is named and acts (`Centers for Medicare and Medicaid Services`, `U.S. Department of Education`)—not the law's title alone
+- **Concepts, technologies, industries, and abstract topics** without a named institution (`artificial intelligence`, `climate change`, `inflation`, `social media`)—omit; they are not organizations even when capitalized or central to the story
 - Article bylines or publication credits only
 - Metonyms without a proper name ("City Hall said" with no named government body)
 - Historical, religious, mythological, or fictional entities unless they act as real-world organizations in the story
@@ -26,7 +28,13 @@ The same name can be an organization, a brand, a work/title, a venue, or an even
 
 **Clear organization** — extract normally when people, management, employees, ownership, policy, statements, lawsuits, layoffs, operations, hiring, closures, or organized activity are in view.
 
-**Omit** — when the name is only incidental product, platform, service, venue, title, or event context and does not matter to the story.
+**Omit** — when the name is only incidental product, platform, service, venue, title, event context, **geography, law/policy, or abstract topic** and does not matter to the story—or when there is **no accountable group of people** behind the name.
+
+Examples of **omit** (not organizations):
+- `"the Affordable Care Act"` / `"ACA health insurance"` → law/program topic; omit (unless a **named agency** is the actor)
+- `"around the Arc de Triomphe in Paris"` → landmark/geography; omit
+- `"Artificial intelligence"` as a story topic → concept; omit
+- `"the Chicago area"` → region; omit
 
 **Borderline but editorially relevant** — include the row, use the best normal `type`, and set `organization_boundary` to one of:
 - `borderline_brand_platform` — brand/platform/service use may not be organizational ("sent a message on Twitter")
@@ -54,6 +62,7 @@ Examples:
 - **Pro and college teams before player names:** when a team nickname precedes a player, coach, or role descriptor (`Phillies masher Kyle Schwarber`, `Cubs ace`, `Yankees outfielder`), extract the team as `sports_team` using the full conventional name (`Philadelphia Phillies`, `Chicago Cubs`, `New York Yankees`) even if the team is not the grammatical subject of the sentence.
 - One record per organization; merge all `mentions`.
 - `type` slugs: `government`, `law_enforcement`, `court`, `legislative_body`, `political_party`, `school_district`, `school`, `university`, `hospital`, `public_health`, `public_services`, `utilities`, `company`, `local_business`, `financial_institution`, `real_estate`, `nonprofit`, `community_group`, `religious_org`, `culture_arts`, `sports_team`, `sports_league`, `media`, `other`
+- **`other` is not a catch-all.** Use a specific `type` when one clearly fits. Use `other` only for a **named institution** that is genuinely organizational but outside the list (e.g. an unusual membership body with a proper name). If the mention is a **law, place, concept, region, or topic**—or you would choose `other` only because nothing fits—**omit it** from `organizations` instead. Never type a law, landmark, or abstract topic as `government` or `other`.
 - `role_in_story`: short plain-language reason it matters
 - `nature`: `primary`, `actor`, `source`, `subject`, `affected`, `regulator`, `context`, `other`
 - `nature_secondary_tags`: optional 0–2 tags from the same nature vocabulary
