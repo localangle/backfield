@@ -11,6 +11,7 @@ from agate_nodes.person_extract.compact_expand import (
     expand_compact_person_row,
     expand_person_nature,
     expand_person_type,
+    is_skippable_compact_row_error,
 )
 from agate_nodes.person_extract.llm_person_parse import person_from_llm_entry
 from backfield_entities.entities.person.types import PERSON_NATURE_VALUES, PERSON_TYPE_VALUES
@@ -120,6 +121,12 @@ def test_expand_compact_person_row_surname_inferred_flag() -> None:
         ]
     )
     assert entry["surname_inferred_from_relative"] is True
+
+
+def test_is_skippable_compact_row_error() -> None:
+    assert is_skippable_compact_row_error("person entry array must not be empty")
+    assert is_skippable_compact_row_error("Missing required field 'name'")
+    assert not is_skippable_compact_row_error("'mentions' field must be a list")
 
 
 def test_expand_compact_person_row_raises_on_non_list() -> None:

@@ -15,7 +15,10 @@ from agate_runtime.upstream_input import flatten_upstream_inputs
 from agate_utils.llm import call_llm
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from agate_nodes.person_extract.compact_expand import expand_compact_person_row
+from agate_nodes.person_extract.compact_expand import (
+    expand_compact_person_row,
+    is_skippable_compact_row_error,
+)
 from agate_nodes.person_extract.compact_prompt import COMPACT_OUTPUT_INSTRUCTIONS
 from agate_nodes.person_extract.llm_person_parse import person_from_llm_entry
 from agate_nodes.person_extract.person_schemas import ExtractedPerson
@@ -265,11 +268,20 @@ class PersonExtractNode:
             parse_errors: list[str] = []
             for raw_entry in people_data:
                 if use_compact:
+                    if isinstance(raw_entry, list) and not raw_entry:
+                        logger.warning("[PersonExtract] skipping empty compact person row")
+                        continue
                     if isinstance(raw_entry, list):
                         try:
                             entry = expand_compact_person_row(raw_entry)
                         except (ValueError, TypeError) as expand_err:
                             msg = str(expand_err)
+                            if is_skippable_compact_row_error(msg):
+                                logger.warning(
+                                    "[PersonExtract] skipping placeholder compact person row: %s",
+                                    msg,
+                                )
+                                continue
                             parse_errors.append(msg)
                             logger.warning(
                                 "[PersonExtract] skipping invalid compact person row: %s",
@@ -294,12 +306,23 @@ class PersonExtractNode:
                     people.append(person_from_llm_entry(entry))
                 except (ValueError, TypeError) as entry_err:
                     msg = str(entry_err)
+                    if is_skippable_compact_row_error(msg):
+                        logger.warning(
+                            "[PersonExtract] skipping placeholder person entry: %s",
+                            msg,
+                        )
+                        continue
                     parse_errors.append(msg)
                     logger.warning("[PersonExtract] skipping invalid LLM person entry: %s", msg)
-            if not people:
+            if not people and parse_errors:
                 detail = parse_errors[0] if len(parse_errors) == 1 else "; ".join(parse_errors[:5])
                 raise ValueError(
                     f"Failed to parse LLM response as people data: no valid people. {detail}"
+                )
+            if not people and people_data:
+                logger.info(
+                    "[PersonExtract] LLM returned no qualifying people after skipping "
+                    "placeholder rows"
                 )
 
         output_data: dict[str, Any] = {

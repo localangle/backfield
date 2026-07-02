@@ -177,6 +177,14 @@ def _apply_organization_extras(entry: dict[str, Any], extras: dict[str, Any]) ->
         entry["nature_secondary_tags"] = secondary
 
 
+def is_skippable_compact_row_error(message: str) -> bool:
+    """True when a compact row is an LLM placeholder with no extractable organization."""
+    return message in {
+        "organization entry array must not be empty",
+        "Missing required field 'name'",
+    }
+
+
 def expand_compact_organization_row(row: list[Any]) -> dict[str, Any]:
     """Expand one compact organization array row into a dict for ``organization_from_llm_entry``."""
     if not isinstance(row, list):

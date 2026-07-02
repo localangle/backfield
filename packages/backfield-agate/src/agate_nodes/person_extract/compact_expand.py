@@ -175,6 +175,14 @@ def _apply_person_extras(entry: dict[str, Any], extras: dict[str, Any]) -> None:
             entry["review_message"] = str(message).strip()
 
 
+def is_skippable_compact_row_error(message: str) -> bool:
+    """True when a compact row is an LLM placeholder with no extractable person."""
+    return message in {
+        "person entry array must not be empty",
+        "Missing required field 'name'",
+    }
+
+
 def expand_compact_person_row(row: list[Any]) -> dict[str, Any]:
     """Expand one compact person array row into a dict for ``person_from_llm_entry``."""
     if not isinstance(row, list):

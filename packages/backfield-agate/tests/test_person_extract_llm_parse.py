@@ -160,6 +160,20 @@ def test_person_from_llm_entry_preserves_animal_auto_defer() -> None:
     assert person.needs_review is False
 
 
+def test_person_from_llm_entry_capitalizes_title_and_role_in_story() -> None:
+    person = person_from_llm_entry(
+        {
+            "name": "Alex Kim",
+            "title": "sophomore",
+            "role_in_story": "boys basketball team in game coverage",
+            "nature": "participant",
+            "mentions": [{"text": "Alex Kim scored 12 points.", "quote": False}],
+        }
+    )
+    assert person.title == "Sophomore"
+    assert person.role_in_story == "Boys basketball team in game coverage"
+
+
 def test_extracted_person_serializes_for_worker() -> None:
     person = ExtractedPerson(
         name="Sam Rivera",

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useAppMessage } from '@/components/AppMessageProvider'
 import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
@@ -72,6 +72,8 @@ export default function RunDetail() {
   const [aiCost, setAiCost] = useState<RunEstimatedAiCost | null>(null)
   const [sortColumn, setSortColumn] = useState<ProcessedItemSortColumn>('id')
   const [sortDirection, setSortDirection] = useState<ProcessedItemSortDirection>('asc')
+  const processedItemsRef = useRef(processedItems)
+  processedItemsRef.current = processedItems
 
   useEffect(() => {
     if (runId) {
@@ -102,6 +104,7 @@ export default function RunDetail() {
               page: currentPage,
               sortColumn,
               sortDirection,
+              background: true,
             }),
           ])
           
@@ -151,6 +154,7 @@ export default function RunDetail() {
     page?: number
     sortColumn?: ProcessedItemSortColumn
     sortDirection?: ProcessedItemSortDirection
+    background?: boolean
   }) {
     if (!runId) return
 
@@ -158,7 +162,11 @@ export default function RunDetail() {
     const pageSortColumn = options?.sortColumn ?? sortColumn
     const pageSortDirection = options?.sortDirection ?? sortDirection
     const offset = (page - 1) * itemsPerPage
-    setItemsLoading(true)
+    const showLoadingState =
+      !options?.background && processedItemsRef.current.length === 0
+    if (showLoadingState) {
+      setItemsLoading(true)
+    }
     try {
       const pageData = await getRunProcessedItemsPage(runId, {
         limit: itemsPerPage,
@@ -166,10 +174,16 @@ export default function RunDetail() {
         sort: pageSortColumn,
         direction: pageSortDirection,
       })
-      setProcessedItems(pageData.items)
-      setProcessedItemsTotal(pageData.total)
+      setProcessedItems((previous) =>
+        processedItemsPageEqual(previous, pageData.items) ? previous : pageData.items,
+      )
+      setProcessedItemsTotal((previous) =>
+        previous === pageData.total ? previous : pageData.total,
+      )
     } finally {
-      setItemsLoading(false)
+      if (showLoadingState) {
+        setItemsLoading(false)
+      }
     }
   }
 
@@ -794,7 +808,7 @@ export default function RunDetail() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {itemsLoading ? (
+                {itemsLoading && paginatedItems.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
                       Loading items…
@@ -986,6 +1000,31 @@ export default function RunDetail() {
       )}
     </div>
   )
+}
+
+function processedItemsPageEqual(
+  left: ProcessedItemSummary[],
+  right: ProcessedItemSummary[],
+): boolean {
+  if (left.length !== right.length) return false
+  for (let index = 0; index < left.length; index += 1) {
+    const previous = left[index]
+    const next = right[index]
+    if (
+      previous.id !== next.id ||
+      previous.status !== next.status ||
+      previous.updated_at !== next.updated_at ||
+      previous.duration_ms !== next.duration_ms ||
+      previous.estimated_ai_cost !== next.estimated_ai_cost ||
+      previous.estimated_ai_cost_incomplete !== next.estimated_ai_cost_incomplete ||
+      previous.input_headline !== next.input_headline ||
+      previous.source_file !== next.source_file ||
+      JSON.stringify(previous.current_node_types) !== JSON.stringify(next.current_node_types)
+    ) {
+      return false
+    }
+  }
+  return true
 }
 
 type SortableTableHeadButtonProps = {

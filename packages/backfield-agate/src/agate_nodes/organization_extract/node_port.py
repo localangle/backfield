@@ -15,7 +15,10 @@ from agate_runtime.upstream_input import flatten_upstream_inputs
 from agate_utils.llm import call_llm
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from agate_nodes.organization_extract.compact_expand import expand_compact_organization_row
+from agate_nodes.organization_extract.compact_expand import (
+    expand_compact_organization_row,
+    is_skippable_compact_row_error,
+)
 from agate_nodes.organization_extract.compact_prompt import COMPACT_OUTPUT_INSTRUCTIONS
 from agate_nodes.organization_extract.llm_organization_parse import organization_from_llm_entry
 from agate_nodes.organization_extract.organization_schemas import ExtractedOrganization
@@ -268,11 +271,23 @@ class OrganizationExtractNode:
             parse_errors: list[str] = []
             for raw_entry in organizations_data:
                 if use_compact:
+                    if isinstance(raw_entry, list) and not raw_entry:
+                        logger.warning(
+                            "[OrganizationExtract] skipping empty compact organization row"
+                        )
+                        continue
                     if isinstance(raw_entry, list):
                         try:
                             entry = expand_compact_organization_row(raw_entry)
                         except (ValueError, TypeError) as expand_err:
                             msg = str(expand_err)
+                            if is_skippable_compact_row_error(msg):
+                                logger.warning(
+                                    "[OrganizationExtract] skipping placeholder compact "
+                                    "organization row: %s",
+                                    msg,
+                                )
+                                continue
                             parse_errors.append(msg)
                             logger.warning(
                                 "[OrganizationExtract] skipping invalid compact "
@@ -298,16 +313,27 @@ class OrganizationExtractNode:
                     organizations.append(organization_from_llm_entry(entry))
                 except (ValueError, TypeError) as entry_err:
                     msg = str(entry_err)
+                    if is_skippable_compact_row_error(msg):
+                        logger.warning(
+                            "[OrganizationExtract] skipping placeholder organization entry: %s",
+                            msg,
+                        )
+                        continue
                     parse_errors.append(msg)
                     logger.warning(
                         "[OrganizationExtract] skipping invalid LLM organization entry: %s",
                         msg,
                     )
-            if not organizations:
+            if not organizations and parse_errors:
                 detail = parse_errors[0] if len(parse_errors) == 1 else "; ".join(parse_errors[:5])
                 raise ValueError(
                     "Failed to parse LLM response as organizations data: "
                     f"no valid organizations. {detail}"
+                )
+            if not organizations and organizations_data:
+                logger.info(
+                    "[OrganizationExtract] LLM returned no qualifying organizations after "
+                    "skipping placeholder rows"
                 )
 
         output_data: dict[str, Any] = {

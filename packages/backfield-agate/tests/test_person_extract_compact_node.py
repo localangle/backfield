@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
+import pytest
 from agate_runtime import Edge, GraphSpec, NodeConfig, execute_graph
+from agate_runtime.executor import GraphExecutionError
 
 
 def _compact_llm_response() -> str:
@@ -164,3 +166,61 @@ def test_person_extract_invalid_output_mode_defaults_to_compact() -> None:
 
     params = PersonExtractParams(output_mode="compact_array")
     assert params.output_mode == "compact"
+
+
+def test_person_extract_compact_empty_row_returns_empty_people() -> None:
+    spec = GraphSpec(
+        name="compact-person-empty-row",
+        nodes=[
+            NodeConfig(id="a", type="TextInput", params={"text": "No names here."}),
+            NodeConfig(
+                id="b",
+                type="PersonExtract",
+                params={"output_mode": "compact"},
+            ),
+        ],
+        edges=[Edge(source="a", target="b", sourceHandle="text", targetHandle="text")],
+    )
+    with patch(
+        "agate_nodes.person_extract.node_port.call_llm",
+        return_value=json.dumps({"people": [[]]}),
+    ):
+        out = execute_graph(spec)
+
+    assert out["person_extract"]["people"] == []
+
+
+def test_person_extract_compact_still_fails_on_structural_parse_error() -> None:
+    spec = GraphSpec(
+        name="compact-person-bad-row",
+        nodes=[
+            NodeConfig(id="a", type="TextInput", params={"text": "Jane Doe spoke."}),
+            NodeConfig(
+                id="b",
+                type="PersonExtract",
+                params={"output_mode": "compact"},
+            ),
+        ],
+        edges=[Edge(source="a", target="b", sourceHandle="text", targetHandle="text")],
+    )
+    with patch(
+        "agate_nodes.person_extract.node_port.call_llm",
+        return_value=json.dumps(
+            {
+                "people": [
+                    [
+                        "Jane Doe",
+                        "",
+                        "",
+                        0,
+                        "un",
+                        "Quoted briefly",
+                        "ot",
+                        "not-a-mentions-list",
+                    ]
+                ]
+            }
+        ),
+    ):
+        with pytest.raises(GraphExecutionError, match="no valid people"):
+            execute_graph(spec)
