@@ -31,7 +31,7 @@ const nodeMetadata = {
     }
   ],
   "defaultParams": {
-    "maxLocations": 100,
+    "maxLocations": 200,
     "perLocationTimeout": 300,
     "useCache": true,
     "stylebook_id": null,

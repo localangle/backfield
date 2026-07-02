@@ -14,7 +14,7 @@ Extract a person only if:
    - Subjects of investigations, lawsuits, decisions, or policies
    - Individuals whose identity is necessary for understanding the story
 
-**IMPORTANT**: Do not extract people who are only referred to generically without a name, such as "a store owner," "the dispatcher," "a teacher," "residents," or "witnesses" unless a specific name is provided.
+**IMPORTANT**: Do not extract people who are only referred to generically without a name, such as "a store owner," "the dispatcher," "a teacher," "residents," or "witnesses" unless a specific name is provided. The same rule applies to **role-plus-agency** phrases with no personal name (e.g. "a Border Patrol agent," "an Illinois Border Patrol agent," "the undercover officer")—**omit them entirely**.
 
 ## Who Should NOT Be Included
 
@@ -47,6 +47,10 @@ Do not extract:
 - Do not treat institutions as people, even if personified
 - Example: "DHS said…" — do not create a person for this
 - Statements by unnamed institutions ("the agency said") do not count as persons
+- **No organization should ever appear as a person.** Government bodies, agencies, departments, offices, bureaus, commissions, boards, companies, nonprofits, unions, schools, universities, hospitals, sports teams or leagues, courts as institutions, and similar named institutions belong in organization extraction—not in `people`—even when they release statements, investigate, confirm, or are the grammatical subject ("The Civilian Office of Police Accountability released…", "the agency posted on X")
+- **Institutional name signals:** names containing **Office**, **Department**, **Bureau**, **Agency**, **Administration**, **Authority**, **Commission**, **Board**, **Division**, **Service**, **Corporation**, **Company**, **Foundation**, **Institute**, **Association**, **Union**, **School**, **University**, **Police Department**, **Fire Department**, or multi-word proper names describing a **body or office** (e.g. "Civilian Office of Police Accountability," "Cook County State's Attorney's Office") are organizations, not people
+- **People vs. organizations:** extract named **individuals** (officers, spokespeople, directors, employees) when their human name appears; do **not** extract the **organization** itself (e.g. "Detective Maria Lopez of the Chicago Police Department" → person **Maria Lopez**; "Chicago Police Department" alone → not a person)
+- When unsure whether a name is a person or an institution, **omit it from people**—downstream organization extraction handles institutions
 
 ### Generic references without names
 
@@ -58,6 +62,9 @@ Do not extract:
   - "residents said…"
   - "witnesses reported…"
   - "officials stated…"
+  - "a Border Patrol agent…" / "shot by a Border Patrol agent" (no agent name given)
+  - "an undercover officer," "a detective," "a prosecutor" (when no personal name appears)
+- **Never use a role, job title, or role-plus-agency phrase as `name`** — e.g. not `"Illinois Border Patrol agent"`, `"Chicago police officer"`, `"store owner"`. Those belong in `title` and `affiliation` only **after** a personal name is established; if no first name, last name, or full personal name appears for that individual anywhere in the article, **do not extract them**
 - Only extract if a specific name (first name, last name, or full name) is provided in the article
 - Crowds or groups ("residents said…") should never be extracted, even if they are quoted
 
@@ -74,6 +81,8 @@ Do not extract:
 **A person must have a name mentioned in the article to be extracted.** This means:
 - First name, last name, or full name must appear in the text
 - Generic titles alone ("the mayor," "the dispatcher") are not sufficient
+- **`name` is never a job title, role label, or role-plus-agency descriptor** — if the article only says "a Border Patrol agent" or "the shooter" with no personal name, omit that person entirely
+- Title-only references may **merge into an existing named person's record** (see Alias & Coreference) but **cannot create a new person** on their own
 - If a person is mentioned by both name and title (e.g., "Mayor John Smith"), extract them using the name
 
 ### 2. Alias & Coreference Handling
@@ -146,7 +155,7 @@ Use common sense and contextual clues.
 
 ### name
 
-The complete name as a **flat string** on first mention (e.g. `"Jane Doe"`). **Must be an actual name** (first name, last name, or full name). Do not use generic titles like "the mayor" or "a store owner" — only extract when a name is provided.
+The complete name as a **flat string** on first mention (e.g. `"Jane Doe"`). **Must be an actual name** (first name, last name, or full name). Do not use generic titles like "the mayor" or "a store owner" — only extract when a name is provided. Do not use an organization, agency, company, or institutional body name as `name` (see **Institutional misinterpretations**). Do not use a **role or role-plus-agency phrase** as `name` (e.g. not `"Illinois Border Patrol agent"`) — if no personal name exists for someone in the article, omit them from `people` entirely.
 
 **Do not include honorifics, courtesy titles, or post-nominals in `name`.** Put those in `title` when they describe the person's role, or omit them when they are only salutations.
 

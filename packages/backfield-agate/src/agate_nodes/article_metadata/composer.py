@@ -9,6 +9,7 @@ from typing import Any
 
 from agate_runtime.upstream_input import flatten_upstream_inputs
 
+from agate_nodes.article_metadata.category_labels import format_allowed_categories_enforcement
 from agate_nodes.article_metadata.presets import MAX_MULTI_VALUE_COUNT, multi_value_list_key
 
 _CATEGORIES_HEADER = "## categories"
@@ -107,6 +108,20 @@ def substitute_prompt_placeholders(template: str, flattened: dict[str, Any]) -> 
     return prompt.replace(esc_open, "{{").replace(esc_close, "}}")
 
 
+def _append_output_instructions(
+    *,
+    body: str,
+    categories: list[str],
+    output_suffix: str,
+) -> str:
+    enforcement = format_allowed_categories_enforcement(categories)
+    parts = [body.rstrip()]
+    if enforcement:
+        parts.append(enforcement)
+    parts.append(output_suffix)
+    return "\n\n".join(parts) + "\n"
+
+
 def load_package_file(relpath: str) -> str:
     base_dir = os.path.dirname(os.path.abspath(__file__))
     path = relpath if os.path.isabs(relpath) else os.path.join(base_dir, relpath)
@@ -124,14 +139,17 @@ def compose_article_metadata_prompt(
     body = substitute_prompt_placeholders(prompt_template, flattened)
     categories = extract_categories_from_prompt(body)
     if preset_id == "subject":
-        prompt = (
-            f"{body.rstrip()}\n\n"
-            "Return only valid JSON with exactly these keys: subject, rationale, confidence.\n"
-            "- subject must be one of the labels listed under ## Subject Labels.\n"
-            "- rationale is one short sentence explaining why this is the primary subject.\n"
-            "- confidence is a number from 0.0 to 1.0.\n\n"
-            "Example shape:\n"
-            f"{output_format_json.strip()}\n"
+        prompt = _append_output_instructions(
+            body=body,
+            categories=categories,
+            output_suffix=(
+                "Return only valid JSON with exactly these keys: subject, rationale, confidence.\n"
+                "- subject must be one of the allowed category values listed above.\n"
+                "- rationale is one short sentence explaining why this is the primary subject.\n"
+                "- confidence is a number from 0.0 to 1.0.\n\n"
+                "Example shape:\n"
+                f"{output_format_json.strip()}"
+            ),
         )
         return prompt, categories
 
@@ -142,26 +160,32 @@ def compose_article_metadata_prompt(
         except json.JSONDecodeError:
             items_example = []
         example_shape = json.dumps({list_key: items_example}, indent=2)
-        prompt = (
-            f"{body.rstrip()}\n\n"
-            f'Return only valid JSON object with a "{list_key}" key containing '
-            f"an array of 1 to {MAX_MULTI_VALUE_COUNT} objects.\n"
-            "Each object must have exactly these keys: category, rationale, confidence.\n"
-            "- category must be one of the labels listed under ## Categories.\n"
-            "- rationale is a concise explanation for editors.\n"
-            "- confidence is a number from 0.0 to 1.0.\n"
-            "- Do not repeat the same category.\n\n"
-            "Example shape:\n"
-            f"{example_shape}\n"
+        prompt = _append_output_instructions(
+            body=body,
+            categories=categories,
+            output_suffix=(
+                f'Return only valid JSON object with a "{list_key}" key containing '
+                f"an array of 1 to {MAX_MULTI_VALUE_COUNT} objects.\n"
+                "Each object must have exactly these keys: category, rationale, confidence.\n"
+                "- category must be one of the allowed category values listed above.\n"
+                "- rationale is a concise explanation for editors.\n"
+                "- confidence is a number from 0.0 to 1.0.\n"
+                "- Do not repeat the same category.\n\n"
+                "Example shape:\n"
+                f"{example_shape}"
+            ),
         )
     else:
-        prompt = (
-            f"{body.rstrip()}\n\n"
-            "Return only valid JSON with exactly these keys: category, rationale, confidence.\n"
-            "- category must be one of the labels listed under ## Categories.\n"
-            "- rationale is a concise explanation for editors.\n"
-            "- confidence is a number from 0.0 to 1.0.\n\n"
-            "Example shape:\n"
-            f"{output_format_json.strip()}\n"
+        prompt = _append_output_instructions(
+            body=body,
+            categories=categories,
+            output_suffix=(
+                "Return only valid JSON with exactly these keys: category, rationale, confidence.\n"
+                "- category must be one of the allowed category values listed above.\n"
+                "- rationale is a concise explanation for editors.\n"
+                "- confidence is a number from 0.0 to 1.0.\n\n"
+                "Example shape:\n"
+                f"{output_format_json.strip()}"
+            ),
         )
     return prompt, categories

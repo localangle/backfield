@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useAppMessage } from '@/components/AppMessageProvider'
 import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
-  getRun,
+  getRunStatus,
+  getRunProcessedItemsPage,
   getGraph,
   getProject,
   replayRun,
@@ -42,9 +43,13 @@ import {
   resolveRunGraphSpecForDisplay,
   s3InputSourceForRun,
 } from '@/lib/runGraphSpec'
-import { ArrowLeft, ArrowRight, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, Play, StopCircle, RotateCcw } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ArrowUpDown, ChevronDown, ChevronUp, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, Play, StopCircle, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  type ProcessedItemSortColumn,
+  type ProcessedItemSortDirection,
+} from '@/lib/processedItemTableSort'
 
 export default function RunDetail() {
   const { showConfirm, showError } = useAppMessage()
@@ -55,6 +60,9 @@ export default function RunDetail() {
   const [project, setProject] = useState<Project | null>(null)
   const [projectWorkspace, setProjectWorkspace] = useState<WorkspaceWithProjects | null>(null)
   const [loading, setLoading] = useState(true)
+  const [itemsLoading, setItemsLoading] = useState(false)
+  const [processedItems, setProcessedItems] = useState<ProcessedItemSummary[]>([])
+  const [processedItemsTotal, setProcessedItemsTotal] = useState(0)
   const [runningAgain, setRunningAgain] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
@@ -62,12 +70,18 @@ export default function RunDetail() {
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set())
   const [rerunningItems, setRerunningItems] = useState<Set<number>>(new Set())
   const [aiCost, setAiCost] = useState<RunEstimatedAiCost | null>(null)
+  const [sortColumn, setSortColumn] = useState<ProcessedItemSortColumn>('id')
+  const [sortDirection, setSortDirection] = useState<ProcessedItemSortDirection>('asc')
+  const processedItemsRef = useRef(processedItems)
+  processedItemsRef.current = processedItems
 
   useEffect(() => {
     if (runId) {
       loadRunData()
       setCurrentPage(1) // Reset to first page when run changes
       setSelectedItems(new Set()) // Clear selection when run changes
+      setSortColumn('id')
+      setSortDirection('asc')
     }
   }, [runId])
 
@@ -83,9 +97,16 @@ export default function RunDetail() {
         if (!runId) return
         
         try {
-          // Only call getRun once, then use the result to get the graph
-          const newRun = await getRun(runId)
-          const graphData = await getGraph(newRun.graph_id)
+          const newRun = await getRunStatus(runId)
+          const [graphData] = await Promise.all([
+            graph && graph.id === newRun.graph_id ? Promise.resolve(graph) : getGraph(newRun.graph_id),
+            loadProcessedItemsPage({
+              page: currentPage,
+              sortColumn,
+              sortDirection,
+              background: true,
+            }),
+          ])
           
           // Only update state if data has actually changed
           if (JSON.stringify(newRun) !== JSON.stringify(run)) {
@@ -102,7 +123,12 @@ export default function RunDetail() {
     }
     // Return empty cleanup function if no interval was created
     return () => {}
-  }, [run?.status, runId]) // Only depend on run.status and runId, not the entire run/graph objects
+  }, [run?.status, runId, currentPage, sortColumn, sortDirection]) // Poll compact status and current page while active.
+
+  useEffect(() => {
+    if (!runId || !run || loading) return
+    void loadProcessedItemsPage()
+  }, [runId, currentPage, sortColumn, sortDirection])
 
   useEffect(() => {
     if (project?.workspace_id == null) {
@@ -124,16 +150,53 @@ export default function RunDetail() {
     }
   }, [project?.workspace_id])
 
+  async function loadProcessedItemsPage(options?: {
+    page?: number
+    sortColumn?: ProcessedItemSortColumn
+    sortDirection?: ProcessedItemSortDirection
+    background?: boolean
+  }) {
+    if (!runId) return
+
+    const page = options?.page ?? currentPage
+    const pageSortColumn = options?.sortColumn ?? sortColumn
+    const pageSortDirection = options?.sortDirection ?? sortDirection
+    const offset = (page - 1) * itemsPerPage
+    const showLoadingState =
+      !options?.background && processedItemsRef.current.length === 0
+    if (showLoadingState) {
+      setItemsLoading(true)
+    }
+    try {
+      const pageData = await getRunProcessedItemsPage(runId, {
+        limit: itemsPerPage,
+        offset,
+        sort: pageSortColumn,
+        direction: pageSortDirection,
+      })
+      setProcessedItems((previous) =>
+        processedItemsPageEqual(previous, pageData.items) ? previous : pageData.items,
+      )
+      setProcessedItemsTotal((previous) =>
+        previous === pageData.total ? previous : pageData.total,
+      )
+    } finally {
+      if (showLoadingState) {
+        setItemsLoading(false)
+      }
+    }
+  }
+
   async function loadRunData() {
     if (!runId) return
 
     try {
       setLoading(true)
-      // Only call getRun once, then use the result to get the graph
-      const runData = await getRun(runId)
+      const runData = await getRunStatus(runId)
       const [graphData, projectData] = await Promise.all([
         getGraph(runData.graph_id),
         getProject(runData.project_id).catch(() => null),
+        loadProcessedItemsPage({ page: 1 }),
       ])
       setRun(runData)
       setGraph(graphData)
@@ -201,6 +264,16 @@ export default function RunDetail() {
     }
   }
 
+  function handleSortColumn(column: ProcessedItemSortColumn) {
+    setCurrentPage(1)
+    if (sortColumn === column) {
+      setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+    setSortColumn(column)
+    setSortDirection('asc')
+  }
+
   function handleSelectItem(itemId: number, checked: boolean) {
     setSelectedItems(prev => {
       const next = new Set(prev)
@@ -214,10 +287,10 @@ export default function RunDetail() {
   }
 
   function handleSelectAll() {
-    if (!run?.items) return
-    // Select all items across all pages
-    const allItemIds = new Set(run.items.map(item => item.id))
-    setSelectedItems(allItemIds)
+    const pageItemIds = processedItems
+      .filter((item) => item.status !== 'pending' && item.status !== 'running' && item.status !== 'skipped')
+      .map(item => item.id)
+    setSelectedItems(prev => new Set([...prev, ...pageItemIds]))
   }
 
   function handleDeselectAll() {
@@ -225,13 +298,12 @@ export default function RunDetail() {
   }
 
   function handleSelectFailed() {
-    if (!run?.items) return
     const failedItemIds = new Set(
-      run.items
+      processedItems
         .filter(item => item.status === 'failed' || item.status === 'timed_out')
         .map(item => item.id)
     )
-    setSelectedItems(failedItemIds)
+    setSelectedItems(prev => new Set([...prev, ...failedItemIds]))
   }
 
   async function handleBulkRerun() {
@@ -299,14 +371,6 @@ export default function RunDetail() {
         return <AlertTriangle className="h-4 w-4" />
       default:
         return <Clock className="h-4 w-4" />
-    }
-  }
-
-  const formatJson = (data: any) => {
-    try {
-      return JSON.stringify(data, null, 2)
-    } catch {
-      return String(data)
     }
   }
 
@@ -379,11 +443,46 @@ export default function RunDetail() {
   const hasAPIInput = graph?.spec?.nodes?.some((node: any) => node.type === 'APIInput') || false
 
   // Pagination calculations
-  const totalItems = run.items?.length || 0
+  const syntheticRunItems: ProcessedItemSummary[] =
+    processedItems.length === 0 && processedItemsTotal === 0 && run.total_items === 1
+      ? [
+          {
+            id: 1,
+            run_id: run.id,
+            synthetic: true,
+            source_file: null,
+            input_preview: syntheticInputPreview,
+            status:
+              run.status === 'pending'
+                ? 'pending'
+                : run.status === 'running'
+                  ? 'running'
+                  : run.status === 'completed'
+                    ? 'succeeded'
+                    : 'failed',
+            error: null,
+            created_at: run.created_at,
+            updated_at: run.updated_at,
+            started_at: null,
+            duration_ms: null,
+            output_s3_bucket: null,
+            output_s3_key: null,
+            input_article_id: null,
+            input_headline: null,
+            current_node_types: null,
+            is_array_splitter_item: false,
+            estimated_ai_cost: run.estimated_ai_cost_total ?? 0,
+            estimated_ai_cost_incomplete: run.estimated_ai_cost_total_incomplete,
+            estimated_ai_cost_currency: 'USD',
+          },
+        ]
+      : []
+  const displayedItems = processedItems.length > 0 ? processedItems : syntheticRunItems
+  const totalItems = processedItemsTotal || run.total_items || displayedItems.length
   const totalPages = Math.ceil(totalItems / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
-  const endIndex = startIndex + itemsPerPage
-  const paginatedItems = run.items?.slice(startIndex, endIndex) || []
+  const endIndex = startIndex + displayedItems.length
+  const paginatedItems = displayedItems
   const preparingItems = isRunPreparingItems(run)
 
   return (
@@ -569,7 +668,7 @@ export default function RunDetail() {
       ) : null}
 
       {/* Processed Items Table */}
-      {run.items && run.items.length > 0 && (
+      {totalItems > 0 && (
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -613,16 +712,17 @@ export default function RunDetail() {
                   variant="outline"
                   size="sm"
                   onClick={handleSelectFailed}
-                  disabled={run.failed_items === 0}
+                  disabled={run.failed_items === 0 || processedItems.length === 0}
                 >
-                  Select Failed ({run.failed_items})
+                  Select failed on page
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleSelectAll}
+                  disabled={processedItems.length === 0}
                 >
-                  Select All
+                  Select page
                 </Button>
               </div>
             </div>
@@ -648,17 +748,73 @@ export default function RunDetail() {
                       }}
                     />
                   </TableHead>
-                  <TableHead className="w-[80px]">ID</TableHead>
-                  <TableHead className="w-[250px]">Source</TableHead>
-                  <TableHead className="w-[120px]">Status</TableHead>
-                  <TableHead className="w-[110px] text-right">Processing</TableHead>
-                  <TableHead className="w-[130px] text-right">Est. cost</TableHead>
-                  <TableHead className="w-[180px]">Created</TableHead>
+                  <TableHead className="w-[80px]">
+                    <SortableTableHeadButton
+                      label="ID"
+                      column="id"
+                      activeColumn={sortColumn}
+                      direction={sortDirection}
+                      onSort={handleSortColumn}
+                    />
+                  </TableHead>
+                  <TableHead className="w-[250px]">
+                    <SortableTableHeadButton
+                      label="Source"
+                      column="source"
+                      activeColumn={sortColumn}
+                      direction={sortDirection}
+                      onSort={handleSortColumn}
+                    />
+                  </TableHead>
+                  <TableHead className="w-[120px]">
+                    <SortableTableHeadButton
+                      label="Status"
+                      column="status"
+                      activeColumn={sortColumn}
+                      direction={sortDirection}
+                      onSort={handleSortColumn}
+                    />
+                  </TableHead>
+                  <TableHead className="w-[110px] text-right">
+                    <SortableTableHeadButton
+                      label="Processing"
+                      column="duration"
+                      activeColumn={sortColumn}
+                      direction={sortDirection}
+                      onSort={handleSortColumn}
+                      align="right"
+                    />
+                  </TableHead>
+                  <TableHead className="w-[130px] text-right">
+                    <SortableTableHeadButton
+                      label="Est. cost"
+                      column="estimated_cost"
+                      activeColumn={sortColumn}
+                      direction={sortDirection}
+                      onSort={handleSortColumn}
+                      align="right"
+                    />
+                  </TableHead>
+                  <TableHead className="w-[180px]">
+                    <SortableTableHeadButton
+                      label="Created"
+                      column="created_at"
+                      activeColumn={sortColumn}
+                      direction={sortDirection}
+                      onSort={handleSortColumn}
+                    />
+                  </TableHead>
                   <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedItems.map((item) => (
+                {itemsLoading && paginatedItems.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
+                      Loading items…
+                    </TableCell>
+                  </TableRow>
+                ) : paginatedItems.map((item) => (
                   <TableRow 
                     key={item.id}
                     className={`cursor-pointer hover:bg-muted/[0.07] ${selectedItems.has(item.id) ? 'bg-muted' : ''}`}
@@ -843,5 +999,70 @@ export default function RunDetail() {
         </Card>
       )}
     </div>
+  )
+}
+
+function processedItemsPageEqual(
+  left: ProcessedItemSummary[],
+  right: ProcessedItemSummary[],
+): boolean {
+  if (left.length !== right.length) return false
+  for (let index = 0; index < left.length; index += 1) {
+    const previous = left[index]
+    const next = right[index]
+    if (
+      previous.id !== next.id ||
+      previous.status !== next.status ||
+      previous.updated_at !== next.updated_at ||
+      previous.duration_ms !== next.duration_ms ||
+      previous.estimated_ai_cost !== next.estimated_ai_cost ||
+      previous.estimated_ai_cost_incomplete !== next.estimated_ai_cost_incomplete ||
+      previous.input_headline !== next.input_headline ||
+      previous.source_file !== next.source_file ||
+      JSON.stringify(previous.current_node_types) !== JSON.stringify(next.current_node_types)
+    ) {
+      return false
+    }
+  }
+  return true
+}
+
+type SortableTableHeadButtonProps = {
+  label: string
+  column: ProcessedItemSortColumn
+  activeColumn: ProcessedItemSortColumn
+  direction: ProcessedItemSortDirection
+  onSort: (column: ProcessedItemSortColumn) => void
+  align?: 'left' | 'right'
+}
+
+function SortableTableHeadButton({
+  label,
+  column,
+  activeColumn,
+  direction,
+  onSort,
+  align = 'left',
+}: SortableTableHeadButtonProps) {
+  const active = activeColumn === column
+  return (
+    <button
+      type="button"
+      className={`inline-flex items-center gap-1 font-medium hover:text-foreground ${
+        align === 'right' ? 'ml-auto' : ''
+      } ${active ? 'text-foreground' : 'text-muted-foreground'}`}
+      onClick={() => onSort(column)}
+    >
+      {label}
+      {active ? (
+        direction === 'asc' ? (
+          <ChevronUp className="h-4 w-4" aria-hidden />
+        ) : (
+          <ChevronDown className="h-4 w-4" aria-hidden />
+        )
+      ) : (
+        <ArrowUpDown className="h-3.5 w-3.5 opacity-50" aria-hidden />
+      )}
+    </button>
   )
 }

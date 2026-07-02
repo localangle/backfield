@@ -13,8 +13,13 @@ from typing import Any
 from agate_runtime.context import AgateEnvContext
 from agate_runtime.upstream_input import flatten_upstream_inputs
 from agate_utils.llm import call_llm
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from agate_nodes.organization_extract.compact_expand import (
+    expand_compact_organization_row,
+    is_skippable_compact_row_error,
+)
+from agate_nodes.organization_extract.compact_prompt import COMPACT_OUTPUT_INSTRUCTIONS
 from agate_nodes.organization_extract.llm_organization_parse import organization_from_llm_entry
 from agate_nodes.organization_extract.organization_schemas import ExtractedOrganization
 
@@ -34,6 +39,21 @@ class OrganizationExtractParams(BaseModel):
     prompt_file: str = Field(default="prompts/extract.md")
     prompt: str = Field(default="")
     llmTimeout: int = Field(default=600, ge=60, le=1800)
+    output_mode: str = Field(
+        default="compact",
+        description=(
+            "'compact' (LLM emits array rows; Python expands to full dicts) or "
+            "'full' (LLM emits full JSON objects)."
+        ),
+    )
+
+    @field_validator("output_mode", mode="before")
+    @classmethod
+    def _normalize_output_mode(cls, value: object) -> str:
+        mode = str(value or "").strip().lower()
+        if mode not in {"full", "compact"}:
+            return "compact"
+        return mode
 
     @model_validator(mode="after")
     def _coerce_empty_model_string(self) -> OrganizationExtractParams:
@@ -145,12 +165,16 @@ class OrganizationExtractNode:
             else self._load_prompt_template(params.prompt_file)
         )
         prompt = self._build_prompt(flattened_input, prompt_template)
-        output_format = self._load_output_format_template()
-        prompt = (
-            f"{prompt}\n\n"
-            "The results should be returned in a JSON that looks like the following.\n\n"
-            f"{output_format}"
-        )
+        use_compact = params.output_mode == "compact"
+        if use_compact:
+            output_format = self._load_compact_output_format_template()
+            output_instructions = COMPACT_OUTPUT_INSTRUCTIONS
+        else:
+            output_format = self._load_output_format_template()
+            output_instructions = (
+                "The results should be returned in a JSON that looks like the following."
+            )
+        prompt = f"{prompt}\n\n{output_instructions}\n\n{output_format}"
 
         elapsed_time = time.time() - start_time
         max_safe_runtime = TASK_SOFT_TIME_LIMIT - CELERY_TIMEOUT_BUFFER
@@ -246,23 +270,70 @@ class OrganizationExtractNode:
         if organizations_data:
             parse_errors: list[str] = []
             for raw_entry in organizations_data:
-                if not isinstance(raw_entry, dict):
-                    parse_errors.append("organization entry must be an object")
-                    continue
+                if use_compact:
+                    if isinstance(raw_entry, list) and not raw_entry:
+                        logger.warning(
+                            "[OrganizationExtract] skipping empty compact organization row"
+                        )
+                        continue
+                    if isinstance(raw_entry, list):
+                        try:
+                            entry = expand_compact_organization_row(raw_entry)
+                        except (ValueError, TypeError) as expand_err:
+                            msg = str(expand_err)
+                            if is_skippable_compact_row_error(msg):
+                                logger.warning(
+                                    "[OrganizationExtract] skipping placeholder compact "
+                                    "organization row: %s",
+                                    msg,
+                                )
+                                continue
+                            parse_errors.append(msg)
+                            logger.warning(
+                                "[OrganizationExtract] skipping invalid compact "
+                                "organization row: %s",
+                                msg,
+                            )
+                            continue
+                    elif isinstance(raw_entry, dict):
+                        logger.warning(
+                            "[OrganizationExtract] compact mode received object entry; "
+                            "using full dict parse fallback"
+                        )
+                        entry = raw_entry
+                    else:
+                        parse_errors.append("organization entry must be an array or object")
+                        continue
+                else:
+                    if not isinstance(raw_entry, dict):
+                        parse_errors.append("organization entry must be an object")
+                        continue
+                    entry = raw_entry
                 try:
-                    organizations.append(organization_from_llm_entry(raw_entry))
+                    organizations.append(organization_from_llm_entry(entry))
                 except (ValueError, TypeError) as entry_err:
                     msg = str(entry_err)
+                    if is_skippable_compact_row_error(msg):
+                        logger.warning(
+                            "[OrganizationExtract] skipping placeholder organization entry: %s",
+                            msg,
+                        )
+                        continue
                     parse_errors.append(msg)
                     logger.warning(
                         "[OrganizationExtract] skipping invalid LLM organization entry: %s",
                         msg,
                     )
-            if not organizations:
+            if not organizations and parse_errors:
                 detail = parse_errors[0] if len(parse_errors) == 1 else "; ".join(parse_errors[:5])
                 raise ValueError(
                     "Failed to parse LLM response as organizations data: "
                     f"no valid organizations. {detail}"
+                )
+            if not organizations and organizations_data:
+                logger.info(
+                    "[OrganizationExtract] LLM returned no qualifying organizations after "
+                    "skipping placeholder rows"
                 )
 
         output_data: dict[str, Any] = {
@@ -310,5 +381,11 @@ class OrganizationExtractNode:
     def _load_output_format_template(self) -> str:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         path = os.path.join(current_dir, "prompts", "_output_format.json")
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+
+    def _load_compact_output_format_template(self) -> str:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(current_dir, "prompts", "_output_format_compact.json")
         with open(path, encoding="utf-8") as f:
             return f.read()

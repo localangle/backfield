@@ -52,6 +52,19 @@ def test_organization_from_llm_entry_parses_boundary() -> None:
     assert org.organization_boundary == "borderline_work_title"
 
 
+def test_organization_from_llm_entry_capitalizes_role_in_story() -> None:
+    org = organization_from_llm_entry(
+        {
+            "name": "Lincoln High School",
+            "type": "school",
+            "role_in_story": "boys basketball team in game coverage",
+            "nature": "actor",
+            "mentions": [{"text": "Lincoln High School won the game.", "quote": False}],
+        }
+    )
+    assert org.role_in_story == "Boys basketball team in game coverage"
+
+
 def test_organization_from_llm_entry_ignores_invalid_boundary() -> None:
     org = organization_from_llm_entry(
         {

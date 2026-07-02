@@ -1,0 +1,35 @@
+{
+  "people": [
+    [
+      "John Smith",
+      "Mayor",
+      "City of Chicago",
+      1,
+      "eo",
+      "Announced a new park initiative",
+      "of",
+      [
+        ["Mayor John Smith announced a new park initiative Monday.", 0]
+      ]
+    ],
+    [
+      "Buddy",
+      "",
+      "",
+      0,
+      "oth",
+      "Family dog mentioned in the story",
+      "ot",
+      [
+        ["The family dog Buddy was unharmed.", 0]
+      ],
+      {
+        "review": {
+          "handling": "auto_defer",
+          "reason_code": "animal",
+          "message": "Identified as an animal"
+        }
+      }
+    ]
+  ]
+}

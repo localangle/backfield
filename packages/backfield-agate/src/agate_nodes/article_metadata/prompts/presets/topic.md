@@ -84,6 +84,8 @@ Topics reflect **what is being covered**, not the article's format, timeliness, 
 - Do **not** select broad categories unless supported by the story.
 - When the story touches multiple areas, choose the **most central** domains.
 - Use `other` only when no category fits.
+- Never use generic sports labels such as `sports` or `sport`; choose `pro_sports`, `college_sports`, or `prep_youth_sports`.
+- Never reword slugs (wrong: `economic_business`; right: `business_economy`).
 
 **Clarifying examples (not few-shot):**
 - Rent burden story → `housing_affordability_homelessness`

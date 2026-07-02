@@ -208,8 +208,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       # One SQLAlchemy pool per Celery child process; keep defaults small so many workers
       # do not exhaust Postgres max_connections alongside agate-api / core-api / stylebook-api.
-      BACKFIELD_SQLALCHEMY_POOL_SIZE: ${BACKFIELD_SQLALCHEMY_POOL_SIZE:-2}
-      BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-3}
+      BACKFIELD_SQLALCHEMY_POOL_SIZE: ${WORKER_BACKFIELD_SQLALCHEMY_POOL_SIZE:-1}
+      BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${WORKER_BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-0}
       CANONICAL_ADJUDICATION_MAX_CONCURRENT: ${CANONICAL_ADJUDICATION_MAX_CONCURRENT:-8}
       STYLEBOOK_API_URL: http://stylebook-api:8003
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
@@ -253,6 +253,8 @@ services:
       VITE_STYLEBOOK_API_PROXY_TARGET: http://stylebook-api:8003
       VITE_CORE_API_PROXY_TARGET: http://core-api:8004
       VITE_AGATE_API_PROXY_TARGET: http://agate-api:8000
+      # Browser opens Stylebook on host :5175; Agate dev server is :5173.
+      VITE_STYLEBOOK_UI_ORIGIN: http://localhost:5175
     volumes:
       - ../apps/agate-ui:/app/apps/agate-ui
       - ../packages:/app/packages
@@ -283,6 +285,8 @@ services:
       VITE_CORE_API_PROXY_TARGET: http://core-api:8004
       VITE_AGATE_API_PROXY_TARGET: http://agate-api:8000
       VITE_STYLEBOOK_API_PROXY_TARGET: http://stylebook-api:8003
+      # Browser opens Agate on host :5173; Stylebook dev server is :5175.
+      VITE_AGATE_UI_ORIGIN: http://localhost:5173
     volumes:
       - ../apps/stylebook-ui:/app/apps/stylebook-ui
       - ../packages:/app/packages

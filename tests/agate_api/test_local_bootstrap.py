@@ -6,7 +6,11 @@ from collections.abc import Generator
 from unittest.mock import patch
 
 import pytest
-from api.local_bootstrap import _ensure_default_workspace_and_general, run_local_bootstrap
+from api.local_bootstrap import (
+    _BOOTSTRAP_SECRET_KEYS,
+    _ensure_default_workspace_and_general,
+    run_local_bootstrap,
+)
 from backfield_db import (
     BackfieldOrganization,
     BackfieldProject,
@@ -101,7 +105,15 @@ def test_ensure_default_workspace_preserves_workspace_name(bootstrap_engine) -> 
         assert refreshed.name == "Newsroom"
 
 
-def test_run_local_bootstrap_preserves_organization_name(bootstrap_engine) -> None:
+def test_run_local_bootstrap_preserves_organization_name(
+    bootstrap_engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Importing litellm anywhere in the test session loads repo-root .env into os.environ;
+    # clear the bootstrap secret keys so _sync_secrets stays a no-op on this minimal schema.
+    for key in _BOOTSTRAP_SECRET_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
     with Session(bootstrap_engine) as session:
         org = BackfieldOrganization(name="Daily Herald", slug="default")
         session.add(org)

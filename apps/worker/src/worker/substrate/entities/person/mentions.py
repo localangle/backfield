@@ -16,6 +16,7 @@ from backfield_entities.canonical.link import (
     CANONICAL_LINK_UNLINKED,
 )
 from backfield_entities.catalog.resolve import resolve_stylebook_id_for_project_id
+from backfield_entities.editorial_text import normalize_editorial_prose
 from backfield_entities.entities.person.persist import unlink_substrate_from_canonical
 from backfield_entities.entities.person.types import PERSON_NATURE_VALUES
 from backfield_entities.ingest.semantic_indexing.cleanup import delete_semantic_documents_for_person
@@ -266,10 +267,8 @@ def _upsert_mention_and_occurrence(
     bucket: str,
     preserve_editor_changes: bool = False,
 ) -> None:
-    role = entry.get("role_in_story")
-    role_str = str(role).strip() if isinstance(role, str) else None
-    if role_str == "":
-        role_str = None
+    raw_role = entry.get("role_in_story")
+    role_str = normalize_editorial_prose(raw_role if isinstance(raw_role, str) else None)
 
     nature_str = _normalize_person_nature(entry)
     secondary_tags = _parse_nature_secondary_tags(entry)

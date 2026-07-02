@@ -1,0 +1,25 @@
+{
+  "organizations": [
+    [
+      "Chicago City Hall",
+      "gov",
+      "Announced a new park initiative",
+      "ac",
+      [
+        ["Chicago City Hall announced a new park initiative Monday.", 0]
+      ]
+    ],
+    [
+      "Dear Abby",
+      "med",
+      "Advice column central to the story",
+      "so",
+      [
+        ["Dear Abby advised the reader to seek counseling.", 0]
+      ],
+      {
+        "b": "work_title"
+      }
+    ]
+  ]
+}

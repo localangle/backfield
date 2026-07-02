@@ -169,6 +169,8 @@ def test_compose_topic_prompt_requests_json_array() -> None:
         preset_id="topic",
     )
     assert 'JSON object with a "topics" key containing an array of 1 to 3 objects' in prompt
+    assert "## Allowed category values" in prompt
+    assert "`pro_sports`" in prompt
     assert "Council voted on zoning." in prompt
 
 
@@ -188,6 +190,7 @@ def test_compose_subject_prompt_reinforces_output_shape() -> None:
         "Return only valid JSON with exactly these keys: subject, rationale, confidence."
         in prompt
     )
+    assert "## Allowed category values" in prompt
     assert prompt.index("City council approves apartment project.") < prompt.index(
         "Return only valid JSON with exactly these keys: subject, rationale, confidence."
     )

@@ -90,12 +90,16 @@ export interface ProjectStats {
   avg_estimated_ai_cost_incomplete?: boolean
 }
 
-export interface Graph {
+export interface GraphSummary {
   id: string
   name: string
   description: string
   public_run_enabled: boolean
   project_id: number
+  created_at: string
+}
+
+export interface Graph extends GraphSummary {
   spec: {
     name: string
     nodes: Array<{
@@ -292,8 +296,28 @@ interface RawGraph {
   description?: string | null
   public_run_enabled?: boolean | null
   project_id: number
-  spec: Graph['spec']
+  spec?: Graph['spec']
   created_at: string
+}
+
+export interface ListGraphsOptions {
+  projectId?: number
+  includeSpec?: boolean
+}
+
+export interface ListRunsOptions {
+  projectId?: number
+  limit?: number
+  offset?: number
+  includeResult?: boolean
+  includeGraphSpecSnapshot?: boolean
+}
+
+export interface ListProcessedItemsOptions {
+  limit?: number
+  offset?: number
+  sort?: 'id' | 'source' | 'status' | 'duration' | 'estimated_cost' | 'created_at'
+  direction?: 'asc' | 'desc'
 }
 
 interface RawProcessedItem {
@@ -336,6 +360,45 @@ interface RawRun {
   flow_changed_since_run?: boolean | null
 }
 
+interface RawRunStatus {
+  id: string
+  graph_id: string
+  project_id: number
+  status: string
+  error_message?: string | null
+  created_at: string
+  updated_at: string
+  total_items: number
+  pending_items: number
+  running_items: number
+  succeeded_items: number
+  failed_items: number
+  estimated_ai_cost_total?: string | number | null
+  estimated_ai_cost_total_incomplete?: boolean
+  graph_spec_snapshot_json?: string | null
+  flow_changed_since_run?: boolean | null
+}
+
+interface RawProcessedItemsPage {
+  run_id: string
+  total: number
+  limit: number
+  offset: number
+  sort: string
+  direction: 'asc' | 'desc'
+  items: RawProcessedItem[]
+}
+
+export interface ProcessedItemsPage {
+  run_id: string
+  total: number
+  limit: number
+  offset: number
+  sort: string
+  direction: 'asc' | 'desc'
+  items: ProcessedItemSummary[]
+}
+
 function _parseCostAmount(v: unknown): number {
   if (v === null || v === undefined) return 0
   if (typeof v === 'number' && !Number.isNaN(v)) return v
@@ -347,15 +410,24 @@ function _currencyFromRaw(v: unknown, fallback: string): string {
   return typeof v === 'string' && v.trim() ? v.trim().toUpperCase() : fallback
 }
 
-function normalizeGraph(raw: RawGraph): Graph {
+function normalizeGraphSummary(raw: RawGraph): GraphSummary {
   return {
     id: raw.id,
     name: raw.name,
     description: typeof raw.description === 'string' ? raw.description : '',
     public_run_enabled: Boolean(raw.public_run_enabled),
     project_id: raw.project_id,
-    spec: raw.spec,
     created_at: raw.created_at,
+  }
+}
+
+function normalizeGraph(raw: RawGraph): Graph {
+  if (!raw.spec) {
+    throw new Error(`Graph ${raw.id} is missing spec`)
+  }
+  return {
+    ...normalizeGraphSummary(raw),
+    spec: raw.spec,
   }
 }
 
@@ -512,11 +584,11 @@ function normalizeRun(raw: RawRun): Run {
     status: st,
     created_at: raw.created_at,
     updated_at: raw.updated_at,
-    total_items: hasServerItemCounts ? raw.total_items : items.length,
-    pending_items: hasServerItemCounts ? raw.pending_items : pending_items,
-    running_items: hasServerItemCounts ? raw.running_items : running_items,
-    succeeded_items: hasServerItemCounts ? raw.succeeded_items : succeeded,
-    failed_items: hasServerItemCounts ? raw.failed_items : failed,
+    total_items: hasServerItemCounts ? (raw.total_items ?? 0) : items.length,
+    pending_items: hasServerItemCounts ? (raw.pending_items ?? 0) : pending_items,
+    running_items: hasServerItemCounts ? (raw.running_items ?? 0) : running_items,
+    succeeded_items: hasServerItemCounts ? (raw.succeeded_items ?? 0) : succeeded,
+    failed_items: hasServerItemCounts ? (raw.failed_items ?? 0) : failed,
     items,
     node_outputs: outputs,
     whole_run_ai_cost_estimate: wrEst,
@@ -528,6 +600,32 @@ function normalizeRun(raw: RawRun): Run {
           estimated_ai_cost_total_incomplete: Boolean(raw.estimated_ai_cost_total_incomplete),
         }
       : {}),
+    ...(raw.graph_spec_snapshot_json != null
+      ? { graph_spec_snapshot_json: raw.graph_spec_snapshot_json }
+      : {}),
+    ...(raw.flow_changed_since_run === true || raw.flow_changed_since_run === false
+      ? { flow_changed_since_run: raw.flow_changed_since_run }
+      : {}),
+  }
+}
+
+function normalizeRunStatus(raw: RawRunStatus): Run {
+  return {
+    id: raw.id,
+    graph_id: raw.graph_id,
+    project_id: raw.project_id,
+    status: mapRunStatus(raw.status),
+    created_at: raw.created_at,
+    updated_at: raw.updated_at,
+    total_items: raw.total_items,
+    pending_items: raw.pending_items,
+    running_items: raw.running_items,
+    succeeded_items: raw.succeeded_items,
+    failed_items: raw.failed_items,
+    items: null,
+    node_outputs: null,
+    estimated_ai_cost_total: _parseCostAmount(raw.estimated_ai_cost_total),
+    estimated_ai_cost_total_incomplete: Boolean(raw.estimated_ai_cost_total_incomplete),
     ...(raw.graph_spec_snapshot_json != null
       ? { graph_spec_snapshot_json: raw.graph_spec_snapshot_json }
       : {}),
@@ -577,9 +675,24 @@ export async function createGraph(data: GraphCreate): Promise<Graph> {
   return normalizeGraph(raw)
 }
 
-export async function listGraphs(): Promise<Graph[]> {
-  const raw = (await fetchAPI('/graphs')) as RawGraph[]
+export async function listGraphs(options: ListGraphsOptions = {}): Promise<Graph[] | GraphSummary[]> {
+  const params = new URLSearchParams()
+  if (options.projectId != null) {
+    params.set('project_id', String(options.projectId))
+  }
+  if (options.includeSpec === false) {
+    params.set('include_spec', 'false')
+  }
+  const query = params.toString()
+  const raw = (await fetchAPI(`/graphs${query ? `?${query}` : ''}`)) as RawGraph[]
+  if (options.includeSpec === false) {
+    return raw.map(normalizeGraphSummary)
+  }
   return raw.map(normalizeGraph)
+}
+
+export async function listGraphSummaries(projectId?: number): Promise<GraphSummary[]> {
+  return listGraphs({ projectId, includeSpec: false }) as Promise<GraphSummary[]>
 }
 
 export async function getGraph(id: string | number): Promise<Graph> {
@@ -624,15 +737,63 @@ export async function replayRun(runId: string): Promise<Run> {
   return normalizeRun(raw)
 }
 
-export async function listRuns(projectId?: number): Promise<Run[]> {
-  const query = projectId != null ? `?project_id=${encodeURIComponent(String(projectId))}` : ''
-  const raw = (await fetchAPI(`/runs${query}`)) as RawRun[]
+export async function listRuns(options: ListRunsOptions = {}): Promise<Run[]> {
+  const params = new URLSearchParams()
+  if (options.projectId != null) {
+    params.set('project_id', String(options.projectId))
+  }
+  if (options.limit != null) {
+    params.set('limit', String(options.limit))
+  }
+  if (options.offset != null) {
+    params.set('offset', String(options.offset))
+  }
+  if (options.includeResult === false) {
+    params.set('include_result', 'false')
+  }
+  if (options.includeGraphSpecSnapshot === false) {
+    params.set('include_graph_spec_snapshot', 'false')
+  }
+  const query = params.toString()
+  const raw = (await fetchAPI(`/runs${query ? `?${query}` : ''}`)) as RawRun[]
   return raw.map(normalizeRun)
 }
 
 export async function getRun(id: string | number): Promise<Run> {
   const raw = (await fetchAPI(`/runs/${id}`)) as RawRun
   return normalizeRun(raw)
+}
+
+export async function getRunStatus(id: string | number): Promise<Run> {
+  const raw = (await fetchAPI(`/runs/${id}/status`)) as RawRunStatus
+  return normalizeRunStatus(raw)
+}
+
+export async function getRunProcessedItemsPage(
+  runId: string | number,
+  options: ListProcessedItemsOptions = {},
+): Promise<ProcessedItemsPage> {
+  const params = new URLSearchParams()
+  if (options.limit != null) {
+    params.set('limit', String(options.limit))
+  }
+  if (options.offset != null) {
+    params.set('offset', String(options.offset))
+  }
+  if (options.sort) {
+    params.set('sort', options.sort)
+  }
+  if (options.direction) {
+    params.set('direction', options.direction)
+  }
+  const query = params.toString()
+  const raw = (await fetchAPI(
+    `/runs/${runId}/items${query ? `?${query}` : ''}`,
+  )) as RawProcessedItemsPage
+  return {
+    ...raw,
+    items: raw.items.map(_mapDbProcessedItem),
+  }
 }
 
 export interface RunEstimatedAiCost {

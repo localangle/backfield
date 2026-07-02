@@ -229,3 +229,65 @@ def test_adjudicate_type_mismatch_links_cross_type_when_llm_confident(monkeypatc
         )
         assert out.decision == CanonicalPersistDecision.LINK_EXISTING
         assert out.existing_canonical_id == canon_id
+
+
+def test_adjudicate_compatible_type_mismatch_links_at_lower_confidence(monkeypatch) -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed(session)
+        canon = StylebookOrganizationCanonical(
+            stylebook_id=sb_id,
+            label="Brutalist Brewing",
+            slug="brutalist-brewing",
+            organization_type="company",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        canon_id = str(canon.id)
+
+        organization = SubstrateOrganization(
+            project_id=pid,
+            name="Brutalist Brewing",
+            normalized_name="brutalist brewing",
+            organization_type="local_business",
+            identity_fingerprint="fp-brewery-type-mismatch",
+        )
+        session.add(organization)
+        session.commit()
+        session.refresh(organization)
+
+        plan = CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.DEFER,
+            resolution_reasons=(
+                {
+                    "code": ORGANIZATION_CANONICAL_TYPE_MISMATCH,
+                    "canonical_id": canon_id,
+                    "recall_canonical_ids": [canon_id],
+                    "substrate_type": "local_business",
+                    "canonical_type": "company",
+                },
+            ),
+        )
+
+        def _fake_llm(*_a, **_k) -> str:
+            rationale = "Same brewery; local_business vs company is a labeling difference."
+            return (
+                f'{{"canonical_id": "{canon_id}", "confidence": 0.82, '
+                f'"rationale": "{rationale}"}}'
+            )
+
+        monkeypatch.setattr(
+            "worker.substrate.entities.organization.adjudication.call_llm",
+            _fake_llm,
+        )
+
+        out = adjudicate_ambiguous_organization_plan_with_llm(
+            session,
+            plan=plan,
+            organization=organization,
+            stylebook_id=sb_id,
+            model="gpt-4o-mini",
+        )
+        assert out.decision == CanonicalPersistDecision.LINK_EXISTING
+        assert out.existing_canonical_id == canon_id

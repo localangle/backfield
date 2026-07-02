@@ -40,6 +40,20 @@ def test_ui_has_env_production_with_relative_bases(name: str, app_dir: Path) -> 
     assert "VITE_AUTH_API_BASE=" in text
 
 
+def test_agate_ui_env_development_sets_stylebook_origin() -> None:
+    env_path = _REPO_ROOT / "apps" / "agate-ui" / ".env.development"
+    assert env_path.is_file()
+    text = _read(env_path)
+    assert "VITE_STYLEBOOK_UI_ORIGIN=http://localhost:5175" in text.replace(" ", "")
+
+
+def test_stylebook_ui_env_development_sets_agate_origin() -> None:
+    env_path = _REPO_ROOT / "apps" / "stylebook-ui" / ".env.development"
+    assert env_path.is_file()
+    text = _read(env_path)
+    assert "VITE_AGATE_UI_ORIGIN=http://localhost:5173" in text.replace(" ", "")
+
+
 @pytest.mark.parametrize(("name", "app_dir"), _UI_APPS)
 def test_ui_app_makefile_documents_same_origin_build(name: str, app_dir: Path) -> None:
     makefile = app_dir / "Makefile"

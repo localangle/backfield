@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, field_validator
 
+from agate_nodes.article_metadata.category_labels import resolve_allowed_category
 from agate_nodes.article_metadata.presets import MAX_MULTI_VALUE_COUNT
 
 
@@ -403,6 +404,7 @@ def parse_article_metadata_response(
     data: Any,
     *,
     allowed_categories: list[str],
+    fallback_to_other: bool = False,
 ) -> ArticleMetadataLLMResponse:
     if not isinstance(data, dict):
         raise ValueError("LLM response must be a JSON object")
@@ -413,11 +415,19 @@ def parse_article_metadata_response(
         raise ValueError(f"Invalid article metadata response: {exc}") from exc
 
     allowed = {label.strip() for label in allowed_categories if label.strip()}
-    if parsed.category not in allowed:
+    resolved_category = resolve_allowed_category(
+        parsed.category,
+        allowed,
+        rationale=parsed.rationale,
+        fallback_to_other=fallback_to_other,
+    )
+    if resolved_category not in allowed:
         options = ", ".join(sorted(allowed))
         raise ValueError(
             f"Category {parsed.category!r} is not allowed. Choose one of: {options}"
         )
+    if resolved_category != parsed.category:
+        parsed = parsed.model_copy(update={"category": resolved_category})
     return parsed
 
 
@@ -425,6 +435,7 @@ def parse_multi_value_metadata_response(
     data: Any,
     *,
     allowed_categories: list[str],
+    fallback_to_other: bool = False,
 ) -> list[ArticleMetadataLLMResponse]:
     items_raw = _unwrap_multi_value_items(data)
 
@@ -452,11 +463,19 @@ def parse_multi_value_metadata_response(
         except Exception as exc:
             preview = raw_item if isinstance(raw_item, dict) else repr(raw_item)
             raise ValueError(f"Invalid subject entry: {exc}; raw={preview!r}") from exc
-        if parsed.category not in allowed:
+        resolved_category = resolve_allowed_category(
+            parsed.category,
+            allowed,
+            rationale=parsed.rationale,
+            fallback_to_other=fallback_to_other,
+        )
+        if resolved_category not in allowed:
             options = ", ".join(sorted(allowed))
             raise ValueError(
                 f"Category {parsed.category!r} is not allowed. Choose one of: {options}"
             )
+        if resolved_category != parsed.category:
+            parsed = parsed.model_copy(update={"category": resolved_category})
         if parsed.category in seen_categories:
             raise ValueError(f"Duplicate subject category {parsed.category!r}")
         seen_categories.add(parsed.category)
@@ -470,6 +489,11 @@ def parse_subject_metadata_response(
     data: Any,
     *,
     allowed_categories: list[str],
+    fallback_to_other: bool = False,
 ) -> list[ArticleMetadataLLMResponse]:
     """Backward-compatible alias for multi-value subject parsing."""
-    return parse_multi_value_metadata_response(data, allowed_categories=allowed_categories)
+    return parse_multi_value_metadata_response(
+        data,
+        allowed_categories=allowed_categories,
+        fallback_to_other=fallback_to_other,
+    )

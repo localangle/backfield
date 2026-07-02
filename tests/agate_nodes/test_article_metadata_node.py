@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
-import pytest
 from agate_runtime.context import AgateEnvContext
 from agate_runtime.runners import run_article_metadata_runtime
 
@@ -258,20 +257,54 @@ def test_run_emits_format_category_for_format_preset() -> None:
     }
 
 
-def test_run_rejects_invalid_category_from_llm() -> None:
+def test_run_falls_back_to_other_after_invalid_category() -> None:
     llm_payload = {
-        "category": "Weather",
+        "category": "totally_unknown_slug",
         "rationale": "Not in list.",
         "confidence": 0.5,
     }
 
     with patch(
         "agate_nodes.article_metadata.node_port.call_llm",
-        return_value=json.dumps(llm_payload),
-    ):
-        with pytest.raises(ValueError, match="not allowed"):
-            run_article_metadata_runtime(
-                {"prompt_preset": "format"},
-                {"text": "Story body."},
-                AgateEnvContext(run_id="run-test"),
-            )
+        side_effect=[
+            json.dumps(llm_payload),
+            json.dumps(llm_payload),
+        ],
+    ) as mock_llm:
+        out = run_article_metadata_runtime(
+            {"prompt_preset": "format"},
+            {"text": "Story body."},
+            AgateEnvContext(run_id="run-test"),
+        )
+
+    assert mock_llm.call_count == 2
+    assert out["article_metadata"]["category"] == "other"
+
+
+def test_run_retries_once_before_other_fallback() -> None:
+    llm_payload = {
+        "category": "totally_unknown_slug",
+        "rationale": "Not in list.",
+        "confidence": 0.5,
+    }
+    fixed_payload = {
+        "category": "news_story",
+        "rationale": "Straight news.",
+        "confidence": 0.8,
+    }
+
+    with patch(
+        "agate_nodes.article_metadata.node_port.call_llm",
+        side_effect=[
+            json.dumps(llm_payload),
+            json.dumps(fixed_payload),
+        ],
+    ) as mock_llm:
+        out = run_article_metadata_runtime(
+            {"prompt_preset": "format"},
+            {"text": "Story body."},
+            AgateEnvContext(run_id="run-test"),
+        )
+
+    assert mock_llm.call_count == 2
+    assert out["article_metadata"]["category"] == "news_story"

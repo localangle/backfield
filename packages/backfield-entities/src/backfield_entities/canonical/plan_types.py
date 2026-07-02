@@ -8,6 +8,9 @@ from typing import Any
 
 # LLM must assert definitive same-entity identity; below this we keep review / materialize.
 ADJUDICATION_LINK_MIN_CONFIDENCE = 0.9
+# When organization_type labels differ only within editorially compatible pairs, accept a
+# slightly lower LLM confidence after alias/name match (see organization_types_are_link_compatible).
+ADJUDICATION_COMPATIBLE_TYPE_LINK_MIN_CONFIDENCE = 0.75
 
 
 class CanonicalPersistDecision(StrEnum):

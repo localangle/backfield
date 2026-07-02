@@ -19,6 +19,8 @@ dependencies = [
     "overpy>=0.7",
     "requests>=2.31.0",
     "shapely>=2.0.0",
+    "us>=3.1.1",
+    "usaddress>=0.5.10",
 ]
 
 [build-system]

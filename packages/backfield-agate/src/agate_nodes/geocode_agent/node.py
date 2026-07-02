@@ -8,8 +8,10 @@ from typing import List, Dict, Any, Optional, Tuple
 from pydantic import AliasChoices, BaseModel, Field, ConfigDict, model_validator
 
 from agate_runtime.context import AgateEnvContext
+from agate_runtime.upstream_input import flatten_upstream_inputs
 
 from .agent import run_advanced_geocoding_agent
+from .location_limits import location_needs_review_entry, split_locations_for_geocoding
 
 logger = logging.getLogger(__name__)
 
@@ -18,23 +20,8 @@ TASK_SOFT_TIME_LIMIT = int(os.getenv("TASK_SOFT_TIME_LIMIT", "3600"))  # 60 minu
 
 
 def _flatten_executor_upstream_inputs(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Hoist per-upstream payloads to top level (parity with PlaceExtract / Backfield executor).
-
-    The graph executor namespaces each direct upstream output by source node id. Without
-    flattening, article fields like ``headline`` and ``url`` stay nested and DBOutput's
-    shallow merge never sees them for ``substrate_article`` upserts.
-    """
-
-    flattened: Dict[str, Any] = {}
-    for key, value in state.items():
-        is_node_key = key.startswith("node-") and len(key) > 5 and key[5:].isdigit()
-        if is_node_key and isinstance(value, dict):
-            flattened.update(value)
-        elif isinstance(value, dict):
-            flattened.update(value)
-        else:
-            flattened[key] = value
-    return flattened
+    """Hoist per-upstream payloads to top level (parity with PlaceExtract / Backfield executor)."""
+    return flatten_upstream_inputs(state)
 
 
 ########## AGENT MODELS ##########
@@ -47,10 +34,10 @@ class GeocodeAgentParams(BaseModel):
     """Parameters for GeocodeAgent node."""
 
     maxLocations: int = Field(
-        default=100,
+        default=200,
         ge=1,
         le=1000,
-        description="Maximum number of locations to process per run (prevents timeouts, default: 100)"
+        description="Maximum number of locations to process per run (prevents timeouts, default: 200)"
     )
     perLocationTimeout: int = Field(
         default=300,
@@ -346,12 +333,27 @@ async def run_geocode_agent_pipeline(
     skipped_count = 0
     timeout_count = 0
         
-    # Limit number of locations to process
-    locations_to_process = filtered_locations[:MAX_LOCATIONS]
-    if len(filtered_locations) > MAX_LOCATIONS:
-        logger.warning(f"Limiting processing to first {MAX_LOCATIONS} of {len(filtered_locations)} locations")
-        skipped_count = len(filtered_locations) - MAX_LOCATIONS
-        
+    # Limit number of locations to process; overflow goes to needs_review.
+    locations_to_process, overflow_locations = split_locations_for_geocoding(
+        filtered_locations,
+        MAX_LOCATIONS,
+    )
+    if overflow_locations:
+        logger.warning(
+            "Limiting processing to first %s of %s locations; %s overflow row(s) moved to needs_review",
+            MAX_LOCATIONS,
+            len(filtered_locations),
+            len(overflow_locations),
+        )
+        skipped_count = len(overflow_locations)
+        for overflow_loc in overflow_locations:
+            all_consolidated_places["needs_review"].append(
+                location_needs_review_entry(
+                    overflow_loc,
+                    f"Skipped: exceeded maxLocations limit ({MAX_LOCATIONS})",
+                )
+            )
+
     # Concurrency limit for parallel processing (default: 5 concurrent geocoding requests)
     MAX_CONCURRENT = int(os.getenv("GEOCODE_MAX_CONCURRENT", "5"))
         
@@ -442,12 +444,12 @@ async def run_geocode_agent_pipeline(
         skipped_count += len(locations_to_process)
         # Add skipped locations to needs_review
         for skipped_loc in locations_to_process:
-            location_info = skipped_loc.get('location', {})
-            all_consolidated_places["needs_review"].append({
-                "original_text": skipped_loc.get('original_text', ''),
-                "location": location_info,
-                "error": f"Skipped due to approaching Celery timeout (elapsed {elapsed_time:.1f}s)"
-            })
+            all_consolidated_places["needs_review"].append(
+                location_needs_review_entry(
+                    skipped_loc,
+                    f"Skipped due to approaching Celery timeout (elapsed {elapsed_time:.1f}s)",
+                )
+            )
     else:
         # Process locations in parallel with concurrency limit
         semaphore = asyncio.Semaphore(MAX_CONCURRENT)
@@ -482,11 +484,9 @@ async def run_geocode_agent_pipeline(
                 # Handle timeout or error
                 if "timeout" in error_msg.lower():
                     timeout_count += 1
-                all_consolidated_places["needs_review"].append({
-                    "original_text": loc.get('original_text', ''),
-                    "location": location_info,
-                    "error": error_msg
-                })
+                all_consolidated_places["needs_review"].append(
+                    location_needs_review_entry(loc, error_msg)
+                )
                 processed_count += 1
             elif consolidated_result and consolidated_result.get("places"):
                 places = consolidated_result["places"]

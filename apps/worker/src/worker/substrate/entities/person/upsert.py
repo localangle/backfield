@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from backfield_db import SubstratePerson
+from backfield_entities.editorial_text import normalize_editorial_prose
 from backfield_entities.entities.person.review import (
     entry_people_bucket as _entry_people_bucket,
 )
@@ -126,7 +127,7 @@ def _upsert_person(
     if not normalized:
         return None
 
-    title = _optional_text(entry.get("title"))
+    title = normalize_editorial_prose(_optional_text(entry.get("title")))
     affiliation = _optional_text(entry.get("affiliation"))
     public_figure = bool(entry.get("public_figure"))
     person_type = _person_type_from_entry(entry)

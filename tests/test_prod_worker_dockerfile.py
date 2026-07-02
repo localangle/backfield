@@ -38,7 +38,7 @@ def test_worker_dockerfile_declares_prod_target_with_build_metadata() -> None:
     assert "ARG BUILD_TIME" in text
     assert "ENV APP_VERSION" in text
     assert "CELERY_WORKER_CONCURRENCY=16" in _prod_stage(text)
-    assert "--concurrency=32" not in text
+    assert "--concurrency=16" not in text
     assert "--reload" not in _prod_stage(text)
 
 
@@ -56,6 +56,14 @@ def test_compose_worker_uses_dev_target_and_entrypoint() -> None:
     worker_block = compose.split("  worker:", 1)[1].split("\n\n", 1)[0]
     assert "target: dev" in worker_block
     assert "command:" not in worker_block
+    assert (
+        "BACKFIELD_SQLALCHEMY_POOL_SIZE: ${WORKER_BACKFIELD_SQLALCHEMY_POOL_SIZE:-1}"
+        in worker_block
+    )
+    assert (
+        "BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${WORKER_BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-0}"
+        in worker_block
+    )
 
 
 def test_prod_worker_image_logs_version_and_respects_concurrency() -> None:

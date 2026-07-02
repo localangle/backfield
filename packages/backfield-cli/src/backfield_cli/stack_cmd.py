@@ -127,7 +127,10 @@ def _resolve_context(args: argparse.Namespace) -> ComposeContext:
 
 def _run_compose(context: ComposeContext, *args: str) -> int:
     command = compose_command_for_context(context, *args)
-    result = subprocess.run(command, check=False)
+    try:
+        result = subprocess.run(command, check=False)
+    except KeyboardInterrupt:
+        return 130
     return int(result.returncode)
 
 
@@ -202,5 +205,8 @@ def _run_clear_entity_data(args: argparse.Namespace) -> int:
 
     env = dict(os.environ)
     env["BACKFIELD_CONFIRM_CLEAR"] = "1"
-    result = subprocess.run([sys.executable, str(script_path)], check=False, env=env)
+    try:
+        result = subprocess.run([sys.executable, str(script_path)], check=False, env=env)
+    except KeyboardInterrupt:
+        return 130
     return int(result.returncode)

@@ -31,7 +31,6 @@ class LiteLLMCompletionResult:
     cost_estimate_incomplete: bool
     cost_estimate_source: str
     latency_ms: int
-    raw_response: Any
 
 
 class LiteLLMCompletionRejectedError(RuntimeError):
@@ -162,7 +161,6 @@ def _build_completion_result(
         cost_estimate_incomplete=incomplete or cost_incomplete,
         cost_estimate_source=cost_source,
         latency_ms=latency_ms,
-        raw_response=resp,
     )
 
 

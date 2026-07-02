@@ -63,6 +63,13 @@ import {
 } from "@/lib/candidateQueueTableLayout"
 import { ChevronRight, Clock, Link2, Loader2, PlusCircle, Sparkles, StickyNote, X } from "lucide-react"
 
+/** Fixed-width action grid: link, create, defer, clear recommendation (placeholders keep columns aligned). */
+const CANDIDATE_ROW_ACTIONS_CLASS =
+  "ml-auto grid w-[11rem] grid-cols-4 gap-1.5 justify-items-end"
+const CANDIDATE_ROW_ACTION_PLACEHOLDER_CLASS = "h-8 w-8 shrink-0"
+const CANDIDATE_ROW_ACTIONS_HEAD_CLASS = "w-[11rem] text-right"
+const CANDIDATE_ROW_ACTIONS_CELL_CLASS = "w-[11rem] whitespace-nowrap text-right align-top"
+
 type CandidateQueuePageProps<TCandidate extends QueueCandidateBase> = {
   config: CandidateQueuePageConfig<TCandidate>
 }
@@ -447,7 +454,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                       {col.header}
                     </TableHead>
                   ))}
-                  <TableHead className="min-w-0 text-right">
+                  <TableHead className={CANDIDATE_ROW_ACTIONS_HEAD_CLASS}>
                     <span className="sr-only">Actions</span>
                   </TableHead>
                 </TableRow>
@@ -571,8 +578,8 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                               {col.render(c)}
                             </TableCell>
                           ))}
-                          <TableCell className="text-right whitespace-nowrap align-top">
-                            <div className="inline-flex flex-nowrap items-center justify-end gap-1.5 px-0.5">
+                          <TableCell className={CANDIDATE_ROW_ACTIONS_CELL_CLASS}>
+                            <div className={CANDIDATE_ROW_ACTIONS_CLASS}>
                               <Button
                                 type="button"
                                 size="icon"
@@ -644,7 +651,12 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                                     <Clock className="h-4 w-4" aria-hidden />
                                   )}
                                 </Button>
-                              ) : null}
+                              ) : (
+                                <span
+                                  className={CANDIDATE_ROW_ACTION_PLACEHOLDER_CLASS}
+                                  aria-hidden
+                                />
+                              )}
                               {rowSugLabel ? (
                                 <Button
                                   type="button"
@@ -667,7 +679,12 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                                     <X className="h-4 w-4" aria-hidden />
                                   )}
                                 </Button>
-                              ) : null}
+                              ) : (
+                                <span
+                                  className={CANDIDATE_ROW_ACTION_PLACEHOLDER_CLASS}
+                                  aria-hidden
+                                />
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>

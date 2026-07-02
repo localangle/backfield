@@ -344,6 +344,113 @@ def test_fuzzy_duplicate_organization_clustering_sqlite() -> None:
         assert len(clusters[0]) == 2
 
 
+def test_duplicate_organization_clusters_sort_exact_matches_first_sqlite() -> None:
+    from backfield_db import StylebookOrganizationCanonical
+    from backfield_entities.quality.finders.duplicate_organizations import (
+        paginate_duplicate_organization_clusters,
+    )
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=stylebook_id,
+                slug="advocate-center-a",
+                label="Advocate Center",
+            )
+        )
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=stylebook_id,
+                slug="advocate-center-b",
+                label="Advocate Center",
+            )
+        )
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=stylebook_id,
+                slug="city-finance-a",
+                label="City of Chicago Finance Department",
+            )
+        )
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=stylebook_id,
+                slug="city-finance-b",
+                label="City of Chicago Department of Finance",
+            )
+        )
+        session.commit()
+
+        page, total = paginate_duplicate_organization_clusters(
+            session,
+            stylebook_id=stylebook_id,
+            limit=10,
+            offset=0,
+        )
+        assert total == 2
+        assert len(page[0]) == 2
+        labels = {
+            session.get(StylebookOrganizationCanonical, member_id).label  # type: ignore[union-attr]
+            for member_id in page[0]
+        }
+        assert labels == {"Advocate Center"}
+
+
+def test_duplicate_organization_clusters_filter_by_query_sqlite() -> None:
+    from backfield_db import StylebookOrganizationCanonical
+    from backfield_entities.quality.finders.duplicate_organizations import (
+        paginate_duplicate_organization_clusters,
+    )
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=stylebook_id,
+                slug="advocate-center-a",
+                label="Advocate Center",
+            )
+        )
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=stylebook_id,
+                slug="advocate-center-b",
+                label="Advocate Center",
+            )
+        )
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=stylebook_id,
+                slug="city-hall-a",
+                label="City Hall",
+            )
+        )
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=stylebook_id,
+                slug="city-hall-b",
+                label="City Hall",
+            )
+        )
+        session.commit()
+
+        page, total = paginate_duplicate_organization_clusters(
+            session,
+            stylebook_id=stylebook_id,
+            limit=10,
+            offset=0,
+            query="advocate",
+        )
+        assert total == 1
+        assert len(page) == 1
+        assert len(page[0]) == 2
+
+
 def test_person_name_mismatch_finder_sqlite() -> None:
     from backfield_db import (
         BackfieldProject,

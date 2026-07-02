@@ -13,6 +13,10 @@ from agate_runtime.context import AgateEnvContext
 from agate_utils.llm import call_llm
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from agate_nodes.article_metadata.category_labels import (
+    build_category_retry_suffix,
+    is_invalid_category_error,
+)
 from agate_nodes.article_metadata.composer import (
     compose_article_metadata_prompt,
     flatten_input,
@@ -37,6 +41,12 @@ logger = logging.getLogger(__name__)
 
 TASK_SOFT_TIME_LIMIT = int(os.getenv("TASK_SOFT_TIME_LIMIT", "3600"))
 CELERY_TIMEOUT_BUFFER = 300
+_ARTICLE_METADATA_SYSTEM_MESSAGE = (
+    "You are a specialized AI assistant for classifying news articles. "
+    "Return only valid JSON. Every category or subject value must be copied verbatim "
+    "from the allowed slug list in the user prompt — no synonyms, rewordings, "
+    "reordered compound labels, or invented labels."
+)
 
 
 class ArticleMetadataInput(BaseModel):
@@ -89,6 +99,56 @@ class ArticleMetadataNode:
         if relpath is None:
             raise ValueError(f"No bundled prompt for preset {preset_id!r}.")
         return preset_id, load_package_file(relpath)
+
+    def _build_article_metadata_block(
+        self,
+        *,
+        response_data: Any,
+        preset_id: str,
+        resolved_meta_type: str,
+        allowed_categories: list[str],
+        fallback_to_other: bool,
+    ) -> dict[str, Any]:
+        if is_multi_value_preset(preset_id):
+            parsed_items = parse_multi_value_metadata_response(
+                response_data,
+                allowed_categories=allowed_categories,
+                fallback_to_other=fallback_to_other,
+            )
+            primary = parsed_items[0]
+            list_key = multi_value_list_key(preset_id)
+            items_payload = [
+                {
+                    "category": item.category,
+                    "rationale": item.rationale,
+                    "confidence": item.confidence,
+                }
+                for item in parsed_items
+            ]
+            return {
+                "meta_type": resolved_meta_type,
+                "category": primary.category,
+                "rationale": primary.rationale,
+                "confidence": primary.confidence,
+                list_key: items_payload,
+                "prompt_preset": preset_id,
+            }
+
+        parsed = parse_article_metadata_response(
+            response_data,
+            allowed_categories=allowed_categories,
+            fallback_to_other=fallback_to_other,
+        )
+        metadata_block: dict[str, Any] = {
+            "meta_type": resolved_meta_type,
+            "category": parsed.category,
+            "rationale": parsed.rationale,
+            "confidence": parsed.confidence,
+            "prompt_preset": preset_id,
+        }
+        if preset_id == "subject":
+            metadata_block["subject"] = parsed.category
+        return metadata_block
 
     async def run(
         self,
@@ -151,16 +211,13 @@ class ArticleMetadataNode:
         raw_mc = getattr(params, "aiModelConfigId", None)
         model_config_id = str(raw_mc).strip() if raw_mc else None
 
-        try:
-            response_text = await asyncio.wait_for(
+        async def call_metadata_llm(prompt_text: str) -> str:
+            return await asyncio.wait_for(
                 asyncio.to_thread(
                     call_llm,
-                    prompt=prompt,
+                    prompt=prompt_text,
                     model=resolved_model,
-                    system_message=(
-                        "You are a specialized AI assistant for classifying news articles. "
-                        "Return only valid JSON."
-                    ),
+                    system_message=_ARTICLE_METADATA_SYSTEM_MESSAGE,
                     force_json=True,
                     temperature=0.0,
                     timeout=effective_timeout,
@@ -175,6 +232,10 @@ class ArticleMetadataNode:
                 ),
                 timeout=effective_timeout,
             )
+
+        current_prompt = prompt
+        try:
+            response_text = await call_metadata_llm(current_prompt)
         except TimeoutError as exc:
             raise TimeoutError(
                 f"Article Metadata LLM call exceeded timeout of {effective_timeout}s"
@@ -185,49 +246,59 @@ class ArticleMetadataNode:
         except json.JSONDecodeError as exc:
             preview = (response_text or "")[:800]
             raise ValueError(
-                f"Failed to parse LLM response as article metadata: {exc}. Preview: {preview!r}"
+                "Failed to parse LLM response as article metadata: "
+                f"{exc}. Preview: {preview!r}"
             ) from exc
+
+        def build_metadata(*, fallback_to_other: bool) -> dict[str, Any]:
+            return self._build_article_metadata_block(
+                response_data=response_data,
+                preset_id=preset_id,
+                resolved_meta_type=resolved_meta_type,
+                allowed_categories=allowed_categories,
+                fallback_to_other=fallback_to_other,
+            )
+
+        try:
+            article_metadata = build_metadata(fallback_to_other=False)
+        except ValueError as exc:
+            if not is_invalid_category_error(exc):
+                raise
+            logger.warning(
+                "[ArticleMetadata] invalid category on first pass; retrying LLM (%s)",
+                exc,
+            )
+            current_prompt = current_prompt + build_category_retry_suffix(
+                str(exc),
+                allowed_categories,
+            )
+            try:
+                response_text = await call_metadata_llm(current_prompt)
+            except TimeoutError as retry_exc:
+                raise TimeoutError(
+                    f"Article Metadata LLM call exceeded timeout of {effective_timeout}s"
+                ) from retry_exc
+            try:
+                response_data = normalize_llm_json_payload(json.loads(response_text))
+            except json.JSONDecodeError as retry_exc:
+                preview = (response_text or "")[:800]
+                raise ValueError(
+                    "Failed to parse LLM response as article metadata: "
+                    f"{retry_exc}. Preview: {preview!r}"
+                ) from retry_exc
+            try:
+                article_metadata = build_metadata(fallback_to_other=False)
+            except ValueError as retry_exc:
+                if not is_invalid_category_error(retry_exc):
+                    raise
+                logger.warning(
+                    "[ArticleMetadata] invalid category after retry; falling back to other (%s)",
+                    retry_exc,
+                )
+                article_metadata = build_metadata(fallback_to_other=True)
 
         output_data: dict[str, Any] = dict(flattened)
         output_data["text"] = text
-
-        if is_multi_value_preset(preset_id):
-            parsed_items = parse_multi_value_metadata_response(
-                response_data,
-                allowed_categories=allowed_categories,
-            )
-            primary = parsed_items[0]
-            list_key = multi_value_list_key(preset_id)
-            items_payload = [
-                {
-                    "category": item.category,
-                    "rationale": item.rationale,
-                    "confidence": item.confidence,
-                }
-                for item in parsed_items
-            ]
-            output_data["article_metadata"] = {
-                "meta_type": resolved_meta_type,
-                "category": primary.category,
-                "rationale": primary.rationale,
-                "confidence": primary.confidence,
-                list_key: items_payload,
-                "prompt_preset": preset_id,
-            }
-        else:
-            parsed = parse_article_metadata_response(
-                response_data,
-                allowed_categories=allowed_categories,
-            )
-            metadata_block: dict[str, Any] = {
-                "meta_type": resolved_meta_type,
-                "category": parsed.category,
-                "rationale": parsed.rationale,
-                "confidence": parsed.confidence,
-                "prompt_preset": preset_id,
-            }
-            if preset_id == "subject":
-                metadata_block["subject"] = parsed.category
-            output_data["article_metadata"] = metadata_block
+        output_data["article_metadata"] = article_metadata
 
         return ArticleMetadataOutput(**output_data)

@@ -123,6 +123,7 @@ export interface GetCleanupCheckResultsParams {
   project?: string
   page?: number
   perPage?: number
+  q?: string
 }
 
 function cleanupChecksPath(stylebookSlug: string): string {
@@ -136,6 +137,7 @@ function cleanupCheckResultsPath(stylebookSlug: string, checkId: string): string
 function paginatedClusterQuery(params: GetCleanupCheckResultsParams): string {
   const q = new URLSearchParams()
   if (params.project) q.set("project", params.project)
+  if (params.q?.trim()) q.set("q", params.q.trim())
   const page = params.page ?? 1
   const perPage = params.perPage ?? 25
   q.set("limit", String(perPage))
