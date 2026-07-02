@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import os
@@ -78,6 +79,12 @@ from sqlmodel import Session, select
 
 from worker.flags.replace_geography import clear_replace_article_geography_flags
 from worker.nodes.db_output import run_db_output
+from worker.processed_item_claims import (
+    active_execute_processed_item_ids,
+    release_orphan_running_items_for_run,
+    release_running_claim,
+    should_reconcile_orphan_running_items,
+)
 from worker.semantic_indexing.reindex import run_semantic_reindex_for_scope
 from worker.substrate.candidates.ai_review import run_candidate_ai_review
 from worker.substrate.cleanup.ai_review import (
@@ -99,6 +106,11 @@ _TASK_HARD_TIME_LIMIT = int(os.getenv("TASK_HARD_TIME_LIMIT", "4200"))
 _STALE_RUNNING_GRACE_S = int(os.getenv("TASK_STALE_RUNNING_GRACE_S", "300"))
 _STALE_RUNNING_AFTER_S = _TASK_HARD_TIME_LIMIT + _STALE_RUNNING_GRACE_S
 _STALE_RUNNING_MESSAGE = "Processing interrupted (worker lost or exceeded time limit)"
+
+_current_processed_item_id: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "current_processed_item_id",
+    default=None,
+)
 
 
 def _running_item_touch_ts(item: AgateProcessedItem) -> datetime:
@@ -266,13 +278,62 @@ celery_app.conf.task_reject_on_worker_lost = True
 
 
 def _register_worker_process_hooks() -> None:
-    from celery.signals import worker_process_init
+    from celery.signals import task_failure, worker_process_init, worker_process_shutdown
 
     from worker.startup import warm_worker_process
 
     @worker_process_init.connect
     def _warm_celery_child_process(**_kwargs: Any) -> None:
         warm_worker_process()
+
+    @worker_process_shutdown.connect
+    def _release_claim_on_child_shutdown(**_kwargs: Any) -> None:
+        item_id = _current_processed_item_id.get()
+        if item_id is None:
+            return
+        try:
+            engine = get_engine()
+            with Session(engine) as session:
+                if release_running_claim(session, int(item_id)):
+                    session.commit()
+                    logger.warning(
+                        "Released running processed_item id=%s to pending on worker child shutdown",
+                        item_id,
+                    )
+        except Exception:
+            logger.exception(
+                "Failed to release processed_item claim on worker shutdown item_id=%s",
+                item_id,
+            )
+
+    @task_failure.connect
+    def _release_claim_on_task_failure(
+        sender: object | None = None,
+        args: tuple[Any, ...] | None = None,
+        **_kwargs: Any,
+    ) -> None:
+        if getattr(sender, "name", None) != "worker.tasks.execute_processed_item":
+            return
+        if not args:
+            return
+        try:
+            item_id = int(args[0])
+        except (TypeError, ValueError):
+            return
+        try:
+            engine = get_engine()
+            with Session(engine) as session:
+                if release_running_claim(session, item_id):
+                    session.commit()
+                    logger.warning(
+                        "Released running processed_item id=%s to pending after task failure",
+                        item_id,
+                    )
+        except Exception:
+            logger.exception(
+                "Failed to release processed_item claim after task failure item_id=%s",
+                item_id,
+            )
 
 
 _register_worker_process_hooks()
@@ -801,17 +862,43 @@ def execute_run_replay_setup(source_run_id: str, new_run_id: str) -> None:
     reject_on_worker_lost=True,
 )
 def execute_processed_item(item_id: int) -> None:
+    token = _current_processed_item_id.set(int(item_id))
+    try:
+        _execute_processed_item_impl(item_id)
+    finally:
+        _current_processed_item_id.reset(token)
+
+
+def _execute_processed_item_impl(item_id: int) -> None:
     engine = get_engine()
     with Session(engine) as session:
         item = session.get(AgateProcessedItem, item_id)
         if not item:
             return
         reaped = _reap_stale_running_items_for_run(session, item.run_id)
-        if reaped:
-            logger.info(
-                "Reaped %d stale running processed_item row(s) for run_id=%s",
-                reaped,
+        running_rows = list(
+            session.exec(
+                select(AgateProcessedItem).where(
+                    AgateProcessedItem.run_id == item.run_id,
+                    AgateProcessedItem.status == "running",
+                )
+            ).all()
+        )
+        released = 0
+        if should_reconcile_orphan_running_items(len(running_rows), run_id=item.run_id):
+            active_ids = active_execute_processed_item_ids(celery_app) | {int(item_id)}
+            released = release_orphan_running_items_for_run(
+                session,
                 item.run_id,
+                active_item_ids=active_ids,
+            )
+        if reaped or released:
+            logger.info(
+                "Reconciled running processed_item rows for run_id=%s "
+                "(stale_reaped=%d orphan_released=%d)",
+                item.run_id,
+                reaped,
+                released,
             )
             session.commit()
         if not _try_claim_processed_item(
