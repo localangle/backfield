@@ -31,7 +31,7 @@ const nodeMetadata = {
     }
   ],
   "defaultParams": {
-    "maxLocations": 100,
+    "maxLocations": 200,
     "perLocationTimeout": 300,
     "useCache": true,
     "stylebook_id": null,
@@ -73,7 +73,7 @@ import {
 const NO_STYLEBOOK_VALUE = '__bf_no_stylebook__'
 
 const DEFAULTS = {
-  maxLocations: 100,
+  maxLocations: 200,
   perLocationTimeout: 300,
   useCache: true,
   stylebook_id: null as number | null,
