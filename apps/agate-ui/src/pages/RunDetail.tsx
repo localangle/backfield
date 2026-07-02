@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useAppMessage } from '@/components/AppMessageProvider'
 import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
@@ -42,9 +42,14 @@ import {
   resolveRunGraphSpecForDisplay,
   s3InputSourceForRun,
 } from '@/lib/runGraphSpec'
-import { ArrowLeft, ArrowRight, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, Play, StopCircle, RotateCcw } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ArrowUpDown, ChevronDown, ChevronUp, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, Play, StopCircle, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  sortProcessedItems,
+  type ProcessedItemSortColumn,
+  type ProcessedItemSortDirection,
+} from '@/lib/processedItemTableSort'
 
 export default function RunDetail() {
   const { showConfirm, showError } = useAppMessage()
@@ -62,12 +67,16 @@ export default function RunDetail() {
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set())
   const [rerunningItems, setRerunningItems] = useState<Set<number>>(new Set())
   const [aiCost, setAiCost] = useState<RunEstimatedAiCost | null>(null)
+  const [sortColumn, setSortColumn] = useState<ProcessedItemSortColumn>('id')
+  const [sortDirection, setSortDirection] = useState<ProcessedItemSortDirection>('asc')
 
   useEffect(() => {
     if (runId) {
       loadRunData()
       setCurrentPage(1) // Reset to first page when run changes
       setSelectedItems(new Set()) // Clear selection when run changes
+      setSortColumn('id')
+      setSortDirection('asc')
     }
   }, [runId])
 
@@ -199,6 +208,16 @@ export default function RunDetail() {
     } finally {
       setCancelling(false)
     }
+  }
+
+  function handleSortColumn(column: ProcessedItemSortColumn) {
+    setCurrentPage(1)
+    if (sortColumn === column) {
+      setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+    setSortColumn(column)
+    setSortDirection('asc')
   }
 
   function handleSelectItem(itemId: number, checked: boolean) {
@@ -344,6 +363,11 @@ export default function RunDetail() {
     run &&
     flowChangedSinceRun(snapshotJson, graph?.spec ? JSON.stringify(graph.spec) : null, run.flow_changed_since_run)
 
+  const sortedItems = useMemo(
+    () => (run?.items ? sortProcessedItems(run.items, sortColumn, sortDirection) : []),
+    [run?.items, sortColumn, sortDirection],
+  )
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -383,7 +407,7 @@ export default function RunDetail() {
   const totalPages = Math.ceil(totalItems / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
-  const paginatedItems = run.items?.slice(startIndex, endIndex) || []
+  const paginatedItems = sortedItems.slice(startIndex, endIndex)
   const preparingItems = isRunPreparingItems(run)
 
   return (
@@ -648,12 +672,62 @@ export default function RunDetail() {
                       }}
                     />
                   </TableHead>
-                  <TableHead className="w-[80px]">ID</TableHead>
-                  <TableHead className="w-[250px]">Source</TableHead>
-                  <TableHead className="w-[120px]">Status</TableHead>
-                  <TableHead className="w-[110px] text-right">Processing</TableHead>
-                  <TableHead className="w-[130px] text-right">Est. cost</TableHead>
-                  <TableHead className="w-[180px]">Created</TableHead>
+                  <TableHead className="w-[80px]">
+                    <SortableTableHeadButton
+                      label="ID"
+                      column="id"
+                      activeColumn={sortColumn}
+                      direction={sortDirection}
+                      onSort={handleSortColumn}
+                    />
+                  </TableHead>
+                  <TableHead className="w-[250px]">
+                    <SortableTableHeadButton
+                      label="Source"
+                      column="source"
+                      activeColumn={sortColumn}
+                      direction={sortDirection}
+                      onSort={handleSortColumn}
+                    />
+                  </TableHead>
+                  <TableHead className="w-[120px]">
+                    <SortableTableHeadButton
+                      label="Status"
+                      column="status"
+                      activeColumn={sortColumn}
+                      direction={sortDirection}
+                      onSort={handleSortColumn}
+                    />
+                  </TableHead>
+                  <TableHead className="w-[110px] text-right">
+                    <SortableTableHeadButton
+                      label="Processing"
+                      column="duration"
+                      activeColumn={sortColumn}
+                      direction={sortDirection}
+                      onSort={handleSortColumn}
+                      align="right"
+                    />
+                  </TableHead>
+                  <TableHead className="w-[130px] text-right">
+                    <SortableTableHeadButton
+                      label="Est. cost"
+                      column="estimated_cost"
+                      activeColumn={sortColumn}
+                      direction={sortDirection}
+                      onSort={handleSortColumn}
+                      align="right"
+                    />
+                  </TableHead>
+                  <TableHead className="w-[180px]">
+                    <SortableTableHeadButton
+                      label="Created"
+                      column="created_at"
+                      activeColumn={sortColumn}
+                      direction={sortDirection}
+                      onSort={handleSortColumn}
+                    />
+                  </TableHead>
                   <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -843,5 +917,45 @@ export default function RunDetail() {
         </Card>
       )}
     </div>
+  )
+}
+
+type SortableTableHeadButtonProps = {
+  label: string
+  column: ProcessedItemSortColumn
+  activeColumn: ProcessedItemSortColumn
+  direction: ProcessedItemSortDirection
+  onSort: (column: ProcessedItemSortColumn) => void
+  align?: 'left' | 'right'
+}
+
+function SortableTableHeadButton({
+  label,
+  column,
+  activeColumn,
+  direction,
+  onSort,
+  align = 'left',
+}: SortableTableHeadButtonProps) {
+  const active = activeColumn === column
+  return (
+    <button
+      type="button"
+      className={`inline-flex items-center gap-1 font-medium hover:text-foreground ${
+        align === 'right' ? 'ml-auto' : ''
+      } ${active ? 'text-foreground' : 'text-muted-foreground'}`}
+      onClick={() => onSort(column)}
+    >
+      {label}
+      {active ? (
+        direction === 'asc' ? (
+          <ChevronUp className="h-4 w-4" aria-hidden />
+        ) : (
+          <ChevronDown className="h-4 w-4" aria-hidden />
+        )
+      ) : (
+        <ArrowUpDown className="h-3.5 w-3.5 opacity-50" aria-hidden />
+      )}
+    </button>
   )
 }
