@@ -17,7 +17,7 @@ Ignore any earlier per-key object description in this prompt; emit arrays, not o
 Rules for compact output:
 - Apply all editorial inclusion, exclusion, typing, and formatting rules above.
 - Each person is ONE JSON array with fields in this order:
-  0. name — required string
+  0. name — required string; personal name only (never a role or role-plus-agency phrase)
   1. title — role/position only; "" when none
   2. affiliation — institution name; "" when none
   3. pf — 0 or 1 for public_figure

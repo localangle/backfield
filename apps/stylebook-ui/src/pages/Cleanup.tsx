@@ -178,8 +178,8 @@ export default function Cleanup() {
         </Button>
       </div>
 
-      <div className="rounded-lg border overflow-x-auto">
-        <table className="w-full table-fixed text-sm min-w-[48rem]">
+      <div className="rounded-lg border overflow-hidden">
+        <table className="w-full table-fixed text-sm">
           <colgroup>
             <col style={{ width: "4%" }} />
             <col style={{ width: "34%" }} />

@@ -28,12 +28,6 @@ Rules for compact output:
 - Prefer the same location-string granularity you would use in full mode (e.g. "Ragadan, Chicago, IL"
   rather than "Ragadan, Uptown, Chicago, IL") unless an extra segment is needed to geocode or
   disambiguate.
-- **Never** emit dateline/lede sentences, narrative policy phrases, speaker-attribution clauses, or
-  generic facility categories (`libraries`, `parks`, etc.) as **`location`** strings—follow the
-  exclusion rules above.
-- The **`location`** field must be a geocodable proper name only—never a copied sentence.
-- Scheduled scoreboard lines without scores ("Team A at Team B"): emit **both** teams as separate
-  **`pl` / place** rows with expanded school names plus city/state. Never use **`ot` / other** for
-  school tokens, and never put a school name in the city component.
+- Scheduled scoreboard lines without scores ("Team A at Team B") and final score lines ("Team A 55, Team B 53"): emit **both** teams as separate **`pl` / place** rows with expanded school names plus city/state. Never use **`ot` / other** for school tokens, never bare tokens (`Belvidere`, `Smith`) as `location`, and never put a school name in the city component.
 
 """ + COMPACT_CODE_LEGEND

@@ -524,6 +524,10 @@ def list_duplicate_location_clusters(
     ),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    q: str | None = Query(
+        None,
+        description="Optional label filter; returns clusters where any member label matches.",
+    ),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> PaginatedDuplicateClustersResponse:
@@ -544,6 +548,7 @@ def list_duplicate_location_clusters(
         head_threshold=head_similarity_threshold,
         limit=limit,
         offset=offset,
+        query=q,
     )
     all_ids = sorted({cid for cluster in cluster_id_lists for cid in cluster})
     rows_by_id = {
@@ -598,6 +603,10 @@ def list_duplicate_person_clusters(
     ),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    q: str | None = Query(
+        None,
+        description="Optional label filter; returns clusters where any member label matches.",
+    ),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> PaginatedDuplicateClustersResponse:
@@ -617,6 +626,7 @@ def list_duplicate_person_clusters(
         full_threshold=similarity_threshold,
         limit=limit,
         offset=offset,
+        query=q,
     )
     all_ids = sorted({cid for cluster in cluster_id_lists for cid in cluster})
     rows_by_id = {
@@ -669,6 +679,10 @@ def list_duplicate_organization_clusters(
     ),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    q: str | None = Query(
+        None,
+        description="Optional label filter; returns clusters where any member label matches.",
+    ),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> PaginatedDuplicateClustersResponse:
@@ -688,6 +702,7 @@ def list_duplicate_organization_clusters(
         full_threshold=similarity_threshold,
         limit=limit,
         offset=offset,
+        query=q,
     )
     all_ids = sorted({cid for cluster in cluster_id_lists for cid in cluster})
     rows_by_id = {

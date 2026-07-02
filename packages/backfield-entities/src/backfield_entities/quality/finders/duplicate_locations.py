@@ -11,6 +11,12 @@ from sqlmodel import Session, col, select
 
 from backfield_entities.quality.dismissals import filter_dismissed_pairs, load_dismissed_keys
 from backfield_entities.quality.finders._clustering import cluster_ids_from_pairs
+from backfield_entities.quality.finders._duplicate_labels import (
+    _all_member_ids,
+    filter_duplicate_label_clusters_by_query,
+    load_canonical_labels,
+    sort_duplicate_label_clusters,
+)
 from backfield_entities.quality.types import CleanupLocationCanonicalRow
 
 # Near-duplicates must share the same primary name (pre-comma head) and pass full-label similarity.
@@ -267,6 +273,7 @@ def paginate_duplicate_location_clusters(
     offset: int,
     full_threshold: float = DEFAULT_FULL_SIMILARITY_THRESHOLD,
     head_threshold: float = DEFAULT_HEAD_SIMILARITY_THRESHOLD,
+    query: str | None = None,
 ) -> tuple[list[list[str]], int]:
     clusters = duplicate_location_cluster_ids(
         session,
@@ -274,6 +281,14 @@ def paginate_duplicate_location_clusters(
         full_threshold=full_threshold,
         head_threshold=head_threshold,
     )
+    if clusters:
+        labels_by_id = load_canonical_labels(
+            session,
+            StylebookLocationCanonical,
+            _all_member_ids(clusters),
+        )
+        clusters = sort_duplicate_label_clusters(clusters, labels_by_id)
+        clusters = filter_duplicate_label_clusters_by_query(clusters, labels_by_id, query)
     total = len(clusters)
     page = clusters[offset : offset + limit]
     return page, total

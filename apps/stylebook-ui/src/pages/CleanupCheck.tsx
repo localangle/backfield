@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Link, useParams } from "react-router-dom"
+import { Link, useParams, useSearchParams } from "react-router-dom"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
 import { CleanupAiReviewDialog } from "@/components/CleanupAiReviewDialog"
 import { DuplicateClusterList } from "@/components/DuplicateClusterList"
 import { StylebookHomeTabs } from "@/components/StylebookHomeTabs"
 import Pagination from "@/components/Pagination"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import { Loader2, Sparkles } from "lucide-react"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
@@ -107,6 +108,9 @@ export default function CleanupCheck() {
     projectFilterSlug,
   } = useProjectCatalogScope()
   const crumbRoot = useScopeBreadcrumbRoot()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const urlQuery = searchParams.get("q") ?? ""
+  const [searchQuery, setSearchQuery] = useState(() => urlQuery)
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [clusterResults, setClusterResults] =
@@ -170,7 +174,24 @@ export default function CleanupCheck() {
 
   useEffect(() => {
     setPage(1)
-  }, [checkId, projectFilterSlug])
+  }, [checkId, projectFilterSlug, urlQuery])
+
+  useEffect(() => {
+    setSearchQuery(urlQuery)
+  }, [urlQuery])
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev)
+        const trimmed = searchQuery.trim()
+        if (trimmed) next.set("q", trimmed)
+        else next.delete("q")
+        return next
+      })
+    }, 300)
+    return () => window.clearTimeout(handle)
+  }, [searchQuery, setSearchParams])
 
   const loadResults = useCallback(async () => {
     if (!stylebookSlug || !config) return
@@ -182,6 +203,7 @@ export default function CleanupCheck() {
         project: projectFilterSlug || undefined,
         page,
         perPage: PER_PAGE,
+        q: isClusterCheck ? urlQuery || undefined : undefined,
       })
       if (config.kind === "cluster") {
         dismissedCleanupPairsRef.current.clear()
@@ -204,7 +226,7 @@ export default function CleanupCheck() {
     } finally {
       setLoading(false)
     }
-  }, [stylebookSlug, checkId, config, projectFilterSlug, page, showError])
+  }, [stylebookSlug, checkId, config, projectFilterSlug, page, showError, isClusterCheck, urlQuery])
 
   useEffect(() => {
     void loadResults()
@@ -586,6 +608,18 @@ export default function CleanupCheck() {
         />
       ) : null}
 
+      {isClusterCheck ? (
+        <div className="max-w-md">
+          <Input
+            type="search"
+            placeholder="Filter by name…"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            aria-label="Filter duplicate clusters by name"
+          />
+        </div>
+      ) : null}
+
       {loading ? (
         <div className="flex items-center gap-2 text-muted-foreground py-8">
           <Loader2 className="h-5 w-5 animate-spin" />
@@ -694,27 +728,40 @@ function MismatchedLinksList({
   }
 
   return (
-    <div className="rounded-lg border overflow-x-auto">
-      <table className="w-full table-fixed text-sm min-w-[44rem]">
+    <div className="rounded-lg border overflow-hidden">
+      <table className="w-full table-fixed text-sm">
         <colgroup>
-          <col style={{ width: "24%" }} />
-          <col style={{ width: "26%" }} />
-          <col style={{ width: "12%" }} />
-          <col style={{ width: "10%" }} />
-          <col style={{ width: "8%" }} />
-          <col style={{ width: "8%" }} />
-          {canEdit && onDismiss ? <col style={{ width: "12%" }} /> : null}
+          {canEdit && onDismiss ? (
+            <>
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "24%" }} />
+              <col style={{ width: "11%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "7%" }} />
+              <col style={{ width: "7%" }} />
+              <col style={{ width: "22%" }} />
+            </>
+          ) : (
+            <>
+              <col style={{ width: "26%" }} />
+              <col style={{ width: "32%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "10%" }} />
+            </>
+          )}
         </colgroup>
         <thead className="bg-muted/50 text-left">
           <tr>
-            <th className="px-4 py-3 font-medium min-w-0">Name</th>
-            <th className="px-4 py-3 font-medium min-w-0">Example mismatched links</th>
-            <th className="px-4 py-3 font-medium min-w-0">Type</th>
-            <th className="px-4 py-3 font-medium min-w-0">Status</th>
-            <th className="px-4 py-3 font-medium text-right">Linked</th>
-            <th className="px-4 py-3 font-medium text-right">Mentions</th>
+            <th className="px-3 py-3 font-medium min-w-0">Name</th>
+            <th className="px-3 py-3 font-medium min-w-0">Example mismatched links</th>
+            <th className="px-3 py-3 font-medium min-w-0">Type</th>
+            <th className="px-3 py-3 font-medium min-w-0">Status</th>
+            <th className="px-3 py-3 font-medium text-right">Linked</th>
+            <th className="px-3 py-3 font-medium text-right">Mentions</th>
             {canEdit && onDismiss ? (
-              <th className="px-4 py-3 font-medium text-right">Action</th>
+              <th className="px-3 py-3 font-medium text-right">Action</th>
             ) : null}
           </tr>
         </thead>
@@ -726,7 +773,7 @@ function MismatchedLinksList({
             )
             return (
               <tr key={canonical.id} className="border-t hover:bg-muted/30">
-                <td className="px-4 py-3 min-w-0">
+                <td className="px-3 py-3 min-w-0">
                   <Link
                     to={detailHref(canonical.id)}
                     target="_blank"
@@ -737,25 +784,25 @@ function MismatchedLinksList({
                     {canonical.label}
                   </Link>
                 </td>
-                <td className="px-4 py-3 text-muted-foreground min-w-0">
+                <td className="px-3 py-3 text-muted-foreground min-w-0">
                   <span className="block truncate" title={examplesText}>
                     {examplesText}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-muted-foreground min-w-0">
+                <td className="px-3 py-3 text-muted-foreground min-w-0">
                   <span className="block truncate">{typeLabel(canonical)}</span>
                 </td>
-                <td className="px-4 py-3 text-muted-foreground min-w-0">
+                <td className="px-3 py-3 text-muted-foreground min-w-0">
                   <span className="block truncate">{canonical.status}</span>
                 </td>
-                <td className="px-4 py-3 text-right tabular-nums">
+                <td className="px-3 py-3 text-right tabular-nums">
                   {canonical.linked_substrate_count ?? 0}
                 </td>
-                <td className="px-4 py-3 text-right tabular-nums">
+                <td className="px-3 py-3 text-right tabular-nums">
                   {canonical.mention_count ?? 0}
                 </td>
                 {canEdit && onDismiss ? (
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-2 py-3 text-right whitespace-nowrap">
                     <Button
                       type="button"
                       variant="outline"
@@ -802,34 +849,47 @@ function GeographyIssuesList({
   }
 
   return (
-    <div className="rounded-lg border overflow-x-auto">
-      <table className="w-full table-fixed text-sm min-w-[40rem]">
+    <div className="rounded-lg border overflow-hidden">
+      <table className="w-full table-fixed text-sm">
         <colgroup>
-          <col style={{ width: "28%" }} />
-          <col style={{ width: "22%" }} />
-          <col style={{ width: "12%" }} />
-          <col style={{ width: "10%" }} />
-          <col style={{ width: "8%" }} />
-          <col style={{ width: "8%" }} />
-          {canEdit && onDismiss ? <col style={{ width: "12%" }} /> : null}
+          {canEdit && onDismiss ? (
+            <>
+              <col style={{ width: "22%" }} />
+              <col style={{ width: "22%" }} />
+              <col style={{ width: "11%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "7%" }} />
+              <col style={{ width: "7%" }} />
+              <col style={{ width: "22%" }} />
+            </>
+          ) : (
+            <>
+              <col style={{ width: "28%" }} />
+              <col style={{ width: "28%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "11%" }} />
+              <col style={{ width: "11%" }} />
+            </>
+          )}
         </colgroup>
         <thead className="bg-muted/50 text-left">
           <tr>
-            <th className="px-4 py-3 font-medium min-w-0">Name</th>
-            <th className="px-4 py-3 font-medium min-w-0">Issue</th>
-            <th className="px-4 py-3 font-medium min-w-0">Type</th>
-            <th className="px-4 py-3 font-medium min-w-0">Status</th>
-            <th className="px-4 py-3 font-medium text-right">Linked</th>
-            <th className="px-4 py-3 font-medium text-right">Mentions</th>
+            <th className="px-3 py-3 font-medium min-w-0">Name</th>
+            <th className="px-3 py-3 font-medium min-w-0">Issue</th>
+            <th className="px-3 py-3 font-medium min-w-0">Type</th>
+            <th className="px-3 py-3 font-medium min-w-0">Status</th>
+            <th className="px-3 py-3 font-medium text-right">Linked</th>
+            <th className="px-3 py-3 font-medium text-right">Mentions</th>
             {canEdit && onDismiss ? (
-              <th className="px-4 py-3 font-medium text-right">Action</th>
+              <th className="px-3 py-3 font-medium text-right">Action</th>
             ) : null}
           </tr>
         </thead>
         <tbody>
           {canonicals.map((canonical) => (
             <tr key={canonical.id} className="border-t hover:bg-muted/30">
-              <td className="px-4 py-3 min-w-0">
+              <td className="px-3 py-3 min-w-0">
                 <Link
                   to={locationDetailHref(canonical.id)}
                   target="_blank"
@@ -840,8 +900,11 @@ function GeographyIssuesList({
                   {canonical.label}
                 </Link>
               </td>
-              <td className="px-4 py-3 text-muted-foreground min-w-0">
-                <span className="block truncate" title={geographyIssueLabel(canonical.geography_issue)}>
+              <td className="px-3 py-3 text-muted-foreground min-w-0">
+                <span
+                  className="block truncate"
+                  title={geographyIssueLabel(canonical.geography_issue)}
+                >
                   {geographyIssueLabel(canonical.geography_issue)}
                   {canonical.geography_issue === "distant_linked_places" &&
                   (canonical.distant_linked_count ?? 0) > 0
@@ -849,24 +912,24 @@ function GeographyIssuesList({
                     : null}
                 </span>
               </td>
-              <td className="px-4 py-3 text-muted-foreground min-w-0">
+              <td className="px-3 py-3 text-muted-foreground min-w-0">
                 <span className="block truncate">
                   {canonical.location_type
                     ? placeExtractTypeLabel(canonical.location_type)
                     : "—"}
                 </span>
               </td>
-              <td className="px-4 py-3 text-muted-foreground min-w-0">
+              <td className="px-3 py-3 text-muted-foreground min-w-0">
                 <span className="block truncate">{canonical.status}</span>
               </td>
-              <td className="px-4 py-3 text-right tabular-nums">
+              <td className="px-3 py-3 text-right tabular-nums">
                 {canonical.linked_substrate_count ?? 0}
               </td>
-              <td className="px-4 py-3 text-right tabular-nums">
+              <td className="px-3 py-3 text-right tabular-nums">
                 {canonical.mention_count ?? 0}
               </td>
               {canEdit && onDismiss ? (
-                <td className="px-4 py-3 text-right">
+                <td className="px-2 py-3 text-right whitespace-nowrap">
                   <Button
                     type="button"
                     variant="outline"

@@ -74,6 +74,7 @@ def paginate_duplicate_organization_clusters(
     limit: int,
     offset: int,
     full_threshold: float = DEFAULT_FULL_SIMILARITY_THRESHOLD,
+    query: str | None = None,
 ) -> tuple[list[list[str]], int]:
     return paginate_duplicate_label_clusters(
         session,
@@ -84,6 +85,7 @@ def paginate_duplicate_organization_clusters(
         check_id=_CHECK_ID,
         full_threshold=full_threshold,
         near_block=_ORG_NEAR_BLOCK,
+        query=query,
     )
 
 

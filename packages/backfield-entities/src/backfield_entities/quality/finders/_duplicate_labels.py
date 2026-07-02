@@ -7,7 +7,7 @@ from collections import defaultdict
 from typing import Literal, TypeVar
 
 from sqlalchemy import text
-from sqlmodel import Session, SQLModel, select
+from sqlmodel import Session, SQLModel, col, select
 
 from backfield_entities.quality.dismissals import filter_dismissed_pairs, load_dismissed_keys
 from backfield_entities.quality.finders._clustering import cluster_ids_from_pairs
@@ -81,6 +81,91 @@ def cluster_display_label(
     if len(normalized) == 1:
         return labels[0]
     return similar_fallback
+
+
+def _all_member_ids(clusters: list[list[str]]) -> list[str]:
+    return sorted({member_id for cluster in clusters for member_id in cluster})
+
+
+def load_canonical_labels(
+    session: Session,
+    model: type[CanonicalModel],
+    canonical_ids: list[str],
+) -> dict[str, str]:
+    if not canonical_ids:
+        return {}
+    rows = session.exec(
+        select(model.id, model.label).where(col(model.id).in_(canonical_ids))  # type: ignore[attr-defined]
+    ).all()
+    return {
+        str(row_id): str(label).strip() if label else ""
+        for row_id, label in rows
+        if row_id is not None
+    }
+
+
+def sort_duplicate_label_clusters(
+    clusters: list[list[str]],
+    labels_by_id: dict[str, str],
+) -> list[list[str]]:
+    def sort_key(member_ids: list[str]) -> tuple[int, int, str, str]:
+        norms = {
+            normalize_label(labels_by_id[member_id])
+            for member_id in member_ids
+            if labels_by_id.get(member_id)
+        }
+        is_exact = len(norms) == 1 and bool(norms)
+        primary_label = (
+            min(norms)
+            if is_exact
+            else normalize_label(labels_by_id.get(member_ids[0], ""))
+        )
+        return (0 if is_exact else 1, -len(member_ids), primary_label, member_ids[0])
+
+    return sorted(clusters, key=sort_key)
+
+
+def filter_duplicate_label_clusters_by_query(
+    clusters: list[list[str]],
+    labels_by_id: dict[str, str],
+    query: str | None,
+) -> list[list[str]]:
+    needle = normalize_label(query or "")
+    if not needle:
+        return clusters
+    filtered: list[list[str]] = []
+    for member_ids in clusters:
+        if any(
+            needle in normalize_label(labels_by_id.get(member_id, ""))
+            for member_id in member_ids
+        ):
+            filtered.append(member_ids)
+    return filtered
+
+
+def _prepare_duplicate_label_clusters(
+    session: Session,
+    *,
+    model: type[CanonicalModel],
+    stylebook_id: int,
+    check_id: str,
+    full_threshold: float,
+    near_block: NearDuplicateBlock,
+) -> tuple[list[list[str]], dict[str, str]]:
+    pairs = duplicate_label_pair_edges(
+        session,
+        model=model,
+        stylebook_id=stylebook_id,
+        full_threshold=full_threshold,
+        near_block=near_block,
+    )
+    dismissed = load_dismissed_keys(session, stylebook_id=stylebook_id, check_id=check_id)
+    pairs = filter_dismissed_pairs(pairs, dismissed)
+    clusters = cluster_ids_from_pairs(pairs)
+    if not clusters:
+        return [], {}
+    labels_by_id = load_canonical_labels(session, model, _all_member_ids(clusters))
+    return sort_duplicate_label_clusters(clusters, labels_by_id), labels_by_id
 
 
 def _postgres_exact_duplicate_clusters(
@@ -305,16 +390,15 @@ def duplicate_label_cluster_ids(
     full_threshold: float = DEFAULT_FULL_SIMILARITY_THRESHOLD,
     near_block: NearDuplicateBlock = "comma_head",
 ) -> list[list[str]]:
-    pairs = duplicate_label_pair_edges(
+    clusters, _labels_by_id = _prepare_duplicate_label_clusters(
         session,
         model=model,
         stylebook_id=stylebook_id,
+        check_id=check_id,
         full_threshold=full_threshold,
         near_block=near_block,
     )
-    dismissed = load_dismissed_keys(session, stylebook_id=stylebook_id, check_id=check_id)
-    pairs = filter_dismissed_pairs(pairs, dismissed)
-    return cluster_ids_from_pairs(pairs)
+    return clusters
 
 
 def count_duplicate_label_clusters(
@@ -348,8 +432,9 @@ def paginate_duplicate_label_clusters(
     offset: int,
     full_threshold: float = DEFAULT_FULL_SIMILARITY_THRESHOLD,
     near_block: NearDuplicateBlock = "comma_head",
+    query: str | None = None,
 ) -> tuple[list[list[str]], int]:
-    clusters = duplicate_label_cluster_ids(
+    clusters, labels_by_id = _prepare_duplicate_label_clusters(
         session,
         model=model,
         stylebook_id=stylebook_id,
@@ -357,6 +442,7 @@ def paginate_duplicate_label_clusters(
         full_threshold=full_threshold,
         near_block=near_block,
     )
+    clusters = filter_duplicate_label_clusters_by_query(clusters, labels_by_id, query)
     total = len(clusters)
     page = clusters[offset : offset + limit]
     return page, total

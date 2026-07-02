@@ -11,6 +11,8 @@ Require a **specific proper-noun institution** (agency, company, school, team, n
 ## Do not extract
 
 - Individual people
+- **Named human individuals** — coaches, players, athletes, elected officials, artists, musicians, executives, sources, witnesses, and other people quoted or acting in the story are **people**, not organizations (e.g. `"Bears coach Ben Johnson said…"` → person **Ben Johnson**; **Alice Cooper** on a roster with **Marc Ribot** and **Steve Earle** → people). Extract their **employer, team, or agency** only when **that institution** is the accountable actor in the story—not the person's personal name.
+- **Descriptive or relational person phrases** — omit entirely when the text describes a **person's relationship, wealth, or role** rather than naming an institution (e.g. `"billionaire father of Bill Conway"`, `"his brother"`, `"the victim's mother"`). These are not organizations.
 - Generic staff or role groups without a named institution ("prosecutors," "coaches," "detectives")
 - Unnamed groups ("residents," "witnesses," "officials")
 - Geography-only places (street, city, building) unless the story treats them as institutions
@@ -44,16 +46,18 @@ Examples:
 ## Names and types
 
 - Use the most specific conventional proper-noun name.
+- `name` must identify an **institution or group**, not an individual human's given and family name (see **Do not extract**). When unsure whether a proper noun is a person or an organization, **omit it from organizations** if the text treats them as an individual acting, speaking, or being described.
 - Expand acronyms when known ("National Basketball Association" not "NBA") unless expansion is ambiguous.
-- **Schools:** use full school names in scorelines, not bare city tokens ("Brother Rice High School," not "Brother Rice" alone when naming a school institution).
+- **Schools:** use full school names in scorelines, not bare city tokens ("Brother Rice High School," not "Brother Rice" alone when naming a school institution). **Never** put a bare scoreline token alone in `name` (not `"Belvidere"`, `"Woodstock"`, `"Smith"`, `"Park"`)—expand with your world knowledge to the conventional **full school name** (`Belvidere High School`, `Woodstock High School`, `Smith High School`).
 - **Sports teams:** in athletics coverage, bare school/university names usually mean the **team**, not the campus. Use `sports_team` with pattern `[School] [boys|girls|men's|women's] [sport] team` when sport is inferable from the article. Never emit bare "Mount Carmel," "Brother Rice," or "Cubs" alone as `sports_team`. Map nicknames ("Caravan," "Wolverines") to the school team pattern. Use `school`/`university` only when administration, district, or campus policy is the actor—not players, games, recruiting, or championships.
+- **Prep scorelines (all formats):** when a token appears in a **game result or schedule**—final scores (`St. Louis Park 57 Hopkins 54`, `Belvidere 55, Woodstock 53`, `Brother Rice 48 Marist 41`), scheduled matchups (`Team A at Team B`), or box-score tables—it names a **school team**, not the homonymous city. **Extract both sides.** Expand each token to the full school name plus team when sport is clear (e.g. `Belvidere 55, Woodstock 53` in basketball coverage → `Belvidere High School boys basketball team`, `Woodstock High School boys basketball team`; not `Belvidere` or `Woodstock` alone, and not `school` when the story is about a game). Use dateline, league, sport section, and nearby context to infer state and sport; apply conventional local school names when you know them.
 - **Pro and college teams before player names:** when a team nickname precedes a player, coach, or role descriptor (`Phillies masher Kyle Schwarber`, `Cubs ace`, `Yankees outfielder`), extract the team as `sports_team` using the full conventional name (`Philadelphia Phillies`, `Chicago Cubs`, `New York Yankees`) even if the team is not the grammatical subject of the sentence.
 - One record per organization; merge all `mentions`.
 - `type` slugs: `government`, `law_enforcement`, `court`, `legislative_body`, `political_party`, `school_district`, `school`, `university`, `hospital`, `public_health`, `public_services`, `utilities`, `company`, `local_business`, `financial_institution`, `real_estate`, `nonprofit`, `community_group`, `religious_org`, `culture_arts`, `sports_team`, `sports_league`, `media`, `other`
 - `role_in_story`: short plain-language reason it matters
 - `nature`: `primary`, `actor`, `source`, `subject`, `affected`, `regulator`, `context`, `other`
 - `nature_secondary_tags`: optional 0–2 tags from the same nature vocabulary
-- `mentions`: at least one object with `text` (verbatim **sentence or paragraph** from the story that contains the organization—not the organization name alone unless the name is the entire sentence) and `quote` (true only for direct quotations) per organization
+- `mentions`: at least one object with `text` (verbatim snippet) and `quote` (true only for direct quotations) per organization. Prefer a full **sentence or paragraph** containing the organization—not the organization name alone unless the name is the entire sentence.
 
 ## Output
 
