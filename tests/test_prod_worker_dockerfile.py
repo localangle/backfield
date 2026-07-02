@@ -38,7 +38,7 @@ def test_worker_dockerfile_declares_prod_target_with_build_metadata() -> None:
     assert "ARG BUILD_TIME" in text
     assert "ENV APP_VERSION" in text
     assert "CELERY_WORKER_CONCURRENCY=16" in _prod_stage(text)
-    assert "--concurrency=32" not in text
+    assert "--concurrency=16" not in text
     assert "--reload" not in _prod_stage(text)
 
 
