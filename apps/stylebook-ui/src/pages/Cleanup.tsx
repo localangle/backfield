@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useLocation } from "react-router-dom"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
 import { StylebookHomeTabs } from "@/components/StylebookHomeTabs"
 import { useAppMessage } from "@/components/AppMessageProvider"
@@ -71,6 +71,7 @@ export default function Cleanup() {
     useProjectCatalogScope()
   const crumbRoot = useScopeBreadcrumbRoot()
   const selectedStylebookLabel = useSelectedStylebookLabel()
+  const location = useLocation()
   const [runSnapshots, setRunSnapshots] = useState<Record<string, CheckRunSnapshot>>(emptySnapshots)
   const [hubLoading, setHubLoading] = useState(true)
   const pollTokensRef = useRef<Record<string, number>>({})
@@ -93,7 +94,7 @@ export default function Cleanup() {
 
   useEffect(() => {
     void loadHub()
-  }, [loadHub])
+  }, [loadHub, location.key])
 
   const pollRun = useCallback(
     async (checkId: string) => {
@@ -283,7 +284,9 @@ function CleanupCheckRow({
         )}
       </td>
       <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
-        <div>{formatCleanupLastRun(snapshot.lastRunAt)}</div>
+        {snapshot.lastRunAt ? (
+          <div>{formatCleanupLastRun(snapshot.lastRunAt)}</div>
+        ) : null}
         <CleanupStalenessIndicator
           staleness={cleanupCheckStaleness(snapshot.lastRunAt)}
           label={formatCleanupStalenessLabel(snapshot.lastRunAt)}

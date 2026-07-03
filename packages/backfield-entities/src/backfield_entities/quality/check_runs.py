@@ -435,6 +435,61 @@ def get_latest_succeeded_cleanup_check_run(
     ).first()
 
 
+def load_existing_canonical_ids_for_check(
+    session: Session,
+    *,
+    stylebook_id: int,
+    check_id: str,
+    candidate_ids: set[str],
+) -> set[str]:
+    """Return which cached canonical ids still exist for a cleanup check."""
+    if not candidate_ids:
+        return set()
+    if check_id in (
+        "duplicate-locations",
+        "missing-geometry-locations",
+        "mismatched-locations",
+    ):
+        model = StylebookLocationCanonical
+    elif check_id in ("duplicate-people", "mismatched-people"):
+        model = StylebookPersonCanonical
+    elif check_id in ("duplicate-organizations", "mismatched-organizations"):
+        model = StylebookOrganizationCanonical
+    else:
+        return set(candidate_ids)
+    rows = session.exec(
+        select(model.id).where(
+            model.stylebook_id == stylebook_id,
+            col(model.id).in_(candidate_ids),
+        )
+    ).all()
+    return {str(row) for row in rows}
+
+
+def _candidate_canonical_ids_from_results(
+    results: list[StylebookCleanupCheckResult],
+) -> set[str]:
+    candidate_ids: set[str] = set()
+    for result in results:
+        candidate_ids.update(str(cid) for cid in (result.canonical_ids_json or []))
+    return candidate_ids
+
+
+def _existing_canonical_ids_for_results(
+    session: Session,
+    *,
+    stylebook_id: int,
+    check_id: str,
+    results: list[StylebookCleanupCheckResult],
+) -> set[str]:
+    return load_existing_canonical_ids_for_check(
+        session,
+        stylebook_id=stylebook_id,
+        check_id=check_id,
+        candidate_ids=_candidate_canonical_ids_from_results(results),
+    )
+
+
 def is_result_dismissed(
     result: StylebookCleanupCheckResult,
     *,
@@ -455,21 +510,19 @@ def filter_visible_cached_results(
     results: list[StylebookCleanupCheckResult],
     *,
     dismissed_keys: set[str],
-    existing_canonical_ids: set[str] | None = None,
+    existing_canonical_ids: set[str],
 ) -> list[StylebookCleanupCheckResult]:
     visible: list[StylebookCleanupCheckResult] = []
     for result in results:
         if is_result_dismissed(result, dismissed_keys=dismissed_keys):
             continue
         canonical_ids = [str(cid) for cid in (result.canonical_ids_json or [])]
-        if existing_canonical_ids is not None:
-            if result.item_kind == "cluster":
-                member_ids = [cid for cid in canonical_ids if cid in existing_canonical_ids]
-                if len(member_ids) < 2:
-                    continue
-            else:
-                if not canonical_ids or canonical_ids[0] not in existing_canonical_ids:
-                    continue
+        if result.item_kind == "cluster":
+            member_ids = [cid for cid in canonical_ids if cid in existing_canonical_ids]
+            if len(member_ids) < 2:
+                continue
+        elif not canonical_ids or canonical_ids[0] not in existing_canonical_ids:
+            continue
         visible.append(result)
     return visible
 
@@ -483,7 +536,6 @@ def query_cached_check_results(
     limit: int,
     offset: int,
     query: str | None = None,
-    existing_canonical_ids: set[str] | None = None,
 ) -> tuple[list[StylebookCleanupCheckResult], int]:
     dismissed_keys = load_dismissed_keys(
         session,
@@ -499,6 +551,12 @@ def query_cached_check_results(
         needle = query.strip().lower()
         stmt = stmt.where(col(StylebookCleanupCheckResult.searchable_text).contains(needle))
     rows = list(session.exec(stmt).all())
+    existing_canonical_ids = _existing_canonical_ids_for_results(
+        session,
+        stylebook_id=stylebook_id,
+        check_id=check_id,
+        results=rows,
+    )
     visible = filter_visible_cached_results(
         rows,
         dismissed_keys=dismissed_keys,
@@ -515,7 +573,6 @@ def count_visible_cached_results(
     run_id: str,
     stylebook_id: int,
     check_id: str,
-    existing_canonical_ids: set[str] | None = None,
 ) -> int:
     dismissed_keys = load_dismissed_keys(
         session,
@@ -528,6 +585,12 @@ def count_visible_cached_results(
             .where(StylebookCleanupCheckResult.run_id == run_id)
             .order_by(StylebookCleanupCheckResult.ordinal)
         ).all()
+    )
+    existing_canonical_ids = _existing_canonical_ids_for_results(
+        session,
+        stylebook_id=stylebook_id,
+        check_id=check_id,
+        results=rows,
     )
     visible = filter_visible_cached_results(
         rows,

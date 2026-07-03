@@ -404,6 +404,11 @@ def test_merge_cleanup_canonical_relinks_and_deletes_source(
         source_id = str(source.id)
         target_id = str(target.id)
 
+    _run_cleanup_check(client, "duplicate-locations")
+    before = client.get("/v1/stylebooks/default/cleanup/checks?check_id=duplicate-locations")
+    assert before.status_code == 200
+    assert before.json()["checks"][0]["count"] == 2
+
     response = client.post(
         f"/v1/stylebooks/default/cleanup/canonical-locations/{source_id}/merge-into",
         json={"target_canonical_id": target_id},
@@ -423,6 +428,15 @@ def test_merge_cleanup_canonical_relinks_and_deletes_source(
             )
         ).one()
         assert loc.stylebook_location_canonical_id == target_id
+
+    checks = client.get("/v1/stylebooks/default/cleanup/checks?check_id=duplicate-locations")
+    assert checks.status_code == 200
+    assert checks.json()["checks"][0]["count"] == 1
+
+    detail = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-locations?limit=10")
+    assert detail.status_code == 200
+    assert detail.json()["total"] == 1
+    assert "Ward 36, Chicago, IL" not in {cluster["label"] for cluster in detail.json()["clusters"]}
 
 
 def test_duplicate_person_clusters(cleanup_client: tuple[TestClient, Engine]) -> None:
