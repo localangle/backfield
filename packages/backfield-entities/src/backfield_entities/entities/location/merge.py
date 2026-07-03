@@ -11,6 +11,7 @@ from backfield_db import (
 )
 from sqlmodel import Session, col, func, select
 
+from backfield_entities.connections.rewire import rewire_connections_for_canonical_merge
 from backfield_entities.entities.linking.substrate_actions import (
     link_substrate_to_canonical_atomic,
 )
@@ -105,6 +106,14 @@ def merge_location_canonical_into(
     )
     if remaining > 0:
         raise ValueError("source canonical still has linked places after merge")
+
+    rewire_connections_for_canonical_merge(
+        session,
+        entity_type="location",
+        source_canonical_id=source_id,
+        target_canonical_id=target_id,
+        project_ids=project_ids,
+    )
 
     session.delete(source)
     return MergeLocationCanonicalResult(
