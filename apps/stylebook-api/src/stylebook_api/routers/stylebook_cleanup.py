@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import os
+import uuid
+from datetime import datetime
 from typing import Any, Literal
 
 from backfield_db import (
+    StylebookCleanupCheckRun,
     StylebookLocationCanonical,
     StylebookOrganizationCanonical,
     StylebookPersonCanonical,
@@ -27,9 +31,21 @@ from backfield_entities.entities.person.merge import (
 from backfield_entities.entities.person.merge import (
     merge_person_canonical_into,
 )
+from backfield_entities.quality.check_runs import (
+    CleanupRunScope,
+    cleanup_algorithm_version,
+    cleanup_scope_hash,
+    count_visible_cached_results,
+    get_active_cleanup_check_run,
+    get_latest_cleanup_check_run,
+    get_latest_succeeded_cleanup_check_run,
+    query_cached_check_results,
+    scope_to_json,
+    validate_cleanup_check_id,
+)
 from backfield_entities.quality.checks import (
     STYLEBOOK_CLEANUP_CHECKS,
-    CleanupCountContext,
+    CleanupCheckDef,
     cleanup_check_by_id,
 )
 from backfield_entities.quality.dismissals import (
@@ -39,35 +55,21 @@ from backfield_entities.quality.dismissals import (
 from backfield_entities.quality.finders.duplicate_locations import (
     DEFAULT_FULL_SIMILARITY_THRESHOLD,
     DEFAULT_HEAD_SIMILARITY_THRESHOLD,
-    paginate_duplicate_location_clusters,
 )
 from backfield_entities.quality.finders.duplicate_locations import (
     cluster_display_label as location_cluster_display_label,
 )
 from backfield_entities.quality.finders.duplicate_organizations import (
     organization_cluster_display_label,
-    paginate_duplicate_organization_clusters,
 )
 from backfield_entities.quality.finders.duplicate_people import (
-    paginate_duplicate_person_clusters,
     person_cluster_display_label,
-)
-from backfield_entities.quality.finders.location_geography_issues import (
-    list_location_geography_issues,
-)
-from backfield_entities.quality.finders.location_name_mismatch import (
-    list_location_name_mismatches,
-)
-from backfield_entities.quality.finders.organization_name_mismatch import (
-    list_organization_name_mismatches,
-)
-from backfield_entities.quality.finders.person_name_mismatch import (
-    list_person_name_mismatches,
 )
 from backfield_entities.quality.types import (
     CleanupLocationGeographyIssueRow,
     CleanupNameMismatchIssueRow,
 )
+from celery import Celery
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session
@@ -93,6 +95,16 @@ from stylebook_api.stylebook_scope import (
 
 router = APIRouter(prefix="/v1/stylebooks", tags=["stylebook-cleanup"])
 
+celery_app = Celery(
+    "agate_worker",
+    broker=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+    backend=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+)
+
+
+def _celery_queue() -> str:
+    return str(os.environ.get("CELERY_QUEUE", "agate"))
+
 
 class CleanupCheckOut(BaseModel):
     id: str
@@ -101,6 +113,44 @@ class CleanupCheckOut(BaseModel):
     entity_type: str
     kind: Literal["cluster", "list"]
     count: int = 0
+    status: str = "never_run"
+    run_id: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    ran_at: datetime | None = None
+    error_message: str | None = None
+
+
+class CleanupCheckRunOut(BaseModel):
+    id: str
+    stylebook_id: int
+    check_id: str
+    status: str
+    scope_hash: str
+    candidate_count: int = 0
+    error_message: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    ran_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_row(cls, row: StylebookCleanupCheckRun) -> CleanupCheckRunOut:
+        return cls(
+            id=str(row.id),
+            stylebook_id=int(row.stylebook_id),
+            check_id=str(row.check_id),
+            status=str(row.status),
+            scope_hash=str(row.scope_hash),
+            candidate_count=int(row.candidate_count),
+            error_message=row.error_message,
+            started_at=row.started_at,
+            completed_at=row.completed_at,
+            ran_at=row.completed_at,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
 
 
 class CleanupChecksResponse(BaseModel):
@@ -442,9 +492,210 @@ def _paginated_cluster_page(limit: int, offset: int) -> int:
     return offset // limit + 1 if limit else 1
 
 
+def _cleanup_run_scope(
+    *,
+    stylebook_id: int,
+    organization_id: int,
+    check_id: str,
+    project_ids: list[int],
+    project_slug: str | None,
+    full_threshold: float,
+    head_threshold: float,
+) -> CleanupRunScope:
+    scoped_project_ids: tuple[int, ...] | None = None
+    if project_slug:
+        scoped_project_ids = tuple(sorted({int(project_id) for project_id in project_ids}))
+    return CleanupRunScope(
+        stylebook_id=stylebook_id,
+        organization_id=organization_id,
+        check_id=check_id,
+        full_threshold=full_threshold,
+        head_threshold=head_threshold,
+        project_ids=scoped_project_ids,
+        project_slug=project_slug,
+    )
+
+
+def _visible_count_for_run(
+    session: Session,
+    *,
+    run: StylebookCleanupCheckRun,
+) -> int:
+    return count_visible_cached_results(
+        session,
+        run_id=str(run.id),
+        stylebook_id=int(run.stylebook_id),
+        check_id=str(run.check_id),
+    )
+
+
+def _check_out_from_run(
+    session: Session,
+    *,
+    check: CleanupCheckDef,
+    latest_run: StylebookCleanupCheckRun | None,
+) -> CleanupCheckOut:
+    if latest_run is None:
+        return CleanupCheckOut(
+            id=check.id,
+            title=check.title,
+            description=check.description,
+            entity_type=check.entity_type,
+            kind=check.kind,
+            status="never_run",
+        )
+    count = 0
+    if latest_run.status == "succeeded":
+        count = _visible_count_for_run(session, run=latest_run)
+    return CleanupCheckOut(
+        id=check.id,
+        title=check.title,
+        description=check.description,
+        entity_type=check.entity_type,
+        kind=check.kind,
+        count=count,
+        status=str(latest_run.status),
+        run_id=str(latest_run.id),
+        started_at=latest_run.started_at,
+        completed_at=latest_run.completed_at,
+        ran_at=latest_run.completed_at,
+        error_message=latest_run.error_message,
+    )
+
+
+def _empty_cluster_response(limit: int, offset: int) -> PaginatedDuplicateClustersResponse:
+    page = _paginated_cluster_page(limit, offset)
+    return PaginatedDuplicateClustersResponse(
+        clusters=[],
+        total=0,
+        page=page,
+        per_page=limit,
+        has_next=False,
+        has_prev=offset > 0,
+    )
+
+
+def _empty_location_issues_response(limit: int, offset: int) -> PaginatedCleanupLocationsResponse:
+    page = offset // limit + 1 if limit else 1
+    return PaginatedCleanupLocationsResponse(
+        canonicals=[],
+        total=0,
+        page=page,
+        per_page=limit,
+        has_next=False,
+        has_prev=offset > 0,
+    )
+
+
+def _empty_person_mismatch_response(
+    limit: int,
+    offset: int,
+) -> PaginatedCleanupPersonMismatchResponse:
+    page = offset // limit + 1 if limit else 1
+    return PaginatedCleanupPersonMismatchResponse(
+        canonicals=[],
+        total=0,
+        page=page,
+        per_page=limit,
+        has_next=False,
+        has_prev=offset > 0,
+    )
+
+
+def _empty_organization_mismatch_response(
+    limit: int,
+    offset: int,
+) -> PaginatedCleanupOrganizationMismatchResponse:
+    page = offset // limit + 1 if limit else 1
+    return PaginatedCleanupOrganizationMismatchResponse(
+        canonicals=[],
+        total=0,
+        page=page,
+        per_page=limit,
+        has_next=False,
+        has_prev=offset > 0,
+    )
+
+
+def _empty_location_mismatch_response(
+    limit: int,
+    offset: int,
+) -> PaginatedCleanupLocationMismatchResponse:
+    page = offset // limit + 1 if limit else 1
+    return PaginatedCleanupLocationMismatchResponse(
+        canonicals=[],
+        total=0,
+        page=page,
+        per_page=limit,
+        has_next=False,
+        has_prev=offset > 0,
+    )
+
+
+def _latest_succeeded_run_for_scope(
+    session: Session,
+    *,
+    stylebook_id: int,
+    check_id: str,
+    scope: CleanupRunScope,
+) -> StylebookCleanupCheckRun | None:
+    scope_hash = cleanup_scope_hash(scope)
+    return get_latest_succeeded_cleanup_check_run(
+        session,
+        stylebook_id=stylebook_id,
+        check_id=check_id,
+        scope_hash=scope_hash,
+    )
+
+
+def _mismatch_items_from_cached_rows(
+    session: Session,
+    *,
+    cached_rows: list[Any],
+    entity_type: Literal["person", "organization", "location"],
+) -> list[CleanupNameMismatchIssueRow]:
+    items: list[CleanupNameMismatchIssueRow] = []
+    for row in cached_rows:
+        payload = row.payload_json if isinstance(row.payload_json, dict) else {}
+        canonical_ids = row.canonical_ids_json or []
+        if not canonical_ids:
+            continue
+        canonical_id = str(canonical_ids[0])
+        if entity_type == "person":
+            canon = session.get(StylebookPersonCanonical, canonical_id)
+        elif entity_type == "organization":
+            canon = session.get(StylebookOrganizationCanonical, canonical_id)
+        else:
+            canon = session.get(StylebookLocationCanonical, canonical_id)
+        if canon is None:
+            continue
+        examples_raw = payload.get("mismatched_examples", [])
+        if isinstance(examples_raw, list):
+            examples = [str(example) for example in examples_raw]
+        else:
+            examples = []
+        items.append(
+            CleanupNameMismatchIssueRow(
+                id=canonical_id,
+                slug=str(canon.slug),
+                label=str(row.label or canon.label),
+                entity_type=entity_type,
+                status=str(canon.status),
+                mismatched_linked_count=int(payload.get("mismatched_linked_count", 0)),
+                mismatched_examples=examples,
+                location_type=getattr(canon, "location_type", None),
+            )
+        )
+    return items
+
+
 @router.get("/{stylebook_slug}/cleanup/checks", response_model=CleanupChecksResponse)
 def list_cleanup_checks(
     stylebook_slug: str,
+    project: str | None = Query(
+        None,
+        description="Optional project slug to scope list-style checks.",
+    ),
     similarity_threshold: float = Query(
         DEFAULT_FULL_SIMILARITY_THRESHOLD,
         ge=0.5,
@@ -462,7 +713,7 @@ def list_cleanup_checks(
     ),
     check_id: str | None = Query(
         None,
-        description="When set, compute and return only this cleanup check.",
+        description="When set, return only this cleanup check.",
     ),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
@@ -472,34 +723,180 @@ def list_cleanup_checks(
         raise HTTPException(status_code=404, detail="Stylebook not found")
     stylebook_id = int(sb.id)
     organization_id = int(sb.organization_id)
+    project_ids = optional_project_filter_to_ids(
+        session,
+        auth=auth,
+        project_slug=project,
+        organization_id=organization_id,
+    )
     checks_to_list = STYLEBOOK_CLEANUP_CHECKS
     if check_id is not None:
         selected = cleanup_check_by_id(check_id.strip())
         if selected is None:
             raise HTTPException(status_code=404, detail=f"Unknown cleanup check: {check_id}")
         checks_to_list = (selected,)
-    count_ctx = CleanupCountContext(
-        stylebook_id=stylebook_id,
-        organization_id=organization_id,
-        full_threshold=similarity_threshold,
-        head_threshold=head_similarity_threshold,
-    )
     checks_out: list[CleanupCheckOut] = []
     total_open = 0
     for check in checks_to_list:
-        count = check.count(session, count_ctx)
-        total_open += count
-        checks_out.append(
-            CleanupCheckOut(
-                id=check.id,
-                title=check.title,
-                description=check.description,
-                entity_type=check.entity_type,
-                kind=check.kind,
-                count=count,
-            )
+        scope = _cleanup_run_scope(
+            stylebook_id=stylebook_id,
+            organization_id=organization_id,
+            check_id=check.id,
+            project_ids=project_ids,
+            project_slug=project,
+            full_threshold=similarity_threshold,
+            head_threshold=head_similarity_threshold,
         )
+        scope_hash = cleanup_scope_hash(scope)
+        latest_run = get_latest_cleanup_check_run(
+            session,
+            stylebook_id=stylebook_id,
+            check_id=check.id,
+            scope_hash=scope_hash,
+        )
+        check_out = _check_out_from_run(session, check=check, latest_run=latest_run)
+        total_open += check_out.count
+        checks_out.append(check_out)
     return CleanupChecksResponse(checks=checks_out, total_open=total_open)
+
+
+@router.post(
+    "/{stylebook_slug}/cleanup/checks/{check_id}/runs",
+    response_model=CleanupCheckRunOut,
+)
+def start_cleanup_check_run(
+    stylebook_slug: str,
+    check_id: str,
+    project: str | None = Query(
+        None,
+        description="Optional project slug to scope list-style checks.",
+    ),
+    similarity_threshold: float = Query(
+        DEFAULT_FULL_SIMILARITY_THRESHOLD,
+        ge=0.5,
+        le=0.95,
+    ),
+    head_similarity_threshold: float = Query(
+        DEFAULT_HEAD_SIMILARITY_THRESHOLD,
+        ge=0.5,
+        le=0.95,
+    ),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> CleanupCheckRunOut:
+    require_stylebook_edit_access(session, auth=auth, stylebook_slug=stylebook_slug)
+    sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    try:
+        normalized_check_id = validate_cleanup_check_id(check_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    stylebook_id = int(sb.id)
+    organization_id = int(sb.organization_id)
+    project_ids = optional_project_filter_to_ids(
+        session,
+        auth=auth,
+        project_slug=project,
+        organization_id=organization_id,
+    )
+    scope = _cleanup_run_scope(
+        stylebook_id=stylebook_id,
+        organization_id=organization_id,
+        check_id=normalized_check_id,
+        project_ids=project_ids,
+        project_slug=project,
+        full_threshold=similarity_threshold,
+        head_threshold=head_similarity_threshold,
+    )
+    scope_hash = cleanup_scope_hash(scope)
+    active = get_active_cleanup_check_run(
+        session,
+        stylebook_id=stylebook_id,
+        check_id=normalized_check_id,
+        scope_hash=scope_hash,
+    )
+    if active is not None:
+        return CleanupCheckRunOut.from_row(active)
+    run = StylebookCleanupCheckRun(
+        id=str(uuid.uuid4()),
+        stylebook_id=stylebook_id,
+        check_id=normalized_check_id,
+        status="queued",
+        scope_hash=scope_hash,
+        scope_json=scope_to_json(scope),
+        algorithm_version=cleanup_algorithm_version(normalized_check_id),
+        created_by_user_id=_created_by_user_id(auth),
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    celery_app.send_task(
+        "worker.tasks.execute_cleanup_check_run",
+        args=[str(run.id)],
+        queue=_celery_queue(),
+    )
+    return CleanupCheckRunOut.from_row(run)
+
+
+@router.get(
+    "/{stylebook_slug}/cleanup/checks/{check_id}/runs/latest",
+    response_model=CleanupCheckRunOut | None,
+)
+def get_latest_cleanup_check_run_route(
+    stylebook_slug: str,
+    check_id: str,
+    project: str | None = Query(
+        None,
+        description="Optional project slug to scope list-style checks.",
+    ),
+    similarity_threshold: float = Query(
+        DEFAULT_FULL_SIMILARITY_THRESHOLD,
+        ge=0.5,
+        le=0.95,
+    ),
+    head_similarity_threshold: float = Query(
+        DEFAULT_HEAD_SIMILARITY_THRESHOLD,
+        ge=0.5,
+        le=0.95,
+    ),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> CleanupCheckRunOut | None:
+    sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    try:
+        normalized_check_id = validate_cleanup_check_id(check_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    stylebook_id = int(sb.id)
+    organization_id = int(sb.organization_id)
+    project_ids = optional_project_filter_to_ids(
+        session,
+        auth=auth,
+        project_slug=project,
+        organization_id=organization_id,
+    )
+    scope = _cleanup_run_scope(
+        stylebook_id=stylebook_id,
+        organization_id=organization_id,
+        check_id=normalized_check_id,
+        project_ids=project_ids,
+        project_slug=project,
+        full_threshold=similarity_threshold,
+        head_threshold=head_similarity_threshold,
+    )
+    scope_hash = cleanup_scope_hash(scope)
+    latest = get_latest_cleanup_check_run(
+        session,
+        stylebook_id=stylebook_id,
+        check_id=normalized_check_id,
+        scope_hash=scope_hash,
+    )
+    if latest is None:
+        return None
+    return CleanupCheckRunOut.from_row(latest)
 
 
 @router.get(
@@ -541,36 +938,57 @@ def list_duplicate_location_clusters(
         organization_id=int(sb.organization_id),
     )
     stylebook_id = int(sb.id)
-    cluster_id_lists, total = paginate_duplicate_location_clusters(
-        session,
+    organization_id = int(sb.organization_id)
+    check_id = "duplicate-locations"
+    scope = _cleanup_run_scope(
         stylebook_id=stylebook_id,
+        organization_id=organization_id,
+        check_id=check_id,
+        project_ids=project_ids,
+        project_slug=project,
         full_threshold=similarity_threshold,
         head_threshold=head_similarity_threshold,
+    )
+    run = _latest_succeeded_run_for_scope(
+        session,
+        stylebook_id=stylebook_id,
+        check_id=check_id,
+        scope=scope,
+    )
+    if run is None:
+        return _empty_cluster_response(limit, offset)
+    cached_rows, total = query_cached_check_results(
+        session,
+        run_id=str(run.id),
+        stylebook_id=stylebook_id,
+        check_id=check_id,
         limit=limit,
         offset=offset,
         query=q,
     )
-    all_ids = sorted({cid for cluster in cluster_id_lists for cid in cluster})
+    all_ids = sorted({cid for row in cached_rows for cid in (row.canonical_ids_json or [])})
     rows_by_id = {
-        cid: session.get(StylebookLocationCanonical, cid)
+        cid: row
         for cid in all_ids
-        if session.get(StylebookLocationCanonical, cid) is not None
+        if (row := session.get(StylebookLocationCanonical, cid)) is not None
     }
     clusters_out: list[DuplicateLocationClusterOut] = []
-    for index, member_ids in enumerate(cluster_id_lists):
+    for row in cached_rows:
+        member_ids = [cid for cid in (row.canonical_ids_json or []) if cid in rows_by_id]
+        if len(member_ids) < 2:
+            continue
         canonicals = _canonical_responses_with_counts(
             session,
             project_ids=project_ids,
             rows_by_id=rows_by_id,
             canonical_ids=member_ids,
         )
-        cluster_label = location_cluster_display_label(
+        cluster_label = row.label or location_cluster_display_label(
             [canonical.label for canonical in canonicals]
         )
-        cluster_key = member_ids[0] if member_ids else str(index)
         clusters_out.append(
             DuplicateLocationClusterOut(
-                cluster_id=f"{cluster_key}:{len(member_ids)}",
+                cluster_id=row.item_key,
                 label=cluster_label,
                 canonicals=canonicals,
             )
@@ -620,33 +1038,57 @@ def list_duplicate_person_clusters(
         organization_id=int(sb.organization_id),
     )
     stylebook_id = int(sb.id)
-    cluster_id_lists, total = paginate_duplicate_person_clusters(
+    organization_id = int(sb.organization_id)
+    check_id = "duplicate-people"
+    scope = _cleanup_run_scope(
+        stylebook_id=stylebook_id,
+        organization_id=organization_id,
+        check_id=check_id,
+        project_ids=project_ids,
+        project_slug=project,
+        full_threshold=similarity_threshold,
+        head_threshold=DEFAULT_HEAD_SIMILARITY_THRESHOLD,
+    )
+    run = _latest_succeeded_run_for_scope(
         session,
         stylebook_id=stylebook_id,
-        full_threshold=similarity_threshold,
+        check_id=check_id,
+        scope=scope,
+    )
+    if run is None:
+        return _empty_cluster_response(limit, offset)
+    cached_rows, total = query_cached_check_results(
+        session,
+        run_id=str(run.id),
+        stylebook_id=stylebook_id,
+        check_id=check_id,
         limit=limit,
         offset=offset,
         query=q,
     )
-    all_ids = sorted({cid for cluster in cluster_id_lists for cid in cluster})
+    all_ids = sorted({cid for row in cached_rows for cid in (row.canonical_ids_json or [])})
     rows_by_id = {
         cid: row
         for cid in all_ids
         if (row := session.get(StylebookPersonCanonical, cid)) is not None
     }
     clusters_out: list[DuplicatePersonClusterOut] = []
-    for index, member_ids in enumerate(cluster_id_lists):
+    for row in cached_rows:
+        member_ids = [cid for cid in (row.canonical_ids_json or []) if cid in rows_by_id]
+        if len(member_ids) < 2:
+            continue
         canonicals = _person_responses_with_counts(
             session,
             project_ids=project_ids,
             rows_by_id=rows_by_id,
             canonical_ids=member_ids,
         )
-        cluster_label = person_cluster_display_label([canonical.label for canonical in canonicals])
-        cluster_key = member_ids[0] if member_ids else str(index)
+        cluster_label = row.label or person_cluster_display_label(
+            [canonical.label for canonical in canonicals]
+        )
         clusters_out.append(
             DuplicatePersonClusterOut(
-                cluster_id=f"{cluster_key}:{len(member_ids)}",
+                cluster_id=row.item_key,
                 label=cluster_label,
                 canonicals=canonicals,
             )
@@ -696,35 +1138,57 @@ def list_duplicate_organization_clusters(
         organization_id=int(sb.organization_id),
     )
     stylebook_id = int(sb.id)
-    cluster_id_lists, total = paginate_duplicate_organization_clusters(
+    organization_id = int(sb.organization_id)
+    check_id = "duplicate-organizations"
+    scope = _cleanup_run_scope(
+        stylebook_id=stylebook_id,
+        organization_id=organization_id,
+        check_id=check_id,
+        project_ids=project_ids,
+        project_slug=project,
+        full_threshold=similarity_threshold,
+        head_threshold=DEFAULT_HEAD_SIMILARITY_THRESHOLD,
+    )
+    run = _latest_succeeded_run_for_scope(
         session,
         stylebook_id=stylebook_id,
-        full_threshold=similarity_threshold,
+        check_id=check_id,
+        scope=scope,
+    )
+    if run is None:
+        return _empty_cluster_response(limit, offset)
+    cached_rows, total = query_cached_check_results(
+        session,
+        run_id=str(run.id),
+        stylebook_id=stylebook_id,
+        check_id=check_id,
         limit=limit,
         offset=offset,
         query=q,
     )
-    all_ids = sorted({cid for cluster in cluster_id_lists for cid in cluster})
+    all_ids = sorted({cid for row in cached_rows for cid in (row.canonical_ids_json or [])})
     rows_by_id = {
         cid: row
         for cid in all_ids
         if (row := session.get(StylebookOrganizationCanonical, cid)) is not None
     }
     clusters_out: list[DuplicateOrganizationClusterOut] = []
-    for index, member_ids in enumerate(cluster_id_lists):
+    for row in cached_rows:
+        member_ids = [cid for cid in (row.canonical_ids_json or []) if cid in rows_by_id]
+        if len(member_ids) < 2:
+            continue
         canonicals = _organization_responses_with_counts(
             session,
             project_ids=project_ids,
             rows_by_id=rows_by_id,
             canonical_ids=member_ids,
         )
-        cluster_label = organization_cluster_display_label(
+        cluster_label = row.label or organization_cluster_display_label(
             [canonical.label for canonical in canonicals]
         )
-        cluster_key = member_ids[0] if member_ids else str(index)
         clusters_out.append(
             DuplicateOrganizationClusterOut(
-                cluster_id=f"{cluster_key}:{len(member_ids)}",
+                cluster_id=row.item_key,
                 label=cluster_label,
                 canonicals=canonicals,
             )
@@ -750,6 +1214,16 @@ def list_missing_geometry_location_check(
         None,
         description="Optional project slug to scope linked/mention counts.",
     ),
+    similarity_threshold: float = Query(
+        DEFAULT_FULL_SIMILARITY_THRESHOLD,
+        ge=0.5,
+        le=0.95,
+    ),
+    head_similarity_threshold: float = Query(
+        DEFAULT_HEAD_SIMILARITY_THRESHOLD,
+        ge=0.5,
+        le=0.95,
+    ),
     limit: int = Query(25, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),
@@ -766,14 +1240,56 @@ def list_missing_geometry_location_check(
     )
     stylebook_id = int(sb.id)
     organization_id = int(sb.organization_id)
-    items, total = list_location_geography_issues(
-        session,
+    check_id = "missing-geometry-locations"
+    scope = _cleanup_run_scope(
         stylebook_id=stylebook_id,
         organization_id=organization_id,
+        check_id=check_id,
         project_ids=project_ids,
+        project_slug=project,
+        full_threshold=similarity_threshold,
+        head_threshold=head_similarity_threshold,
+    )
+    run = _latest_succeeded_run_for_scope(
+        session,
+        stylebook_id=stylebook_id,
+        check_id=check_id,
+        scope=scope,
+    )
+    if run is None:
+        return _empty_location_issues_response(limit, offset)
+    cached_rows, total = query_cached_check_results(
+        session,
+        run_id=str(run.id),
+        stylebook_id=stylebook_id,
+        check_id=check_id,
         limit=limit,
         offset=offset,
     )
+    items: list[CleanupLocationGeographyIssueRow] = []
+    for row in cached_rows:
+        payload = row.payload_json if isinstance(row.payload_json, dict) else {}
+        canonical_ids = row.canonical_ids_json or []
+        if not canonical_ids:
+            continue
+        canonical_id = str(canonical_ids[0])
+        canon = session.get(StylebookLocationCanonical, canonical_id)
+        if canon is None:
+            continue
+        issue = payload.get("geography_issue", "missing_geometry")
+        if issue not in ("missing_geometry", "distant_linked_places"):
+            issue = "missing_geometry"
+        items.append(
+            CleanupLocationGeographyIssueRow(
+                id=canonical_id,
+                slug=str(canon.slug),
+                label=str(row.label or canon.label),
+                location_type=canon.location_type,
+                status=str(canon.status),
+                issue=issue,  # type: ignore[arg-type]
+                distant_linked_count=int(payload.get("distant_linked_count", 0)),
+            )
+        )
     cids = [item.id for item in items]
     rows_by_id = {
         cid: row
@@ -807,6 +1323,16 @@ def list_mismatched_people_check(
         None,
         description="Optional project slug to scope linked/mention counts.",
     ),
+    similarity_threshold: float = Query(
+        DEFAULT_FULL_SIMILARITY_THRESHOLD,
+        ge=0.5,
+        le=0.95,
+    ),
+    head_similarity_threshold: float = Query(
+        DEFAULT_HEAD_SIMILARITY_THRESHOLD,
+        ge=0.5,
+        le=0.95,
+    ),
     limit: int = Query(25, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),
@@ -823,12 +1349,36 @@ def list_mismatched_people_check(
     )
     stylebook_id = int(sb.id)
     organization_id = int(sb.organization_id)
-    items, total = list_person_name_mismatches(
-        session,
+    check_id = "mismatched-people"
+    scope = _cleanup_run_scope(
         stylebook_id=stylebook_id,
         organization_id=organization_id,
+        check_id=check_id,
+        project_ids=project_ids,
+        project_slug=project,
+        full_threshold=similarity_threshold,
+        head_threshold=head_similarity_threshold,
+    )
+    run = _latest_succeeded_run_for_scope(
+        session,
+        stylebook_id=stylebook_id,
+        check_id=check_id,
+        scope=scope,
+    )
+    if run is None:
+        return _empty_person_mismatch_response(limit, offset)
+    cached_rows, total = query_cached_check_results(
+        session,
+        run_id=str(run.id),
+        stylebook_id=stylebook_id,
+        check_id=check_id,
         limit=limit,
         offset=offset,
+    )
+    items = _mismatch_items_from_cached_rows(
+        session,
+        cached_rows=cached_rows,
+        entity_type="person",
     )
     cids = [item.id for item in items]
     rows_by_id = {
@@ -863,6 +1413,16 @@ def list_mismatched_organizations_check(
         None,
         description="Optional project slug to scope linked/mention counts.",
     ),
+    similarity_threshold: float = Query(
+        DEFAULT_FULL_SIMILARITY_THRESHOLD,
+        ge=0.5,
+        le=0.95,
+    ),
+    head_similarity_threshold: float = Query(
+        DEFAULT_HEAD_SIMILARITY_THRESHOLD,
+        ge=0.5,
+        le=0.95,
+    ),
     limit: int = Query(25, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),
@@ -879,12 +1439,36 @@ def list_mismatched_organizations_check(
     )
     stylebook_id = int(sb.id)
     organization_id = int(sb.organization_id)
-    items, total = list_organization_name_mismatches(
-        session,
+    check_id = "mismatched-organizations"
+    scope = _cleanup_run_scope(
         stylebook_id=stylebook_id,
         organization_id=organization_id,
+        check_id=check_id,
+        project_ids=project_ids,
+        project_slug=project,
+        full_threshold=similarity_threshold,
+        head_threshold=head_similarity_threshold,
+    )
+    run = _latest_succeeded_run_for_scope(
+        session,
+        stylebook_id=stylebook_id,
+        check_id=check_id,
+        scope=scope,
+    )
+    if run is None:
+        return _empty_organization_mismatch_response(limit, offset)
+    cached_rows, total = query_cached_check_results(
+        session,
+        run_id=str(run.id),
+        stylebook_id=stylebook_id,
+        check_id=check_id,
         limit=limit,
         offset=offset,
+    )
+    items = _mismatch_items_from_cached_rows(
+        session,
+        cached_rows=cached_rows,
+        entity_type="organization",
     )
     cids = [item.id for item in items]
     rows_by_id = {
@@ -919,6 +1503,16 @@ def list_mismatched_locations_check(
         None,
         description="Optional project slug to scope linked/mention counts.",
     ),
+    similarity_threshold: float = Query(
+        DEFAULT_FULL_SIMILARITY_THRESHOLD,
+        ge=0.5,
+        le=0.95,
+    ),
+    head_similarity_threshold: float = Query(
+        DEFAULT_HEAD_SIMILARITY_THRESHOLD,
+        ge=0.5,
+        le=0.95,
+    ),
     limit: int = Query(25, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),
@@ -935,12 +1529,36 @@ def list_mismatched_locations_check(
     )
     stylebook_id = int(sb.id)
     organization_id = int(sb.organization_id)
-    items, total = list_location_name_mismatches(
-        session,
+    check_id = "mismatched-locations"
+    scope = _cleanup_run_scope(
         stylebook_id=stylebook_id,
         organization_id=organization_id,
+        check_id=check_id,
+        project_ids=project_ids,
+        project_slug=project,
+        full_threshold=similarity_threshold,
+        head_threshold=head_similarity_threshold,
+    )
+    run = _latest_succeeded_run_for_scope(
+        session,
+        stylebook_id=stylebook_id,
+        check_id=check_id,
+        scope=scope,
+    )
+    if run is None:
+        return _empty_location_mismatch_response(limit, offset)
+    cached_rows, total = query_cached_check_results(
+        session,
+        run_id=str(run.id),
+        stylebook_id=stylebook_id,
+        check_id=check_id,
         limit=limit,
         offset=offset,
+    )
+    items = _mismatch_items_from_cached_rows(
+        session,
+        cached_rows=cached_rows,
+        entity_type="location",
     )
     cids = [item.id for item in items]
     rows_by_id = {

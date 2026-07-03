@@ -35,13 +35,15 @@ import {
   deleteEmptyCleanupPersonCanonical,
   dismissCleanupIssue,
   getCleanupCheckResults,
+  getLatestCleanupCheckRun,
+  listCleanupChecks,
   mergeCleanupLocationCanonical,
   mergeCleanupOrganizationCanonical,
   mergeCleanupPersonCanonical,
   acceptCleanupAiProposal,
   rejectCleanupAiProposal,
-  refreshPersistedCleanupCheckCount,
   type CleanupAiProposal,
+  type CleanupCheckRunStatus,
   type CleanupLocationIssue,
   type CleanupMismatchIssue,
   type PaginatedDuplicateClustersResponse,
@@ -112,6 +114,7 @@ export default function CleanupCheck() {
   const urlQuery = searchParams.get("q") ?? ""
   const [searchQuery, setSearchQuery] = useState(() => urlQuery)
   const [loading, setLoading] = useState(true)
+  const [checkRunStatus, setCheckRunStatus] = useState<CleanupCheckRunStatus>("never_run")
   const [page, setPage] = useState(1)
   const [clusterResults, setClusterResults] =
     useState<PaginatedDuplicateClustersResponse | null>(null)
@@ -162,7 +165,7 @@ export default function CleanupCheck() {
   const refreshHubCheckCount = useCallback(async () => {
     if (!stylebookSlug || !config) return
     try {
-      await refreshPersistedCleanupCheckCount({
+      await listCleanupChecks({
         stylebookSlug,
         checkId: config.id,
         project: projectFilterSlug || undefined,
@@ -170,6 +173,21 @@ export default function CleanupCheck() {
     } catch {
       // Hub refreshes on next visit; ignore background sync failures.
     }
+  }, [stylebookSlug, config, projectFilterSlug])
+
+  useEffect(() => {
+    if (!stylebookSlug || !config) return
+    void getLatestCleanupCheckRun({
+      stylebookSlug,
+      checkId: config.id,
+      project: projectFilterSlug || undefined,
+    })
+      .then((run) => {
+        setCheckRunStatus(run?.status ?? "never_run")
+      })
+      .catch(() => {
+        setCheckRunStatus("never_run")
+      })
   }, [stylebookSlug, config, projectFilterSlug])
 
   useEffect(() => {
@@ -518,7 +536,14 @@ export default function CleanupCheck() {
   const showAiReviewControls =
     canEdit &&
     isClusterCheck &&
+    checkRunStatus === "succeeded" &&
     (loading || pagination.total > 0 || aiReviewActive)
+
+  const needsRun =
+    checkRunStatus === "never_run" ||
+    checkRunStatus === "queued" ||
+    checkRunStatus === "running" ||
+    checkRunStatus === "failed"
 
   if (!config) {
     return (
@@ -625,6 +650,14 @@ export default function CleanupCheck() {
           <Loader2 className="h-5 w-5 animate-spin" />
           Loading…
         </div>
+      ) : needsRun ? (
+        <p className="text-muted-foreground py-8 text-center">
+          {checkRunStatus === "running" || checkRunStatus === "queued"
+            ? "This check is running. Results will appear here when it finishes."
+            : checkRunStatus === "failed"
+              ? "This check failed. Run it again from the Checks tab to see candidates."
+              : "Run this check from the Checks tab to see candidates."}
+        </p>
       ) : config.kind === "cluster" ? (
         <DuplicateClusterList
           clusters={clusterResults?.clusters ?? []}

@@ -50,6 +50,7 @@ from backfield_db import (
     StylebookBundleJob,
     StylebookCandidateAiReview,
     StylebookCleanupAiReview,
+    StylebookCleanupCheckRun,
 )
 from backfield_db.session import get_engine
 from backfield_entities.catalog.candidate_ai_review import list_open_candidate_ids_for_review
@@ -57,6 +58,11 @@ from backfield_entities.catalog.full_bundle import export_stylebook_bundle, impo
 from backfield_entities.ingest.semantic_indexing.reindex_contract import SemanticReindexScope
 from backfield_entities.processed_item_article_link import (
     resolve_substrate_article_id_for_processed_item,
+)
+from backfield_entities.quality.check_runs import (
+    CleanupRunScope,
+    build_cleanup_check_items,
+    persist_cleanup_check_results,
 )
 from backfield_entities.quality.finders._duplicate_labels import DEFAULT_FULL_SIMILARITY_THRESHOLD
 from backfield_entities.quality.finders.duplicate_locations import (
@@ -1594,6 +1600,97 @@ def execute_cleanup_ai_review(review_id: str) -> None:
     except Exception as exc:
         logger.exception("execute_cleanup_ai_review failed")
         _fail_cleanup_ai_review(engine, review_id, str(exc))
+
+
+def _fail_cleanup_check_run(engine: Any, run_id: str, message: str) -> None:
+    with Session(engine) as session:
+        run = session.get(StylebookCleanupCheckRun, run_id)
+        if run is None:
+            return
+        if str(run.status) in ("succeeded", "failed"):
+            return
+        run.status = "failed"
+        run.error_message = message[:10000]
+        run.completed_at = datetime.now(UTC)
+        run.updated_at = datetime.now(UTC)
+        session.add(run)
+        session.commit()
+
+
+@celery_app.task(name="worker.tasks.execute_cleanup_check_run")
+def execute_cleanup_check_run(run_id: str) -> None:
+    """Execute one queued cleanup check run and persist cached candidate rows."""
+    engine = get_engine()
+    with Session(engine) as session:
+        run = session.get(StylebookCleanupCheckRun, run_id)
+        if run is None:
+            return
+        if run.status != "queued":
+            return
+        stylebook = session.get(Stylebook, int(run.stylebook_id))
+        if stylebook is None:
+            _fail_cleanup_check_run(engine, run_id, "Stylebook not found")
+            return
+        scope_payload = run.scope_json if isinstance(run.scope_json, dict) else {}
+        try:
+            scope = CleanupRunScope(
+                stylebook_id=int(run.stylebook_id),
+                organization_id=int(
+                    scope_payload.get("organization_id", stylebook.organization_id)
+                ),
+                check_id=str(run.check_id),
+                full_threshold=float(
+                    scope_payload.get("full_threshold", DEFAULT_FULL_SIMILARITY_THRESHOLD)
+                ),
+                head_threshold=float(
+                    scope_payload.get("head_threshold", LOCATION_HEAD_THRESHOLD)
+                ),
+                project_ids=tuple(scope_payload["project_ids"])
+                if isinstance(scope_payload.get("project_ids"), list)
+                else None,
+                project_slug=scope_payload.get("project_slug"),
+            )
+        except (TypeError, ValueError) as exc:
+            _fail_cleanup_check_run(engine, run_id, f"Invalid run scope: {exc}")
+            return
+        run.status = "running"
+        run.started_at = datetime.now(UTC)
+        run.error_message = None
+        run.updated_at = datetime.now(UTC)
+        session.add(run)
+        session.commit()
+
+    try:
+        with Session(engine) as session:
+            run = session.get(StylebookCleanupCheckRun, run_id)
+            if run is None:
+                return
+            scope_payload = run.scope_json if isinstance(run.scope_json, dict) else {}
+            scope = CleanupRunScope(
+                stylebook_id=int(run.stylebook_id),
+                organization_id=int(scope_payload.get("organization_id", 0)),
+                check_id=str(run.check_id),
+                full_threshold=float(
+                    scope_payload.get("full_threshold", DEFAULT_FULL_SIMILARITY_THRESHOLD)
+                ),
+                head_threshold=float(
+                    scope_payload.get("head_threshold", LOCATION_HEAD_THRESHOLD)
+                ),
+                project_ids=tuple(scope_payload["project_ids"])
+                if isinstance(scope_payload.get("project_ids"), list)
+                else None,
+                project_slug=scope_payload.get("project_slug"),
+            )
+            items = build_cleanup_check_items(session, scope=scope)
+            persist_cleanup_check_results(session, run=run, items=items)
+            run.status = "succeeded"
+            run.completed_at = datetime.now(UTC)
+            run.updated_at = datetime.now(UTC)
+            session.add(run)
+            session.commit()
+    except Exception as exc:
+        logger.exception("execute_cleanup_check_run failed")
+        _fail_cleanup_check_run(engine, run_id, str(exc))
 
 
 def _fail_candidate_ai_review(engine: Any, review_id: str, message: str) -> None:

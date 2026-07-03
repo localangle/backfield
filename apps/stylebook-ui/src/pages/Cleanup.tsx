@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
 import { StylebookHomeTabs } from "@/components/StylebookHomeTabs"
@@ -14,35 +14,54 @@ import {
   type CleanupCheckConfig,
 } from "@/lib/cleanupChecks"
 import {
-  cleanupLastRunStorageKey,
   cleanupCheckStaleness,
   formatCleanupLastRun,
   formatCleanupStalenessLabel,
-  loadCleanupHubState,
-  type CleanupCheckRunRecord,
   type CleanupCheckStaleness,
 } from "@/lib/cleanupHubLastRun"
-import { refreshPersistedCleanupCheckCount } from "@/lib/api"
+import {
+  listCleanupChecks,
+  pollCleanupCheckRun,
+  startCleanupCheckRun,
+  type CleanupCheck,
+  type CleanupCheckRunStatus,
+} from "@/lib/api"
 
 type CheckRunSnapshot = {
   count: number | null
   loading: boolean
+  status: CleanupCheckRunStatus
+  lastRunAt?: string
+  errorMessage?: string | null
 }
 
-function runSnapshotsFromStore(
-  store: Record<string, CleanupCheckRunRecord>,
-): Record<string, CheckRunSnapshot> {
+function snapshotFromCheck(check: CleanupCheck): CheckRunSnapshot {
+  const hasRun = check.status !== "never_run"
+  return {
+    count: hasRun ? check.count : null,
+    loading: check.status === "queued" || check.status === "running",
+    status: check.status,
+    lastRunAt: check.completed_at ?? check.ran_at ?? undefined,
+    errorMessage: check.error_message,
+  }
+}
+
+function emptySnapshots(): Record<string, CheckRunSnapshot> {
   return Object.fromEntries(
-    CLEANUP_CHECK_CONFIGS.map((config) => {
-      const record = store[config.id]
-      return [
-        config.id,
-        {
-          count: record ? record.count : null,
-          loading: false,
-        },
-      ]
-    }),
+    CLEANUP_CHECK_CONFIGS.map((config) => [
+      config.id,
+      { count: null, loading: false, status: "never_run" as const },
+    ]),
+  )
+}
+
+function applyChecksToSnapshots(checks: CleanupCheck[]): Record<string, CheckRunSnapshot> {
+  const byId = Object.fromEntries(checks.map((check) => [check.id, snapshotFromCheck(check)]))
+  return Object.fromEntries(
+    CLEANUP_CHECK_CONFIGS.map((config) => [
+      config.id,
+      byId[config.id] ?? { count: null, loading: false, status: "never_run" as const },
+    ]),
   )
 }
 
@@ -52,40 +71,87 @@ export default function Cleanup() {
     useProjectCatalogScope()
   const crumbRoot = useScopeBreadcrumbRoot()
   const selectedStylebookLabel = useSelectedStylebookLabel()
-  const storageKey = useMemo(
-    () => cleanupLastRunStorageKey(stylebookSlug, projectFilterSlug || undefined),
-    [stylebookSlug, projectFilterSlug],
-  )
-  const [lastRunByCheckId, setLastRunByCheckId] = useState<Record<string, string>>({})
-  const [runSnapshots, setRunSnapshots] = useState<Record<string, CheckRunSnapshot>>(() =>
-    runSnapshotsFromStore({}),
-  )
+  const [runSnapshots, setRunSnapshots] = useState<Record<string, CheckRunSnapshot>>(emptySnapshots)
+  const [hubLoading, setHubLoading] = useState(true)
+  const pollTokensRef = useRef<Record<string, number>>({})
+
+  const loadHub = useCallback(async () => {
+    if (!stylebookSlug) return
+    setHubLoading(true)
+    try {
+      const response = await listCleanupChecks({
+        stylebookSlug,
+        project: projectFilterSlug || undefined,
+      })
+      setRunSnapshots(applyChecksToSnapshots(response.checks))
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Failed to load cleanup checks")
+    } finally {
+      setHubLoading(false)
+    }
+  }, [stylebookSlug, projectFilterSlug, showError])
 
   useEffect(() => {
-    const { records, lastRunByCheckId: persistedLastRun } = loadCleanupHubState(storageKey)
-    setLastRunByCheckId(persistedLastRun)
-    setRunSnapshots(runSnapshotsFromStore(records))
-  }, [storageKey])
+    void loadHub()
+  }, [loadHub])
+
+  const pollRun = useCallback(
+    async (checkId: string) => {
+      if (!stylebookSlug) return
+      const token = (pollTokensRef.current[checkId] ?? 0) + 1
+      pollTokensRef.current[checkId] = token
+      try {
+        const run = await pollCleanupCheckRun({
+          stylebookSlug,
+          checkId,
+          project: projectFilterSlug || undefined,
+        })
+        if (pollTokensRef.current[checkId] !== token) return
+        const response = await listCleanupChecks({
+          stylebookSlug,
+          project: projectFilterSlug || undefined,
+          checkId,
+        })
+        const check = response.checks[0]
+        if (!check) return
+        setRunSnapshots((prev) => ({
+          ...prev,
+          [checkId]: snapshotFromCheck(check),
+        }))
+        if (run.status === "failed" && run.error_message) {
+          showError(run.error_message)
+        }
+      } catch (error) {
+        if (pollTokensRef.current[checkId] !== token) return
+        setRunSnapshots((prev) => ({
+          ...prev,
+          [checkId]: { ...prev[checkId], loading: false },
+        }))
+        showError(error instanceof Error ? error.message : "Failed to run cleanup check")
+      }
+    },
+    [stylebookSlug, projectFilterSlug, showError],
+  )
 
   const runCheck = useCallback(
     async (checkId: string) => {
       if (!stylebookSlug) return
       setRunSnapshots((prev) => ({
         ...prev,
-        [checkId]: { ...prev[checkId], loading: true },
+        [checkId]: {
+          ...prev[checkId],
+          loading: true,
+          status: "running",
+          errorMessage: null,
+        },
       }))
       try {
-        const record = await refreshPersistedCleanupCheckCount({
+        await startCleanupCheckRun({
           stylebookSlug,
           checkId,
           project: projectFilterSlug || undefined,
         })
-        setRunSnapshots((prev) => ({
-          ...prev,
-          [checkId]: { count: record.count, loading: false },
-        }))
-        const store = loadCleanupHubState(storageKey)
-        setLastRunByCheckId(store.lastRunByCheckId)
+        await pollRun(checkId)
       } catch (error) {
         setRunSnapshots((prev) => ({
           ...prev,
@@ -94,7 +160,7 @@ export default function Cleanup() {
         showError(error instanceof Error ? error.message : "Failed to run cleanup check")
       }
     },
-    [stylebookSlug, projectFilterSlug, storageKey, showError],
+    [stylebookSlug, projectFilterSlug, pollRun, showError],
   )
 
   return (
@@ -129,16 +195,26 @@ export default function Cleanup() {
             </tr>
           </thead>
           <tbody>
-            {CLEANUP_CHECK_CONFIGS.map((config) => (
-              <CleanupCheckRow
-                key={config.id}
-                config={config}
-                href={`${catalogBasePath}/cleanup/${config.id}${catalogScopeSuffix}`}
-                snapshot={runSnapshots[config.id] ?? { count: null, loading: false }}
-                lastRunAt={lastRunByCheckId[config.id]}
-                onRun={() => void runCheck(config.id)}
-              />
-            ))}
+            {hubLoading ? (
+              <tr className="border-t">
+                <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    Loading checks…
+                  </span>
+                </td>
+              </tr>
+            ) : (
+              CLEANUP_CHECK_CONFIGS.map((config) => (
+                <CleanupCheckRow
+                  key={config.id}
+                  config={config}
+                  href={`${catalogBasePath}/cleanup/${config.id}${catalogScopeSuffix}`}
+                  snapshot={runSnapshots[config.id] ?? { count: null, loading: false, status: "never_run" }}
+                  onRun={() => void runCheck(config.id)}
+                />
+              ))
+            )}
           </tbody>
         </table>
       </div>
@@ -150,17 +226,15 @@ function CleanupCheckRow({
   config,
   href,
   snapshot,
-  lastRunAt,
   onRun,
 }: {
   config: CleanupCheckConfig
   href: string
   snapshot: CheckRunSnapshot
-  lastRunAt?: string
   onRun: () => void
 }) {
   const Icon = cleanupEntityIcon(config.entityType)
-  const hasRun = snapshot.count !== null
+  const hasRun = snapshot.status !== "never_run"
   const count = snapshot.count ?? 0
 
   return (
@@ -190,6 +264,9 @@ function CleanupCheckRow({
           </span>
         )}
         <p className="text-muted-foreground mt-1 line-clamp-2">{config.description}</p>
+        {snapshot.status === "failed" && snapshot.errorMessage ? (
+          <p className="text-destructive mt-1 text-xs line-clamp-2">{snapshot.errorMessage}</p>
+        ) : null}
       </td>
       <td className="px-4 py-3 text-right tabular-nums">
         {snapshot.loading ? (
@@ -206,10 +283,10 @@ function CleanupCheckRow({
         )}
       </td>
       <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
-        <div>{formatCleanupLastRun(lastRunAt)}</div>
+        <div>{formatCleanupLastRun(snapshot.lastRunAt)}</div>
         <CleanupStalenessIndicator
-          staleness={cleanupCheckStaleness(lastRunAt)}
-          label={formatCleanupStalenessLabel(lastRunAt)}
+          staleness={cleanupCheckStaleness(snapshot.lastRunAt)}
+          label={formatCleanupStalenessLabel(snapshot.lastRunAt)}
         />
       </td>
       <td className="px-4 py-3 text-right">
