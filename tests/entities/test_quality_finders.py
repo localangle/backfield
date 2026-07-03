@@ -288,6 +288,217 @@ def test_fuzzy_duplicate_person_clustering_sqlite() -> None:
         assert len(clusters[0]) == 2
 
 
+def _add_person(
+    session: Session,
+    *,
+    stylebook_id: int,
+    slug: str,
+    label: str,
+    person_type: str | None = None,
+) -> str:
+    from backfield_db import StylebookPersonCanonical
+
+    row = StylebookPersonCanonical(
+        stylebook_id=stylebook_id,
+        slug=slug,
+        label=label,
+        person_type=person_type,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return str(row.id)
+
+
+def test_aaron_ampudia_diacritic_variants_cluster_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        a = _add_person(
+            session,
+            stylebook_id=stylebook_id,
+            slug="aaron-ampudia",
+            label="Aaron Ampudia",
+        )
+        b = _add_person(
+            session,
+            stylebook_id=stylebook_id,
+            slug="aaron-ampudia-accent",
+            label="Aarón Ampudia",
+        )
+
+        clusters = duplicate_person_cluster_ids(session, stylebook_id=stylebook_id)
+        assert len(clusters) == 1
+        assert set(clusters[0]) == {a, b}
+
+
+def test_mr_t_title_variants_cluster_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        a = _add_person(session, stylebook_id=stylebook_id, slug="mr-t-a", label="Mr T")
+        b = _add_person(session, stylebook_id=stylebook_id, slug="mr-t-b", label="Mr. T")
+
+        clusters = duplicate_person_cluster_ids(session, stylebook_id=stylebook_id)
+        assert len(clusters) == 1
+        assert set(clusters[0]) == {a, b}
+
+
+def test_sasha_ann_hyphen_variants_cluster_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        a = _add_person(
+            session,
+            stylebook_id=stylebook_id,
+            slug="sasha-ann-a",
+            label="Sasha-Ann Simons",
+        )
+        b = _add_person(
+            session,
+            stylebook_id=stylebook_id,
+            slug="sasha-ann-b",
+            label="Sasha Ann Simons",
+        )
+
+        clusters = duplicate_person_cluster_ids(session, stylebook_id=stylebook_id)
+        assert len(clusters) == 1
+        assert set(clusters[0]) == {a, b}
+
+
+def test_donald_trump_suffix_mismatch_does_not_cluster_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        _add_person(
+            session,
+            stylebook_id=stylebook_id,
+            slug="donald-trump",
+            label="Donald Trump",
+        )
+        _add_person(
+            session,
+            stylebook_id=stylebook_id,
+            slug="donald-trump-jr",
+            label="Donald Trump Jr",
+        )
+
+        clusters = duplicate_person_cluster_ids(session, stylebook_id=stylebook_id)
+        assert clusters == []
+
+
+def test_weak_first_suffix_bridge_does_not_cluster_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        _add_person(
+            session,
+            stylebook_id=stylebook_id,
+            slug="mike-conley-jr",
+            label="Mike Conley Jr",
+        )
+        _add_person(
+            session,
+            stylebook_id=stylebook_id,
+            slug="mike-oliver-jr",
+            label="Mike Oliver Jr",
+        )
+
+        clusters = duplicate_person_cluster_ids(session, stylebook_id=stylebook_id)
+        assert clusters == []
+
+
+def test_numbered_detective_groups_do_not_cluster_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        _add_person(
+            session,
+            stylebook_id=stylebook_id,
+            slug="area-3-detectives",
+            label="Area 3 detectives",
+        )
+        _add_person(
+            session,
+            stylebook_id=stylebook_id,
+            slug="area-5-detectives",
+            label="Area 5 detectives",
+        )
+
+        clusters = duplicate_person_cluster_ids(session, stylebook_id=stylebook_id)
+        assert clusters == []
+
+
+def test_numbered_courts_do_not_cluster_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        _add_person(
+            session,
+            stylebook_id=stylebook_id,
+            slug="court-1-judge",
+            label="Court 1 Judge",
+        )
+        _add_person(
+            session,
+            stylebook_id=stylebook_id,
+            slug="court-2-judge",
+            label="Court 2 Judge",
+        )
+
+        clusters = duplicate_person_cluster_ids(session, stylebook_id=stylebook_id)
+        assert clusters == []
+
+
+def test_same_person_type_alone_does_not_cluster_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        _add_person(
+            session,
+            stylebook_id=stylebook_id,
+            slug="john-adams",
+            label="John Adams",
+            person_type="public_official",
+        )
+        _add_person(
+            session,
+            stylebook_id=stylebook_id,
+            slug="john-quincy",
+            label="John Quincy Adams",
+            person_type="public_official",
+        )
+
+        clusters = duplicate_person_cluster_ids(session, stylebook_id=stylebook_id)
+        assert clusters == []
+
+
+def test_duplicate_person_bounded_no_false_positives_sqlite() -> None:
+    """Many unrelated people must not produce spurious clusters."""
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        for index in range(300):
+            _add_person(
+                session,
+                stylebook_id=stylebook_id,
+                slug=f"unique-person-{index}",
+                label=f"Unique Person Number {index}",
+            )
+
+        clusters = duplicate_person_cluster_ids(session, stylebook_id=stylebook_id)
+        assert clusters == []
+
+
 def _add_organization(
     session: Session,
     *,

@@ -62,7 +62,7 @@ _LIST_BATCH_SIZE = 500
 
 _ALGORITHM_VERSIONS: dict[str, str] = {
     "duplicate-locations": "duplicate-locations:v1",
-    "duplicate-people": "duplicate-people:v1",
+    "duplicate-people": "duplicate-people:v2",
     "duplicate-organizations": "duplicate-organizations:v1",
     "missing-geometry-locations": "missing-geometry-locations:v1",
     "mismatched-locations": "mismatched-locations:v1",
