@@ -165,6 +165,22 @@ def cleanup_client(
                 label="City Hall",
             )
         )
+        s.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=sb_id,
+                slug="org-crossform-a",
+                label="Cook County State's Attorney's Office",
+                organization_type="government",
+            )
+        )
+        s.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=sb_id,
+                slug="org-crossform-b",
+                label="Office of the Cook County State's Attorney",
+                organization_type="government",
+            )
+        )
         s.commit()
         user_id = int(user.id)
 
@@ -206,7 +222,7 @@ def test_list_cleanup_checks(cleanup_client: tuple[TestClient, Engine]) -> None:
     by_id = {check["id"]: check["count"] for check in body["checks"]}
     assert by_id["duplicate-locations"] == 2
     assert by_id["duplicate-people"] == 1
-    assert by_id["duplicate-organizations"] == 1
+    assert by_id["duplicate-organizations"] == 2
     assert by_id["missing-geometry-locations"] == 6
     assert by_id["mismatched-locations"] == 0
     assert by_id["mismatched-people"] == 0
@@ -344,9 +360,66 @@ def test_duplicate_organization_clusters(cleanup_client: tuple[TestClient, Engin
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["total"] == 1
+    assert body["total"] == 2
+    # Exact matches sort first ("City Hall"); the cross-form cluster follows.
     assert body["clusters"][0]["label"] == "City Hall"
     assert len(body["clusters"][0]["canonicals"]) == 2
+    cross_form_labels = {
+        canonical["label"] for canonical in body["clusters"][1]["canonicals"]
+    }
+    assert cross_form_labels == {
+        "Cook County State's Attorney's Office",
+        "Office of the Cook County State's Attorney",
+    }
+
+
+def test_dismiss_duplicate_organization_cluster(
+    cleanup_client: tuple[TestClient, Engine],
+) -> None:
+    client, engine = cleanup_client
+    with Session(engine) as session:
+        orgs = session.exec(
+            select(StylebookOrganizationCanonical).where(
+                StylebookOrganizationCanonical.slug.in_(  # type: ignore[union-attr]
+                    ["org-crossform-a", "org-crossform-b"]
+                )
+            )
+        ).all()
+        member_ids = sorted(str(row.id) for row in orgs if row.id is not None)
+    assert len(member_ids) == 2
+
+    before = client.get(
+        "/v1/stylebooks/default/cleanup/checks/duplicate-organizations?limit=10"
+    )
+    assert before.status_code == 200
+    assert before.json()["total"] == 2
+
+    dismiss = client.post(
+        "/v1/stylebooks/default/cleanup/dismissals",
+        json={
+            "check_id": "duplicate-organizations",
+            "member_ids": member_ids,
+        },
+    )
+    assert dismiss.status_code == 200
+    assert dismiss.json()["dismissed_pair_count"] == 1
+
+    after = client.get(
+        "/v1/stylebooks/default/cleanup/checks/duplicate-organizations?limit=10"
+    )
+    assert after.status_code == 200
+    assert after.json()["total"] == 1
+    labels = {
+        canonical["label"]
+        for cluster in after.json()["clusters"]
+        for canonical in cluster["canonicals"]
+    }
+    assert "Cook County State's Attorney's Office" not in labels
+
+    checks = client.get("/v1/stylebooks/default/cleanup/checks")
+    assert checks.status_code == 200
+    by_id = {check["id"]: check["count"] for check in checks.json()["checks"]}
+    assert by_id["duplicate-organizations"] == after.json()["total"]
 
 
 def test_merge_cleanup_person_relinks_and_deletes_source(
