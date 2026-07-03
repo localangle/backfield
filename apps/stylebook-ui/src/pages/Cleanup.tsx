@@ -15,9 +15,12 @@ import {
 } from "@/lib/cleanupChecks"
 import {
   cleanupLastRunStorageKey,
+  cleanupCheckStaleness,
   formatCleanupLastRun,
+  formatCleanupStalenessLabel,
   loadCleanupHubState,
   type CleanupCheckRunRecord,
+  type CleanupCheckStaleness,
 } from "@/lib/cleanupHubLastRun"
 import { refreshPersistedCleanupCheckCount } from "@/lib/api"
 
@@ -62,54 +65,7 @@ export default function Cleanup() {
     const { records, lastRunByCheckId: persistedLastRun } = loadCleanupHubState(storageKey)
     setLastRunByCheckId(persistedLastRun)
     setRunSnapshots(runSnapshotsFromStore(records))
-
-    if (!stylebookSlug) return
-    const checkIds = Object.keys(persistedLastRun)
-    if (checkIds.length === 0) return
-
-    setRunSnapshots((prev) => {
-      const next = { ...prev }
-      for (const checkId of checkIds) {
-        next[checkId] = {
-          count: records[checkId]?.count ?? prev[checkId]?.count ?? null,
-          loading: true,
-        }
-      }
-      return next
-    })
-
-    let cancelled = false
-    void (async () => {
-      await Promise.all(
-        checkIds.map(async (checkId) => {
-          try {
-            const record = await refreshPersistedCleanupCheckCount({
-              stylebookSlug,
-              checkId,
-              project: projectFilterSlug || undefined,
-            })
-            if (cancelled) return
-            setRunSnapshots((prev) => ({
-              ...prev,
-              [checkId]: { count: record.count, loading: false },
-            }))
-            setLastRunByCheckId((prev) => ({ ...prev, [checkId]: record.ranAtIso }))
-          } catch {
-            if (!cancelled) {
-              setRunSnapshots((prev) => ({
-                ...prev,
-                [checkId]: { ...prev[checkId], loading: false },
-              }))
-            }
-          }
-        }),
-      )
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [storageKey, stylebookSlug, projectFilterSlug])
+  }, [storageKey])
 
   const runCheck = useCallback(
     async (checkId: string) => {
@@ -141,13 +97,6 @@ export default function Cleanup() {
     [stylebookSlug, projectFilterSlug, storageKey, showError],
   )
 
-  const runAllChecks = useCallback(async () => {
-    await Promise.all(CLEANUP_CHECK_CONFIGS.map((config) => runCheck(config.id)))
-  }, [runCheck])
-
-  const anyLoading = CLEANUP_CHECK_CONFIGS.some((config) => runSnapshots[config.id]?.loading)
-  const allLoading = CLEANUP_CHECK_CONFIGS.every((config) => runSnapshots[config.id]?.loading)
-
   return (
     <div className="space-y-6">
       <div>
@@ -160,23 +109,6 @@ export default function Cleanup() {
       </div>
 
       <StylebookHomeTabs />
-
-      <div className="flex items-center justify-end">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={anyLoading}
-          onClick={() => void runAllChecks()}
-        >
-          {allLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Play className="h-4 w-4" />
-          )}
-          <span className="ml-2">Run all checks</span>
-        </Button>
-      </div>
 
       <div className="rounded-lg border overflow-hidden">
         <table className="w-full table-fixed text-sm">
@@ -274,7 +206,11 @@ function CleanupCheckRow({
         )}
       </td>
       <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
-        {formatCleanupLastRun(lastRunAt)}
+        <div>{formatCleanupLastRun(lastRunAt)}</div>
+        <CleanupStalenessIndicator
+          staleness={cleanupCheckStaleness(lastRunAt)}
+          label={formatCleanupStalenessLabel(lastRunAt)}
+        />
       </td>
       <td className="px-4 py-3 text-right">
         <div className="inline-flex items-center gap-2">
@@ -298,5 +234,28 @@ function CleanupCheckRow({
         </div>
       </td>
     </tr>
+  )
+}
+
+const STALENESS_STYLES: Record<CleanupCheckStaleness, { dotClass: string; textClass: string }> = {
+  fresh: { dotClass: "bg-green-500", textClass: "text-green-700" },
+  aging: { dotClass: "bg-yellow-500", textClass: "text-yellow-700" },
+  stale: { dotClass: "bg-red-500", textClass: "text-red-700" },
+  never: { dotClass: "bg-red-500", textClass: "text-red-700" },
+}
+
+function CleanupStalenessIndicator({
+  staleness,
+  label,
+}: {
+  staleness: CleanupCheckStaleness
+  label: string
+}) {
+  const { dotClass, textClass } = STALENESS_STYLES[staleness]
+  return (
+    <div className="mt-1 flex items-center gap-1.5">
+      <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dotClass}`} aria-hidden />
+      <span className={`text-xs ${textClass}`}>{label}</span>
+    </div>
   )
 }

@@ -161,6 +161,8 @@ Revision **`039_organization_schema`** adds the organization **substrate trio**,
 
 Revision **`040_sb_conn_evidence`** adds nullable **`evidence_json`** on **`stylebook_connections`** (creation evidence for auto-linked edges) and unique **`uq_stylebook_connection_exact_edge`** on **`(project_id, from_entity_type, from_entity_id, to_entity_type, to_entity_id, nature)`**. Manual connections keep free-form **`nature`** values; the automatic taxonomy lives in **`backfield_entities.connections`**.
 
+Revision **`061_sb_conn_description`** adds nullable **`description`** (`TEXT`) on **`stylebook_connections`**, makes **`nature`** nullable, backfills **`description`** from auto-link evidence or a readable **`nature`** fallback, and replaces **`uq_stylebook_connection_exact_edge`** with a Postgres expression unique index on endpoint fields plus **`coalesce(nature, '')`** and **`coalesce(description, '')`**. **`description`** is the human-readable relationship sentence shown in Stylebook UI; **`nature`** is an optional normalized slug when one clearly fits. Auto-created edges always include **`description`**; manual create/update requires at least one of **`description`** or **`nature`**.
+
 Revision **`046_agate_graph_description`** adds nullable-by-default **`description`** (`TEXT NOT NULL DEFAULT ''`) on **`agate_graph`** for optional flow summaries shown in Agate UI lists and on create/edit screens.
 
 Revision **`060_agate_graph_public_run`** adds **`public_run_enabled`** (`BOOLEAN NOT NULL DEFAULT false`) on **`agate_graph`** to gate public API run trigger.

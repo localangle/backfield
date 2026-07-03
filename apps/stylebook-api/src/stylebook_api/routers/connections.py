@@ -14,8 +14,12 @@ from backfield_db import (
     StylebookOrganizationCanonical,
     StylebookPersonCanonical,
 )
+from backfield_entities.connections.dedupe import (
+    connection_description_coalesced,
+    connection_nature_coalesced,
+)
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import and_, or_
 from sqlmodel import Session, select
 
@@ -26,6 +30,7 @@ from stylebook_api.helpers.connections_utils import (
     normalize_connection_entity_id,
     validate_canonical_exists,
     validate_connection_pair,
+    validate_manual_connection_labels,
     validate_not_self_connection,
 )
 from stylebook_api.helpers.project_scope import (
@@ -57,7 +62,8 @@ class ConnectionResponse(BaseModel):
     to_entity_type: str
     to_entity_id: str
     to_display_name: str
-    nature: str
+    description: str | None = None
+    nature: str | None = None
     evidence_json: dict[str, Any] | None = None
     created_at: datetime | None = None
 
@@ -75,11 +81,31 @@ class CreateConnectionRequest(BaseModel):
         ...,
         description="UUID string for location; int for stubs",
     )
-    nature: str = Field(..., min_length=1)
+    nature: str | None = Field(default=None, min_length=1)
+    description: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _require_nature_or_description(self) -> CreateConnectionRequest:
+        nature = (self.nature or "").strip()
+        description = (self.description or "").strip()
+        if not nature and not description:
+            raise ValueError("Provide at least one of nature or description")
+        return self
 
 
 class UpdateConnectionRequest(BaseModel):
-    nature: str = Field(..., min_length=1)
+    nature: str | None = None
+    description: str | None = None
+
+    @model_validator(mode="after")
+    def _require_at_least_one_field(self) -> UpdateConnectionRequest:
+        if self.nature is None and self.description is None:
+            raise ValueError("Provide at least one of nature or description")
+        if self.nature is not None and not self.nature.strip():
+            raise ValueError("nature cannot be empty")
+        if self.description is not None and not self.description.strip():
+            raise ValueError("description cannot be empty")
+        return self
 
 
 class NaturesResponse(BaseModel):
@@ -129,6 +155,7 @@ def _connection_response_from_row(
             conn.to_entity_id,
             catalog_stylebook_id,
         ),
+        description=conn.description,
         nature=conn.nature,
         evidence_json=conn.evidence_json if isinstance(conn.evidence_json, dict) else None,
         created_at=conn.created_at,
@@ -233,14 +260,66 @@ def _canonical_organization_in_stylebook_or_404(
         raise HTTPException(status_code=404, detail="Canonical organization not found")
 
 
-def _connection_dedupe_key(c: StylebookConnection) -> tuple[str, str, str, str, str]:
+def _connection_dedupe_key(c: StylebookConnection) -> tuple[str, str, str, str, str, str]:
     return (
         str(c.from_entity_type),
         str(c.from_entity_id),
         str(c.to_entity_type),
         str(c.to_entity_id),
-        str(c.nature),
+        str(c.nature or ""),
+        str(c.description or ""),
     )
+
+
+def _apply_connection_update(
+    conn: StylebookConnection,
+    payload: UpdateConnectionRequest,
+) -> StylebookConnection:
+    new_nature = conn.nature
+    new_description = conn.description
+    if payload.nature is not None:
+        new_nature = validate_manual_connection_labels(
+            nature=payload.nature,
+            description=new_description,
+        )[0]
+    if payload.description is not None:
+        new_nature, new_description = validate_manual_connection_labels(
+            nature=new_nature,
+            description=payload.description,
+        )
+    conn.nature = new_nature
+    conn.description = new_description
+    return conn
+
+
+def _find_existing_connection(
+    session: Session,
+    *,
+    project_ids: list[int],
+    from_entity_type: str,
+    from_entity_id: str,
+    to_entity_type: str,
+    to_entity_id: str,
+    nature: str | None,
+    description: str | None,
+) -> StylebookConnection | None:
+    normalized_nature, normalized_description = validate_manual_connection_labels(
+        nature=nature,
+        description=description,
+    )
+    return session.exec(
+        select(StylebookConnection)
+        .where(
+            StylebookConnection.project_id.in_(project_ids),
+            StylebookConnection.from_entity_type == from_entity_type,
+            StylebookConnection.from_entity_id == from_entity_id,
+            StylebookConnection.to_entity_type == to_entity_type,
+            StylebookConnection.to_entity_id == to_entity_id,
+            connection_nature_coalesced() == (normalized_nature or ""),
+            connection_description_coalesced() == (normalized_description or ""),
+        )
+        .order_by(StylebookConnection.created_at, StylebookConnection.id)
+    ).first()
 
 
 def _list_stylebook_connections_for_entity(
@@ -272,7 +351,7 @@ def _list_stylebook_connections_for_entity(
         .order_by(StylebookConnection.created_at, StylebookConnection.id)
     ).all()
     deduped: list[StylebookConnection] = []
-    seen: set[tuple[str, str, str, str, str]] = set()
+    seen: set[tuple[str, str, str, str, str, str]] = set()
     for conn in conns:
         key = _connection_dedupe_key(conn)
         if key in seen:
@@ -311,7 +390,8 @@ def _matching_stylebook_connection_rows(
             StylebookConnection.from_entity_id == connection.from_entity_id,
             StylebookConnection.to_entity_type == connection.to_entity_type,
             StylebookConnection.to_entity_id == connection.to_entity_id,
-            StylebookConnection.nature == connection.nature,
+            connection_nature_coalesced() == (connection.nature or ""),
+            connection_description_coalesced() == (connection.description or ""),
         )
         .order_by(StylebookConnection.id.asc())
     ).all()
@@ -328,7 +408,10 @@ def list_connection_natures(
     require_project_access(session, auth, int(proj.id))
     stmt = (
         select(StylebookConnection.nature)
-        .where(StylebookConnection.project_id == int(proj.id))
+        .where(
+            StylebookConnection.project_id == int(proj.id),
+            StylebookConnection.nature.is_not(None),
+        )
         .distinct()
     )
     if q and q.strip():
@@ -396,13 +479,18 @@ def create_location_connection(
         payload.to_entity_type,
         to_key,
     )
+    nature, description = validate_manual_connection_labels(
+        nature=payload.nature,
+        description=payload.description,
+    )
     conn = StylebookConnection(
         project_id=int(proj.id),
         from_entity_type="location",
         from_entity_id=loc_key,
         to_entity_type=payload.to_entity_type,
         to_entity_id=to_key,
-        nature=payload.nature.strip(),
+        nature=nature,
+        description=description,
     )
     session.add(conn)
     session.commit()
@@ -451,7 +539,20 @@ def update_location_connection(
     ).first()
     if conn is None:
         raise HTTPException(status_code=404, detail="Connection not found")
-    conn.nature = payload.nature.strip()
+    new_nature = conn.nature
+    new_description = conn.description
+    if payload.nature is not None:
+        new_nature = validate_manual_connection_labels(
+            nature=payload.nature,
+            description=new_description,
+        )[0]
+    if payload.description is not None:
+        new_nature, new_description = validate_manual_connection_labels(
+            nature=new_nature,
+            description=payload.description,
+        )
+    conn.nature = new_nature
+    conn.description = new_description
     session.add(conn)
     session.commit()
     session.refresh(conn)
@@ -512,7 +613,10 @@ def list_stylebook_connection_natures(
         return NaturesResponse(natures=[])
     stmt = (
         select(StylebookConnection.nature)
-        .where(StylebookConnection.project_id.in_(project_ids))
+        .where(
+            StylebookConnection.project_id.in_(project_ids),
+            StylebookConnection.nature.is_not(None),
+        )
         .distinct()
     )
     if q and q.strip():
@@ -520,7 +624,7 @@ def list_stylebook_connection_natures(
         stmt = stmt.where(StylebookConnection.nature.ilike(f"%{esc}%", escape="\\"))
     stmt = stmt.order_by(StylebookConnection.nature).limit(100)
     rows = session.exec(stmt).all()
-    return NaturesResponse(natures=list(rows))
+    return NaturesResponse(natures=[row for row in rows if row])
 
 
 @locations_connections_router.get(
@@ -674,19 +778,20 @@ def create_stylebook_location_connection(
         payload.to_entity_type,
         to_key,
     )
-    nature = payload.nature.strip()
-    existing = session.exec(
-        select(StylebookConnection)
-        .where(
-            StylebookConnection.project_id.in_(project_ids),
-            StylebookConnection.from_entity_type == "location",
-            StylebookConnection.from_entity_id == loc_key,
-            StylebookConnection.to_entity_type == payload.to_entity_type,
-            StylebookConnection.to_entity_id == to_key,
-            StylebookConnection.nature == nature,
-        )
-        .order_by(StylebookConnection.created_at, StylebookConnection.id)
-    ).first()
+    nature, description = validate_manual_connection_labels(
+        nature=payload.nature,
+        description=payload.description,
+    )
+    existing = _find_existing_connection(
+        session,
+        project_ids=project_ids,
+        from_entity_type="location",
+        from_entity_id=loc_key,
+        to_entity_type=payload.to_entity_type,
+        to_entity_id=to_key,
+        nature=nature,
+        description=description,
+    )
     if existing is None:
         existing = StylebookConnection(
             project_id=storage_project_id,
@@ -695,6 +800,7 @@ def create_stylebook_location_connection(
             to_entity_type=payload.to_entity_type,
             to_entity_id=to_key,
             nature=nature,
+            description=description,
         )
         session.add(existing)
         session.commit()
@@ -754,9 +860,8 @@ def update_stylebook_location_connection(
     rows = _matching_stylebook_connection_rows(
         session, project_ids=project_ids, connection=conn
     )
-    new_nature = payload.nature.strip()
     for row in rows:
-        row.nature = new_nature
+        _apply_connection_update(row, payload)
         session.add(row)
     session.commit()
     session.refresh(conn)
@@ -844,19 +949,20 @@ def _create_stylebook_entity_connection(
         payload.to_entity_type,
         to_key,
     )
-    nature = payload.nature.strip()
-    existing = session.exec(
-        select(StylebookConnection)
-        .where(
-            StylebookConnection.project_id.in_(project_ids),
-            StylebookConnection.from_entity_type == from_entity_type,
-            StylebookConnection.from_entity_id == from_entity_id,
-            StylebookConnection.to_entity_type == payload.to_entity_type,
-            StylebookConnection.to_entity_id == to_key,
-            StylebookConnection.nature == nature,
-        )
-        .order_by(StylebookConnection.created_at, StylebookConnection.id)
-    ).first()
+    nature, description = validate_manual_connection_labels(
+        nature=payload.nature,
+        description=payload.description,
+    )
+    existing = _find_existing_connection(
+        session,
+        project_ids=project_ids,
+        from_entity_type=from_entity_type,
+        from_entity_id=from_entity_id,
+        to_entity_type=payload.to_entity_type,
+        to_entity_id=to_key,
+        nature=nature,
+        description=description,
+    )
     if existing is None:
         existing = StylebookConnection(
             project_id=storage_project_id,
@@ -865,6 +971,7 @@ def _create_stylebook_entity_connection(
             to_entity_type=payload.to_entity_type,
             to_entity_id=to_key,
             nature=nature,
+            description=description,
         )
         session.add(existing)
         session.commit()
@@ -978,9 +1085,8 @@ def update_stylebook_person_connection(
     rows = _matching_stylebook_connection_rows(
         session, project_ids=project_ids, connection=conn
     )
-    new_nature = payload.nature.strip()
     for row in rows:
-        row.nature = new_nature
+        _apply_connection_update(row, payload)
         session.add(row)
     session.commit()
     session.refresh(conn)
@@ -1104,9 +1210,8 @@ def update_stylebook_organization_connection(
     rows = _matching_stylebook_connection_rows(
         session, project_ids=project_ids, connection=conn
     )
-    new_nature = payload.nature.strip()
     for row in rows:
-        row.nature = new_nature
+        _apply_connection_update(row, payload)
         session.add(row)
     session.commit()
     session.refresh(conn)

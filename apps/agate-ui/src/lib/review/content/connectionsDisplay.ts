@@ -9,7 +9,8 @@ export type ProcessedItemConnectionsStatus =
 export interface ProcessedItemConnectionEdge {
   from_display_name: string
   to_display_name: string
-  nature: string
+  description: string | null
+  nature: string | null
   confidence: number | null
 }
 
@@ -27,6 +28,14 @@ const DEFAULT_CONNECTIONS: ProcessedItemConnections = {
   created_count: 0,
   edges: [],
   error: null,
+}
+
+function connectionEdgeLabel(edge: ProcessedItemConnectionEdge): string {
+  const description = edge.description?.trim()
+  if (description) return description
+  const nature = edge.nature?.trim()
+  if (nature) return nature.replace(/_/g, ' ')
+  return 'Connection'
 }
 
 export function normalizeProcessedItemConnections(raw: unknown): ProcessedItemConnections {
@@ -52,8 +61,15 @@ export function normalizeProcessedItemConnections(raw: unknown): ProcessedItemCo
       const row = edge as Record<string, unknown>
       const fromName = typeof row.from_display_name === 'string' ? row.from_display_name.trim() : ''
       const toName = typeof row.to_display_name === 'string' ? row.to_display_name.trim() : ''
-      const nature = typeof row.nature === 'string' ? row.nature.trim() : ''
-      if (!fromName || !toName || !nature) continue
+      const descriptionRaw = row.description
+      const natureRaw = row.nature
+      const description =
+        typeof descriptionRaw === 'string' && descriptionRaw.trim()
+          ? descriptionRaw.trim()
+          : null
+      const nature =
+        typeof natureRaw === 'string' && natureRaw.trim() ? natureRaw.trim() : null
+      if (!fromName || !toName || (!description && !nature)) continue
       const confRaw = row.confidence
       let confidence: number | null = null
       if (typeof confRaw === 'number' && !Number.isNaN(confRaw)) {
@@ -62,6 +78,7 @@ export function normalizeProcessedItemConnections(raw: unknown): ProcessedItemCo
       edges.push({
         from_display_name: fromName,
         to_display_name: toName,
+        description,
         nature,
         confidence,
       })
@@ -118,6 +135,10 @@ export function formatConnectionsDetail(summary: ProcessedItemConnections): stri
   return `${summary.created_count.toLocaleString()} connection${
     summary.created_count === 1 ? '' : 's'
   } created`
+}
+
+export function formatConnectionEdgeLabel(edge: ProcessedItemConnectionEdge): string {
+  return connectionEdgeLabel(edge)
 }
 
 export function shouldShowConnectionsSummary(

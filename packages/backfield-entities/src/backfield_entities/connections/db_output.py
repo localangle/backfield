@@ -16,6 +16,9 @@ from backfield_entities.connections.context import (
     AutoConnectionArticleContext,
     collect_auto_connection_article_context,
 )
+from backfield_entities.connections.dedupe import (
+    connection_edge_key,
+)
 from backfield_entities.connections.eligibility import evaluate_auto_connections_eligibility
 from backfield_entities.connections.inference import (
     AUTO_CONNECTION_FAMILIES,
@@ -99,7 +102,7 @@ def run_auto_connections_for_db_output(
                 AutoConnectionEdgeProposal,
             ]
         ] = []
-        pending_edge_keys: set[tuple[str, str, str, str, str]] = set()
+        pending_edge_keys: set[tuple[int, str, str, str, str, str, str]] = set()
 
         for from_type, to_type in AUTO_CONNECTION_FAMILIES:
             from_entities, to_entities = _family_entities(
@@ -115,12 +118,14 @@ def run_auto_connections_for_db_output(
                     organizations=to_entities,
                     article_text=context.article_text,
                 ):
-                    edge_key = (
-                        from_type,
-                        to_type,
-                        edge.from_entity_id,
-                        edge.to_entity_id,
-                        edge.nature.strip().lower(),
+                    edge_key = connection_edge_key(
+                        project_id=project_id,
+                        from_entity_type=from_type,
+                        from_entity_id=edge.from_entity_id,
+                        to_entity_type=to_type,
+                        to_entity_id=edge.to_entity_id,
+                        nature=edge.nature,
+                        description=edge.description,
                     )
                     if edge_key in pending_edge_keys:
                         continue
@@ -148,12 +153,14 @@ def run_auto_connections_for_db_output(
             )
             family_results.append(result)
             for edge in result.edges:
-                edge_key = (
-                    from_type,
-                    to_type,
-                    edge.from_entity_id,
-                    edge.to_entity_id,
-                    edge.nature.strip().lower(),
+                edge_key = connection_edge_key(
+                    project_id=project_id,
+                    from_entity_type=from_type,
+                    from_entity_id=edge.from_entity_id,
+                    to_entity_type=to_type,
+                    to_entity_id=edge.to_entity_id,
+                    nature=edge.nature,
+                    description=edge.description,
                 )
                 if edge_key in pending_edge_keys:
                     continue

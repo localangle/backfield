@@ -97,6 +97,9 @@ def review_same_site_org_location_pair(
     return AutoConnectionEdgeProposal(
         from_entity_id=hint.org.canonical_id,
         to_entity_id=hint.location.canonical_id,
+        description=(
+            f"{hint.org.label} is located at {hint.location.label}."
+        ),
         nature=nature,
         confidence=confidence,
         quote=quote,

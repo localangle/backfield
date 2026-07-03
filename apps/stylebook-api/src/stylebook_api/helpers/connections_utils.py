@@ -202,3 +202,32 @@ def validate_not_self_connection(
 ) -> None:
     if from_entity_type == to_entity_type and from_entity_id == to_entity_id:
         raise HTTPException(status_code=400, detail="Cannot connect an entity to itself")
+
+
+def normalize_manual_connection_nature(nature: str | None) -> str | None:
+    if nature is None:
+        return None
+    stripped = nature.strip().lower()
+    return stripped or None
+
+
+def normalize_manual_connection_description(description: str | None) -> str | None:
+    if description is None:
+        return None
+    stripped = description.strip()
+    return stripped or None
+
+
+def validate_manual_connection_labels(
+    *,
+    nature: str | None,
+    description: str | None,
+) -> tuple[str | None, str | None]:
+    normalized_nature = normalize_manual_connection_nature(nature)
+    normalized_description = normalize_manual_connection_description(description)
+    if normalized_nature is None and normalized_description is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide at least one of nature or description",
+        )
+    return normalized_nature, normalized_description

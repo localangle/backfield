@@ -8,6 +8,13 @@ from backfield_db import StylebookConnection
 from sqlalchemy import and_, or_
 from sqlmodel import Session, col, select
 
+from backfield_entities.connections.dedupe import (
+    connection_description_coalesced,
+    connection_nature_coalesced,
+    normalize_connection_description,
+    normalize_connection_nature,
+)
+
 
 @dataclass(frozen=True)
 class RewireConnectionsResult:
@@ -100,7 +107,12 @@ def rewire_connections_for_canonical_merge(
                 StylebookConnection.from_entity_id == new_from_id,
                 StylebookConnection.to_entity_type == conn.to_entity_type,
                 StylebookConnection.to_entity_id == new_to_id,
-                StylebookConnection.nature == conn.nature,
+                connection_nature_coalesced() == (
+                    normalize_connection_nature(conn.nature) or ""
+                ),
+                connection_description_coalesced() == (
+                    normalize_connection_description(conn.description) or ""
+                ),
             )
         ).first()
         if existing is not None and existing.id != conn.id:

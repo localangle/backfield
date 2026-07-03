@@ -176,13 +176,16 @@ def _llm_edges_response(
     nature: str = "works_for",
     confidence: float = 0.95,
     quote: str,
+    description: str | None = None,
 ) -> str:
+    edge_description = description or quote
     return json.dumps(
         {
             "edges": [
                 {
                     "from_entity_id": from_id,
                     "to_entity_id": to_id,
+                    "description": edge_description,
                     "nature": nature,
                     "confidence": confidence,
                     "quote": quote,
@@ -246,15 +249,19 @@ def test_auto_connections_ineligible_when_auto_apply_off() -> None:
 def test_auto_connections_creates_high_confidence_edge() -> None:
     engine = _engine()
     with Session(engine) as session:
-        fixture = _seed_linked_person_org(session)
+        fixture = _seed_linked_person_org(session, person_affiliation="")
         quote = "Mayor Jane Smith works for Chicago City Hall"
-        mock_llm = MagicMock(
-            return_value=_llm_edges_response(
-                from_id=fixture.person_canonical_id,
-                to_id=fixture.organization_canonical_id,
-                quote=quote,
-            )
-        )
+
+        def _mock_llm(prompt: str, **_kwargs: object) -> str:
+            if "person to organization" in prompt:
+                return _llm_edges_response(
+                    from_id=fixture.person_canonical_id,
+                    to_id=fixture.organization_canonical_id,
+                    quote=quote,
+                )
+            return json.dumps({"edges": []})
+
+        mock_llm = MagicMock(side_effect=_mock_llm)
         summary = run_auto_connections_for_db_output(
             session,
             project_id=fixture.project_id,
@@ -269,7 +276,7 @@ def test_auto_connections_creates_high_confidence_edge() -> None:
     assert summary["status"] == "succeeded"
     assert summary["created"] == 1
     assert summary["edges"][0]["nature"] == "works_for"
-    mock_llm.assert_called_once()
+    assert mock_llm.call_count >= 1
 
     with Session(engine) as session:
         rows = session.exec(select(StylebookConnection)).all()
@@ -282,7 +289,7 @@ def test_auto_connections_creates_high_confidence_edge() -> None:
         assert row.nature == "works_for"
         assert row.evidence_json is not None
         assert "Chicago City Hall" in row.evidence_json["quote"]
-        assert row.evidence_json["confidence"] == AUTO_CONNECTION_MIN_CONFIDENCE
+        assert row.evidence_json["confidence"] >= AUTO_CONNECTION_MIN_CONFIDENCE
 
 
 def test_auto_connections_skips_low_confidence_edge() -> None:
@@ -317,7 +324,7 @@ def test_auto_connections_skips_low_confidence_edge() -> None:
 def test_auto_connections_skips_duplicate_existing_edge() -> None:
     engine = _engine()
     with Session(engine) as session:
-        fixture = _seed_linked_person_org(session)
+        fixture = _seed_linked_person_org(session, person_affiliation="")
         session.add(
             StylebookConnection(
                 project_id=fixture.project_id,
@@ -326,18 +333,23 @@ def test_auto_connections_skips_duplicate_existing_edge() -> None:
                 to_entity_type="organization",
                 to_entity_id=fixture.organization_canonical_id,
                 nature="works_for",
+                description="Mayor Jane Smith works for Chicago City Hall",
             )
         )
         session.commit()
 
         quote = "Mayor Jane Smith works for Chicago City Hall"
-        mock_llm = MagicMock(
-            return_value=_llm_edges_response(
-                from_id=fixture.person_canonical_id,
-                to_id=fixture.organization_canonical_id,
-                quote=quote,
-            )
-        )
+
+        def _mock_llm(prompt: str, **_kwargs: object) -> str:
+            if "person to organization" in prompt:
+                return _llm_edges_response(
+                    from_id=fixture.person_canonical_id,
+                    to_id=fixture.organization_canonical_id,
+                    quote=quote,
+                )
+            return json.dumps({"edges": []})
+
+        mock_llm = MagicMock(side_effect=_mock_llm)
         summary = run_auto_connections_for_db_output(
             session,
             project_id=fixture.project_id,

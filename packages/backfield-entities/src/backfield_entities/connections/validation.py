@@ -27,7 +27,8 @@ def validate_auto_connection_candidate(
     *,
     from_entity_type: str,
     to_entity_type: str,
-    nature: str,
+    description: str,
+    nature: str | None = None,
     confidence: float,
     quote: str,
     location_type: str | None = None,
@@ -35,8 +36,9 @@ def validate_auto_connection_candidate(
     """Validate a high-confidence auto-connection candidate before persistence."""
     from_type = from_entity_type.strip().lower()
     to_type = to_entity_type.strip().lower()
-    nature_key = nature.strip().lower()
+    nature_key = nature.strip().lower() if nature is not None else None
     quote_text = quote.strip()
+    description_text = description.strip()
 
     if not is_auto_link_endpoint_pair(from_type, to_type):
         return AutoConnectionValidationResult(
@@ -44,12 +46,19 @@ def validate_auto_connection_candidate(
             skip_reason="endpoint_pair_not_allowed",
         )
 
-    allowed_natures = auto_link_natures_for_pair(from_type, to_type)
-    if nature_key not in allowed_natures:
+    if not description_text:
         return AutoConnectionValidationResult(
             ok=False,
-            skip_reason="nature_not_allowed",
+            skip_reason="missing_description",
         )
+
+    if nature_key is not None:
+        allowed_natures = auto_link_natures_for_pair(from_type, to_type)
+        if nature_key not in allowed_natures:
+            return AutoConnectionValidationResult(
+                ok=False,
+                skip_reason="nature_not_allowed",
+            )
 
     if confidence < AUTO_CONNECTION_MIN_CONFIDENCE:
         return AutoConnectionValidationResult(
@@ -63,7 +72,7 @@ def validate_auto_connection_candidate(
             skip_reason="missing_quote",
         )
 
-    if to_type == "location":
+    if to_type == "location" and nature_key is not None:
         lt = _normalize_location_type(location_type)
         if not lt:
             return AutoConnectionValidationResult(

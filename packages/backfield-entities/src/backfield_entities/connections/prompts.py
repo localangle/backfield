@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from backfield_entities.connections.same_site_hints import SameSiteOrgLocationHint
 from backfield_entities.connections.taxonomy import (
-    AUTO_CONNECTION_PROMPT_VERSION,
+    AUTO_CONNECTION_PROMPT_VERSION_DESCRIPTION_FIRST,
     AUTO_CONNECTION_PROMPT_VERSION_WITH_HINTS,
     auto_link_natures_for_pair,
 )
@@ -64,7 +64,7 @@ def build_family_classification_prompt(
     prompt_version = (
         AUTO_CONNECTION_PROMPT_VERSION_WITH_HINTS
         if same_site_hints
-        else AUTO_CONNECTION_PROMPT_VERSION
+        else AUTO_CONNECTION_PROMPT_VERSION_DESCRIPTION_FIRST
     )
     hints_section = _format_same_site_hints_section(same_site_hints)
     same_site_rules = ""
@@ -75,17 +75,22 @@ def build_family_classification_prompt(
         )
     return (
         f"prompt_version: {prompt_version}\n"
-        f"Classify explicit relationships from {from_type} to {to_type} using ONLY the "
-        f"allowed nature slugs.\n\n"
-        f"Allowed natures: {', '.join(allowed)}\n\n"
+        f"Identify explicit relationships from {from_type} to {to_type}.\n\n"
+        f"Allowed nature slugs (optional; use only when one clearly fits): "
+        f"{', '.join(allowed) if allowed else '(none)'}\n\n"
         "Rules:\n"
-        "- Return edges only when the evidence explicitly supports the relationship.\n"
-        "- Do not infer from co-mention alone.\n"
+        "- Return an edge only when the article states or strongly entails a direct "
+        "relationship between the two entities.\n"
+        "- Do not create edges for co-mention, same paragraph, same event attendance, "
+        "same geography, same topic, or generic association.\n"
         "- Prefer no edge over an uncertain edge.\n"
         "- Use only canonical ids from the lists below.\n"
         "- Each edge must include a supporting quote copied from the snippets.\n"
+        "- Each edge must include description: one sentence or less explaining the "
+        "relationship in narrative terms.\n"
+        "- Set nature to one allowed slug only when it clearly fits; otherwise use null.\n"
         "- confidence must be 0.0-1.0; only return edges you would score >= 0.9.\n"
-        "- Multiple natures for the same pair are allowed only when each is explicitly "
+        "- Multiple edges for the same pair are allowed only when each is explicitly "
         "supported by separate evidence.\n"
         "- For organization→location, prefer located_at over based_in when a specific "
         "address/place is supported.\n"
@@ -94,11 +99,14 @@ def build_family_classification_prompt(
         '(e.g. "Phillies masher Kyle Schwarber") support member_of to that sports_team.\n'
         "- Person→location must not use address-like locations.\n"
         "- Prefer the most specific supported geography.\n"
+        "- Never connect an entity to itself.\n"
+        "- For symmetric relationships, return one edge per pair.\n"
         f"{same_site_rules}"
         f"{hints_section}"
         f"From entities ({from_type}):\n{from_section}\n\n"
         f"To entities ({to_type}):\n{to_section}\n\n"
         f"Evidence snippets:\n{snippet_section}\n\n"
         'Return JSON only: {"edges": [{"from_entity_id": "...", "to_entity_id": "...", '
-        '"nature": "...", "confidence": 0.95, "quote": "...", "reason": "..."}]}'
+        '"description": "...", "nature": null, "confidence": 0.95, "quote": "...", '
+        '"reason": "..."}]}'
     )

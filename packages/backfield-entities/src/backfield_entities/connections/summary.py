@@ -90,6 +90,7 @@ def _written_edge_dict(edge: WrittenAutoConnection) -> dict[str, Any]:
         "to_entity_type": edge.to_entity_type,
         "to_entity_id": edge.to_entity_id,
         "to_display_name": edge.to_display_name,
+        "description": edge.description,
         "nature": edge.nature,
         "confidence": edge.confidence,
     }

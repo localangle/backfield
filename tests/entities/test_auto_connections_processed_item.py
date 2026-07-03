@@ -72,6 +72,7 @@ def test_build_summary_succeeded_with_edges() -> None:
                             "from_display_name": "Jane Smith",
                             "to_display_name": "Chicago City Hall",
                             "nature": "works_for",
+                            "description": "Jane Smith works for Chicago City Hall.",
                             "confidence": 0.95,
                         }
                     ],
@@ -82,6 +83,35 @@ def test_build_summary_succeeded_with_edges() -> None:
     assert summary["status"] == "succeeded"
     assert summary["created_count"] == 1
     assert summary["edges"][0]["nature"] == "works_for"
+    assert summary["edges"][0]["description"] == "Jane Smith works for Chicago City Hall."
+
+
+def test_build_summary_keeps_edges_with_description_only() -> None:
+    summary = build_processed_item_connections_summary(
+        item_status="succeeded",
+        result_obj={
+            "stylebook_output": {
+                "connections": {
+                    "enabled": True,
+                    "eligible": True,
+                    "status": "succeeded",
+                    "created": 1,
+                    "edges": [
+                        {
+                            "from_display_name": "Jane Smith",
+                            "to_display_name": "John Doe",
+                            "description": "They served together on the police reform task force.",
+                            "confidence": 0.95,
+                        }
+                    ],
+                }
+            }
+        },
+    )
+    assert summary["status"] == "succeeded"
+    assert len(summary["edges"]) == 1
+    assert summary["edges"][0]["nature"] is None
+    assert "task force" in summary["edges"][0]["description"]
 
 
 def test_build_summary_failed_preserves_error() -> None:

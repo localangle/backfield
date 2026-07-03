@@ -804,21 +804,18 @@ class StylebookConnection(SQLModel, table=True):
     ``from_entity_id`` / ``to_entity_id`` are TEXT UUID strings for ``location``, ``person``,
     and ``organization`` entities; decimal strings for stub work ids until that catalog uses UUIDs.
 
+    ``description`` is the human-readable relationship sentence shown in Stylebook UI.
+    ``nature`` is an optional normalized slug when one clearly fits the relationship.
+
     ``evidence_json`` is optional creation evidence for auto-linked edges (see
     ``backfield_entities.connections.evidence``). Manual connections leave it null.
+
+    Exact-edge uniqueness is enforced in Postgres via migration
+    ``061_sb_conn_description`` (expression index with ``coalesce`` on nullable fields).
     """
 
     __tablename__ = "stylebook_connections"
     __table_args__ = (
-        UniqueConstraint(
-            "project_id",
-            "from_entity_type",
-            "from_entity_id",
-            "to_entity_type",
-            "to_entity_id",
-            "nature",
-            name="uq_stylebook_connection_exact_edge",
-        ),
         Index(
             "ix_stylebook_connection_from",
             "project_id",
@@ -840,7 +837,8 @@ class StylebookConnection(SQLModel, table=True):
     from_entity_id: str = Field(sa_column=Column(Text, nullable=False, index=True))
     to_entity_type: str = Field(sa_column=Column(Text, nullable=False, index=True))
     to_entity_id: str = Field(sa_column=Column(Text, nullable=False, index=True))
-    nature: str = Field(sa_column=Column(Text, nullable=False, index=True))
+    nature: str | None = Field(default=None, sa_column=Column(Text, nullable=True, index=True))
+    description: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     evidence_json: dict[str, Any] | None = Field(
         default=None,
         sa_column=Column(JSON, nullable=True),

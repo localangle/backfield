@@ -146,7 +146,8 @@ class ProcessedItemConnectionEdgeOut(BaseModel):
 
     from_display_name: str
     to_display_name: str
-    nature: str
+    description: str | None = None
+    nature: str | None = None
     confidence: float | None = None
 
 
