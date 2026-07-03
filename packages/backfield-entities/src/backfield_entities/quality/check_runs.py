@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -51,6 +52,12 @@ from backfield_entities.quality.finders.organization_name_mismatch import (
 from backfield_entities.quality.finders.person_name_mismatch import (
     list_person_name_mismatches,
 )
+from backfield_entities.quality.finders.questionable_organizations import (
+    build_questionable_organization_check_items,
+)
+from backfield_entities.quality.llm_questionable_organizations import (
+    DEFAULT_QUESTIONABLE_ORG_LLM_MODEL,
+)
 from backfield_entities.quality.types import (
     CleanupLocationGeographyIssueRow,
     CleanupNameMismatchIssueRow,
@@ -68,6 +75,7 @@ _ALGORITHM_VERSIONS: dict[str, str] = {
     "mismatched-locations": "mismatched-locations:v1",
     "mismatched-people": "mismatched-people:v1",
     "mismatched-organizations": "mismatched-organizations:v1",
+    "questionable-organization-canonicals": "questionable-organization-canonicals:v1",
 }
 
 
@@ -254,6 +262,9 @@ def build_cleanup_check_items(
     session: Session,
     *,
     scope: CleanupRunScope,
+    call_llm: Callable[..., str] | None = None,
+    questionable_org_model: str | None = None,
+    questionable_org_model_config_id: str | None = None,
 ) -> list[CleanupCheckItem]:
     check_id = scope.check_id
     stylebook_id = scope.stylebook_id
@@ -342,6 +353,17 @@ def build_cleanup_check_items(
             )
 
         return _mismatch_list_items(session, scope=scope, fetch_page=fetch_page)
+
+    if check_id == "questionable-organization-canonicals":
+        if call_llm is None:
+            raise ValueError("questionable-organization-canonicals requires call_llm")
+        return build_questionable_organization_check_items(
+            session,
+            scope=scope,
+            call_llm=call_llm,
+            model=questionable_org_model or DEFAULT_QUESTIONABLE_ORG_LLM_MODEL,
+            model_config_id=questionable_org_model_config_id,
+        )
 
     raise ValueError(f"Unknown cleanup check id: {check_id}")
 
@@ -453,7 +475,11 @@ def load_existing_canonical_ids_for_check(
         model = StylebookLocationCanonical
     elif check_id in ("duplicate-people", "mismatched-people"):
         model = StylebookPersonCanonical
-    elif check_id in ("duplicate-organizations", "mismatched-organizations"):
+    elif check_id in (
+        "duplicate-organizations",
+        "mismatched-organizations",
+        "questionable-organization-canonicals",
+    ):
         model = StylebookOrganizationCanonical
     else:
         return set(candidate_ids)

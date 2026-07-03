@@ -33,6 +33,7 @@ from agate_runtime.s3_batch import (
     parse_s3_text_json_document,
     s3_max_files_from_params,
 )
+from agate_utils.llm import call_llm
 from backfield_ai.credentials import merge_project_and_org_llm_api_keys
 from backfield_ai.tracking_context import (
     LlmAttemptTrackingContext,
@@ -372,6 +373,20 @@ def _env_overlay(updates: dict[str, str]):
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = prev
+
+
+def _call_llm_with_env_api_keys(prompt: str, **kwargs: Any) -> str:
+    """Pass org/project API keys explicitly; ``call_llm`` does not read env by default."""
+    return call_llm(
+        prompt,
+        openai_api_key=os.getenv("OPENAI_API_KEY"),
+        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
+        gemini_api_key=os.getenv("GEMINI_API_KEY"),
+        openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
+        azure_api_key=os.getenv("AZURE_API_KEY"),
+        azure_api_base=os.getenv("AZURE_API_BASE"),
+        **kwargs,
+    )
 
 
 def _project_system_prompt_from_settings(settings_json: str | None) -> str | None:
@@ -1681,7 +1696,25 @@ def execute_cleanup_check_run(run_id: str) -> None:
                 else None,
                 project_slug=scope_payload.get("project_slug"),
             )
-            items = build_cleanup_check_items(session, scope=scope)
+            if scope.check_id == "questionable-organization-canonicals":
+                from worker.substrate.cleanup.questionable_organizations_llm import (
+                    resolve_questionable_organization_llm_context,
+                )
+
+                llm_context = resolve_questionable_organization_llm_context(
+                    session,
+                    scope=scope,
+                )
+                with _env_overlay(llm_context.api_key_overlay):
+                    items = build_cleanup_check_items(
+                        session,
+                        scope=scope,
+                        call_llm=_call_llm_with_env_api_keys,
+                        questionable_org_model=llm_context.model,
+                        questionable_org_model_config_id=llm_context.model_config_id,
+                    )
+            else:
+                items = build_cleanup_check_items(session, scope=scope, call_llm=call_llm)
             persist_cleanup_check_results(session, run=run, items=items)
             run.status = "succeeded"
             run.completed_at = datetime.now(UTC)

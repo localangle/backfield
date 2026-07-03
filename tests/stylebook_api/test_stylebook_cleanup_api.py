@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Generator
 from typing import Any
 
@@ -224,6 +225,12 @@ ALL_CLEANUP_CHECK_IDS = (
     "mismatched-people",
     "duplicate-organizations",
     "mismatched-organizations",
+    "questionable-organization-canonicals",
+)
+STANDARD_CLEANUP_CHECK_IDS = tuple(
+    check_id
+    for check_id in ALL_CLEANUP_CHECK_IDS
+    if check_id != "questionable-organization-canonicals"
 )
 
 
@@ -238,7 +245,7 @@ def _run_cleanup_check(client: TestClient, check_id: str) -> dict[str, Any]:
 
 
 def _run_all_cleanup_checks(client: TestClient) -> None:
-    for check_id in ALL_CLEANUP_CHECK_IDS:
+    for check_id in STANDARD_CLEANUP_CHECK_IDS:
         _run_cleanup_check(client, check_id)
 
 
@@ -269,6 +276,8 @@ def test_list_cleanup_checks(cleanup_client: tuple[TestClient, Engine]) -> None:
     assert by_id["mismatched-locations"]["count"] == 0
     assert by_id["mismatched-people"]["count"] == 0
     assert by_id["mismatched-organizations"]["count"] == 0
+    assert by_id["questionable-organization-canonicals"]["count"] == 0
+    assert by_id["questionable-organization-canonicals"]["status"] == "never_run"
     assert body["total_open"] == sum(check["count"] for check in body["checks"])
 
 
@@ -910,6 +919,163 @@ def test_mismatched_organizations_check(cleanup_client: tuple[TestClient, Engine
     assert row["label"] == "Globex Industries"
     assert row["mismatched_linked_count"] == 1
     assert "Acme Corporation" in row["mismatched_examples"]
+
+
+def _patch_questionable_org_llm(
+    monkeypatch: pytest.MonkeyPatch,
+    mock_call_llm: Any,
+) -> None:
+    from worker.substrate.cleanup.questionable_organizations_llm import (
+        QuestionableOrganizationLlmContext,
+    )
+
+    monkeypatch.setattr(
+        "worker.tasks._call_llm_with_env_api_keys",
+        mock_call_llm,
+    )
+    monkeypatch.setattr(
+        "worker.substrate.cleanup.questionable_organizations_llm.resolve_questionable_organization_llm_context",
+        lambda _session, scope: QuestionableOrganizationLlmContext(
+            project_id=1,
+            api_key_overlay={"OPENAI_API_KEY": "test-key"},
+            model="gpt-5-nano",
+            model_config_id="test-model",
+        ),
+    )
+
+
+def test_questionable_organization_canonicals_check(
+    cleanup_client: tuple[TestClient, Engine],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, engine = cleanup_client
+    trump_id = ""
+    with Session(engine) as session:
+        sb = session.exec(select(Stylebook)).one()
+        session.add(
+            StylebookPersonCanonical(
+                stylebook_id=int(sb.id),
+                slug="donald-trump-person",
+                label="Donald Trump",
+            )
+        )
+        trump_org = StylebookOrganizationCanonical(
+            stylebook_id=int(sb.id),
+            slug="donald-trump-org",
+            label="Donald Trump",
+            organization_type="government",
+        )
+        session.add(trump_org)
+        session.commit()
+        session.refresh(trump_org)
+        trump_id = str(trump_org.id)
+
+    def mock_call_llm(prompt: str, **_kwargs: object) -> str:
+        assert trump_id in prompt
+        return json.dumps(
+            {
+                "results": [
+                    {
+                        "canonical_id": trump_id,
+                        "decision": "flag",
+                        "category": "person_like",
+                        "confidence": "high",
+                        "explanation": "This label names a person, not an institution.",
+                        "suggested_entity_type": "person",
+                    }
+                ]
+            }
+        )
+
+    _patch_questionable_org_llm(monkeypatch, mock_call_llm)
+    _run_cleanup_check(client, "questionable-organization-canonicals")
+
+    checks = client.get("/v1/stylebooks/default/cleanup/checks")
+    assert checks.status_code == 200
+    by_id = {check["id"]: check["count"] for check in checks.json()["checks"]}
+    assert by_id["questionable-organization-canonicals"] == 1
+
+    response = client.get(
+        "/v1/stylebooks/default/cleanup/checks/questionable-organization-canonicals"
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    row = body["canonicals"][0]
+    assert row["label"] == "Donald Trump"
+    assert row["category"] == "person_like"
+    assert row["confidence"] == "high"
+    assert "person" in row["explanation"].lower()
+    assert "cross_catalog_person" in row["prefilter_signals"]
+
+
+def test_dismiss_questionable_organization_canonical(
+    cleanup_client: tuple[TestClient, Engine],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, engine = cleanup_client
+    trump_id = ""
+    with Session(engine) as session:
+        sb = session.exec(select(Stylebook)).one()
+        session.add(
+            StylebookPersonCanonical(
+                stylebook_id=int(sb.id),
+                slug="donald-trump-person",
+                label="Donald Trump",
+            )
+        )
+        trump_org = StylebookOrganizationCanonical(
+            stylebook_id=int(sb.id),
+            slug="donald-trump-org",
+            label="Donald Trump",
+            organization_type="government",
+        )
+        session.add(trump_org)
+        session.commit()
+        session.refresh(trump_org)
+        trump_id = str(trump_org.id)
+
+    def mock_call_llm(_prompt: str, **_kwargs: object) -> str:
+        return json.dumps(
+            {
+                "results": [
+                    {
+                        "canonical_id": trump_id,
+                        "decision": "flag",
+                        "category": "person_like",
+                        "confidence": "high",
+                        "explanation": "Person label.",
+                        "suggested_entity_type": "person",
+                    }
+                ]
+            }
+        )
+
+    _patch_questionable_org_llm(monkeypatch, mock_call_llm)
+    _run_cleanup_check(client, "questionable-organization-canonicals")
+
+    before = client.get(
+        "/v1/stylebooks/default/cleanup/checks/questionable-organization-canonicals"
+    )
+    assert before.status_code == 200
+    assert before.json()["total"] == 1
+
+    dismiss = client.post(
+        "/v1/stylebooks/default/cleanup/dismissals",
+        json={
+            "check_id": "questionable-organization-canonicals",
+            "canonical_id": trump_id,
+        },
+    )
+    assert dismiss.status_code == 200
+
+    after = client.get(
+        "/v1/stylebooks/default/cleanup/checks/questionable-organization-canonicals"
+    )
+    assert after.status_code == 200
+    assert after.json()["total"] == before.json()["total"] - 1
+    labels = {item["label"] for item in after.json()["canonicals"]}
+    assert "Donald Trump" not in labels
 
 
 def test_cleanup_ai_review_start_and_proposal_accept(

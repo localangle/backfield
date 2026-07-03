@@ -130,9 +130,30 @@ export interface PaginatedCleanupMismatchIssuesResponse {
   has_prev: boolean
 }
 
+export interface CleanupQuestionableOrganizationIssue extends CleanupMismatchIssue {
+  prefilter_score: number
+  prefilter_signals: string[]
+  llm_decision: string
+  category: string
+  confidence: string
+  explanation: string
+  suggested_entity_type: string
+  sample_mentions: string[]
+}
+
+export interface PaginatedCleanupQuestionableOrganizationsResponse {
+  canonicals: CleanupQuestionableOrganizationIssue[]
+  total: number
+  page: number
+  per_page: number
+  has_next: boolean
+  has_prev: boolean
+}
+
 export type PaginatedCleanupListResults =
   | PaginatedCleanupLocationIssuesResponse
   | PaginatedCleanupMismatchIssuesResponse
+  | PaginatedCleanupQuestionableOrganizationsResponse
 
 export interface ListCleanupChecksParams {
   stylebookSlug: string
@@ -215,6 +236,9 @@ export async function getLatestCleanupCheckRun(params: {
 
 const ACTIVE_RUN_STATUSES = new Set<CleanupCheckRun["status"]>(["queued", "running"])
 
+const LLM_CLEANUP_CHECK_IDS = new Set(["questionable-organization-canonicals"])
+const LLM_POLL_TIMEOUT_MS = 600000
+
 export async function pollCleanupCheckRun(params: {
   stylebookSlug: string
   checkId: string
@@ -223,7 +247,10 @@ export async function pollCleanupCheckRun(params: {
   timeoutMs?: number
 }): Promise<CleanupCheckRun> {
   const intervalMs = params.intervalMs ?? 1500
-  const timeoutMs = params.timeoutMs ?? 120000
+  const defaultTimeout = LLM_CLEANUP_CHECK_IDS.has(params.checkId)
+    ? LLM_POLL_TIMEOUT_MS
+    : 120000
+  const timeoutMs = params.timeoutMs ?? defaultTimeout
   const started = Date.now()
   let latest = await getLatestCleanupCheckRun(params)
   if (!latest) {
@@ -358,6 +385,14 @@ export async function getMismatchedLocations(
   )
 }
 
+export async function getQuestionableOrganizationCanonicals(
+  params: GetCleanupCheckResultsParams,
+): Promise<PaginatedCleanupQuestionableOrganizationsResponse> {
+  return stylebookJsonFetch<PaginatedCleanupQuestionableOrganizationsResponse>(
+    `${cleanupCheckResultsPath(params.stylebookSlug, "questionable-organization-canonicals")}?${paginatedListQuery(params)}`,
+  )
+}
+
 export async function getCleanupCheckResults(
   params: GetCleanupCheckResultsParams,
 ): Promise<
@@ -378,6 +413,8 @@ export async function getCleanupCheckResults(
       return getMismatchedOrganizations(params)
     case "mismatched-locations":
       return getMismatchedLocations(params)
+    case "questionable-organization-canonicals":
+      return getQuestionableOrganizationCanonicals(params)
     default:
       throw new Error(`Unknown cleanup check: ${params.checkId}`)
   }

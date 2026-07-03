@@ -213,6 +213,17 @@ class CleanupOrganizationMismatchIssueOut(CanonicalOrganizationResponse):
     mismatched_examples: list[str] = Field(default_factory=list)
 
 
+class CleanupQuestionableOrganizationIssueOut(CanonicalOrganizationResponse):
+    prefilter_score: int = 0
+    prefilter_signals: list[str] = Field(default_factory=list)
+    llm_decision: str = "flag"
+    category: str = "other_non_organization"
+    confidence: str = "medium"
+    explanation: str = ""
+    suggested_entity_type: str = "unknown"
+    sample_mentions: list[str] = Field(default_factory=list)
+
+
 class CleanupLocationMismatchIssueOut(CanonicalLocationResponse):
     mismatched_linked_count: int = 0
     mismatched_examples: list[str] = Field(default_factory=list)
@@ -229,6 +240,15 @@ class PaginatedCleanupPersonMismatchResponse(BaseModel):
 
 class PaginatedCleanupOrganizationMismatchResponse(BaseModel):
     canonicals: list[CleanupOrganizationMismatchIssueOut]
+    total: int
+    page: int
+    per_page: int
+    has_next: bool
+    has_prev: bool
+
+
+class PaginatedCleanupQuestionableOrganizationsResponse(BaseModel):
+    canonicals: list[CleanupQuestionableOrganizationIssueOut]
     total: int
     page: int
     per_page: int
@@ -458,6 +478,59 @@ def _organization_mismatch_responses_with_counts(
     return out
 
 
+def _questionable_organization_responses_with_counts(
+    session: Session,
+    *,
+    project_ids: list[int],
+    rows_by_id: dict[str, StylebookOrganizationCanonical],
+    cached_rows: list[Any],
+) -> list[CleanupQuestionableOrganizationIssueOut]:
+    canonical_ids = [
+        str((row.canonical_ids_json or [None])[0])
+        for row in cached_rows
+        if row.canonical_ids_json
+    ]
+    base_rows = _organization_responses_with_counts(
+        session,
+        project_ids=project_ids,
+        rows_by_id=rows_by_id,
+        canonical_ids=canonical_ids,
+    )
+    by_id = {row.id: row for row in base_rows}
+    out: list[CleanupQuestionableOrganizationIssueOut] = []
+    for cached in cached_rows:
+        canonical_ids_json = cached.canonical_ids_json or []
+        if not canonical_ids_json:
+            continue
+        canonical_id = str(canonical_ids_json[0])
+        base = by_id.get(canonical_id)
+        if base is None:
+            continue
+        payload = cached.payload_json if isinstance(cached.payload_json, dict) else {}
+        out.append(
+            CleanupQuestionableOrganizationIssueOut(
+                **base.model_dump(),
+                prefilter_score=int(payload.get("prefilter_score", 0)),
+                prefilter_signals=[
+                    str(signal)
+                    for signal in (payload.get("prefilter_signals") or [])
+                    if str(signal).strip()
+                ],
+                llm_decision=str(payload.get("llm_decision") or "flag"),
+                category=str(payload.get("category") or "other_non_organization"),
+                confidence=str(payload.get("confidence") or "medium"),
+                explanation=str(payload.get("explanation") or ""),
+                suggested_entity_type=str(payload.get("suggested_entity_type") or "unknown"),
+                sample_mentions=[
+                    str(sample)
+                    for sample in (payload.get("sample_mentions") or [])
+                    if str(sample).strip()
+                ],
+            )
+        )
+    return out
+
+
 def _location_mismatch_responses_with_counts(
     session: Session,
     *,
@@ -608,6 +681,21 @@ def _empty_organization_mismatch_response(
 ) -> PaginatedCleanupOrganizationMismatchResponse:
     page = offset // limit + 1 if limit else 1
     return PaginatedCleanupOrganizationMismatchResponse(
+        canonicals=[],
+        total=0,
+        page=page,
+        per_page=limit,
+        has_next=False,
+        has_prev=offset > 0,
+    )
+
+
+def _empty_questionable_organization_response(
+    limit: int,
+    offset: int,
+) -> PaginatedCleanupQuestionableOrganizationsResponse:
+    page = offset // limit + 1 if limit else 1
+    return PaginatedCleanupQuestionableOrganizationsResponse(
         canonicals=[],
         total=0,
         page=page,
@@ -1484,6 +1572,102 @@ def list_mismatched_organizations_check(
     )
     page = offset // limit + 1 if limit else 1
     return PaginatedCleanupOrganizationMismatchResponse(
+        canonicals=canonicals,
+        total=total,
+        page=page,
+        per_page=limit,
+        has_next=offset + len(canonicals) < total,
+        has_prev=offset > 0,
+    )
+
+
+@router.get(
+    "/{stylebook_slug}/cleanup/checks/questionable-organization-canonicals",
+    response_model=PaginatedCleanupQuestionableOrganizationsResponse,
+)
+def list_questionable_organization_canonicals_check(
+    stylebook_slug: str,
+    project: str | None = Query(
+        None,
+        description="Optional project slug to scope linked/mention counts.",
+    ),
+    similarity_threshold: float = Query(
+        DEFAULT_FULL_SIMILARITY_THRESHOLD,
+        ge=0.5,
+        le=0.95,
+    ),
+    head_similarity_threshold: float = Query(
+        DEFAULT_HEAD_SIMILARITY_THRESHOLD,
+        ge=0.5,
+        le=0.95,
+    ),
+    limit: int = Query(25, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    q: str | None = Query(
+        None,
+        description="Optional label filter for questionable organization canonicals.",
+    ),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> PaginatedCleanupQuestionableOrganizationsResponse:
+    sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    project_ids = optional_project_filter_to_ids(
+        session,
+        auth=auth,
+        project_slug=project,
+        organization_id=int(sb.organization_id),
+    )
+    stylebook_id = int(sb.id)
+    organization_id = int(sb.organization_id)
+    check_id = "questionable-organization-canonicals"
+    scope = _cleanup_run_scope(
+        stylebook_id=stylebook_id,
+        organization_id=organization_id,
+        check_id=check_id,
+        project_ids=project_ids,
+        project_slug=project,
+        full_threshold=similarity_threshold,
+        head_threshold=head_similarity_threshold,
+    )
+    run = _latest_succeeded_run_for_scope(
+        session,
+        stylebook_id=stylebook_id,
+        check_id=check_id,
+        scope=scope,
+    )
+    if run is None:
+        return _empty_questionable_organization_response(limit, offset)
+    cached_rows, total = query_cached_check_results(
+        session,
+        run_id=str(run.id),
+        stylebook_id=stylebook_id,
+        check_id=check_id,
+        limit=limit,
+        offset=offset,
+        query=q,
+    )
+    cids = sorted(
+        {
+            str(cid)
+            for row in cached_rows
+            for cid in (row.canonical_ids_json or [])
+        }
+    )
+    rows_by_id = {
+        cid: row
+        for cid in cids
+        if (row := session.get(StylebookOrganizationCanonical, cid)) is not None
+    }
+    canonicals = _questionable_organization_responses_with_counts(
+        session,
+        project_ids=project_ids,
+        rows_by_id=rows_by_id,
+        cached_rows=cached_rows,
+    )
+    page = offset // limit + 1 if limit else 1
+    return PaginatedCleanupQuestionableOrganizationsResponse(
         canonicals=canonicals,
         total=total,
         page=page,

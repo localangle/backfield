@@ -73,6 +73,14 @@ export const CLEANUP_CHECK_CONFIGS: CleanupCheckConfig[] = [
     kind: "list",
     entityType: "organization",
   },
+  {
+    id: "questionable-organization-canonicals",
+    title: "Questionable organization canonicals",
+    description:
+      "Organization records that may actually be people, places, laws, programs, events, awards, or generic groups.",
+    kind: "list",
+    entityType: "organization",
+  },
 ]
 
 export function cleanupCheckConfigById(checkId: string): CleanupCheckConfig | undefined {

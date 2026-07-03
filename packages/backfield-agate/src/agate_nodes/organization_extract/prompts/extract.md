@@ -2,6 +2,22 @@
 
 Extract **editorially relevant organizations** from the text at the end of this prompt.
 
+## Organization decision gate
+
+Before adding any row, ask: **Is this a durable institution or organized body of people?**
+
+Extract only when the answer is yes. If the name is primarily a **person, place, law, program, grant, event, award, historical event, work/title, topic, or generic role group**, **omit it** from `organizations`.
+
+Never choose `government` or `other` just because the name acts grammatically in a sentence. A law, park, person, or event is still not an organization.
+
+Paired examples:
+- omit `Grant Park`; keep `Grant Park Advisory Council`
+- omit `Kenwood`; keep `Kenwood Academy High School`
+- omit `Affordable Care Act`; keep `Centers for Medicare and Medicaid Services` when that agency is named and acting
+- omit `Grammy Awards`; keep `Recording Academy` when that body is named and acting
+- omit `Donald Trump`; keep `Trump administration` only when the administration is the accountable actor
+- omit `Area 5 detectives`; keep `Chicago Police Department` or `Chicago Police Department Area 5 Detectives` when the institution is named
+
 ## When to extract
 
 Extract a named organization when the article treats it as an **accountable group of people**: employing, announcing, operating, suing, being investigated, regulating, organizing, competing, publishing, deciding, funding, endorsing, or similar.
@@ -13,10 +29,11 @@ Require a **specific proper-noun institution** (agency, company, school, team, n
 - Individual people
 - **Named human individuals** — coaches, players, athletes, elected officials, artists, musicians, executives, sources, witnesses, and other people quoted or acting in the story are **people**, not organizations (e.g. `"Bears coach Ben Johnson said…"` → person **Ben Johnson**; **Alice Cooper** on a roster with **Marc Ribot** and **Steve Earle** → people). Extract their **employer, team, or agency** only when **that institution** is the accountable actor in the story—not the person's personal name.
 - **Descriptive or relational person phrases** — omit entirely when the text describes a **person's relationship, wealth, or role** rather than naming an institution (e.g. `"billionaire father of Bill Conway"`, `"his brother"`, `"the victim's mother"`). These are not organizations.
-- Generic staff or role groups without a named institution ("prosecutors," "coaches," "detectives")
+- Generic staff or role groups without a named institution ("prosecutors," "coaches," "detectives," `Area 5 detectives`, `Chicago Bulls coach Billy Donovan`)
 - Unnamed groups ("residents," "witnesses," "officials")
-- Geography-only places (street, city, building, **landmark, monument, region, or area**) unless the story treats them as institutions—e.g. **Arc de Triomphe**, **the Chicago area**, **downtown**, **the lakefront** belong in location extraction, not organizations
-- **Laws, statutes, acts, bills, regulations, programs, and policies** named as rules or coverage topics—not organizations (`Affordable Care Act`, `No Child Left Behind`, `the tax bill`). Extract an **administering agency or department** only when that **institution** is named and acts (`Centers for Medicare and Medicaid Services`, `U.S. Department of Education`)—not the law's title alone
+- Geography-only places (street, city, neighborhood, building, **landmark, monument, region, or area**) unless the story names an **institutional body** that governs or operates there—e.g. omit **Grant Park**, **Kenwood**, **Arc de Triomphe**, **the Chicago area**, **downtown**, **the lakefront**; keep **Evanston City Council**, **Grant Park Advisory Council**
+- **Laws, statutes, acts, bills, regulations, programs, grants, and policies** named as rules or coverage topics—not organizations (`Affordable Care Act`, `Administrative Procedure Act`, `Full Service Community Schools grant`, `No Child Left Behind`, `the tax bill`). Extract an **administering agency or department** only when that **institution** is named and acts (`Centers for Medicare and Medicaid Services`, `U.S. Department of Education`)—not the law's title alone
+- **Events, awards, competitions, concerts, festivals, parades, games, and historical events** (`Grammy Awards`, `Super Bowl`, `World War I`, `Bud Billiken Day parade`) unless the story names the **organizing institution** (`Recording Academy`, `National Football League`) as the accountable actor
 - **Concepts, technologies, industries, and abstract topics** without a named institution (`artificial intelligence`, `climate change`, `inflation`, `social media`)—omit; they are not organizations even when capitalized or central to the story
 - Article bylines or publication credits only
 - Metonyms without a proper name ("City Hall said" with no named government body)
@@ -28,19 +45,22 @@ The same name can be an organization, a brand, a work/title, a venue, or an even
 
 **Clear organization** — extract normally when people, management, employees, ownership, policy, statements, lawsuits, layoffs, operations, hiring, closures, or organized activity are in view.
 
-**Omit** — when the name is only incidental product, platform, service, venue, title, event context, **geography, law/policy, or abstract topic** and does not matter to the story—or when there is **no accountable group of people** behind the name.
+**Omit** — when the name is only incidental product, platform, service, venue, title, event context, **geography, law/policy, grant/program, or abstract topic** and does not matter to the story—or when there is **no accountable group of people** behind the name. For awards, games, concerts, festivals, parades, and historical events, **omit the event name** unless the organizing institution is clearly the actor.
 
 Examples of **omit** (not organizations):
 - `"the Affordable Care Act"` / `"ACA health insurance"` → law/program topic; omit (unless a **named agency** is the actor)
-- `"around the Arc de Triomphe in Paris"` → landmark/geography; omit
+- `"Full Service Community Schools grant"` → grant/program topic; omit
+- `"around the Arc de Triomphe in Paris"` / `"in Grant Park"` → landmark/geography; omit
 - `"Artificial intelligence"` as a story topic → concept; omit
 - `"the Chicago area"` → region; omit
+- `"Donald Trump"` / `"Bernie Sanders"` → people; omit
+- `"Grammy Awards"` / `"Super Bowl"` / `"World War I"` → event/history; omit unless the organizing body is named
 
 **Borderline but editorially relevant** — include the row, use the best normal `type`, and set `organization_boundary` to one of:
 - `borderline_brand_platform` — brand/platform/service use may not be organizational ("sent a message on Twitter")
 - `borderline_work_title` — column, show, book, film, franchise, publication title, etc. ("Dear Abby answered a reader")
 - `borderline_place_business` — business name may be only a location ("the event happened at Baskin Robbins")
-- `borderline_event_competition` — named event/competition may not be an organizing body ("Lollapalooza drew 100,000 people")
+- `borderline_event_competition` — use only when an organizing body might exist but context is ambiguous. If the mention is just the event/award/game name (`Grammy Awards`, `Super Bowl`, festival title), **omit** instead of using this boundary.
 
 Do **not** use `other` just because a row is borderline. Omit `organization_boundary` for clear organizations.
 

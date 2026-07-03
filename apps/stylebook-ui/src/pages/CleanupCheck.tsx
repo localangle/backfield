@@ -46,10 +46,12 @@ import {
   type CleanupCheckRunStatus,
   type CleanupLocationIssue,
   type CleanupMismatchIssue,
+  type CleanupQuestionableOrganizationIssue,
   type PaginatedDuplicateClustersResponse,
   type PaginatedCleanupListResults,
   type PaginatedCleanupLocationIssuesResponse,
   type PaginatedCleanupMismatchIssuesResponse,
+  type PaginatedCleanupQuestionableOrganizationsResponse,
 } from "@/lib/api"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
@@ -679,6 +681,16 @@ export default function CleanupCheck() {
           canEdit={canEdit}
           onDismiss={canEdit ? handleDismissListIssue : undefined}
         />
+      ) : config.id === "questionable-organization-canonicals" ? (
+        <QuestionableOrganizationsList
+          canonicals={
+            (listResults as PaginatedCleanupQuestionableOrganizationsResponse | null)?.canonicals ??
+            []
+          }
+          detailHref={detailHref}
+          canEdit={canEdit}
+          onDismiss={canEdit ? handleDismissListIssue : undefined}
+        />
       ) : (
         <MismatchedLinksList
           canonicals={(listResults as PaginatedCleanupMismatchIssuesResponse | null)?.canonicals ?? []}
@@ -827,6 +839,157 @@ function MismatchedLinksList({
                 </td>
                 <td className="px-3 py-3 text-muted-foreground min-w-0">
                   <span className="block truncate">{canonical.status}</span>
+                </td>
+                <td className="px-3 py-3 text-right tabular-nums">
+                  {canonical.linked_substrate_count ?? 0}
+                </td>
+                <td className="px-3 py-3 text-right tabular-nums">
+                  {canonical.mention_count ?? 0}
+                </td>
+                {canEdit && onDismiss ? (
+                  <td className="px-2 py-3 text-right whitespace-nowrap">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void onDismiss(canonical.id)}
+                    >
+                      Mark reviewed
+                    </Button>
+                  </td>
+                ) : null}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function questionableCategoryLabel(category: string): string {
+  switch (category) {
+    case "person_like":
+      return "Likely a person"
+    case "place_like":
+      return "Likely a place"
+    case "law_policy_program":
+      return "Likely a law or program"
+    case "event_award_history":
+      return "Likely an event or award"
+    case "generic_group":
+      return "Likely a generic group"
+    case "work_or_topic":
+      return "Likely a work or topic"
+    default:
+      return "Likely not an organization"
+  }
+}
+
+function questionableMentionPreview(mentions: string[]): string {
+  const shown = mentions.filter(Boolean)
+  if (shown.length === 0) {
+    return "No sample mentions"
+  }
+  return shown.join("; ")
+}
+
+function QuestionableOrganizationsList({
+  canonicals,
+  detailHref,
+  canEdit = false,
+  onDismiss,
+}: {
+  canonicals: CleanupQuestionableOrganizationIssue[]
+  detailHref: (canonicalId: string) => string
+  canEdit?: boolean
+  onDismiss?: (canonicalId: string) => void | Promise<void>
+}) {
+  if (canonicals.length === 0) {
+    return (
+      <p className="text-muted-foreground py-8 text-center">
+        No questionable organization canonicals in this stylebook.
+      </p>
+    )
+  }
+
+  return (
+    <div className="rounded-lg border overflow-hidden">
+      <table className="w-full table-fixed text-sm">
+        <colgroup>
+          {canEdit && onDismiss ? (
+            <>
+              <col style={{ width: "18%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "24%" }} />
+              <col style={{ width: "18%" }} />
+              <col style={{ width: "7%" }} />
+              <col style={{ width: "7%" }} />
+              <col style={{ width: "12%" }} />
+            </>
+          ) : (
+            <>
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "16%" }} />
+              <col style={{ width: "28%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "8%" }} />
+              <col style={{ width: "8%" }} />
+            </>
+          )}
+        </colgroup>
+        <thead className="bg-muted/50 text-left">
+          <tr>
+            <th className="px-3 py-3 font-medium min-w-0">Name</th>
+            <th className="px-3 py-3 font-medium min-w-0">Issue</th>
+            <th className="px-3 py-3 font-medium min-w-0">Why flagged</th>
+            <th className="px-3 py-3 font-medium min-w-0">Sample mentions</th>
+            <th className="px-3 py-3 font-medium text-right">Linked</th>
+            <th className="px-3 py-3 font-medium text-right">Mentions</th>
+            {canEdit && onDismiss ? (
+              <th className="px-3 py-3 font-medium text-right">Action</th>
+            ) : null}
+          </tr>
+        </thead>
+        <tbody>
+          {canonicals.map((canonical) => {
+            const mentionPreview = questionableMentionPreview(canonical.sample_mentions ?? [])
+            const issueLabel = questionableCategoryLabel(canonical.category)
+            return (
+              <tr key={canonical.id} className="border-t hover:bg-muted/30">
+                <td className="px-3 py-3 min-w-0">
+                  <Link
+                    to={detailHref(canonical.id)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-primary hover:underline block truncate"
+                    title={canonical.label}
+                  >
+                    {canonical.label}
+                  </Link>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {canonical.organization_type
+                      ? placeExtractTypeLabel(canonical.organization_type)
+                      : "—"}
+                  </div>
+                </td>
+                <td className="px-3 py-3 text-muted-foreground min-w-0">
+                  <span className="block truncate" title={issueLabel}>
+                    {issueLabel}
+                  </span>
+                  <div className="text-xs truncate">
+                    {canonical.confidence} confidence
+                  </div>
+                </td>
+                <td className="px-3 py-3 text-muted-foreground min-w-0">
+                  <span className="block truncate" title={canonical.explanation}>
+                    {canonical.explanation}
+                  </span>
+                </td>
+                <td className="px-3 py-3 text-muted-foreground min-w-0">
+                  <span className="block truncate" title={mentionPreview}>
+                    {mentionPreview}
+                  </span>
                 </td>
                 <td className="px-3 py-3 text-right tabular-nums">
                   {canonical.linked_substrate_count ?? 0}
