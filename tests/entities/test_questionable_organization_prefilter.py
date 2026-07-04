@@ -21,6 +21,17 @@ _FLAG_LABELS = (
     ("World War I", "other", False, False),
     ("Area 5 detectives", "law_enforcement", False, False),
     ("Chicago Bulls coach Billy Donovan", "sports_team", False, False),
+    ("A Mighty Wind", "culture_arts", False, False),
+    ("Angelo, My Love", "culture_arts", False, False),
+    ("American Community Survey", "other", False, False),
+    ("Anne Frank House", "other", False, False),
+    ("Arc de Triomphe", "other", False, False),
+    ("American civil society", "other", False, False),
+    ("Arizona families", "other", False, False),
+    ("Arizona grand jury", "government", False, False),
+    ("Antonio Martínez Ocasio", "other", False, False),
+    ("Ayo Dosunmu", "other", False, False),
+    ("Anti-Weaponization Fund", "other", False, False),
 )
 
 _KEEP_LABELS = (
@@ -83,3 +94,23 @@ def test_kenwood_passes_with_location_collision() -> None:
         matches_location_label=True,
     )
     assert passes_questionable_organization_prefilter(result)
+
+
+def test_institutional_company_labels_skip_person_name_like_signal() -> None:
+    result = score_questionable_organization_label(
+        label="Gibson Guitars",
+        organization_type="company",
+        matches_person_label=True,
+    )
+    assert "cross_catalog_person" in result.signals
+    assert "person_name_like" not in result.signals
+
+
+def test_institutional_school_labels_skip_person_name_like_signal() -> None:
+    result = score_questionable_organization_label(
+        label="Glenbard East",
+        organization_type="school",
+        matches_person_label=True,
+    )
+    assert "cross_catalog_person" in result.signals
+    assert "person_name_like" not in result.signals

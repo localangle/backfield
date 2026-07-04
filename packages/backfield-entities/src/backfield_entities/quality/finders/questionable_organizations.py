@@ -124,6 +124,7 @@ def build_questionable_organization_check_items(
     model_config_id: str | None = None,
     batch_size: int = DEFAULT_QUESTIONABLE_ORG_BATCH_SIZE,
     threshold: int = PREFILTER_SCORE_THRESHOLD,
+    max_workers: int = 1,
 ) -> list[CleanupCheckItem]:
     stylebook_id = scope.stylebook_id
     project_ids = (
@@ -142,6 +143,25 @@ def build_questionable_organization_check_items(
         len(prefiltered),
         threshold,
     )
+    if not prefiltered:
+        return []
+
+    dismissed = load_dismissed_keys(
+        session,
+        stylebook_id=stylebook_id,
+        check_id=_CHECK_ID,
+    )
+    if dismissed:
+        before = len(prefiltered)
+        prefiltered = [
+            (row, score, signals)
+            for row, score, signals in prefiltered
+            if row.id is not None and str(row.id) not in dismissed
+        ]
+        logger.info(
+            "Questionable org dismissed filter: skipped %d previously kept canonicals",
+            before - len(prefiltered),
+        )
     if not prefiltered:
         return []
 
@@ -177,31 +197,31 @@ def build_questionable_organization_check_items(
         for row, score, signals in prefiltered
         if row.id is not None
     ]
-    logger.info(
-        "Sending %d candidates to LLM review (model=%s, batch_size=%d)",
-        len(llm_candidates),
-        model,
-        batch_size,
-    )
-    reviews = review_questionable_organization_batches(
-        llm_candidates,
-        call_llm=call_llm,
-        model=model,
-        model_config_id=model_config_id,
-        batch_size=batch_size,
-    )
-    dismissed = load_dismissed_keys(
-        session,
-        stylebook_id=stylebook_id,
-        check_id=_CHECK_ID,
-    )
+    reviews: dict[str, QuestionableOrganizationReviewResult] = {}
+    if llm_candidates:
+        logger.info(
+            "Sending %d candidates to LLM review (model=%s, batch_size=%d, max_workers=%d)",
+            len(llm_candidates),
+            model,
+            batch_size,
+            max_workers,
+        )
+        reviews = review_questionable_organization_batches(
+            llm_candidates,
+            call_llm=call_llm,
+            model=model,
+            model_config_id=model_config_id,
+            batch_size=batch_size,
+            max_workers=max_workers,
+        )
+
     return _items_from_reviews(
         prefiltered=prefiltered,
         reviews=reviews,
         mention_counts=mention_counts,
         linked_counts=linked_counts,
         sample_mentions=sample_mentions,
-        dismissed=dismissed,
+        dismissed=set(),
     )
 
 

@@ -75,7 +75,7 @@ _ALGORITHM_VERSIONS: dict[str, str] = {
     "mismatched-locations": "mismatched-locations:v1",
     "mismatched-people": "mismatched-people:v1",
     "mismatched-organizations": "mismatched-organizations:v1",
-    "questionable-organization-canonicals": "questionable-organization-canonicals:v1",
+    "questionable-organization-canonicals": "questionable-organization-canonicals:v4",
 }
 
 
@@ -265,6 +265,7 @@ def build_cleanup_check_items(
     call_llm: Callable[..., str] | None = None,
     questionable_org_model: str | None = None,
     questionable_org_model_config_id: str | None = None,
+    questionable_org_max_workers: int = 1,
 ) -> list[CleanupCheckItem]:
     check_id = scope.check_id
     stylebook_id = scope.stylebook_id
@@ -363,6 +364,7 @@ def build_cleanup_check_items(
             call_llm=call_llm,
             model=questionable_org_model or DEFAULT_QUESTIONABLE_ORG_LLM_MODEL,
             model_config_id=questionable_org_model_config_id,
+            max_workers=questionable_org_max_workers,
         )
 
     raise ValueError(f"Unknown cleanup check id: {check_id}")

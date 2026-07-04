@@ -130,6 +130,7 @@ export default function CleanupCheck() {
   const [questionableBulkAction, setQuestionableBulkAction] = useState<
     "keep-all" | "delete-all" | null
   >(null)
+  const questionableBulkActionRef = useRef<"keep-all" | "delete-all" | null>(null)
   const isClusterCheck = config?.kind === "cluster"
 
   const {
@@ -409,20 +410,25 @@ export default function CleanupCheck() {
   )
 
   const loadAllQuestionableOrganizations = useCallback(async () => {
-    const current = questionableOrgResults?.canonicals ?? []
-    const total = questionableOrgResults?.total ?? current.length
-    if (!stylebookSlug || current.length >= total) {
-      return current
+    if (!stylebookSlug) return []
+    const rows: CleanupQuestionableOrganizationIssue[] = []
+    let pageNum = 1
+    let hasNext = true
+    while (hasNext) {
+      const response = await getCleanupCheckResults({
+        stylebookSlug,
+        checkId: "questionable-organization-canonicals",
+        project: projectFilterSlug || undefined,
+        page: pageNum,
+        perPage: 200,
+      })
+      const paginated = response as PaginatedCleanupQuestionableOrganizationsResponse
+      rows.push(...paginated.canonicals)
+      hasNext = paginated.has_next
+      pageNum += 1
     }
-    const response = await getCleanupCheckResults({
-      stylebookSlug,
-      checkId: "questionable-organization-canonicals",
-      project: projectFilterSlug || undefined,
-      page: 1,
-      perPage: total,
-    })
-    return (response as PaginatedCleanupQuestionableOrganizationsResponse).canonicals
-  }, [stylebookSlug, projectFilterSlug, questionableOrgResults])
+    return rows
+  }, [stylebookSlug, projectFilterSlug])
 
   const handleKeepQuestionableOrganization = useCallback(
     async (canonicalId: string) => {
@@ -450,10 +456,12 @@ export default function CleanupCheck() {
   )
 
   const handleKeepAllQuestionableOrganizations = useCallback(async () => {
-    if (!stylebookSlug || !config || questionableBulkAction !== null) return
+    if (!stylebookSlug || !config || questionableBulkActionRef.current !== null) return
+    questionableBulkActionRef.current = "keep-all"
     setQuestionableBulkAction("keep-all")
     try {
       const rows = await loadAllQuestionableOrganizations()
+      if (rows.length === 0) return
       for (const row of rows) {
         await dismissCleanupIssue({
           stylebookSlug,
@@ -474,19 +482,14 @@ export default function CleanupCheck() {
     } catch (error) {
       showError(error instanceof Error ? error.message : "Failed to keep organizations")
     } finally {
+      questionableBulkActionRef.current = null
       setQuestionableBulkAction(null)
     }
-  }, [
-    stylebookSlug,
-    config,
-    questionableBulkAction,
-    loadAllQuestionableOrganizations,
-    showError,
-    refreshHubCheckCount,
-  ])
+  }, [stylebookSlug, config, loadAllQuestionableOrganizations, showError, refreshHubCheckCount])
 
   const handleDeleteAllQuestionableOrganizations = useCallback(async () => {
-    if (!stylebookSlug || questionableBulkAction !== null) return
+    if (!stylebookSlug || questionableBulkActionRef.current !== null) return
+    questionableBulkActionRef.current = "delete-all"
     setQuestionableBulkAction("delete-all")
     try {
       const rows = await loadAllQuestionableOrganizations()
@@ -528,16 +531,13 @@ export default function CleanupCheck() {
           `Deleted ${deleted} organization${deleted === 1 ? "" : "s"}. ${failures.length} could not be deleted.`,
         )
       }
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Failed to delete organizations")
     } finally {
+      questionableBulkActionRef.current = null
       setQuestionableBulkAction(null)
     }
-  }, [
-    stylebookSlug,
-    questionableBulkAction,
-    loadAllQuestionableOrganizations,
-    showError,
-    refreshHubCheckCount,
-  ])
+  }, [stylebookSlug, loadAllQuestionableOrganizations, showError, refreshHubCheckCount])
 
   const applyAcceptedMergeProposal = useCallback(
     (proposal: CleanupAiProposal) => {
@@ -1023,9 +1023,9 @@ function questionableCategoryLabel(category: string): string {
     case "event_award_history":
       return "Likely an event or award"
     case "generic_group":
-      return "Likely a generic group"
+      return "Likely a broad group or descriptor"
     case "work_or_topic":
-      return "Likely a work or topic"
+      return "Likely a film, publication, or topic"
     default:
       return "Likely not an organization"
   }

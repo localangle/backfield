@@ -67,6 +67,14 @@ def questionable_org_engine(tmp_path) -> Engine:
                 organization_type="government",
             )
         )
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=sb_id,
+                slug="american-civil-society",
+                label="American civil society",
+                organization_type="other",
+            )
+        )
         session.commit()
     return engine
 
@@ -82,10 +90,11 @@ def test_prefilter_questionable_organization_canonicals_filters_active_rows(
         )
     labels = {str(row.label) for row, _score, _signals in prefiltered}
     assert "Donald Trump" in labels
+    assert "American civil society" in labels
     assert "Chicago Department of Law" not in labels
 
 
-def test_build_questionable_organization_check_items_uses_mock_llm(
+def test_build_questionable_organization_check_items_uses_llm_for_cross_catalog_person(
     questionable_org_engine: Engine,
 ) -> None:
     with Session(questionable_org_engine) as session:
@@ -100,6 +109,7 @@ def test_build_questionable_organization_check_items_uses_mock_llm(
 
         def mock_call_llm(prompt: str, **_kwargs: object) -> str:
             assert trump_id in prompt
+            assert "catalog_collision=person_canonical_same_label" in prompt
             return json.dumps(
                 {
                     "results": [
@@ -129,11 +139,64 @@ def test_build_questionable_organization_check_items_uses_mock_llm(
             scope=scope,
             call_llm=mock_call_llm,
         )
-        assert len(items) == 1
-        assert items[0].label == "Donald Trump"
-        assert items[0].payload["llm_decision"] == "flag"
-        assert items[0].payload["category"] == "person_like"
-        assert "cross_catalog_person" in items[0].payload["prefilter_signals"]
+        trump_items = [item for item in items if item.item_key == trump_id]
+        assert len(trump_items) == 1
+        assert trump_items[0].label == "Donald Trump"
+        assert trump_items[0].payload["llm_decision"] == "flag"
+        assert trump_items[0].payload["category"] == "person_like"
+        assert "cross_catalog_person" in trump_items[0].payload["prefilter_signals"]
+
+
+def test_build_questionable_organization_check_items_uses_mock_llm_for_non_auto_rows(
+    questionable_org_engine: Engine,
+) -> None:
+    with Session(questionable_org_engine) as session:
+        sb = session.exec(select(Stylebook)).one()
+        org = session.exec(select(BackfieldOrganization)).one()
+        descriptor = session.exec(
+            select(StylebookOrganizationCanonical).where(
+                StylebookOrganizationCanonical.slug == "american-civil-society"
+            )
+        ).one()
+        descriptor_id = str(descriptor.id)
+        llm_called = {"value": False}
+
+        def mock_call_llm(prompt: str, **_kwargs: object) -> str:
+            llm_called["value"] = True
+            assert descriptor_id in prompt
+            return json.dumps(
+                {
+                    "results": [
+                        {
+                            "canonical_id": descriptor_id,
+                            "decision": "flag",
+                            "category": "generic_group",
+                            "confidence": "high",
+                            "explanation": "Broad descriptor, not a proper-noun institution.",
+                            "suggested_entity_type": "none",
+                        }
+                    ]
+                }
+            )
+
+        scope = CleanupRunScope(
+            stylebook_id=int(sb.id),
+            organization_id=int(org.id),
+            check_id="questionable-organization-canonicals",
+            full_threshold=0.84,
+            head_threshold=0.75,
+            project_ids=(),
+            project_slug=None,
+        )
+        items = build_questionable_organization_check_items(
+            session,
+            scope=scope,
+            call_llm=mock_call_llm,
+        )
+        assert llm_called["value"] is True
+        descriptor_items = [item for item in items if item.item_key == descriptor_id]
+        assert len(descriptor_items) == 1
+        assert descriptor_items[0].payload["category"] == "generic_group"
 
 
 def test_build_questionable_organization_check_items_hides_dismissed_rows(
@@ -156,21 +219,9 @@ def test_build_questionable_organization_check_items_hides_dismissed_rows(
         )
         session.commit()
 
-        def mock_call_llm(_prompt: str, **_kwargs: object) -> str:
-            return json.dumps(
-                {
-                    "results": [
-                        {
-                            "canonical_id": trump_id,
-                            "decision": "flag",
-                            "category": "person_like",
-                            "confidence": "high",
-                            "explanation": "Person label.",
-                            "suggested_entity_type": "person",
-                        }
-                    ]
-                }
-            )
+        def mock_call_llm(prompt: str, **_kwargs: object) -> str:
+            assert trump_id not in prompt
+            return json.dumps({"results": []})
 
         scope = CleanupRunScope(
             stylebook_id=int(sb.id),
@@ -186,4 +237,4 @@ def test_build_questionable_organization_check_items_hides_dismissed_rows(
             scope=scope,
             call_llm=mock_call_llm,
         )
-        assert items == []
+        assert all(item.item_key != trump_id for item in items)

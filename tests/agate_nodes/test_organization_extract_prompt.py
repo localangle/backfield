@@ -21,5 +21,11 @@ def test_organization_extract_prompt_includes_decision_gate_and_paired_examples(
     assert "## Organization decision gate" in prompt
     assert "omit `Grant Park`; keep `Grant Park Advisory Council`" in prompt
     assert "omit `Affordable Care Act`" in prompt
+    assert "omit `Anti-Weaponization Fund`" in prompt
+    assert "omit `A Mighty Wind`" in prompt
+    assert "omit `American Community Survey`" in prompt
+    assert "omit `Anne Frank House`" in prompt
+    assert "omit `American civil society`" in prompt
+    assert "Antonio Martínez Ocasio" in prompt
     assert "omit `Area 5 detectives`" in prompt
     assert "Never choose `government` or `other`" in prompt

@@ -1697,6 +1697,9 @@ def execute_cleanup_check_run(run_id: str) -> None:
                 project_slug=scope_payload.get("project_slug"),
             )
             if scope.check_id == "questionable-organization-canonicals":
+                from worker.substrate.canonical.parallel_llm import (
+                    canonical_adjudication_max_concurrent,
+                )
                 from worker.substrate.cleanup.questionable_organizations_llm import (
                     resolve_questionable_organization_llm_context,
                 )
@@ -1712,6 +1715,7 @@ def execute_cleanup_check_run(run_id: str) -> None:
                         call_llm=_call_llm_with_env_api_keys,
                         questionable_org_model=llm_context.model,
                         questionable_org_model_config_id=llm_context.model_config_id,
+                        questionable_org_max_workers=canonical_adjudication_max_concurrent(),
                     )
             else:
                 items = build_cleanup_check_items(session, scope=scope, call_llm=call_llm)

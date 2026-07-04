@@ -11,7 +11,8 @@ _HARD_LAW_RE = re.compile(
     r"\b(Act|Acts|Ordinance|Regulation|Executive Order|Tax Credit|Voucher)\b"
 )
 _LOWER_PROGRAM_RE = re.compile(
-    r"\b(bill|grant|program|policy|rule|fund|plan|initiative)\b"
+    r"\b(bill|grant|program|policy|rule|fund|plan|initiative|survey|census)\b",
+    re.IGNORECASE,
 )
 _EVENT_RE = re.compile(
     r"\b(Awards?|Grammys?|Super Bowl|World War|Olympics?|concert|Concert|"
@@ -20,7 +21,54 @@ _EVENT_RE = re.compile(
 )
 _GENERIC_GROUP_RE = re.compile(
     r"\b(officials|residents|witnesses|detectives|prosecutors|coaches|"
-    r"students|voters|fans|parents|workers|employees|children|Detectives)\b"
+    r"students|voters|fans|parents|workers|employees|children|Detectives|"
+    r"civil society|grand jury|families)\b",
+    re.IGNORECASE,
+)
+_BROAD_DESCRIPTOR_RE = re.compile(
+    r"\b(American|Arizona|National|Local|Regional|State|City|County)\s+"
+    r"(civil society|families|grand jury|residents|voters|workers|community)\b",
+    re.IGNORECASE,
+)
+_PUBLICATION_SURVEY_RE = re.compile(
+    r"\b(Community Survey|Statistical Abstract|Yearbook|Almanac)\b",
+    re.IGNORECASE,
+)
+_LANDMARK_SITE_RE = re.compile(
+    r"\b(Arc de Triomphe|Frank House|Triomphe|Monument|Memorial)\b",
+    re.IGNORECASE,
+)
+_PERSON_NAME_LIKE_RE = re.compile(
+    r"^[A-Z][\w'.-]+(?: [A-Z][\w'.áéíóúñ-]+){1,3}$"
+)
+_INSTITUTION_LABEL_RE = re.compile(
+    r"\b(Guitars?|Steel|Elementary|School|Schools|University|College|Capital|"
+    r"Industries|Corp|Corporation|Inc|LLC|Fund|Foundation|Academy|Institute|"
+    r"Hospital|Church|Bank|Women|Brothers|Sisters|Group|Partners|Assets?|"
+    r"Management|Investment|District|Properties|Motors|Energy|Media)\b",
+    re.IGNORECASE,
+)
+_INSTITUTIONAL_ORG_TYPES: frozenset[str] = frozenset(
+    {
+        "company",
+        "local_business",
+        "financial_institution",
+        "real_estate",
+        "nonprofit",
+        "community_group",
+        "school",
+        "school_district",
+        "university",
+        "hospital",
+        "public_health",
+        "public_services",
+        "utilities",
+        "religious_org",
+        "culture_arts",
+        "sports_team",
+        "sports_league",
+        "media",
+    }
 )
 _PERSON_ROLE_RE = re.compile(
     r"\b(President|president|Senator|senator|Sen\.?|Governor|governor|Mayor|"
@@ -71,7 +119,19 @@ def score_questionable_organization_label(
 
     law = bool(_HARD_LAW_RE.search(clean_label) or _LOWER_PROGRAM_RE.search(clean_label))
     event = bool(_EVENT_RE.search(clean_label))
-    generic = bool(_GENERIC_GROUP_RE.search(clean_label))
+    generic = bool(
+        _GENERIC_GROUP_RE.search(clean_label) or _BROAD_DESCRIPTOR_RE.search(clean_label)
+    )
+    publication = bool(_PUBLICATION_SURVEY_RE.search(clean_label))
+    landmark = bool(_LANDMARK_SITE_RE.search(clean_label))
+    person_name_like = bool(
+        _PERSON_NAME_LIKE_RE.match(clean_label)
+        and not has_anchor
+        and not law
+        and not publication
+        and typ not in _INSTITUTIONAL_ORG_TYPES
+        and not _INSTITUTION_LABEL_RE.search(clean_label)
+    )
     role = bool(_PERSON_ROLE_RE.search(clean_label))
     place = bool(_PLACE_RE.search(clean_label))
 
@@ -90,6 +150,18 @@ def score_questionable_organization_label(
     if generic:
         score += 3
         signals.append("generic_role_group")
+    if "," in clean_label and not has_anchor:
+        score += 3
+        signals.append("creative_work_title")
+    if typ == "culture_arts" and not has_anchor and not publication:
+        score += 3
+        signals.append("culture_arts_without_org_anchor")
+    if landmark:
+        score += 3
+        signals.append("landmark_or_site")
+    if person_name_like:
+        score += 3
+        signals.append("person_name_like")
     if role and not has_anchor:
         score += 3
         signals.append("person_role_phrase_no_anchor")

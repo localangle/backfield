@@ -6,17 +6,24 @@ Extract **editorially relevant organizations** from the text at the end of this 
 
 Before adding any row, ask: **Is this a durable institution or organized body of people?**
 
-Extract only when the answer is yes. If the name is primarily a **person, place, law, program, grant, event, award, historical event, work/title, topic, or generic role group**, **omit it** from `organizations`.
+Extract only when the answer is yes. If the name is primarily a **person, place, law, program, grant, fund, event, award, historical event, film/performance/show title, publication or survey title, landmark or building, broad social descriptor, work/title, topic, or generic role group**, **omit it** from `organizations`.
 
-Never choose `government` or `other` just because the name acts grammatically in a sentence. A law, park, person, or event is still not an organization.
+Require a **specific proper-noun institution**—not a broad descriptor, demographic phrase, or generic category label (`American civil society`, `Arizona families`, `Arizona grand jury`).
+
+Never choose `government` or `other` just because the name acts grammatically in a sentence. A law, park, person, film title, or event is still not an organization.
 
 Paired examples:
 - omit `Grant Park`; keep `Grant Park Advisory Council`
 - omit `Kenwood`; keep `Kenwood Academy High School`
 - omit `Affordable Care Act`; keep `Centers for Medicare and Medicaid Services` when that agency is named and acting
+- omit `Anti-Weaponization Fund`; keep the **administering agency or office** only when that institution is named and acting
 - omit `Grammy Awards`; keep `Recording Academy` when that body is named and acting
-- omit `Donald Trump`; keep `Trump administration` only when the administration is the accountable actor
+- omit `Donald Trump`, `Antonio Martínez Ocasio`, `Ayo Dosunmu`; keep `Trump administration` only when the administration is the accountable actor
 - omit `Area 5 detectives`; keep `Chicago Police Department` or `Chicago Police Department Area 5 Detectives` when the institution is named
+- omit `A Mighty Wind`, `Angelo, My Love`; keep a **named production company, studio, or presenter** only when that institution is the actor
+- omit `American Community Survey`; keep `U.S. Census Bureau` when that agency is named and acting
+- omit `Anne Frank House`, `Arc de Triomphe`; keep a **named museum foundation or operating institution** only when that body is the actor—not the landmark name alone
+- omit `American civil society`, `Arizona families`, `Arizona grand jury`; keep a **named office, agency, or committee** only when the institution is explicit
 
 ## When to extract
 
@@ -27,12 +34,15 @@ Require a **specific proper-noun institution** (agency, company, school, team, n
 ## Do not extract
 
 - Individual people
-- **Named human individuals** — coaches, players, athletes, elected officials, artists, musicians, executives, sources, witnesses, and other people quoted or acting in the story are **people**, not organizations (e.g. `"Bears coach Ben Johnson said…"` → person **Ben Johnson**; **Alice Cooper** on a roster with **Marc Ribot** and **Steve Earle** → people). Extract their **employer, team, or agency** only when **that institution** is the accountable actor in the story—not the person's personal name.
+- **Named human individuals** — coaches, players, athletes, elected officials, artists, musicians, actors, executives, sources, witnesses, and other people quoted or acting in the story are **people**, not organizations (e.g. `"Bears coach Ben Johnson said…"` → person **Ben Johnson**; **Alice Cooper** on a roster with **Marc Ribot** and **Steve Earle** → people; **Antonio Martínez Ocasio**, **Ayo Dosunmu** → people). Extract their **employer, team, or agency** only when **that institution** is the accountable actor in the story—not the person's personal name.
 - **Descriptive or relational person phrases** — omit entirely when the text describes a **person's relationship, wealth, or role** rather than naming an institution (e.g. `"billionaire father of Bill Conway"`, `"his brother"`, `"the victim's mother"`). These are not organizations.
 - Generic staff or role groups without a named institution ("prosecutors," "coaches," "detectives," `Area 5 detectives`, `Chicago Bulls coach Billy Donovan`)
 - Unnamed groups ("residents," "witnesses," "officials")
-- Geography-only places (street, city, neighborhood, building, **landmark, monument, region, or area**) unless the story names an **institutional body** that governs or operates there—e.g. omit **Grant Park**, **Kenwood**, **Arc de Triomphe**, **the Chicago area**, **downtown**, **the lakefront**; keep **Evanston City Council**, **Grant Park Advisory Council**
-- **Laws, statutes, acts, bills, regulations, programs, grants, and policies** named as rules or coverage topics—not organizations (`Affordable Care Act`, `Administrative Procedure Act`, `Full Service Community Schools grant`, `No Child Left Behind`, `the tax bill`). Extract an **administering agency or department** only when that **institution** is named and acts (`Centers for Medicare and Medicaid Services`, `U.S. Department of Education`)—not the law's title alone
+- Geography-only places (street, city, neighborhood, building, **landmark, monument, historic site, museum building, region, or area**) unless the story names an **institutional body** that governs or operates there—e.g. omit **Grant Park**, **Kenwood**, **Arc de Triomphe**, **Anne Frank House**, **the Chicago area**, **downtown**, **the lakefront**; keep **Evanston City Council**, **Grant Park Advisory Council**
+- **Films, performances, shows, albums, books, and other creative works** named as titles—not organizations (`A Mighty Wind`, `Angelo, My Love`, `Hamilton`, `The Daily Show` as a program title). Extract a **named studio, network, production company, or presenter** only when that institution is the accountable actor—not the title alone
+- **Publications, surveys, reports, and datasets** named as titles or products—not organizations (`American Community Survey`, `Consumer Price Index`, `Statistical Abstract`). Extract the **publishing agency, bureau, or company** only when that institution is named and acting
+- **Broad descriptors and generic social categories** that are not proper-noun institutions (`American civil society`, `Arizona families`, `Arizona grand jury`, `local residents`, `the business community`). These are topics or groups, not organizations—omit unless a **named institution** is explicit
+- **Laws, statutes, acts, bills, regulations, programs, grants, funds, and policies** named as rules or coverage topics—not organizations (`Affordable Care Act`, `Administrative Procedure Act`, `Anti-Weaponization Fund`, `Full Service Community Schools grant`, `No Child Left Behind`, `the tax bill`). Extract an **administering agency or department** only when that **institution** is named and acts (`Centers for Medicare and Medicaid Services`, `U.S. Department of Education`)—not the law, program, or fund title alone
 - **Events, awards, competitions, concerts, festivals, parades, games, and historical events** (`Grammy Awards`, `Super Bowl`, `World War I`, `Bud Billiken Day parade`) unless the story names the **organizing institution** (`Recording Academy`, `National Football League`) as the accountable actor
 - **Concepts, technologies, industries, and abstract topics** without a named institution (`artificial intelligence`, `climate change`, `inflation`, `social media`)—omit; they are not organizations even when capitalized or central to the story
 - Article bylines or publication credits only
@@ -49,11 +59,14 @@ The same name can be an organization, a brand, a work/title, a venue, or an even
 
 Examples of **omit** (not organizations):
 - `"the Affordable Care Act"` / `"ACA health insurance"` → law/program topic; omit (unless a **named agency** is the actor)
-- `"Full Service Community Schools grant"` → grant/program topic; omit
-- `"around the Arc de Triomphe in Paris"` / `"in Grant Park"` → landmark/geography; omit
+- `"Anti-Weaponization Fund"` / `"Full Service Community Schools grant"` → fund/program topic; omit
+- `"American Community Survey"` → publication/survey title; omit (unless **U.S. Census Bureau** or similar agency is the actor)
+- `"A Mighty Wind"` / `"Angelo, My Love"` → film or performance title; omit
+- `"Anne Frank House"` / `"around the Arc de Triomphe in Paris"` / `"in Grant Park"` → landmark/site/geography; omit
+- `"American civil society"` / `"Arizona families"` / `"Arizona grand jury"` → broad descriptor, not a proper-noun institution; omit
 - `"Artificial intelligence"` as a story topic → concept; omit
 - `"the Chicago area"` → region; omit
-- `"Donald Trump"` / `"Bernie Sanders"` → people; omit
+- `"Donald Trump"` / `"Bernie Sanders"` / `"Antonio Martínez Ocasio"` / `"Ayo Dosunmu"` → people; omit
 - `"Grammy Awards"` / `"Super Bowl"` / `"World War I"` → event/history; omit unless the organizing body is named
 
 **Borderline but editorially relevant** — include the row, use the best normal `type`, and set `organization_boundary` to one of:
@@ -74,7 +87,7 @@ Examples:
 ## Names and types
 
 - Use the most specific conventional proper-noun name.
-- `name` must identify an **institution or group**, not an individual human's given and family name (see **Do not extract**). When unsure whether a proper noun is a person or an organization, **omit it from organizations** if the text treats them as an individual acting, speaking, or being described.
+- `name` must identify an **institution or group**, not an individual human's given and family name (see **Do not extract**). A label must be a **proper-noun institution**, not a broad descriptor (`American civil society`), fund/program title (`Anti-Weaponization Fund`), publication/survey title (`American Community Survey`), landmark (`Anne Frank House`), or creative-work title (`A Mighty Wind`). When unsure whether a proper noun is a person or an organization, **omit it from organizations** if the text treats them as an individual acting, speaking, or being described.
 - Expand acronyms when known ("National Basketball Association" not "NBA") unless expansion is ambiguous.
 - **Schools:** use full school names in scorelines, not bare city tokens ("Brother Rice High School," not "Brother Rice" alone when naming a school institution). **Never** put a bare scoreline token alone in `name` (not `"Belvidere"`, `"Woodstock"`, `"Smith"`, `"Park"`)—expand with your world knowledge to the conventional **full school name** (`Belvidere High School`, `Woodstock High School`, `Smith High School`).
 - **Sports teams:** in athletics coverage, bare school/university names usually mean the **team**, not the campus. Use `sports_team` with pattern `[School] [boys|girls|men's|women's] [sport] team` when sport is inferable from the article. Never emit bare "Mount Carmel," "Brother Rice," or "Cubs" alone as `sports_team`. Map nicknames ("Caravan," "Wolverines") to the school team pattern. Use `school`/`university` only when administration, district, or campus policy is the actor—not players, games, recruiting, or championships.
