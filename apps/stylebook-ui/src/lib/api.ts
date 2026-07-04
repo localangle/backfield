@@ -85,6 +85,7 @@ export {
   getDuplicatePersonClusters,
   getDuplicateOrganizationClusters,
   getMissingGeometryLocations,
+  cancelCleanupCheckRun,
   getLatestCleanupCheckRun,
   listCleanupChecks,
   pollCleanupCheckRun,

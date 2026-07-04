@@ -4,7 +4,7 @@ import { Breadcrumbs } from "@/components/Breadcrumbs"
 import { StylebookHomeTabs } from "@/components/StylebookHomeTabs"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import { Button } from "@/components/ui/button"
-import { Loader2, Play } from "lucide-react"
+import { Loader2, Play, Square } from "lucide-react"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useSelectedStylebookLabel } from "@/lib/stylebookScopeContext"
@@ -20,6 +20,7 @@ import {
   type CleanupCheckStaleness,
 } from "@/lib/cleanupHubLastRun"
 import {
+  cancelCleanupCheckRun,
   listCleanupChecks,
   pollCleanupCheckRun,
   startCleanupCheckRun,
@@ -164,6 +165,27 @@ export default function Cleanup() {
     [stylebookSlug, projectFilterSlug, pollRun, showError],
   )
 
+  const stopCheck = useCallback(
+    async (checkId: string) => {
+      if (!stylebookSlug) return
+      try {
+        await cancelCleanupCheckRun({
+          stylebookSlug,
+          checkId,
+          project: projectFilterSlug || undefined,
+        })
+        pollTokensRef.current[checkId] = (pollTokensRef.current[checkId] ?? 0) + 1
+        setRunSnapshots((prev) => ({
+          ...prev,
+          [checkId]: { ...prev[checkId], loading: false, status: "cancelled" },
+        }))
+      } catch (error) {
+        showError(error instanceof Error ? error.message : "Failed to stop cleanup check")
+      }
+    },
+    [stylebookSlug, projectFilterSlug, showError],
+  )
+
   return (
     <div className="space-y-6">
       <div>
@@ -213,6 +235,7 @@ export default function Cleanup() {
                   href={`${catalogBasePath}/cleanup/${config.id}${catalogScopeSuffix}`}
                   snapshot={runSnapshots[config.id] ?? { count: null, loading: false, status: "never_run" }}
                   onRun={() => void runCheck(config.id)}
+                  onStop={() => void stopCheck(config.id)}
                 />
               ))
             )}
@@ -228,11 +251,13 @@ function CleanupCheckRow({
   href,
   snapshot,
   onRun,
+  onStop,
 }: {
   config: CleanupCheckConfig
   href: string
   snapshot: CheckRunSnapshot
   onRun: () => void
+  onStop: () => void
 }) {
   const Icon = cleanupEntityIcon(config.entityType)
   const hasRun = snapshot.status !== "never_run"
@@ -294,20 +319,27 @@ function CleanupCheckRow({
       </td>
       <td className="px-4 py-3 text-right">
         <div className="inline-flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={snapshot.loading}
-            onClick={onRun}
-          >
-            {snapshot.loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
+          {snapshot.loading ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onStop}
+            >
+              <Square className="h-3.5 w-3.5" />
+              <span className="ml-1.5">Stop</span>
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onRun}
+            >
               <Play className="h-4 w-4" />
-            )}
-            <span className="ml-1.5">Run</span>
-          </Button>
+              <span className="ml-1.5">Run</span>
+            </Button>
+          )}
           <Button type="button" variant="ghost" size="sm" asChild>
             <Link to={href}>Review</Link>
           </Button>

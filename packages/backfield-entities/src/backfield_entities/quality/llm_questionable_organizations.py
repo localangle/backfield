@@ -209,10 +209,17 @@ def review_questionable_organization_batches(
         return {}
     accepted: dict[str, QuestionableOrganizationReviewResult] = {}
     batches = list(_chunked(candidates, batch_size))
+    total_batches = len(batches)
     failed_batches = 0
-    for batch in batches:
+    logger.info(
+        "Starting questionable org LLM review: %d candidates in %d batches",
+        len(candidates),
+        total_batches,
+    )
+    for batch_idx, batch in enumerate(batches, 1):
         valid_ids = {candidate.canonical_id for candidate in batch}
         prompt = build_questionable_organization_batch_prompt(batch)
+        logger.info("Processing batch %d/%d (%d candidates)", batch_idx, total_batches, len(batch))
         try:
             raw = call_llm(
                 prompt,
@@ -222,12 +229,19 @@ def review_questionable_organization_batches(
                 model_config_id=model_config_id,
             )
         except Exception as exc:
-            logger.warning("Questionable organization LLM batch failed: %s", exc)
+            logger.warning("Batch %d/%d failed: %s", batch_idx, total_batches, exc)
             failed_batches += 1
             continue
         parsed = parse_questionable_organization_batch_response(
             _parse_llm_json(raw),
             valid_ids=valid_ids,
+        )
+        logger.info(
+            "Batch %d/%d complete: %d flagged, %d total accepted so far",
+            batch_idx,
+            total_batches,
+            len(parsed),
+            len(accepted) + len(parsed),
         )
         accepted.update(parsed)
     if failed_batches == len(batches):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from backfield_db import (
@@ -925,6 +925,78 @@ def start_cleanup_check_run(
         queue=_celery_queue(),
     )
     return CleanupCheckRunOut.from_row(run)
+
+
+@router.post(
+    "/{stylebook_slug}/cleanup/checks/{check_id}/runs/cancel",
+    response_model=CleanupCheckRunOut,
+)
+def cancel_cleanup_check_run_route(
+    stylebook_slug: str,
+    check_id: str,
+    project: str | None = Query(
+        None,
+        description="Optional project slug to scope list-style checks.",
+    ),
+    similarity_threshold: float = Query(
+        DEFAULT_FULL_SIMILARITY_THRESHOLD,
+        ge=0.5,
+        le=0.95,
+    ),
+    head_similarity_threshold: float = Query(
+        DEFAULT_HEAD_SIMILARITY_THRESHOLD,
+        ge=0.5,
+        le=0.95,
+    ),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> CleanupCheckRunOut:
+    require_stylebook_edit_access(session, auth=auth, stylebook_slug=stylebook_slug)
+    sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    try:
+        normalized_check_id = validate_cleanup_check_id(check_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    stylebook_id = int(sb.id)
+    organization_id = int(sb.organization_id)
+    project_ids = optional_project_filter_to_ids(
+        session,
+        auth=auth,
+        project_slug=project,
+        organization_id=organization_id,
+    )
+    scope = _cleanup_run_scope(
+        stylebook_id=stylebook_id,
+        organization_id=organization_id,
+        check_id=normalized_check_id,
+        project_ids=project_ids,
+        project_slug=project,
+        full_threshold=similarity_threshold,
+        head_threshold=head_similarity_threshold,
+    )
+    scope_hash = cleanup_scope_hash(scope)
+    active = get_active_cleanup_check_run(
+        session,
+        stylebook_id=stylebook_id,
+        check_id=normalized_check_id,
+        scope_hash=scope_hash,
+    )
+    if active is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No active check run to cancel.",
+        )
+    active.status = "cancelled"
+    active.error_message = None
+    active.completed_at = datetime.now(UTC)
+    active.updated_at = datetime.now(UTC)
+    session.add(active)
+    session.commit()
+    session.refresh(active)
+    celery_app.control.revoke(str(active.id), terminate=True, signal="SIGTERM")
+    return CleanupCheckRunOut.from_row(active)
 
 
 @router.get(

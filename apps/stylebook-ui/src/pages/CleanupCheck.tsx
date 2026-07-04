@@ -33,6 +33,7 @@ import {
   deleteEmptyCleanupLocationCanonical,
   deleteEmptyCleanupOrganizationCanonical,
   deleteEmptyCleanupPersonCanonical,
+  deleteCanonicalOrganization,
   dismissCleanupIssue,
   getCleanupCheckResults,
   getLatestCleanupCheckRun,
@@ -126,6 +127,9 @@ export default function CleanupCheck() {
   const dismissedCleanupPairsRef = useRef<Set<string>>(new Set())
   const [aiDialogOpen, setAiDialogOpen] = useState(false)
   const [stoppingAiReview, setStoppingAiReview] = useState(false)
+  const [questionableBulkAction, setQuestionableBulkAction] = useState<
+    "keep-all" | "delete-all" | null
+  >(null)
   const isClusterCheck = config?.kind === "cluster"
 
   const {
@@ -395,6 +399,145 @@ export default function CleanupCheck() {
     },
     [stylebookSlug, config, showError, refreshHubCheckCount],
   )
+
+  const questionableOrgResults = useMemo(
+    () =>
+      config?.id === "questionable-organization-canonicals"
+        ? (listResults as PaginatedCleanupQuestionableOrganizationsResponse | null)
+        : null,
+    [config?.id, listResults],
+  )
+
+  const loadAllQuestionableOrganizations = useCallback(async () => {
+    const current = questionableOrgResults?.canonicals ?? []
+    const total = questionableOrgResults?.total ?? current.length
+    if (!stylebookSlug || current.length >= total) {
+      return current
+    }
+    const response = await getCleanupCheckResults({
+      stylebookSlug,
+      checkId: "questionable-organization-canonicals",
+      project: projectFilterSlug || undefined,
+      page: 1,
+      perPage: total,
+    })
+    return (response as PaginatedCleanupQuestionableOrganizationsResponse).canonicals
+  }, [stylebookSlug, projectFilterSlug, questionableOrgResults])
+
+  const handleKeepQuestionableOrganization = useCallback(
+    async (canonicalId: string) => {
+      await handleDismissListIssue(canonicalId)
+    },
+    [handleDismissListIssue],
+  )
+
+  const handleDeleteQuestionableOrganization = useCallback(
+    async (canonicalId: string) => {
+      if (!stylebookSlug) return
+      try {
+        await deleteCanonicalOrganization(canonicalId, stylebookSlug)
+        setListResults((prev) =>
+          prev ? applyDismissCanonicalToListResults(prev, canonicalId) : prev,
+        )
+        void refreshHubCheckCount()
+      } catch (error) {
+        showError(
+          error instanceof Error ? error.message : "Failed to delete organization",
+        )
+      }
+    },
+    [stylebookSlug, showError, refreshHubCheckCount],
+  )
+
+  const handleKeepAllQuestionableOrganizations = useCallback(async () => {
+    if (!stylebookSlug || !config || questionableBulkAction !== null) return
+    setQuestionableBulkAction("keep-all")
+    try {
+      const rows = await loadAllQuestionableOrganizations()
+      for (const row of rows) {
+        await dismissCleanupIssue({
+          stylebookSlug,
+          checkId: config.id,
+          canonicalId: row.id,
+        })
+      }
+      const dismissedIds = new Set(rows.map((row) => row.id))
+      setListResults((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          canonicals: prev.canonicals.filter((row) => !dismissedIds.has(row.id)),
+          total: Math.max(0, prev.total - rows.length),
+        }
+      })
+      void refreshHubCheckCount()
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Failed to keep organizations")
+    } finally {
+      setQuestionableBulkAction(null)
+    }
+  }, [
+    stylebookSlug,
+    config,
+    questionableBulkAction,
+    loadAllQuestionableOrganizations,
+    showError,
+    refreshHubCheckCount,
+  ])
+
+  const handleDeleteAllQuestionableOrganizations = useCallback(async () => {
+    if (!stylebookSlug || questionableBulkAction !== null) return
+    setQuestionableBulkAction("delete-all")
+    try {
+      const rows = await loadAllQuestionableOrganizations()
+      if (rows.length === 0) return
+      let deleted = 0
+      const deletedIds = new Set<string>()
+      const failures: string[] = []
+      for (const row of rows) {
+        try {
+          await deleteCanonicalOrganization(row.id, stylebookSlug)
+          deleted += 1
+          deletedIds.add(row.id)
+        } catch (error) {
+          failures.push(
+            error instanceof Error ? error.message : `Failed to delete ${row.label}`,
+          )
+        }
+      }
+      if (deletedIds.size > 0) {
+        setListResults((prev) => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            canonicals: prev.canonicals.filter((row) => !deletedIds.has(row.id)),
+            total: Math.max(0, prev.total - deletedIds.size),
+          }
+        })
+      }
+      void refreshHubCheckCount()
+      if (deleted > 0 && failures.length === 0) {
+        return
+      }
+      if (deleted === 0 && failures.length > 0) {
+        showError(failures[0])
+        return
+      }
+      if (failures.length > 0) {
+        showError(
+          `Deleted ${deleted} organization${deleted === 1 ? "" : "s"}. ${failures.length} could not be deleted.`,
+        )
+      }
+    } finally {
+      setQuestionableBulkAction(null)
+    }
+  }, [
+    stylebookSlug,
+    questionableBulkAction,
+    loadAllQuestionableOrganizations,
+    showError,
+    refreshHubCheckCount,
+  ])
 
   const applyAcceptedMergeProposal = useCallback(
     (proposal: CleanupAiProposal) => {
@@ -683,13 +826,15 @@ export default function CleanupCheck() {
         />
       ) : config.id === "questionable-organization-canonicals" ? (
         <QuestionableOrganizationsList
-          canonicals={
-            (listResults as PaginatedCleanupQuestionableOrganizationsResponse | null)?.canonicals ??
-            []
-          }
+          canonicals={questionableOrgResults?.canonicals ?? []}
+          totalOpen={questionableOrgResults?.total ?? 0}
           detailHref={detailHref}
           canEdit={canEdit}
-          onDismiss={canEdit ? handleDismissListIssue : undefined}
+          bulkAction={questionableBulkAction}
+          onKeep={canEdit ? handleKeepQuestionableOrganization : undefined}
+          onDelete={canEdit ? handleDeleteQuestionableOrganization : undefined}
+          onKeepAll={canEdit ? handleKeepAllQuestionableOrganizations : undefined}
+          onDeleteAll={canEdit ? handleDeleteAllQuestionableOrganizations : undefined}
         />
       ) : (
         <MismatchedLinksList
@@ -896,15 +1041,31 @@ function questionableMentionPreview(mentions: string[]): string {
 
 function QuestionableOrganizationsList({
   canonicals,
+  totalOpen,
   detailHref,
   canEdit = false,
-  onDismiss,
+  bulkAction = null,
+  onKeep,
+  onDelete,
+  onKeepAll,
+  onDeleteAll,
 }: {
   canonicals: CleanupQuestionableOrganizationIssue[]
+  totalOpen: number
   detailHref: (canonicalId: string) => string
   canEdit?: boolean
-  onDismiss?: (canonicalId: string) => void | Promise<void>
+  bulkAction?: "keep-all" | "delete-all" | null
+  onKeep?: (canonicalId: string) => void | Promise<void>
+  onDelete?: (canonicalId: string) => void | Promise<void>
+  onKeepAll?: () => void | Promise<void>
+  onDeleteAll?: () => void | Promise<void>
 }) {
+  const showActions = canEdit && onKeep && onDelete
+  const showBulkActions = showActions && onKeepAll && onDeleteAll && totalOpen > 0
+  const bulkBusy = bulkAction !== null
+  const keepingAll = bulkAction === "keep-all"
+  const deletingAll = bulkAction === "delete-all"
+
   if (canonicals.length === 0) {
     return (
       <p className="text-muted-foreground py-8 text-center">
@@ -914,18 +1075,52 @@ function QuestionableOrganizationsList({
   }
 
   return (
-    <div className="rounded-lg border overflow-hidden">
+    <div className="space-y-3">
+      {showBulkActions ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={bulkBusy}
+            onClick={() => void onKeepAll()}
+          >
+            {keepingAll ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            ) : null}
+            <span className={keepingAll ? "ml-1.5" : undefined}>
+              {keepingAll ? "Keeping all…" : `Keep all (${totalOpen.toLocaleString()})`}
+            </span>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            disabled={bulkBusy}
+            onClick={() => void onDeleteAll()}
+          >
+            {deletingAll ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            ) : null}
+            <span className={deletingAll ? "ml-1.5" : undefined}>
+              {deletingAll ? "Deleting all…" : `Delete all (${totalOpen.toLocaleString()})`}
+            </span>
+          </Button>
+        </div>
+      ) : null}
+      <div className="rounded-lg border overflow-hidden">
       <table className="w-full table-fixed text-sm">
         <colgroup>
-          {canEdit && onDismiss ? (
+          {showActions ? (
             <>
-              <col style={{ width: "18%" }} />
-              <col style={{ width: "14%" }} />
-              <col style={{ width: "24%" }} />
-              <col style={{ width: "18%" }} />
+              <col style={{ width: "17%" }} />
+              <col style={{ width: "13%" }} />
+              <col style={{ width: "22%" }} />
+              <col style={{ width: "17%" }} />
               <col style={{ width: "7%" }} />
               <col style={{ width: "7%" }} />
-              <col style={{ width: "12%" }} />
+              <col style={{ width: "17%" }} />
             </>
           ) : (
             <>
@@ -946,7 +1141,7 @@ function QuestionableOrganizationsList({
             <th className="px-3 py-3 font-medium min-w-0">Sample mentions</th>
             <th className="px-3 py-3 font-medium text-right">Linked</th>
             <th className="px-3 py-3 font-medium text-right">Mentions</th>
-            {canEdit && onDismiss ? (
+            {showActions ? (
               <th className="px-3 py-3 font-medium text-right">Action</th>
             ) : null}
           </tr>
@@ -997,16 +1192,29 @@ function QuestionableOrganizationsList({
                 <td className="px-3 py-3 text-right tabular-nums">
                   {canonical.mention_count ?? 0}
                 </td>
-                {canEdit && onDismiss ? (
+                {showActions ? (
                   <td className="px-2 py-3 text-right whitespace-nowrap">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void onDismiss(canonical.id)}
-                    >
-                      Mark reviewed
-                    </Button>
+                    <div className="inline-flex items-center justify-end gap-1.5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={bulkBusy}
+                        onClick={() => void onKeep(canonical.id)}
+                      >
+                        Keep
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        disabled={bulkBusy}
+                        onClick={() => void onDelete(canonical.id)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
                   </td>
                 ) : null}
               </tr>
@@ -1014,6 +1222,7 @@ function QuestionableOrganizationsList({
           })}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }

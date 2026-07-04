@@ -1622,7 +1622,7 @@ def _fail_cleanup_check_run(engine: Any, run_id: str, message: str) -> None:
         run = session.get(StylebookCleanupCheckRun, run_id)
         if run is None:
             return
-        if str(run.status) in ("succeeded", "failed"):
+        if str(run.status) in ("succeeded", "failed", "cancelled"):
             return
         run.status = "failed"
         run.error_message = message[:10000]
@@ -1715,6 +1715,9 @@ def execute_cleanup_check_run(run_id: str) -> None:
                     )
             else:
                 items = build_cleanup_check_items(session, scope=scope, call_llm=call_llm)
+            session.refresh(run)
+            if str(run.status) == "cancelled":
+                return
             persist_cleanup_check_results(session, run=run, items=items)
             run.status = "succeeded"
             run.completed_at = datetime.now(UTC)

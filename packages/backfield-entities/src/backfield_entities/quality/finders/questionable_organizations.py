@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -35,6 +36,8 @@ from backfield_entities.quality.llm_questionable_organizations import (
 
 if TYPE_CHECKING:
     from backfield_entities.quality.check_runs import CleanupCheckItem, CleanupRunScope
+
+logger = logging.getLogger(__name__)
 
 _CHECK_ID = "questionable-organization-canonicals"
 
@@ -134,6 +137,11 @@ def build_questionable_organization_check_items(
         stylebook_id=stylebook_id,
         threshold=threshold,
     )
+    logger.info(
+        "Questionable org prefilter: %d candidates passed threshold %d",
+        len(prefiltered),
+        threshold,
+    )
     if not prefiltered:
         return []
 
@@ -169,6 +177,12 @@ def build_questionable_organization_check_items(
         for row, score, signals in prefiltered
         if row.id is not None
     ]
+    logger.info(
+        "Sending %d candidates to LLM review (model=%s, batch_size=%d)",
+        len(llm_candidates),
+        model,
+        batch_size,
+    )
     reviews = review_questionable_organization_batches(
         llm_candidates,
         call_llm=call_llm,

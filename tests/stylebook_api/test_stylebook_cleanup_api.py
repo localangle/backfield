@@ -315,6 +315,46 @@ def test_start_cleanup_check_run_is_idempotent_while_active(
     assert second["status"] == "running"
 
 
+def test_cancel_cleanup_check_run(
+    cleanup_client: tuple[TestClient, Engine],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, engine = cleanup_client
+    monkeypatch.setattr(
+        "stylebook_api.routers.stylebook_cleanup.celery_app.send_task",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "stylebook_api.routers.stylebook_cleanup.celery_app.control",
+        type("_ctrl", (), {"revoke": staticmethod(lambda *a, **kw: None)})(),
+    )
+    started = _start_cleanup_check(client, "duplicate-locations")
+    with Session(engine) as session:
+        run = session.get(StylebookCleanupCheckRun, started["id"])
+        assert run is not None
+        run.status = "running"
+        session.add(run)
+        session.commit()
+    cancel_resp = client.post(
+        "/v1/stylebooks/default/cleanup/checks/duplicate-locations/runs/cancel"
+    )
+    assert cancel_resp.status_code == 200
+    body = cancel_resp.json()
+    assert body["id"] == started["id"]
+    assert body["status"] == "cancelled"
+
+
+def test_cancel_cleanup_check_run_no_active(
+    cleanup_client: tuple[TestClient, Engine],
+) -> None:
+    client, _engine = cleanup_client
+    resp = client.post(
+        "/v1/stylebooks/default/cleanup/checks/duplicate-locations/runs/cancel"
+    )
+    assert resp.status_code == 400
+    assert "No active check run" in resp.json()["detail"]
+
+
 def test_get_latest_cleanup_check_run(cleanup_client: tuple[TestClient, Engine]) -> None:
     client, _engine = cleanup_client
     missing = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-locations/runs/latest")

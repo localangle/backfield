@@ -8,6 +8,7 @@ export type CleanupCheckRunStatus =
   | "running"
   | "succeeded"
   | "failed"
+  | "cancelled"
 
 export interface CleanupCheck {
   id: string
@@ -223,6 +224,18 @@ export async function startCleanupCheckRun(params: {
   )
 }
 
+export async function cancelCleanupCheckRun(params: {
+  stylebookSlug: string
+  checkId: string
+  project?: string
+}): Promise<CleanupCheckRun> {
+  const suffix = cleanupScopeQuery(params.project)
+  return stylebookJsonFetch<CleanupCheckRun>(
+    `${cleanupCheckRunPath(params.stylebookSlug, params.checkId)}/cancel${suffix ? `?${suffix}` : ""}`,
+    { method: "POST" },
+  )
+}
+
 export async function getLatestCleanupCheckRun(params: {
   stylebookSlug: string
   checkId: string
@@ -236,30 +249,18 @@ export async function getLatestCleanupCheckRun(params: {
 
 const ACTIVE_RUN_STATUSES = new Set<CleanupCheckRun["status"]>(["queued", "running"])
 
-const LLM_CLEANUP_CHECK_IDS = new Set(["questionable-organization-canonicals"])
-const LLM_POLL_TIMEOUT_MS = 600000
-
 export async function pollCleanupCheckRun(params: {
   stylebookSlug: string
   checkId: string
   project?: string
   intervalMs?: number
-  timeoutMs?: number
 }): Promise<CleanupCheckRun> {
   const intervalMs = params.intervalMs ?? 1500
-  const defaultTimeout = LLM_CLEANUP_CHECK_IDS.has(params.checkId)
-    ? LLM_POLL_TIMEOUT_MS
-    : 120000
-  const timeoutMs = params.timeoutMs ?? defaultTimeout
-  const started = Date.now()
   let latest = await getLatestCleanupCheckRun(params)
   if (!latest) {
     throw new Error(`Cleanup check run not found: ${params.checkId}`)
   }
   while (ACTIVE_RUN_STATUSES.has(latest.status)) {
-    if (Date.now() - started > timeoutMs) {
-      throw new Error("Cleanup check run timed out")
-    }
     await new Promise((resolve) => window.setTimeout(resolve, intervalMs))
     latest = await getLatestCleanupCheckRun(params)
     if (!latest) {
