@@ -41,7 +41,7 @@ def _format_same_site_hints_section(
             f"(match_basis={hint.match_basis})"
         )
     lines.append(
-        "- When confirmed, prefer located_at and include match_basis head_name_match in reason."
+        "- When confirmed, prefer located_at with a narrative reason grounded in the snippets."
     )
     return "\n".join(lines) + "\n\n"
 

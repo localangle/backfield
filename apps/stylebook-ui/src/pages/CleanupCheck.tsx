@@ -704,6 +704,19 @@ export default function CleanupCheck() {
     return { page: 1, total: 0, hasNext: false, hasPrev: false }
   }, [clusterResults, listResults])
 
+  const handleRefreshEmptyPage = useCallback(() => {
+    if (!clusterResults) {
+      void loadResults()
+      return
+    }
+    const lastPage = Math.max(1, Math.ceil(clusterResults.total / PER_PAGE))
+    if (clusterResults.page > lastPage) {
+      setPage(lastPage)
+      return
+    }
+    void loadResults()
+  }, [clusterResults, loadResults])
+
   const showAiReviewControls =
     canEdit &&
     isClusterCheck &&
@@ -829,6 +842,11 @@ export default function CleanupCheck() {
               ? "This check failed. Run it again from the Checks tab to see candidates."
               : "Run this check from the Checks tab to see candidates."}
         </p>
+      ) : config.kind === "cluster" &&
+        clusterResults &&
+        clusterResults.clusters.length === 0 &&
+        clusterResults.total > 0 ? (
+        <EmptyCleanupPageAction itemLabel="clusters" onRefresh={handleRefreshEmptyPage} />
       ) : config.kind === "cluster" ? (
         <DuplicateClusterList
           clusters={clusterResults?.clusters ?? []}
@@ -893,6 +911,25 @@ export default function CleanupCheck() {
           }
         />
       ) : null}
+    </div>
+  )
+}
+
+function EmptyCleanupPageAction({
+  itemLabel,
+  onRefresh,
+}: {
+  itemLabel: string
+  onRefresh: () => void
+}) {
+  return (
+    <div className="flex flex-col items-center gap-3 py-8 text-center">
+      <p className="text-muted-foreground">
+        This page is clear, but there may be more {itemLabel} to review.
+      </p>
+      <Button type="button" variant="outline" onClick={onRefresh}>
+        Refresh and show more
+      </Button>
     </div>
   )
 }

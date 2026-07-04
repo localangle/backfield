@@ -549,14 +549,22 @@ def filter_visible_cached_results(
 ) -> list[StylebookCleanupCheckResult]:
     visible: list[StylebookCleanupCheckResult] = []
     for result in results:
-        if is_result_dismissed(result, dismissed_keys=dismissed_keys):
-            continue
         canonical_ids = [str(cid) for cid in (result.canonical_ids_json or [])]
         if result.item_kind == "cluster":
             member_ids = [cid for cid in canonical_ids if cid in existing_canonical_ids]
             if len(member_ids) < 2:
                 continue
+            current_pair_keys = [
+                pair_key_for_ids(left_id, right_id)
+                for left_id, right_id in all_pairs_for_members(member_ids)
+            ]
+            if current_pair_keys and all(
+                pair_key in dismissed_keys for pair_key in current_pair_keys
+            ):
+                continue
         elif not canonical_ids or canonical_ids[0] not in existing_canonical_ids:
+            continue
+        elif is_result_dismissed(result, dismissed_keys=dismissed_keys):
             continue
         visible.append(result)
     return visible

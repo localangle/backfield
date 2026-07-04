@@ -41,6 +41,7 @@ import ConnectionEvidenceBlock from "@/components/ConnectionEvidenceBlock"
 import ConnectionsGraph from "@/components/ConnectionsGraph"
 import NatureAutocomplete from "@/components/NatureAutocomplete"
 import Pagination from "@/components/Pagination"
+import { formatConnectionSummaryLabel } from "@/lib/connectionEvidence"
 import type { EntityType as ConnectionsEntityType } from "@/lib/entityTypes"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { fetchProjects, type Project } from "@/lib/stylebook-api/projects"
@@ -75,11 +76,7 @@ function getDetailUrl(
 }
 
 function connectionSummaryLabel(conn: Connection): string {
-  const description = conn.description?.trim()
-  if (description) return description
-  const nature = conn.nature?.trim()
-  if (nature) return nature.replace(/_/g, " ")
-  return "Connection"
+  return formatConnectionSummaryLabel(conn)
 }
 
 export default function ConnectionsSection({

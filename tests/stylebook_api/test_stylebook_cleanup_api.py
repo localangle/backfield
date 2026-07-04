@@ -506,6 +506,60 @@ def test_duplicate_person_clusters(cleanup_client: tuple[TestClient, Engine]) ->
     assert len(body["clusters"][0]["canonicals"]) == 2
 
 
+def test_dismiss_duplicate_person_cluster_after_member_deleted(
+    cleanup_client: tuple[TestClient, Engine],
+) -> None:
+    client, engine = cleanup_client
+    with Session(engine) as session:
+        sb = session.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        third = StylebookPersonCanonical(
+            stylebook_id=int(sb.id),
+            slug="person-dupe-c",
+            label="Jane Doe",
+        )
+        session.add(third)
+        session.commit()
+
+    _run_cleanup_check(client, "duplicate-people")
+
+    with Session(engine) as session:
+        people = session.exec(
+            select(StylebookPersonCanonical).where(
+                StylebookPersonCanonical.slug.in_(  # type: ignore[union-attr]
+                    ["person-dupe-a", "person-dupe-b", "person-dupe-c"]
+                )
+            )
+        ).all()
+        member_ids_by_slug = {row.slug: str(row.id) for row in people if row.id is not None}
+        session.delete(next(row for row in people if row.slug == "person-dupe-c"))
+        session.commit()
+
+    visible_after_delete = client.get(
+        "/v1/stylebooks/default/cleanup/checks/duplicate-people?limit=10"
+    )
+    assert visible_after_delete.status_code == 200
+    assert visible_after_delete.json()["total"] == 1
+    assert len(visible_after_delete.json()["clusters"][0]["canonicals"]) == 2
+
+    dismiss = client.post(
+        "/v1/stylebooks/default/cleanup/dismissals",
+        json={
+            "check_id": "duplicate-people",
+            "member_ids": [
+                member_ids_by_slug["person-dupe-a"],
+                member_ids_by_slug["person-dupe-b"],
+            ],
+        },
+    )
+    assert dismiss.status_code == 200
+    assert dismiss.json()["dismissed_pair_count"] == 1
+
+    after = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-people?limit=10")
+    assert after.status_code == 200
+    assert after.json()["total"] == 0
+    assert after.json()["clusters"] == []
+
+
 def test_duplicate_organization_clusters(cleanup_client: tuple[TestClient, Engine]) -> None:
     client, _engine = cleanup_client
     _run_cleanup_check(client, "duplicate-organizations")
