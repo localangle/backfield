@@ -33,6 +33,7 @@ import {
   deleteEmptyCleanupLocationCanonical,
   deleteEmptyCleanupOrganizationCanonical,
   deleteEmptyCleanupPersonCanonical,
+  deleteCanonicalPerson,
   deleteCanonicalOrganization,
   dismissCleanupIssue,
   getCleanupCheckResults,
@@ -48,16 +49,21 @@ import {
   type CleanupLocationIssue,
   type CleanupMismatchIssue,
   type CleanupQuestionableOrganizationIssue,
+  type CleanupQuestionablePersonIssue,
   type PaginatedDuplicateClustersResponse,
   type PaginatedCleanupListResults,
   type PaginatedCleanupLocationIssuesResponse,
   type PaginatedCleanupMismatchIssuesResponse,
   type PaginatedCleanupQuestionableOrganizationsResponse,
+  type PaginatedCleanupQuestionablePeopleResponse,
 } from "@/lib/api"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 
 const PER_PAGE = 25
+type CleanupQuestionableCanonicalIssue =
+  | CleanupQuestionableOrganizationIssue
+  | CleanupQuestionablePersonIssue
 
 async function mergeCleanupCanonical(
   entityType: CleanupEntityType,
@@ -401,66 +407,77 @@ export default function CleanupCheck() {
     [stylebookSlug, config, showError, refreshHubCheckCount],
   )
 
-  const questionableOrgResults = useMemo(
-    () =>
-      config?.id === "questionable-organization-canonicals"
-        ? (listResults as PaginatedCleanupQuestionableOrganizationsResponse | null)
-        : null,
-    [config?.id, listResults],
-  )
+  const isQuestionableCanonicalCheck =
+    config?.id === "questionable-organization-canonicals" ||
+    config?.id === "questionable-person-canonicals"
+  const questionableCanonicalResults = useMemo(() => {
+    if (!isQuestionableCanonicalCheck) return null
+    return listResults as
+      | PaginatedCleanupQuestionableOrganizationsResponse
+      | PaginatedCleanupQuestionablePeopleResponse
+      | null
+  }, [isQuestionableCanonicalCheck, listResults])
 
-  const loadAllQuestionableOrganizations = useCallback(async () => {
-    if (!stylebookSlug) return []
-    const rows: CleanupQuestionableOrganizationIssue[] = []
+  const loadAllQuestionableCanonicals = useCallback(async () => {
+    if (!stylebookSlug || !config) return []
+    const rows: CleanupQuestionableCanonicalIssue[] = []
     let pageNum = 1
     let hasNext = true
     while (hasNext) {
       const response = await getCleanupCheckResults({
         stylebookSlug,
-        checkId: "questionable-organization-canonicals",
+        checkId: config.id,
         project: projectFilterSlug || undefined,
         page: pageNum,
         perPage: 200,
       })
-      const paginated = response as PaginatedCleanupQuestionableOrganizationsResponse
+      const paginated = response as
+        | PaginatedCleanupQuestionableOrganizationsResponse
+        | PaginatedCleanupQuestionablePeopleResponse
       rows.push(...paginated.canonicals)
       hasNext = paginated.has_next
       pageNum += 1
     }
     return rows
-  }, [stylebookSlug, projectFilterSlug])
+  }, [stylebookSlug, config, projectFilterSlug])
 
-  const handleKeepQuestionableOrganization = useCallback(
+  const handleKeepQuestionableCanonical = useCallback(
     async (canonicalId: string) => {
       await handleDismissListIssue(canonicalId)
     },
     [handleDismissListIssue],
   )
 
-  const handleDeleteQuestionableOrganization = useCallback(
+  const handleDeleteQuestionableCanonical = useCallback(
     async (canonicalId: string) => {
-      if (!stylebookSlug) return
+      if (!stylebookSlug || !config) return
       try {
-        await deleteCanonicalOrganization(canonicalId, stylebookSlug)
+        if (config.entityType === "person") {
+          await deleteCanonicalPerson(canonicalId, stylebookSlug)
+        } else {
+          await deleteCanonicalOrganization(canonicalId, stylebookSlug)
+        }
         setListResults((prev) =>
           prev ? applyDismissCanonicalToListResults(prev, canonicalId) : prev,
         )
         void refreshHubCheckCount()
       } catch (error) {
         showError(
-          error instanceof Error ? error.message : "Failed to delete organization",
+          error instanceof Error
+            ? error.message
+            : `Failed to delete ${entitySingular(config.entityType)}`,
         )
       }
     },
-    [stylebookSlug, showError, refreshHubCheckCount],
+    [stylebookSlug, config, showError, refreshHubCheckCount],
   )
 
-  const handleKeepAllQuestionableOrganizations = useCallback(async () => {
+  const handleKeepAllQuestionableCanonicals = useCallback(async () => {
     if (!stylebookSlug || !config || questionableBulkActionRef.current !== null) return
     questionableBulkActionRef.current = "keep-all"
     setQuestionableBulkAction("keep-all")
     try {
-      const rows = await loadAllQuestionableOrganizations()
+      const rows = await loadAllQuestionableCanonicals()
       if (rows.length === 0) return
       for (const row of rows) {
         await dismissCleanupIssue({
@@ -474,32 +491,38 @@ export default function CleanupCheck() {
         if (!prev) return prev
         return {
           ...prev,
-          canonicals: prev.canonicals.filter((row) => !dismissedIds.has(row.id)),
+          canonicals: (prev.canonicals as CleanupQuestionableCanonicalIssue[]).filter(
+            (row) => !dismissedIds.has(row.id),
+          ),
           total: Math.max(0, prev.total - rows.length),
-        }
+        } as PaginatedCleanupListResults
       })
       void refreshHubCheckCount()
     } catch (error) {
-      showError(error instanceof Error ? error.message : "Failed to keep organizations")
+      showError(error instanceof Error ? error.message : "Failed to keep records")
     } finally {
       questionableBulkActionRef.current = null
       setQuestionableBulkAction(null)
     }
-  }, [stylebookSlug, config, loadAllQuestionableOrganizations, showError, refreshHubCheckCount])
+  }, [stylebookSlug, config, loadAllQuestionableCanonicals, showError, refreshHubCheckCount])
 
-  const handleDeleteAllQuestionableOrganizations = useCallback(async () => {
-    if (!stylebookSlug || questionableBulkActionRef.current !== null) return
+  const handleDeleteAllQuestionableCanonicals = useCallback(async () => {
+    if (!stylebookSlug || !config || questionableBulkActionRef.current !== null) return
     questionableBulkActionRef.current = "delete-all"
     setQuestionableBulkAction("delete-all")
     try {
-      const rows = await loadAllQuestionableOrganizations()
+      const rows = await loadAllQuestionableCanonicals()
       if (rows.length === 0) return
       let deleted = 0
       const deletedIds = new Set<string>()
       const failures: string[] = []
       for (const row of rows) {
         try {
-          await deleteCanonicalOrganization(row.id, stylebookSlug)
+          if (config.entityType === "person") {
+            await deleteCanonicalPerson(row.id, stylebookSlug)
+          } else {
+            await deleteCanonicalOrganization(row.id, stylebookSlug)
+          }
           deleted += 1
           deletedIds.add(row.id)
         } catch (error) {
@@ -513,9 +536,11 @@ export default function CleanupCheck() {
           if (!prev) return prev
           return {
             ...prev,
-            canonicals: prev.canonicals.filter((row) => !deletedIds.has(row.id)),
+            canonicals: (prev.canonicals as CleanupQuestionableCanonicalIssue[]).filter(
+              (row) => !deletedIds.has(row.id),
+            ),
             total: Math.max(0, prev.total - deletedIds.size),
-          }
+          } as PaginatedCleanupListResults
         })
       }
       void refreshHubCheckCount()
@@ -527,17 +552,18 @@ export default function CleanupCheck() {
         return
       }
       if (failures.length > 0) {
+        const singular = entitySingular(config.entityType)
         showError(
-          `Deleted ${deleted} organization${deleted === 1 ? "" : "s"}. ${failures.length} could not be deleted.`,
+          `Deleted ${deleted} ${singular}${deleted === 1 ? "" : "s"}. ${failures.length} could not be deleted.`,
         )
       }
     } catch (error) {
-      showError(error instanceof Error ? error.message : "Failed to delete organizations")
+      showError(error instanceof Error ? error.message : "Failed to delete records")
     } finally {
       questionableBulkActionRef.current = null
       setQuestionableBulkAction(null)
     }
-  }, [stylebookSlug, loadAllQuestionableOrganizations, showError, refreshHubCheckCount])
+  }, [stylebookSlug, config, loadAllQuestionableCanonicals, showError, refreshHubCheckCount])
 
   const applyAcceptedMergeProposal = useCallback(
     (proposal: CleanupAiProposal) => {
@@ -824,17 +850,18 @@ export default function CleanupCheck() {
           canEdit={canEdit}
           onDismiss={canEdit ? handleDismissListIssue : undefined}
         />
-      ) : config.id === "questionable-organization-canonicals" ? (
-        <QuestionableOrganizationsList
-          canonicals={questionableOrgResults?.canonicals ?? []}
-          totalOpen={questionableOrgResults?.total ?? 0}
+      ) : isQuestionableCanonicalCheck ? (
+        <QuestionableCanonicalsList
+          canonicals={questionableCanonicalResults?.canonicals ?? []}
+          totalOpen={questionableCanonicalResults?.total ?? 0}
+          entityType={entityType}
           detailHref={detailHref}
           canEdit={canEdit}
           bulkAction={questionableBulkAction}
-          onKeep={canEdit ? handleKeepQuestionableOrganization : undefined}
-          onDelete={canEdit ? handleDeleteQuestionableOrganization : undefined}
-          onKeepAll={canEdit ? handleKeepAllQuestionableOrganizations : undefined}
-          onDeleteAll={canEdit ? handleDeleteAllQuestionableOrganizations : undefined}
+          onKeep={canEdit ? handleKeepQuestionableCanonical : undefined}
+          onDelete={canEdit ? handleDeleteQuestionableCanonical : undefined}
+          onKeepAll={canEdit ? handleKeepAllQuestionableCanonicals : undefined}
+          onDeleteAll={canEdit ? handleDeleteAllQuestionableCanonicals : undefined}
         />
       ) : (
         <MismatchedLinksList
@@ -1012,7 +1039,17 @@ function MismatchedLinksList({
   )
 }
 
-function questionableCategoryLabel(category: string): string {
+function questionableCategoryLabel(category: string, entityType: CleanupEntityType): string {
+  if (entityType === "person") {
+    switch (category) {
+      case "organization_like":
+        return "Likely an organization"
+      case "role_phrase":
+        return "Likely an unnamed role"
+      default:
+        return "Likely not a person"
+    }
+  }
   switch (category) {
     case "person_like":
       return "Likely a person"
@@ -1039,9 +1076,10 @@ function questionableMentionPreview(mentions: string[]): string {
   return shown.join("; ")
 }
 
-function QuestionableOrganizationsList({
+function QuestionableCanonicalsList({
   canonicals,
   totalOpen,
+  entityType,
   detailHref,
   canEdit = false,
   bulkAction = null,
@@ -1050,8 +1088,9 @@ function QuestionableOrganizationsList({
   onKeepAll,
   onDeleteAll,
 }: {
-  canonicals: CleanupQuestionableOrganizationIssue[]
+  canonicals: CleanupQuestionableCanonicalIssue[]
   totalOpen: number
+  entityType: CleanupEntityType
   detailHref: (canonicalId: string) => string
   canEdit?: boolean
   bulkAction?: "keep-all" | "delete-all" | null
@@ -1069,7 +1108,9 @@ function QuestionableOrganizationsList({
   if (canonicals.length === 0) {
     return (
       <p className="text-muted-foreground py-8 text-center">
-        No questionable organization canonicals in this stylebook.
+        {entityType === "person"
+          ? "No questionable person canonicals in this stylebook."
+          : "No questionable organization canonicals in this stylebook."}
       </p>
     )
   }
@@ -1149,7 +1190,7 @@ function QuestionableOrganizationsList({
         <tbody>
           {canonicals.map((canonical) => {
             const mentionPreview = questionableMentionPreview(canonical.sample_mentions ?? [])
-            const issueLabel = questionableCategoryLabel(canonical.category)
+            const issueLabel = questionableCategoryLabel(canonical.category, entityType)
             return (
               <tr key={canonical.id} className="border-t hover:bg-muted/30">
                 <td className="px-3 py-3 min-w-0">
@@ -1163,8 +1204,10 @@ function QuestionableOrganizationsList({
                     {canonical.label}
                   </Link>
                   <div className="text-xs text-muted-foreground truncate">
-                    {canonical.organization_type
-                      ? placeExtractTypeLabel(canonical.organization_type)
+                    {entityType === "person" && canonical.person_type
+                      ? placeExtractTypeLabel(canonical.person_type)
+                      : entityType === "organization" && canonical.organization_type
+                        ? placeExtractTypeLabel(canonical.organization_type)
                       : "—"}
                   </div>
                 </td>

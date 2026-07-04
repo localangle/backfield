@@ -223,6 +223,7 @@ ALL_CLEANUP_CHECK_IDS = (
     "mismatched-locations",
     "duplicate-people",
     "mismatched-people",
+    "questionable-person-canonicals",
     "duplicate-organizations",
     "mismatched-organizations",
     "questionable-organization-canonicals",
@@ -230,7 +231,11 @@ ALL_CLEANUP_CHECK_IDS = (
 STANDARD_CLEANUP_CHECK_IDS = tuple(
     check_id
     for check_id in ALL_CLEANUP_CHECK_IDS
-    if check_id != "questionable-organization-canonicals"
+    if check_id
+    not in {
+        "questionable-organization-canonicals",
+        "questionable-person-canonicals",
+    }
 )
 
 
@@ -275,6 +280,8 @@ def test_list_cleanup_checks(cleanup_client: tuple[TestClient, Engine]) -> None:
     assert by_id["missing-geometry-locations"]["count"] == 6
     assert by_id["mismatched-locations"]["count"] == 0
     assert by_id["mismatched-people"]["count"] == 0
+    assert by_id["questionable-person-canonicals"]["count"] == 0
+    assert by_id["questionable-person-canonicals"]["status"] == "never_run"
     assert by_id["mismatched-organizations"]["count"] == 0
     assert by_id["questionable-organization-canonicals"]["count"] == 0
     assert by_id["questionable-organization-canonicals"]["status"] == "never_run"
@@ -1116,6 +1123,53 @@ def test_dismiss_questionable_organization_canonical(
     assert after.json()["total"] == before.json()["total"] - 1
     labels = {item["label"] for item in after.json()["canonicals"]}
     assert "Donald Trump" not in labels
+
+
+def test_questionable_person_canonicals_check(
+    cleanup_client: tuple[TestClient, Engine],
+) -> None:
+    client, engine = cleanup_client
+    wbez_id = ""
+    with Session(engine) as session:
+        sb = session.exec(select(Stylebook)).one()
+        person = StylebookPersonCanonical(
+            stylebook_id=int(sb.id),
+            slug="wbez-person",
+            label="WBEZ",
+            person_type="media_journalism",
+        )
+        session.add(person)
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=int(sb.id),
+                slug="wbez-org",
+                label="WBEZ",
+                organization_type="media",
+            )
+        )
+        session.commit()
+        session.refresh(person)
+        wbez_id = str(person.id)
+
+    _run_cleanup_check(client, "questionable-person-canonicals")
+
+    checks = client.get("/v1/stylebooks/default/cleanup/checks")
+    assert checks.status_code == 200
+    by_id = {check["id"]: check["count"] for check in checks.json()["checks"]}
+    assert by_id["questionable-person-canonicals"] == 1
+
+    response = client.get("/v1/stylebooks/default/cleanup/checks/questionable-person-canonicals")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    row = body["canonicals"][0]
+    assert row["id"] == wbez_id
+    assert row["label"] == "WBEZ"
+    assert row["category"] == "organization_like"
+    assert row["confidence"] == "high"
+    assert row["matching_organization_type"] == "media"
+    assert "cross_catalog_organization" in row["prefilter_signals"]
+    assert "media" in row["explanation"].lower()
 
 
 def test_cleanup_ai_review_start_and_proposal_accept(

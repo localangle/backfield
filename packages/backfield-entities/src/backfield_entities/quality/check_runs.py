@@ -55,6 +55,9 @@ from backfield_entities.quality.finders.person_name_mismatch import (
 from backfield_entities.quality.finders.questionable_organizations import (
     build_questionable_organization_check_items,
 )
+from backfield_entities.quality.finders.questionable_people import (
+    build_questionable_person_check_items,
+)
 from backfield_entities.quality.llm_questionable_organizations import (
     DEFAULT_QUESTIONABLE_ORG_LLM_MODEL,
 )
@@ -75,6 +78,7 @@ _ALGORITHM_VERSIONS: dict[str, str] = {
     "mismatched-locations": "mismatched-locations:v1",
     "mismatched-people": "mismatched-people:v1",
     "mismatched-organizations": "mismatched-organizations:v1",
+    "questionable-person-canonicals": "questionable-person-canonicals:v1",
     "questionable-organization-canonicals": "questionable-organization-canonicals:v4",
 }
 
@@ -354,6 +358,9 @@ def build_cleanup_check_items(
             )
 
         return _mismatch_list_items(session, scope=scope, fetch_page=fetch_page)
+
+    if check_id == "questionable-person-canonicals":
+        return build_questionable_person_check_items(session, scope=scope)
 
     if check_id == "questionable-organization-canonicals":
         if call_llm is None:

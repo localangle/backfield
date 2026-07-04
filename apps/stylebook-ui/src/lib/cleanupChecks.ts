@@ -58,6 +58,14 @@ export const CLEANUP_CHECK_CONFIGS: CleanupCheckConfig[] = [
     entityType: "person",
   },
   {
+    id: "questionable-person-canonicals",
+    title: "Questionable person canonicals",
+    description:
+      "Person records that may actually be organizations, agencies, schools, media outlets, teams, or unnamed roles.",
+    kind: "list",
+    entityType: "person",
+  },
+  {
     id: "duplicate-organizations",
     title: "Potential duplicate organizations",
     description:

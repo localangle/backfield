@@ -142,8 +142,28 @@ export interface CleanupQuestionableOrganizationIssue extends CleanupMismatchIss
   sample_mentions: string[]
 }
 
+export interface CleanupQuestionablePersonIssue extends CleanupMismatchIssue {
+  prefilter_score: number
+  prefilter_signals: string[]
+  category: string
+  confidence: string
+  explanation: string
+  suggested_entity_type: string
+  matching_organization_type?: string | null
+  sample_mentions: string[]
+}
+
 export interface PaginatedCleanupQuestionableOrganizationsResponse {
   canonicals: CleanupQuestionableOrganizationIssue[]
+  total: number
+  page: number
+  per_page: number
+  has_next: boolean
+  has_prev: boolean
+}
+
+export interface PaginatedCleanupQuestionablePeopleResponse {
+  canonicals: CleanupQuestionablePersonIssue[]
   total: number
   page: number
   per_page: number
@@ -155,6 +175,7 @@ export type PaginatedCleanupListResults =
   | PaginatedCleanupLocationIssuesResponse
   | PaginatedCleanupMismatchIssuesResponse
   | PaginatedCleanupQuestionableOrganizationsResponse
+  | PaginatedCleanupQuestionablePeopleResponse
 
 export interface ListCleanupChecksParams {
   stylebookSlug: string
@@ -394,6 +415,14 @@ export async function getQuestionableOrganizationCanonicals(
   )
 }
 
+export async function getQuestionablePersonCanonicals(
+  params: GetCleanupCheckResultsParams,
+): Promise<PaginatedCleanupQuestionablePeopleResponse> {
+  return stylebookJsonFetch<PaginatedCleanupQuestionablePeopleResponse>(
+    `${cleanupCheckResultsPath(params.stylebookSlug, "questionable-person-canonicals")}?${paginatedListQuery(params)}`,
+  )
+}
+
 export async function getCleanupCheckResults(
   params: GetCleanupCheckResultsParams,
 ): Promise<
@@ -416,6 +445,8 @@ export async function getCleanupCheckResults(
       return getMismatchedLocations(params)
     case "questionable-organization-canonicals":
       return getQuestionableOrganizationCanonicals(params)
+    case "questionable-person-canonicals":
+      return getQuestionablePersonCanonicals(params)
     default:
       throw new Error(`Unknown cleanup check: ${params.checkId}`)
   }

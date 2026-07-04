@@ -50,6 +50,9 @@ from backfield_entities.quality.finders.person_name_mismatch import (
 from backfield_entities.quality.finders.questionable_organizations import (
     count_questionable_organization_canonicals,
 )
+from backfield_entities.quality.finders.questionable_people import (
+    count_questionable_person_canonicals,
+)
 
 CleanupCheckKind = Literal["cluster", "list"]
 CleanupEntityType = Literal["location", "person", "organization"]
@@ -157,6 +160,21 @@ PERSON_CLEANUP_CHECKS: tuple[CleanupCheckDef, ...] = (
         entity_type="person",
         kind="list",
         count=lambda session, ctx: count_person_name_mismatches(
+            session,
+            stylebook_id=ctx.stylebook_id,
+            organization_id=ctx.organization_id,
+        ),
+    ),
+    CleanupCheckDef(
+        id="questionable-person-canonicals",
+        title="Questionable person canonicals",
+        description=(
+            "Person records that may actually be organizations, agencies, schools, media "
+            "outlets, teams, or unnamed roles. Review each record before treating it as a person."
+        ),
+        entity_type="person",
+        kind="list",
+        count=lambda session, ctx: count_questionable_person_canonicals(
             session,
             stylebook_id=ctx.stylebook_id,
             organization_id=ctx.organization_id,

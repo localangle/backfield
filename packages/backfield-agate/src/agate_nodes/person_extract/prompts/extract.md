@@ -46,9 +46,12 @@ Do not extract:
 
 - Do not treat institutions as people, even if personified
 - Example: "DHS said…" — do not create a person for this
+- Example: "WBEZ reported…", "the American Medical Association said…", "CTA said…", "MLB announced…", "the FBI assisted…" — these are organizations or institutions, not people
 - Statements by unnamed institutions ("the agency said") do not count as persons
 - **No organization should ever appear as a person.** Government bodies, agencies, departments, offices, bureaus, commissions, boards, companies, nonprofits, unions, schools, universities, hospitals, sports teams or leagues, courts as institutions, and similar named institutions belong in organization extraction—not in `people`—even when they release statements, investigate, confirm, or are the grammatical subject ("The Civilian Office of Police Accountability released…", "the agency posted on X")
-- **Institutional name signals:** names containing **Office**, **Department**, **Bureau**, **Agency**, **Administration**, **Authority**, **Commission**, **Board**, **Division**, **Service**, **Corporation**, **Company**, **Foundation**, **Institute**, **Association**, **Union**, **School**, **University**, **Police Department**, **Fire Department**, or multi-word proper names describing a **body or office** (e.g. "Civilian Office of Police Accountability," "Cook County State's Attorney's Office") are organizations, not people
+- **Institutional name signals:** names containing **Office**, **Department**, **Bureau**, **Agency**, **Administration**, **Authority**, **Commission**, **Board**, **Division**, **Service**, **Corporation**, **Company**, **Foundation**, **Institute**, **Association**, **Union**, **School**, **Elementary**, **University**, **Hospital**, **Medical Center**, **Police Department**, **Fire Department**, **Capital**, **Associates**, **LLC**, **Inc.**, **Media**, **News**, or multi-word proper names describing a **body or office** (e.g. "Civilian Office of Police Accountability," "Cook County State's Attorney's Office") are organizations, not people
+- **Associations, companies, schools, media outlets, agencies, and teams are not people:** do not emit names such as `American Gaming Association`, `American Medical Association`, `Kittelson & Associates`, `Engaged Capital`, `Gibson Guitars`, `Finkl Steel`, `Fuller Elementary`, `Glenbard East`, `WBEZ`, `CBS2`, `BBC`, `Chicago Sky`, or `Team USA` as `people.name`. If relevant, they belong in organizations; if they describe a human's employer, put them in `affiliation` only after the human name is known.
+- **Acronyms and outlets:** all-caps labels like `CTA`, `DHS`, `FBI`, `MLB`, `UIC`, `WBEZ`, `BBC`, and `PBS` are usually institutions in news copy. Do not create a person for an acronym unless the article clearly establishes it as an individual stage name or personal mononym.
 - **People vs. organizations:** extract named **individuals** (officers, spokespeople, directors, employees) when their human name appears; do **not** extract the **organization** itself (e.g. "Detective Maria Lopez of the Chicago Police Department" → person **Maria Lopez**; "Chicago Police Department" alone → not a person)
 - When unsure whether a name is a person or an institution, **omit it from people**—downstream organization extraction handles institutions
 
@@ -62,6 +65,10 @@ Do not extract:
   - "residents said…"
   - "witnesses reported…"
   - "officials stated…"
+  - "the agency spokesperson said…"
+  - "Chicago Department of Transportation spokesperson"
+  - "Chicago Fire Department officials"
+  - "Chicago police officer"
   - "a Border Patrol agent…" / "shot by a Border Patrol agent" (no agent name given)
   - "an undercover officer," "a detective," "a prosecutor" (when no personal name appears)
 - **Never use a role, job title, or role-plus-agency phrase as `name`** — e.g. not `"Illinois Border Patrol agent"`, `"Chicago police officer"`, `"store owner"`. Those belong in `title` and `affiliation` only **after** a personal name is established; if no first name, last name, or full personal name appears for that individual anywhere in the article, **do not extract them**
