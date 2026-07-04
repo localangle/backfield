@@ -1172,6 +1172,51 @@ def test_questionable_person_canonicals_check(
     assert "media" in row["explanation"].lower()
 
 
+def test_delete_questionable_person_canonical_updates_cached_count(
+    cleanup_client: tuple[TestClient, Engine],
+) -> None:
+    client, engine = cleanup_client
+    wbez_id = ""
+    with Session(engine) as session:
+        sb = session.exec(select(Stylebook)).one()
+        person = StylebookPersonCanonical(
+            stylebook_id=int(sb.id),
+            slug="wbez-person",
+            label="WBEZ",
+            person_type="media_journalism",
+        )
+        session.add(person)
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=int(sb.id),
+                slug="wbez-org",
+                label="WBEZ",
+                organization_type="media",
+            )
+        )
+        session.commit()
+        session.refresh(person)
+        wbez_id = str(person.id)
+
+    _run_cleanup_check(client, "questionable-person-canonicals")
+    before = client.get("/v1/stylebooks/default/cleanup/checks/questionable-person-canonicals")
+    assert before.status_code == 200
+    assert before.json()["total"] == 1
+
+    delete = client.delete(f"/v1/stylebooks/default/canonical-people/{wbez_id}")
+    assert delete.status_code == 200
+
+    after = client.get("/v1/stylebooks/default/cleanup/checks/questionable-person-canonicals")
+    assert after.status_code == 200
+    assert after.json()["total"] == 0
+
+    checks = client.get(
+        "/v1/stylebooks/default/cleanup/checks?check_id=questionable-person-canonicals"
+    )
+    assert checks.status_code == 200
+    assert checks.json()["checks"][0]["count"] == 0
+
+
 def test_cleanup_ai_review_start_and_proposal_accept(
     cleanup_client: tuple[TestClient, Engine],
 ) -> None:

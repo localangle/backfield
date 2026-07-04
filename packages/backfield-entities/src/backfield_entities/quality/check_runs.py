@@ -482,7 +482,7 @@ def load_existing_canonical_ids_for_check(
         "mismatched-locations",
     ):
         model = StylebookLocationCanonical
-    elif check_id in ("duplicate-people", "mismatched-people"):
+    elif check_id in ("duplicate-people", "mismatched-people", "questionable-person-canonicals"):
         model = StylebookPersonCanonical
     elif check_id in (
         "duplicate-organizations",

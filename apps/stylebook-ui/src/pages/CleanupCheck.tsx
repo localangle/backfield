@@ -1150,27 +1150,27 @@ function QuestionableCanonicalsList({
           </Button>
         </div>
       ) : null}
-      <div className="rounded-lg border overflow-hidden">
-      <table className="w-full table-fixed text-sm">
+      <div className="rounded-lg border overflow-x-auto">
+      <table className="w-full min-w-[1100px] table-fixed text-sm">
         <colgroup>
           {showActions ? (
             <>
-              <col style={{ width: "17%" }} />
-              <col style={{ width: "13%" }} />
+              <col style={{ width: "24%" }} />
+              <col style={{ width: "12%" }} />
               <col style={{ width: "22%" }} />
-              <col style={{ width: "17%" }} />
-              <col style={{ width: "7%" }} />
-              <col style={{ width: "7%" }} />
-              <col style={{ width: "17%" }} />
+              <col style={{ width: "24%" }} />
+              <col style={{ width: "6%" }} />
+              <col style={{ width: "6%" }} />
+              <col style={{ width: "6%" }} />
             </>
           ) : (
             <>
-              <col style={{ width: "20%" }} />
-              <col style={{ width: "16%" }} />
-              <col style={{ width: "28%" }} />
-              <col style={{ width: "20%" }} />
-              <col style={{ width: "8%" }} />
-              <col style={{ width: "8%" }} />
+              <col style={{ width: "27%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "27%" }} />
+              <col style={{ width: "22%" }} />
+              <col style={{ width: "5%" }} />
+              <col style={{ width: "5%" }} />
             </>
           )}
         </colgroup>
@@ -1193,17 +1193,17 @@ function QuestionableCanonicalsList({
             const issueLabel = questionableCategoryLabel(canonical.category, entityType)
             return (
               <tr key={canonical.id} className="border-t hover:bg-muted/30">
-                <td className="px-3 py-3 min-w-0">
+                <td className="px-3 py-3 align-top min-w-0">
                   <Link
                     to={detailHref(canonical.id)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="font-medium text-primary hover:underline block truncate"
+                    className="font-medium text-primary hover:underline block whitespace-normal break-words leading-snug"
                     title={canonical.label}
                   >
                     {canonical.label}
                   </Link>
-                  <div className="text-xs text-muted-foreground truncate">
+                  <div className="mt-1 text-xs text-muted-foreground whitespace-normal break-words leading-snug">
                     {entityType === "person" && canonical.person_type
                       ? placeExtractTypeLabel(canonical.person_type)
                       : entityType === "organization" && canonical.organization_type
@@ -1211,33 +1211,47 @@ function QuestionableCanonicalsList({
                       : "—"}
                   </div>
                 </td>
-                <td className="px-3 py-3 text-muted-foreground min-w-0">
-                  <span className="block truncate" title={issueLabel}>
+                <td className="px-3 py-3 align-top text-muted-foreground min-w-0">
+                  <span className="block whitespace-normal break-words leading-snug" title={issueLabel}>
                     {issueLabel}
                   </span>
-                  <div className="text-xs truncate">
+                  <div className="mt-1 text-xs whitespace-normal">
                     {canonical.confidence} confidence
                   </div>
                 </td>
-                <td className="px-3 py-3 text-muted-foreground min-w-0">
-                  <span className="block truncate" title={canonical.explanation}>
+                <td className="px-3 py-3 align-top text-muted-foreground min-w-0">
+                  <span
+                    className="block whitespace-normal break-words leading-snug"
+                    title={canonical.explanation}
+                  >
                     {canonical.explanation}
                   </span>
                 </td>
-                <td className="px-3 py-3 text-muted-foreground min-w-0">
-                  <span className="block truncate" title={mentionPreview}>
-                    {mentionPreview}
-                  </span>
+                <td className="px-3 py-3 align-top text-muted-foreground min-w-0">
+                  {(canonical.sample_mentions ?? []).filter(Boolean).length > 0 ? (
+                    <div className="space-y-1">
+                      {(canonical.sample_mentions ?? []).filter(Boolean).map((mention, index) => (
+                        <p
+                          key={`${canonical.id}-mention-${index}`}
+                          className="whitespace-normal break-words leading-snug"
+                        >
+                          {mention}
+                        </p>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="block whitespace-normal">No sample mentions</span>
+                  )}
                 </td>
-                <td className="px-3 py-3 text-right tabular-nums">
+                <td className="px-3 py-3 align-top text-right tabular-nums">
                   {canonical.linked_substrate_count ?? 0}
                 </td>
-                <td className="px-3 py-3 text-right tabular-nums">
+                <td className="px-3 py-3 align-top text-right tabular-nums">
                   {canonical.mention_count ?? 0}
                 </td>
                 {showActions ? (
-                  <td className="px-2 py-3 text-right whitespace-nowrap">
-                    <div className="inline-flex items-center justify-end gap-1.5">
+                  <td className="px-2 py-3 align-top text-right whitespace-nowrap">
+                    <div className="inline-flex flex-col items-stretch justify-end gap-1.5">
                       <Button
                         type="button"
                         variant="outline"
