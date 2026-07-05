@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from backfield_entities.canonical.link_matrix import types_are_comparable
 from backfield_entities.ingest.geocode_cache.fingerprint import normalize_substrate_cache_query
 from backfield_entities.ingest.geocode_cache.sanity import cache_hit_sane_for_substrate
 
@@ -146,6 +147,24 @@ def location_names_share_obvious_identity(
         str(substrate_name or "").split(",")[0]
     ) & _meaningful_location_tokens(str(canonical_label or "").split(",")[0])
     return len(head_shared) >= 2
+
+
+def location_merge_pair_blocked(
+    *,
+    source_label: str,
+    source_location_type: str | None,
+    target_label: str,
+    target_location_type: str | None,
+) -> bool:
+    """True when merging these canonicals would be an obvious scale/kind error.
+
+    Blocks merges across deny-listed ``location_type`` pairs (e.g. a venue ``place``
+    into its containing ``city``) unless the labels clearly name the same place —
+    the identity escape hatch keeps mistyped rows of the same place mergeable.
+    """
+    if types_are_comparable(source_location_type, target_location_type):
+        return False
+    return not location_names_share_obvious_identity(source_label, target_label)
 
 
 def location_link_is_obvious_mismatch(

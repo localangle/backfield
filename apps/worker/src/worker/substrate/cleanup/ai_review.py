@@ -475,6 +475,7 @@ def propose_for_cluster(
     if groups is None:
         return []
     return build_proposals_from_partition(
+        check_id=check_id,
         cluster_id=cluster_id,
         members=members,
         groups=groups,

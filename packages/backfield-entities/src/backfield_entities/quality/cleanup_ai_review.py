@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from backfield_entities.entities.location.link_identity import location_merge_pair_blocked
+
 CleanupAiAction = Literal["merge", "keep_separate"]
 
 MAX_MENTION_SAMPLES_IN_PROMPT = 6
@@ -137,6 +139,10 @@ def _entity_specific_partition_rules(check_id: str) -> str:
             "jurisdictions, administrative levels, or similarly named places.\n"
             "- Do not merge a container geography with a finer-grained child place unless the "
             "labels are clearly two names for the same entity.\n"
+            "- Never merge a specific venue, business, building, or point of interest into the "
+            "city, town, neighborhood, or region that merely contains it. Labels like "
+            "'<Venue>, Chicago, IL' name the venue, not the city; sharing a city/state tail is "
+            "not evidence of identity.\n"
         )
     return ""
 
@@ -244,8 +250,31 @@ def parse_cluster_partition_response(
     return groups
 
 
+def _location_merge_group_blocked(
+    group_members: list[CleanupClusterMember],
+    *,
+    keeper_id: str,
+) -> bool:
+    """True when any member pairs with the keeper across incompatible place kinds."""
+    keeper = next((member for member in group_members if str(member.id) == keeper_id), None)
+    if keeper is None:
+        return False
+    for member in group_members:
+        if str(member.id) == keeper_id:
+            continue
+        if location_merge_pair_blocked(
+            source_label=str(member.label),
+            source_location_type=member.location_type,
+            target_label=str(keeper.label),
+            target_location_type=keeper.location_type,
+        ):
+            return True
+    return False
+
+
 def build_proposals_from_partition(
     *,
+    check_id: str,
     cluster_id: str,
     members: list[CleanupClusterMember],
     groups: list[CleanupClusterPartitionGroup],
@@ -259,6 +288,12 @@ def build_proposals_from_partition(
         group_members = [by_id[member_id] for member_id in group.member_ids if member_id in by_id]
         if len(group_members) >= 2:
             keeper_id = choose_keeper_member_id(group_members)
+            # Never propose merging incompatible place kinds (e.g. a venue into its
+            # containing city); leave those groups for manual review instead.
+            if check_id == "duplicate-locations" and _location_merge_group_blocked(
+                group_members, keeper_id=keeper_id
+            ):
+                continue
             proposals.append(
                 CleanupAiProposalDraft(
                     cluster_id=cluster_id,

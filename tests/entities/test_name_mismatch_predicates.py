@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from backfield_entities.entities.location.link_identity import (
     location_link_is_obvious_mismatch,
+    location_merge_pair_blocked,
     location_names_share_obvious_identity,
 )
 from backfield_entities.entities.organization.name_mismatch import (
@@ -168,6 +169,51 @@ def test_location_mismatch_loop_alias_not_flagged() -> None:
         geometry_type="Polygon",
         canonical_label="Loop, Chicago, IL",
         canonical_location_type="neighborhood",
+    )
+
+
+def test_location_merge_blocked_venue_into_containing_city() -> None:
+    assert location_merge_pair_blocked(
+        source_label="Perman, Chicago, IL",
+        source_location_type="place",
+        target_label="Chicago, IL",
+        target_location_type="city",
+    )
+
+
+def test_location_merge_blocked_is_symmetric_for_city_keeper_order() -> None:
+    assert location_merge_pair_blocked(
+        source_label="Chicago, IL",
+        source_location_type="city",
+        target_label="Fox32, Chicago, IL",
+        target_location_type="place",
+    )
+
+
+def test_location_merge_allowed_same_type() -> None:
+    assert not location_merge_pair_blocked(
+        source_label="Chicago Shakespeare Theatre, Chicago, IL",
+        source_location_type="place",
+        target_label="Chicago Shakespeare Theater, Chicago, IL",
+        target_location_type="place",
+    )
+
+
+def test_location_merge_allowed_same_label_cross_type() -> None:
+    assert not location_merge_pair_blocked(
+        source_label="Near North Side, Chicago, IL",
+        source_location_type="place",
+        target_label="Near North Side, Chicago, IL",
+        target_location_type="neighborhood",
+    )
+
+
+def test_location_merge_allowed_missing_types() -> None:
+    assert not location_merge_pair_blocked(
+        source_label="Kentucky",
+        source_location_type=None,
+        target_label="Kentucky, US",
+        target_location_type="state",
     )
 
 

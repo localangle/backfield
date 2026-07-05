@@ -65,7 +65,7 @@ def _normalize_alias_text(text: str) -> str:
     return text.strip().lower()
 
 
-def _normalized_alias_variants(normalized_alias: str) -> tuple[str, ...]:
+def normalized_alias_variants(normalized_alias: str) -> tuple[str, ...]:
     """Stable variants for recall/exact matching.
 
     We keep this conservative: only add an ordinal-stripped form so that strings like
@@ -92,7 +92,7 @@ def seed_aliases_for_canonical_label(
     clean = label.strip()
     if not clean:
         return
-    for norm in _normalized_alias_variants(_normalize_alias_text(clean)):
+    for norm in normalized_alias_variants(_normalize_alias_text(clean)):
         upsert_alias_for_canonical_text(
             session,
             canon_id=canon_id,
@@ -141,7 +141,7 @@ def _upsert_alias_for_canonical(
     location: SubstrateLocation,
     provenance: str,
 ) -> None:
-    for norm in _normalized_alias_variants(str(location.normalized_name)):
+    for norm in normalized_alias_variants(str(location.normalized_name)):
         upsert_alias_for_canonical_text(
             session,
             canon_id=canon_id,

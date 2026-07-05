@@ -162,6 +162,7 @@ def test_build_proposals_from_partition_merge_and_keep_separate() -> None:
     )
     assert groups is not None
     proposals = build_proposals_from_partition(
+        check_id="duplicate-people",
         cluster_id=cluster_id_for_member_ids(["a", "b", "c"]),
         members=members,
         groups=groups,
@@ -172,3 +173,66 @@ def test_build_proposals_from_partition_merge_and_keep_separate() -> None:
     keep = [proposal for proposal in proposals if proposal.action == "keep_separate"]
     assert len(keep) == 2
     assert {tuple(proposal.member_ids) for proposal in keep} == {("a", "c"), ("b", "c")}
+
+
+def test_build_proposals_skips_location_merge_across_incompatible_place_kinds() -> None:
+    members = [
+        CleanupClusterMember(
+            id="city",
+            label="Chicago, IL",
+            linked_substrate_count=10,
+            mention_count=50,
+            location_type="city",
+        ),
+        CleanupClusterMember(
+            id="venue",
+            label="Perman, Chicago, IL",
+            linked_substrate_count=1,
+            mention_count=2,
+            location_type="place",
+        ),
+    ]
+    groups = parse_cluster_partition_response(
+        {"groups": [{"member_ids": ["city", "venue"], "confidence": 0.95}]},
+        valid_member_ids={"city", "venue"},
+    )
+    assert groups is not None
+    proposals = build_proposals_from_partition(
+        check_id="duplicate-locations",
+        cluster_id=cluster_id_for_member_ids(["city", "venue"]),
+        members=members,
+        groups=groups,
+    )
+    assert [proposal for proposal in proposals if proposal.action == "merge"] == []
+
+
+def test_build_proposals_allows_location_merge_of_same_label_cross_type() -> None:
+    members = [
+        CleanupClusterMember(
+            id="keeper",
+            label="Near North Side, Chicago, IL",
+            linked_substrate_count=4,
+            mention_count=9,
+            location_type="neighborhood",
+        ),
+        CleanupClusterMember(
+            id="dupe",
+            label="Near North Side, Chicago, IL",
+            linked_substrate_count=0,
+            mention_count=0,
+            location_type="place",
+        ),
+    ]
+    groups = parse_cluster_partition_response(
+        {"groups": [{"member_ids": ["keeper", "dupe"], "confidence": 0.95}]},
+        valid_member_ids={"keeper", "dupe"},
+    )
+    assert groups is not None
+    proposals = build_proposals_from_partition(
+        check_id="duplicate-locations",
+        cluster_id=cluster_id_for_member_ids(["keeper", "dupe"]),
+        members=members,
+        groups=groups,
+    )
+    merge = next(proposal for proposal in proposals if proposal.action == "merge")
+    assert merge.target_canonical_id == "keeper"
