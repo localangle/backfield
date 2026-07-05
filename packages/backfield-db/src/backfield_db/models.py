@@ -279,6 +279,61 @@ class StylebookBundleJob(SQLModel, table=True):
     )
 
 
+class StylebookActivity(SQLModel, table=True):
+    """Durable stylebook activity event stream for Recent feed."""
+
+    __tablename__ = "stylebook_activity"
+    __table_args__ = (
+        Index("ix_stylebook_activity_feed", "stylebook_id", "created_at"),
+        Index(
+            "ix_stylebook_activity_stylebook_event",
+            "stylebook_id",
+            "event_type",
+            "created_at",
+        ),
+        Index(
+            "ix_stylebook_activity_stylebook_entity",
+            "stylebook_id",
+            "entity_type",
+            "entity_id",
+            "created_at",
+        ),
+        Index("ix_stylebook_activity_project_created", "project_id", "created_at"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    project_id: int | None = Field(
+        default=None,
+        foreign_key="backfield_project.id",
+        index=True,
+    )
+    actor_type: str = Field(
+        default="system",
+        sa_column=Column(Text, nullable=False, server_default="system"),
+    )
+    actor_user_id: int | None = Field(
+        default=None,
+        foreign_key="backfield_user.id",
+        index=True,
+    )
+    source: str = Field(sa_column=Column(Text, nullable=False))
+    event_type: str = Field(sa_column=Column(Text, nullable=False))
+    entity_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    entity_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    entity_label: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    related_entity_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    related_entity_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    related_entity_label: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    payload_json: dict[str, Any] | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
 class StylebookCleanupDismissal(SQLModel, table=True):
     """Editor dismissal of a cleanup issue (duplicate pair or list item)."""
 

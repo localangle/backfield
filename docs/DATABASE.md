@@ -98,6 +98,7 @@ New entity types (person, organization, work, …) follow the same **substrate t
 - `stylebook_organization_canonical` — canonical organization within a Stylebook. **`id`** is a **UUID string** primary key; **`slug`** is required and unique per **`stylebook_id`**. Type-specific field: **`organization_type`**. Optional deprecated **`primary_substrate_organization_id`** FK; prefer **`substrate_organization.stylebook_organization_canonical_id`** for linkage.
 - `stylebook_person_alias` — alias strings for a person canonical (`person_canonical_id` UUID FK). Unique `(person_canonical_id, normalized_alias)`. Postgres **GIN `pg_trgm`** index on **`normalized_alias`** (revision **`036_person_schema`**, requires **`pg_trgm`** from **`014`**).
 - `stylebook_person_meta` — JSON metadata rows per canonical person and project (`meta_type`, `data_json`, soft delete flags).
+- `stylebook_activity` — append-only stylebook-scoped event stream powering the **Recent** tab. Captures actor/source, event type, primary + related entity identifiers/labels, optional payload JSON, and `created_at`. Read-path indexes: `(stylebook_id, created_at)`, `(stylebook_id, event_type, created_at)`, `(stylebook_id, entity_type, entity_id, created_at)`.
 
 ### Agate execution (`agate_*`)
 

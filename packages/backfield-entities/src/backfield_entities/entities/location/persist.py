@@ -7,6 +7,11 @@ from typing import Any
 from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocation
 from sqlmodel import Session, select
 
+from backfield_entities.activity import (
+    EVENT_CANONICAL_CREATED,
+    EVENT_SUBSTRATE_LINKED,
+    log_stylebook_activity_safe,
+)
 from backfield_entities.canonical.jurisdiction import (
     place_extract_components_from_entry,
     stylebook_district_fields_from_components,
@@ -491,6 +496,20 @@ def apply_canonical_persist_plan(
             provenance=provenance,
             audit_reasons=reasons,
         )
+        log_stylebook_activity_safe(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=int(location.project_id),
+            actor_type="system",
+            source="ingest_pipeline",
+            event_type=EVENT_SUBSTRATE_LINKED,
+            entity_type="location",
+            entity_id=str(location.id) if location.id is not None else None,
+            entity_label=str(location.name),
+            related_entity_type="location",
+            related_entity_id=str(plan.existing_canonical_id),
+            payload_json={"provenance": provenance},
+        )
         return
     materialize_new_canonical_and_link(
         session,
@@ -498,4 +517,20 @@ def apply_canonical_persist_plan(
         location=location,
         provenance=provenance,
         audit_reasons=reasons,
+    )
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=stylebook_id,
+        project_id=int(location.project_id),
+        actor_type="system",
+        source="ingest_pipeline",
+        event_type=EVENT_CANONICAL_CREATED,
+        entity_type="location",
+        entity_id=str(location.stylebook_location_canonical_id)
+        if location.stylebook_location_canonical_id is not None
+        else None,
+        entity_label=str(location.name),
+        related_entity_type="location",
+        related_entity_id=str(location.id) if location.id is not None else None,
+        payload_json={"provenance": provenance, "materialized_from_substrate": True},
     )

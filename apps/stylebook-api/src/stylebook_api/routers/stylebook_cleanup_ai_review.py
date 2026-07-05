@@ -15,6 +15,13 @@ from backfield_db import (
     StylebookOrganizationCanonical,
     StylebookPersonCanonical,
 )
+from backfield_entities.activity import (
+    EVENT_AI_REVIEW_APPLIED,
+    EVENT_AI_REVIEW_STARTED,
+    EVENT_CLEANUP_KEEP_SEPARATE,
+    EVENT_CLEANUP_MERGE,
+    log_stylebook_activity_safe,
+)
 from backfield_entities.entities.location.merge import merge_location_canonical_into
 from backfield_entities.entities.organization.merge import merge_organization_canonical_into
 from backfield_entities.entities.person.merge import merge_person_canonical_into
@@ -319,6 +326,22 @@ def start_cleanup_ai_review(
         created_by_user_id=_created_by_user_id(auth),
     )
     session.add(review)
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="cleanup_ai",
+        event_type=EVENT_AI_REVIEW_STARTED,
+        entity_type="check",
+        entity_id=body.check_id.strip(),
+        payload_json={
+            "review_id": str(review.id),
+            "check_id": body.check_id.strip(),
+            "provider_model_id": body.provider_model_id.strip(),
+            "ai_model_config_id": body.ai_model_config_id,
+        },
+    )
     session.commit()
     session.refresh(review)
     celery_app.send_task(
@@ -509,6 +532,36 @@ def accept_cleanup_ai_proposal(
     proposal.status = "applied"
     proposal.resolved_at = datetime.now(UTC)
     proposal.resolved_by_user_id = user_id
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=stylebook_id,
+        actor_type="user",
+        actor_user_id=user_id,
+        source="cleanup_ai",
+        event_type=EVENT_AI_REVIEW_APPLIED,
+        entity_type="check",
+        entity_id=check_id,
+        related_entity_id=str(proposal.id),
+        payload_json={
+            "proposal_id": str(proposal.id),
+            "action": proposal.action,
+            "member_ids": member_ids,
+        },
+    )
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=stylebook_id,
+        actor_type="user",
+        actor_user_id=user_id,
+        source="cleanup_ai",
+        event_type=(
+            EVENT_CLEANUP_MERGE if proposal.action == "merge" else EVENT_CLEANUP_KEEP_SEPARATE
+        ),
+        entity_type="check",
+        entity_id=check_id,
+        related_entity_id=str(proposal.id),
+        payload_json={"proposal_id": str(proposal.id), "member_ids": member_ids},
+    )
     session.add(proposal)
     session.commit()
     return CleanupAiProposalActionResponse(
@@ -540,6 +593,18 @@ def reject_cleanup_ai_proposal(
     proposal.status = "rejected"
     proposal.resolved_at = datetime.now(UTC)
     proposal.resolved_by_user_id = _created_by_user_id(auth)
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="cleanup_ai",
+        event_type=EVENT_AI_REVIEW_APPLIED,
+        entity_type="check",
+        entity_id=str(proposal.check_id),
+        related_entity_id=str(proposal.id),
+        payload_json={"proposal_id": str(proposal.id), "action": "reject"},
+    )
     session.add(proposal)
     session.commit()
     return CleanupAiProposalActionResponse(

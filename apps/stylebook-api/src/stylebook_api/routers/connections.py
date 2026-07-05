@@ -14,6 +14,12 @@ from backfield_db import (
     StylebookOrganizationCanonical,
     StylebookPersonCanonical,
 )
+from backfield_entities.activity import (
+    EVENT_CONNECTION_CREATED,
+    EVENT_CONNECTION_DELETED,
+    EVENT_CONNECTION_UPDATED,
+    log_stylebook_activity_safe,
+)
 from backfield_entities.connections.dedupe import (
     connection_description_coalesced,
     connection_nature_coalesced,
@@ -52,6 +58,47 @@ locations_connections_router = APIRouter(prefix="/v1", tags=["connections"])
 
 CONNECTIONS_DEFAULT_LIMIT = 10
 CONNECTIONS_MAX_LIMIT = 500
+
+
+def _created_by_user_id(auth: dict[str, Any]) -> int | None:
+    if auth.get("type") != "session" or auth.get("user") is None:
+        return None
+    return int(auth["user"].id)  # type: ignore[union-attr]
+
+
+def _log_stylebook_connection_event(
+    session: Session,
+    *,
+    stylebook_id: int,
+    auth: dict[str, Any],
+    event_type: str,
+    conn: StylebookConnection,
+    payload_json: dict[str, Any] | None = None,
+) -> None:
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=stylebook_id,
+        project_id=int(conn.project_id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="connections",
+        event_type=event_type,
+        entity_type="connection",
+        entity_id=str(conn.id),
+        entity_label=(conn.description or conn.nature or "").strip() or None,
+        related_entity_type=conn.to_entity_type,
+        related_entity_id=conn.to_entity_id,
+        related_entity_label=None,
+        payload_json={
+            "from_entity_type": conn.from_entity_type,
+            "from_entity_id": conn.from_entity_id,
+            "to_entity_type": conn.to_entity_type,
+            "to_entity_id": conn.to_entity_id,
+            "nature": conn.nature,
+            "description": conn.description,
+            **(payload_json or {}),
+        },
+    )
 
 
 class ConnectionResponse(BaseModel):
@@ -805,6 +852,14 @@ def create_stylebook_location_connection(
         session.add(existing)
         session.commit()
         session.refresh(existing)
+        _log_stylebook_connection_event(
+            session,
+            stylebook_id=int(sb.id),
+            auth=auth,
+            event_type=EVENT_CONNECTION_CREATED,
+            conn=existing,
+        )
+        session.commit()
     return _connection_response_from_row(
         session,
         project_id=storage_project_id,
@@ -863,6 +918,14 @@ def update_stylebook_location_connection(
     for row in rows:
         _apply_connection_update(row, payload)
         session.add(row)
+    _log_stylebook_connection_event(
+        session,
+        stylebook_id=int(sb.id),
+        auth=auth,
+        event_type=EVENT_CONNECTION_UPDATED,
+        conn=conn,
+        payload_json={"replica_count": len(rows)},
+    )
     session.commit()
     session.refresh(conn)
     return _connection_response_from_row(
@@ -918,6 +981,14 @@ def delete_stylebook_location_connection(
     rows = _matching_stylebook_connection_rows(
         session, project_ids=project_ids, connection=conn
     )
+    _log_stylebook_connection_event(
+        session,
+        stylebook_id=int(sb.id),
+        auth=auth,
+        event_type=EVENT_CONNECTION_DELETED,
+        conn=conn,
+        payload_json={"replica_count": len(rows)},
+    )
     for row in rows:
         session.delete(row)
     session.commit()
@@ -930,6 +1001,7 @@ def _create_stylebook_entity_connection(
     storage_project_id: int,
     project_ids: list[int],
     catalog_stylebook_id: int,
+    auth: dict[str, Any],
     from_entity_type: str,
     from_entity_id: str,
     payload: CreateConnectionRequest,
@@ -976,6 +1048,14 @@ def _create_stylebook_entity_connection(
         session.add(existing)
         session.commit()
         session.refresh(existing)
+        _log_stylebook_connection_event(
+            session,
+            stylebook_id=int(catalog_stylebook_id),
+            auth=auth,
+            event_type=EVENT_CONNECTION_CREATED,
+            conn=existing,
+        )
+        session.commit()
     return _connection_response_from_row(
         session,
         project_id=storage_project_id,
@@ -1043,6 +1123,7 @@ def create_stylebook_person_connection(
         storage_project_id=storage_project_id,
         project_ids=project_ids,
         catalog_stylebook_id=int(sb.id),
+        auth=auth,
         from_entity_type="person",
         from_entity_id=person_key,
         payload=payload,
@@ -1088,6 +1169,14 @@ def update_stylebook_person_connection(
     for row in rows:
         _apply_connection_update(row, payload)
         session.add(row)
+    _log_stylebook_connection_event(
+        session,
+        stylebook_id=int(sb.id),
+        auth=auth,
+        event_type=EVENT_CONNECTION_UPDATED,
+        conn=conn,
+        payload_json={"replica_count": len(rows)},
+    )
     session.commit()
     session.refresh(conn)
     return _connection_response_from_row(
@@ -1132,6 +1221,14 @@ def delete_stylebook_person_connection(
     rows = _matching_stylebook_connection_rows(
         session, project_ids=project_ids, connection=conn
     )
+    _log_stylebook_connection_event(
+        session,
+        stylebook_id=int(sb.id),
+        auth=auth,
+        event_type=EVENT_CONNECTION_DELETED,
+        conn=conn,
+        payload_json={"replica_count": len(rows)},
+    )
     for row in rows:
         session.delete(row)
     session.commit()
@@ -1168,6 +1265,7 @@ def create_stylebook_organization_connection(
         storage_project_id=storage_project_id,
         project_ids=project_ids,
         catalog_stylebook_id=int(sb.id),
+        auth=auth,
         from_entity_type="organization",
         from_entity_id=org_key,
         payload=payload,
@@ -1213,6 +1311,14 @@ def update_stylebook_organization_connection(
     for row in rows:
         _apply_connection_update(row, payload)
         session.add(row)
+    _log_stylebook_connection_event(
+        session,
+        stylebook_id=int(sb.id),
+        auth=auth,
+        event_type=EVENT_CONNECTION_UPDATED,
+        conn=conn,
+        payload_json={"replica_count": len(rows)},
+    )
     session.commit()
     session.refresh(conn)
     return _connection_response_from_row(
@@ -1256,6 +1362,14 @@ def delete_stylebook_organization_connection(
     )
     rows = _matching_stylebook_connection_rows(
         session, project_ids=project_ids, connection=conn
+    )
+    _log_stylebook_connection_event(
+        session,
+        stylebook_id=int(sb.id),
+        auth=auth,
+        event_type=EVENT_CONNECTION_DELETED,
+        conn=conn,
+        payload_json={"replica_count": len(rows)},
     )
     for row in rows:
         session.delete(row)

@@ -13,6 +13,13 @@ from backfield_db import (
     StylebookOrganizationCanonical,
     StylebookPersonCanonical,
 )
+from backfield_entities.activity import (
+    EVENT_CLEANUP_DELETE,
+    EVENT_CLEANUP_KEEP,
+    EVENT_CLEANUP_KEEP_SEPARATE,
+    EVENT_CLEANUP_MERGE,
+    log_stylebook_activity_safe,
+)
 from backfield_entities.entities.location.merge import (
     canonical_has_linked_evidence as location_has_linked_evidence,
 )
@@ -2064,6 +2071,19 @@ def merge_cleanup_canonical_location(
             entity_id=location_id,
         )
 
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="cleanup_check",
+        event_type=EVENT_CLEANUP_MERGE,
+        entity_type="location",
+        entity_id=result.source_id,
+        related_entity_type="location",
+        related_entity_id=result.target_id,
+        payload_json={"check_id": "duplicate-locations"},
+    )
     session.commit()
     return MergeCleanupCanonicalResponse(
         source_id=result.source_id,
@@ -2123,6 +2143,18 @@ def delete_empty_cleanup_canonical_location(
         )
 
     deleted_id = str(canon.id)
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="cleanup_check",
+        event_type=EVENT_CLEANUP_DELETE,
+        entity_type="location",
+        entity_id=deleted_id,
+        entity_label=str(canon.label),
+        payload_json={"check_id": "questionable-location-canonicals"},
+    )
     session.delete(canon)
     session.commit()
     return DeleteCleanupCanonicalResponse(id=deleted_id, message="deleted")
@@ -2165,6 +2197,19 @@ def merge_cleanup_canonical_person(
             entity_id=person_id,
         )
 
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="cleanup_check",
+        event_type=EVENT_CLEANUP_MERGE,
+        entity_type="person",
+        entity_id=result.source_id,
+        related_entity_type="person",
+        related_entity_id=result.target_id,
+        payload_json={"check_id": "duplicate-people"},
+    )
     session.commit()
     return MergeCleanupCanonicalResponse(
         source_id=result.source_id,
@@ -2224,6 +2269,18 @@ def delete_empty_cleanup_canonical_person(
         )
 
     deleted_id = str(canon.id)
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="cleanup_check",
+        event_type=EVENT_CLEANUP_DELETE,
+        entity_type="person",
+        entity_id=deleted_id,
+        entity_label=str(canon.label),
+        payload_json={"check_id": "questionable-person-canonicals"},
+    )
     session.delete(canon)
     session.commit()
     return DeleteCleanupCanonicalResponse(id=deleted_id, message="deleted")
@@ -2266,6 +2323,19 @@ def merge_cleanup_canonical_organization(
             entity_id=organization_id,
         )
 
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="cleanup_check",
+        event_type=EVENT_CLEANUP_MERGE,
+        entity_type="organization",
+        entity_id=result.source_id,
+        related_entity_type="organization",
+        related_entity_id=result.target_id,
+        payload_json={"check_id": "duplicate-organizations"},
+    )
     session.commit()
     return MergeCleanupCanonicalResponse(
         source_id=result.source_id,
@@ -2325,6 +2395,18 @@ def delete_empty_cleanup_canonical_organization(
         )
 
     deleted_id = str(canon.id)
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="cleanup_check",
+        event_type=EVENT_CLEANUP_DELETE,
+        entity_type="organization",
+        entity_id=deleted_id,
+        entity_label=str(canon.label),
+        payload_json={"check_id": "questionable-organization-canonicals"},
+    )
     session.delete(canon)
     session.commit()
     return DeleteCleanupCanonicalResponse(id=deleted_id, message="deleted")
@@ -2366,6 +2448,21 @@ def create_cleanup_dismissal(
             member_ids=member_ids,
             created_by_user_id=user_id,
         )
+        log_stylebook_activity_safe(
+            session,
+            stylebook_id=stylebook_id,
+            actor_type="user",
+            actor_user_id=user_id,
+            source="cleanup_check",
+            event_type=EVENT_CLEANUP_KEEP_SEPARATE,
+            entity_type="check",
+            entity_id=body.check_id,
+            payload_json={
+                "check_id": body.check_id,
+                "member_ids": member_ids,
+                "dismissed_pair_count": inserted,
+            },
+        )
         session.commit()
         return CleanupDismissalResponse(
             check_id=body.check_id,
@@ -2382,6 +2479,18 @@ def create_cleanup_dismissal(
         check_id=body.check_id,
         canonical_id=canonical_id,
         created_by_user_id=user_id,
+    )
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=stylebook_id,
+        actor_type="user",
+        actor_user_id=user_id,
+        source="cleanup_check",
+        event_type=EVENT_CLEANUP_KEEP,
+        entity_type="check",
+        entity_id=body.check_id,
+        related_entity_id=canonical_id,
+        payload_json={"check_id": body.check_id, "canonical_id": canonical_id},
     )
     session.commit()
     return CleanupDismissalResponse(

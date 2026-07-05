@@ -14,6 +14,12 @@ from backfield_db import (
     SubstrateOrganizationMention,
     SubstrateOrganizationMentionOccurrence,
 )
+from backfield_entities.activity import (
+    EVENT_CANONICAL_CREATED,
+    EVENT_CANONICAL_DELETED,
+    EVENT_CANONICAL_UPDATED,
+    log_stylebook_activity_safe,
+)
 from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
 from backfield_entities.entities.organization.persist import create_standalone_canonical
 from backfield_entities.entities.organization.types import (
@@ -35,6 +41,12 @@ from stylebook_api.stylebook_scope import (
 )
 
 router = APIRouter(prefix="/v1/stylebooks", tags=["stylebook-organization-canonicals"])
+
+
+def _created_by_user_id(auth: dict[str, Any]) -> int | None:
+    if auth.get("type") != "session" or auth.get("user") is None:
+        return None
+    return int(auth["user"].id)  # type: ignore[union-attr]
 
 
 def _escape_ilike_metacharacters(s: str) -> str:
@@ -486,6 +498,18 @@ def create_canonical_organization(
         organization_type=normalize_organization_type(body.organization_type),
         provenance="stylebook_ui_manual",
     )
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="manual_ui",
+        event_type=EVENT_CANONICAL_CREATED,
+        entity_type="organization",
+        entity_id=str(canon.id),
+        entity_label=str(canon.label),
+        payload_json={"organization_type": canon.organization_type},
+    )
     session.commit()
     session.refresh(canon)
 
@@ -539,6 +563,18 @@ def patch_canonical_organization(
         else:
             canon.organization_type = normalize_organization_type(str(v).strip() or None)
 
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="manual_ui",
+        event_type=EVENT_CANONICAL_UPDATED,
+        entity_type="organization",
+        entity_id=str(canon.id),
+        entity_label=str(canon.label),
+        payload_json=updates,
+    )
     session.add(canon)
     session.commit()
     session.refresh(canon)
@@ -596,6 +632,18 @@ def delete_canonical_organization(
         ]
         session.add(organization)
 
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="manual_ui",
+        event_type=EVENT_CANONICAL_DELETED,
+        entity_type="organization",
+        entity_id=str(canon.id),
+        entity_label=str(canon.label),
+        payload_json={"unlinked_substrate_count": len(linked)},
+    )
     session.delete(canon)
     session.commit()
     return {

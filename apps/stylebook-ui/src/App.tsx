@@ -33,6 +33,7 @@ import OrganizationDetail from "@/pages/OrganizationDetail"
 import CreateOrganization from "@/pages/CreateOrganization"
 import Cleanup from "@/pages/Cleanup"
 import CleanupCheck from "@/pages/CleanupCheck"
+import Recent from "@/pages/Recent"
 import StubPage from "@/pages/StubPage"
 
 function ProtectedLayout() {
@@ -222,6 +223,7 @@ export default function App() {
               <Route index element={<Index />} />
               <Route path="cleanup" element={<Cleanup />} />
               <Route path="cleanup/:checkId" element={<CleanupCheck />} />
+              <Route path="recent" element={<Recent />} />
               <Route path="locations/candidates" element={<LocationCandidates />} />
               <Route path="locations/canonical" element={<Locations />} />
               <Route path="locations/canonical/:id" element={<LocationDetail />} />

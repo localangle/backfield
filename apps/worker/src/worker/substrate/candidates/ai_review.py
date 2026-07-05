@@ -19,6 +19,7 @@ from backfield_db import (
     SubstratePersonMention,
     SubstratePersonMentionOccurrence,
 )
+from backfield_entities.activity import EVENT_AI_REVIEW_COMPLETED, log_stylebook_activity_safe
 from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
 from backfield_entities.canonical.plan_types import CanonicalPersistPlan
 from backfield_entities.catalog.candidate_ai_review import list_open_candidate_ids_for_review
@@ -120,6 +121,24 @@ def _mark_candidate_ai_review_succeeded(engine: Any, review_id: str) -> None:
             return
         review.status = "succeeded"
         review.updated_at = datetime.now(UTC)
+        log_stylebook_activity_safe(
+            session,
+            stylebook_id=int(review.stylebook_id),
+            project_id=int(review.project_id),
+            actor_type="system",
+            source="candidate_ai",
+            event_type=EVENT_AI_REVIEW_COMPLETED,
+            entity_type="check",
+            entity_id=str(review.entity_type),
+            payload_json={
+                "review_id": str(review.id),
+                "entity_type": str(review.entity_type),
+                "candidate_count": int(review.candidate_count),
+                "processed_count": int(review.processed_count),
+                "recommendation_count": int(review.recommendation_count),
+                "status": "succeeded",
+            },
+        )
         session.add(review)
         session.commit()
 

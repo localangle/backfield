@@ -14,6 +14,12 @@ from backfield_db import (
     SubstratePersonMention,
     SubstratePersonMentionOccurrence,
 )
+from backfield_entities.activity import (
+    EVENT_CANONICAL_CREATED,
+    EVENT_CANONICAL_DELETED,
+    EVENT_CANONICAL_UPDATED,
+    log_stylebook_activity_safe,
+)
 from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
 from backfield_entities.entities.person.persist import create_standalone_canonical
 from backfield_entities.entities.person.types import (
@@ -36,6 +42,12 @@ from stylebook_api.stylebook_scope import (
 )
 
 router = APIRouter(prefix="/v1/stylebooks", tags=["stylebook-person-canonicals"])
+
+
+def _created_by_user_id(auth: dict[str, Any]) -> int | None:
+    if auth.get("type") != "session" or auth.get("user") is None:
+        return None
+    return int(auth["user"].id)  # type: ignore[union-attr]
 
 
 def _escape_ilike_metacharacters(s: str) -> str:
@@ -537,6 +549,18 @@ def create_canonical_person(
         sort_key=body.sort_key,
         provenance="stylebook_ui_manual",
     )
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="manual_ui",
+        event_type=EVENT_CANONICAL_CREATED,
+        entity_type="person",
+        entity_id=str(canon.id),
+        entity_label=str(canon.label),
+        payload_json={"person_type": canon.person_type},
+    )
     session.commit()
     session.refresh(canon)
 
@@ -610,6 +634,18 @@ def patch_canonical_person(
     elif "label" in updates and updates["label"] is not None:
         canon.sort_key = derive_person_sort_key(canon.label)
 
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="manual_ui",
+        event_type=EVENT_CANONICAL_UPDATED,
+        entity_type="person",
+        entity_id=str(canon.id),
+        entity_label=str(canon.label),
+        payload_json=updates,
+    )
     session.add(canon)
     session.commit()
     session.refresh(canon)
@@ -667,6 +703,18 @@ def delete_canonical_person(
         ]
         session.add(person)
 
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="manual_ui",
+        event_type=EVENT_CANONICAL_DELETED,
+        entity_type="person",
+        entity_id=str(canon.id),
+        entity_label=str(canon.label),
+        payload_json={"unlinked_substrate_count": len(linked)},
+    )
     session.delete(canon)
     session.commit()
     return {

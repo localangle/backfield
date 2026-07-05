@@ -22,6 +22,7 @@ from stylebook_api.routers import (
     health,
     imports,
     semantic_mention_search,
+    stylebook_activity,
     stylebook_bundle_jobs,
     stylebook_candidate_ai_review,
     stylebook_canonicals,
@@ -65,6 +66,7 @@ app.include_router(health.router)
 app.include_router(taxonomy.router)
 app.include_router(stylebooks.router)
 app.include_router(stylebook_bundle_jobs.router)
+app.include_router(stylebook_activity.router)
 app.include_router(geocode.router)
 app.include_router(locations.router)
 app.include_router(imports.router)

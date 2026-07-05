@@ -13,6 +13,7 @@ from backfield_db import (
     BackfieldProject,
     BackfieldUser,
     Stylebook,
+    StylebookActivity,
     StylebookCleanupAiProposal,
     StylebookCleanupAiReview,
     StylebookCleanupCheckRun,
@@ -1368,3 +1369,77 @@ def test_cleanup_ai_review_start_and_proposal_accept(
         "/v1/stylebooks/default/cleanup/ai-review/proposals/proposal-merge-1/reject"
     )
     assert reject.status_code == 409
+
+
+def test_stylebook_activity_feed_lists_recent_events(
+    cleanup_client: tuple[TestClient, Engine],
+) -> None:
+    client, engine = cleanup_client
+    with Session(engine) as session:
+        sb = session.exec(select(Stylebook)).one()
+        session.add(
+            StylebookActivity(
+                stylebook_id=int(sb.id),
+                actor_type="system",
+                source="ingest_pipeline",
+                event_type="canonical_created",
+                entity_type="person",
+                entity_id="person-123",
+                entity_label="Jane Doe",
+            )
+        )
+        session.add(
+            StylebookActivity(
+                stylebook_id=int(sb.id),
+                actor_type="user",
+                source="cleanup_check",
+                event_type="cleanup_merge",
+                entity_type="organization",
+                entity_id="org-456",
+                entity_label="Example Org",
+            )
+        )
+        session.commit()
+
+    response = client.get("/v1/stylebooks/default/activity?limit=10&offset=0")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] >= 2
+    assert payload["events"][0]["event_type"] in {"cleanup_merge", "canonical_created"}
+
+
+def test_stylebook_activity_feed_filters_by_event_type(
+    cleanup_client: tuple[TestClient, Engine],
+) -> None:
+    client, engine = cleanup_client
+    with Session(engine) as session:
+        sb = session.exec(select(Stylebook)).one()
+        session.add(
+            StylebookActivity(
+                stylebook_id=int(sb.id),
+                actor_type="system",
+                source="ingest_pipeline",
+                event_type="canonical_created",
+                entity_type="location",
+                entity_id="loc-1",
+            )
+        )
+        session.add(
+            StylebookActivity(
+                stylebook_id=int(sb.id),
+                actor_type="system",
+                source="connections",
+                event_type="connection_created",
+                entity_type="connection",
+                entity_id="conn-1",
+            )
+        )
+        session.commit()
+
+    response = client.get(
+        "/v1/stylebooks/default/activity?event_type=connection_created&limit=20&offset=0"
+    )
+    assert response.status_code == 200
+    events = response.json()["events"]
+    assert events
+    assert all(event["event_type"] == "connection_created" for event in events)

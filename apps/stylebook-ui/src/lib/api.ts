@@ -4,6 +4,12 @@
 
 export { fetchProjects, type Project } from "@/lib/stylebook-api/projects"
 export {
+  type ListStylebookActivityParams,
+  type PaginatedStylebookActivityResponse,
+  type StylebookActivityEvent,
+  listStylebookActivity,
+} from "@/lib/stylebook-api/activity"
+export {
   LOCATION_TYPES,
   type CanonicalListSort,
   type CanonicalLocation,
