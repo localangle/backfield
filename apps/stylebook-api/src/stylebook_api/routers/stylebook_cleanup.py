@@ -327,6 +327,29 @@ def _created_by_user_id(auth: dict[str, Any]) -> int | None:
     return int(auth["user"].id)  # type: ignore[union-attr]
 
 
+def _canonical_label_for_entity(
+    session: Session,
+    *,
+    stylebook_id: int,
+    entity_type: str,
+    canonical_id: str,
+) -> str | None:
+    canonical_id = canonical_id.strip()
+    if not canonical_id:
+        return None
+    if entity_type == "location":
+        row = session.get(StylebookLocationCanonical, canonical_id)
+    elif entity_type == "person":
+        row = session.get(StylebookPersonCanonical, canonical_id)
+    elif entity_type == "organization":
+        row = session.get(StylebookOrganizationCanonical, canonical_id)
+    else:
+        return None
+    if row is None or int(row.stylebook_id) != int(stylebook_id):
+        return None
+    return str(row.label).strip() or None
+
+
 def _canonical_responses_with_counts(
     session: Session,
     *,
@@ -2049,6 +2072,18 @@ def merge_cleanup_canonical_location(
     sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
+    source_label = _canonical_label_for_entity(
+        session,
+        stylebook_id=int(sb.id),
+        entity_type="location",
+        canonical_id=source_canonical_id,
+    )
+    target_label = _canonical_label_for_entity(
+        session,
+        stylebook_id=int(sb.id),
+        entity_type="location",
+        canonical_id=body.target_canonical_id,
+    )
     try:
         result = merge_location_canonical_into(
             session,
@@ -2080,8 +2115,10 @@ def merge_cleanup_canonical_location(
         event_type=EVENT_CLEANUP_MERGE,
         entity_type="location",
         entity_id=result.source_id,
+        entity_label=source_label,
         related_entity_type="location",
         related_entity_id=result.target_id,
+        related_entity_label=target_label,
         payload_json={"check_id": "duplicate-locations"},
     )
     session.commit()
@@ -2175,6 +2212,18 @@ def merge_cleanup_canonical_person(
     sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
+    source_label = _canonical_label_for_entity(
+        session,
+        stylebook_id=int(sb.id),
+        entity_type="person",
+        canonical_id=source_canonical_id,
+    )
+    target_label = _canonical_label_for_entity(
+        session,
+        stylebook_id=int(sb.id),
+        entity_type="person",
+        canonical_id=body.target_canonical_id,
+    )
     try:
         result = merge_person_canonical_into(
             session,
@@ -2206,8 +2255,10 @@ def merge_cleanup_canonical_person(
         event_type=EVENT_CLEANUP_MERGE,
         entity_type="person",
         entity_id=result.source_id,
+        entity_label=source_label,
         related_entity_type="person",
         related_entity_id=result.target_id,
+        related_entity_label=target_label,
         payload_json={"check_id": "duplicate-people"},
     )
     session.commit()
@@ -2301,6 +2352,18 @@ def merge_cleanup_canonical_organization(
     sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
+    source_label = _canonical_label_for_entity(
+        session,
+        stylebook_id=int(sb.id),
+        entity_type="organization",
+        canonical_id=source_canonical_id,
+    )
+    target_label = _canonical_label_for_entity(
+        session,
+        stylebook_id=int(sb.id),
+        entity_type="organization",
+        canonical_id=body.target_canonical_id,
+    )
     try:
         result = merge_organization_canonical_into(
             session,
@@ -2332,8 +2395,10 @@ def merge_cleanup_canonical_organization(
         event_type=EVENT_CLEANUP_MERGE,
         entity_type="organization",
         entity_id=result.source_id,
+        entity_label=source_label,
         related_entity_type="organization",
         related_entity_id=result.target_id,
+        related_entity_label=target_label,
         payload_json={"check_id": "duplicate-organizations"},
     )
     session.commit()
@@ -2489,7 +2554,14 @@ def create_cleanup_dismissal(
         event_type=EVENT_CLEANUP_KEEP,
         entity_type="check",
         entity_id=body.check_id,
+        related_entity_type=check.entity_type,
         related_entity_id=canonical_id,
+        related_entity_label=_canonical_label_for_entity(
+            session,
+            stylebook_id=stylebook_id,
+            entity_type=check.entity_type,
+            canonical_id=canonical_id,
+        ),
         payload_json={"check_id": body.check_id, "canonical_id": canonical_id},
     )
     session.commit()
