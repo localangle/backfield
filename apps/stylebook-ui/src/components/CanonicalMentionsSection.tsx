@@ -1,4 +1,4 @@
-import { Fragment, useMemo } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
 import type {
   CanonicalMentionRow,
   CanonicalMentionsSectionConfig,
@@ -71,7 +71,11 @@ export default function CanonicalMentionsSection<
   }, [config, mentions])
 
   const mentionTotal = pagination?.total ?? mentions.length
+  const selectableMode = config.substrateDisplayMode === "selectable"
   const displaySubstrates = useMemo(() => {
+    if (selectableMode) {
+      return substrates
+    }
     if (mentionTotal > 0) {
       const orderedIds: number[] = []
       const seen = new Set<number>()
@@ -86,11 +90,32 @@ export default function CanonicalMentionsSection<
         .filter((substrate): substrate is TSubstrate => substrate != null)
     }
     return substrates
-  }, [config, mentionTotal, mentions, substrates, substratesById])
+  }, [config, mentionTotal, mentions, selectableMode, substrates, substratesById])
 
   const totalPages = pagination
     ? Math.max(1, Math.ceil(pagination.total / pagination.perPage))
     : 1
+  const [selectedSubstrateId, setSelectedSubstrateId] = useState<number | null>(null)
+  const selectedSubstrate = useMemo(
+    () => displaySubstrates.find((substrate) => substrate.id === selectedSubstrateId) ?? null,
+    [displaySubstrates, selectedSubstrateId],
+  )
+  const selectedMentions = useMemo(() => {
+    if (!selectedSubstrate) return []
+    return mentionsBySubstrateId.get(selectedSubstrate.id) ?? []
+  }, [mentionsBySubstrateId, selectedSubstrate])
+
+  useEffect(() => {
+    if (!selectableMode) return
+    if (displaySubstrates.length === 0) {
+      setSelectedSubstrateId(null)
+      return
+    }
+    const selectedStillVisible = displaySubstrates.some((substrate) => substrate.id === selectedSubstrateId)
+    if (!selectedStillVisible) {
+      setSelectedSubstrateId(displaySubstrates[0].id)
+    }
+  }, [displaySubstrates, selectableMode, selectedSubstrateId])
 
   return (
     <Card className="relative z-10">
@@ -108,50 +133,50 @@ export default function CanonicalMentionsSection<
           <p className="text-sm text-muted-foreground">{config.noLinkedMentionsMessage}</p>
         ) : (
           <>
-            <div className="w-full overflow-x-auto">
-              <Table className="w-full table-fixed min-w-[56rem]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[26%] min-w-[9rem]">
-                      {config.columnHeaders.substrateArticle}
-                    </TableHead>
-                    <TableHead className="w-[6.5rem] min-w-[5.5rem]">
-                      {config.columnHeaders.nature}
-                    </TableHead>
-                    <TableHead className="w-[10rem] min-w-[10rem]">
-                      {config.columnHeaders.role}
-                    </TableHead>
-                    <TableHead className="min-w-[18rem]">{config.columnHeaders.quotedText}</TableHead>
-                    <TableHead className="w-[12rem] min-w-[12rem] text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {displaySubstrates.map((s) => {
-                    const group = mentionsBySubstrateId.get(s.id) ?? []
-                    return (
-                      <Fragment key={`group-${s.id}`}>
-                        <TableRow className="bg-muted/50 border-t">
-                          <TableCell colSpan={4} className="align-top py-3">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <div className="font-medium min-w-0 break-words">{s.name}</div>
-                              {config.renderSubstrateHeaderExtra?.(s)}
-                            </div>
-                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground break-words">
-                              <Badge variant="outline" className="font-normal">
-                                Project: {s.project_name}
-                              </Badge>
-                              {config.renderSubstrateSubtitle(s)}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right align-top py-3 w-[12rem] min-w-[12rem]">
+            {selectableMode ? (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Linked substrate variants</p>
+                  <div className="grid gap-2">
+                    {displaySubstrates.map((substrate) => {
+                      const mentionCount = (mentionsBySubstrateId.get(substrate.id) ?? []).length
+                      const selected = selectedSubstrateId === substrate.id
+                      return (
+                        <div
+                          key={`substrate-choice-${substrate.id}`}
+                          className={cn(
+                            "rounded-md border px-3 py-2",
+                            selected ? "border-primary bg-primary/5" : "border-border",
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <button
+                              type="button"
+                              className="min-w-0 flex-1 text-left"
+                              onClick={() => setSelectedSubstrateId(substrate.id)}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="font-medium break-words">{substrate.name}</span>
+                                {config.renderSubstrateHeaderExtra?.(substrate)}
+                              </div>
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                <Badge variant="outline" className="font-normal">
+                                  Project: {substrate.project_name}
+                                </Badge>
+                                <Badge variant="outline" className="font-normal">
+                                  Mentions on page: {mentionCount}
+                                </Badge>
+                                {config.renderSubstrateSubtitle(substrate)}
+                              </div>
+                            </button>
                             <div className="flex flex-wrap justify-end gap-2">
                               <Button
                                 type="button"
                                 size="sm"
                                 variant="outline"
                                 className="relative z-10 shrink-0"
-                                disabled={unlinkingId === s.id}
-                                onClick={() => onMove(s)}
+                                disabled={unlinkingId === substrate.id}
+                                onClick={() => onMove(substrate)}
                               >
                                 Move…
                               </Button>
@@ -160,54 +185,81 @@ export default function CanonicalMentionsSection<
                                 size="sm"
                                 variant="secondary"
                                 className="relative z-10 shrink-0"
-                                disabled={unlinkingId === s.id}
-                                onClick={() => onUnlink(s)}
+                                disabled={unlinkingId === substrate.id}
+                                onClick={() => onUnlink(substrate)}
                               >
-                                {unlinkingId === s.id ? "Unlinking…" : "Unlink"}
+                                {unlinkingId === substrate.id ? "Unlinking…" : "Unlink"}
                               </Button>
                             </div>
-                          </TableCell>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="rounded-md border">
+                  <div className="border-b px-3 py-2 text-sm">
+                    {selectedSubstrate ? (
+                      <span>
+                        Showing mentions for <strong>{selectedSubstrate.name}</strong>
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">Select a substrate variant to inspect mentions.</span>
+                    )}
+                  </div>
+                  <div className="w-full overflow-x-auto">
+                    <Table className="w-full table-fixed min-w-[48rem]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[32%] min-w-[10rem]">
+                            {config.columnHeaders.substrateArticle}
+                          </TableHead>
+                          <TableHead className="w-[6.5rem] min-w-[5.5rem]">
+                            {config.columnHeaders.nature}
+                          </TableHead>
+                          <TableHead className="w-[10rem] min-w-[10rem]">
+                            {config.columnHeaders.role}
+                          </TableHead>
+                          <TableHead className="min-w-[18rem]">{config.columnHeaders.quotedText}</TableHead>
                         </TableRow>
-                        {group.length === 0 ? (
+                      </TableHeader>
+                      <TableBody>
+                        {!selectedSubstrate ? (
                           <TableRow>
-                            <TableCell
-                              colSpan={5}
-                              className="pl-8 text-sm text-muted-foreground py-2"
-                            >
+                            <TableCell colSpan={4} className="text-sm text-muted-foreground py-3">
+                              Select a substrate above.
+                            </TableCell>
+                          </TableRow>
+                        ) : selectedMentions.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-sm text-muted-foreground py-3">
                               {config.emptySubstrateMentionsMessage}
                             </TableCell>
                           </TableRow>
                         ) : (
-                          group.map((m) => {
+                          selectedMentions.map((m) => {
                             const articleHref = mentionArticleHref(m)
                             const articleLabel = mentionArticleDisplayTitle(m)
                             return (
                               <TableRow key={m.mention_id} className="hover:bg-muted/30">
-                                <TableCell className="pl-8 align-top min-w-0">
-                                  <div className="flex items-start gap-1 min-w-0">
-                                    <span
-                                      className="text-muted-foreground select-none shrink-0 pt-0.5"
-                                      aria-hidden
-                                    >
-                                      ↳
-                                    </span>
-                                    <div className="min-w-0">
-                                      {articleHref ? (
-                                        <a
-                                          href={articleHref}
-                                          className="font-medium text-primary hover:underline break-words"
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          title={articleLabel}
-                                        >
-                                          {articleLabel}
-                                        </a>
-                                      ) : (
-                                        <span className="font-medium break-words" title={articleLabel}>
-                                          {articleLabel}
-                                        </span>
-                                      )}
-                                    </div>
+                                <TableCell className="align-top min-w-0">
+                                  <div className="min-w-0">
+                                    {articleHref ? (
+                                      <a
+                                        href={articleHref}
+                                        className="font-medium text-primary hover:underline break-words"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title={articleLabel}
+                                      >
+                                        {articleLabel}
+                                      </a>
+                                    ) : (
+                                      <span className="font-medium break-words" title={articleLabel}>
+                                        {articleLabel}
+                                      </span>
+                                    )}
                                   </div>
                                 </TableCell>
                                 <TableCell className="align-top py-3">
@@ -227,17 +279,147 @@ export default function CanonicalMentionsSection<
                                 <TableCell className="min-w-0 text-sm align-top break-words leading-relaxed">
                                   {m.original_text ?? "—"}
                                 </TableCell>
-                                <TableCell className="align-top" />
                               </TableRow>
                             )
                           })
                         )}
-                      </Fragment>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="w-full overflow-x-auto">
+                <Table className="w-full table-fixed min-w-[56rem]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[26%] min-w-[9rem]">
+                        {config.columnHeaders.substrateArticle}
+                      </TableHead>
+                      <TableHead className="w-[6.5rem] min-w-[5.5rem]">
+                        {config.columnHeaders.nature}
+                      </TableHead>
+                      <TableHead className="w-[10rem] min-w-[10rem]">
+                        {config.columnHeaders.role}
+                      </TableHead>
+                      <TableHead className="min-w-[18rem]">{config.columnHeaders.quotedText}</TableHead>
+                      <TableHead className="w-[12rem] min-w-[12rem] text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {displaySubstrates.map((s) => {
+                      const group = mentionsBySubstrateId.get(s.id) ?? []
+                      return (
+                        <Fragment key={`group-${s.id}`}>
+                          <TableRow className="bg-muted/50 border-t">
+                            <TableCell colSpan={4} className="align-top py-3">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="font-medium min-w-0 break-words">{s.name}</div>
+                                {config.renderSubstrateHeaderExtra?.(s)}
+                              </div>
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground break-words">
+                                <Badge variant="outline" className="font-normal">
+                                  Project: {s.project_name}
+                                </Badge>
+                                {config.renderSubstrateSubtitle(s)}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right align-top py-3 w-[12rem] min-w-[12rem]">
+                              <div className="flex flex-wrap justify-end gap-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="relative z-10 shrink-0"
+                                  disabled={unlinkingId === s.id}
+                                  onClick={() => onMove(s)}
+                                >
+                                  Move…
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="secondary"
+                                  className="relative z-10 shrink-0"
+                                  disabled={unlinkingId === s.id}
+                                  onClick={() => onUnlink(s)}
+                                >
+                                  {unlinkingId === s.id ? "Unlinking…" : "Unlink"}
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                          {group.length === 0 ? (
+                            <TableRow>
+                              <TableCell
+                                colSpan={5}
+                                className="pl-8 text-sm text-muted-foreground py-2"
+                              >
+                                {config.emptySubstrateMentionsMessage}
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            group.map((m) => {
+                              const articleHref = mentionArticleHref(m)
+                              const articleLabel = mentionArticleDisplayTitle(m)
+                              return (
+                                <TableRow key={m.mention_id} className="hover:bg-muted/30">
+                                  <TableCell className="pl-8 align-top min-w-0">
+                                    <div className="flex items-start gap-1 min-w-0">
+                                      <span
+                                        className="text-muted-foreground select-none shrink-0 pt-0.5"
+                                        aria-hidden
+                                      >
+                                        ↳
+                                      </span>
+                                      <div className="min-w-0">
+                                        {articleHref ? (
+                                          <a
+                                            href={articleHref}
+                                            className="font-medium text-primary hover:underline break-words"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            title={articleLabel}
+                                          >
+                                            {articleLabel}
+                                          </a>
+                                        ) : (
+                                          <span className="font-medium break-words" title={articleLabel}>
+                                            {articleLabel}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="align-top py-3">
+                                    <Badge
+                                      variant="outline"
+                                      className={cn(
+                                        "font-medium shadow-none",
+                                        config.getMentionNatureBadgeClass(m.mention_nature),
+                                      )}
+                                    >
+                                      {config.getMentionNatureLabel(m.mention_nature)}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-muted-foreground text-sm align-top max-w-[10rem] break-words leading-snug">
+                                    {m.description ?? "—"}
+                                  </TableCell>
+                                  <TableCell className="min-w-0 text-sm align-top break-words leading-relaxed">
+                                    {m.original_text ?? "—"}
+                                  </TableCell>
+                                  <TableCell className="align-top" />
+                                </TableRow>
+                              )
+                            })
+                          )}
+                        </Fragment>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
             {pagination ? (
               <Pagination
                 page={pagination.page}

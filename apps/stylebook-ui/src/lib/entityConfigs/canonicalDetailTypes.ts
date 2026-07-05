@@ -32,6 +32,7 @@ export interface CanonicalMentionsSectionConfig<
   TMention extends CanonicalMentionRow = CanonicalMentionRow,
 > {
   description: string
+  substrateDisplayMode?: "grouped" | "selectable"
   columnHeaders: {
     substrateArticle: string
     nature: string

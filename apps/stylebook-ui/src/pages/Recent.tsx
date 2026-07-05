@@ -10,7 +10,7 @@ import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 const PER_PAGE = 25
 
 function eventSummary(event: StylebookActivityEvent): string {
-  const base = event.event_type.replaceAll("_", " ")
+  const base = event.event_type.split("_").join(" ")
   const entity = event.entity_label || event.entity_id || event.entity_type || "record"
   const related = event.related_entity_label || event.related_entity_id
   if (related) return `${base}: ${entity} -> ${related}`
