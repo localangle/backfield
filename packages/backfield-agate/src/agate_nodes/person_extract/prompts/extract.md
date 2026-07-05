@@ -13,6 +13,7 @@ Extract a person only if:
    - Officials, employees, or representatives whose statements or actions are relevant
    - Subjects of investigations, lawsuits, decisions, or policies
    - Individuals whose identity is necessary for understanding the story
+   - **Named musical groups, bands, and recording acts** when they perform, release work, tour, win awards, or are quoted as a group (`Pearl Jam`, `The Beatles`, `Alice Cooper` when referring to the act)
 
 **IMPORTANT**: Do not extract people who are only referred to generically without a name, such as "a store owner," "the dispatcher," "a teacher," "residents," or "witnesses" unless a specific name is provided. The same rule applies to **role-plus-agency** phrases with no personal name (e.g. "a Border Patrol agent," "an Illinois Border Patrol agent," "the undercover officer")—**omit them entirely**.
 
@@ -51,6 +52,8 @@ Do not extract:
 - **No organization should ever appear as a person.** Government bodies, agencies, departments, offices, bureaus, commissions, boards, companies, nonprofits, unions, schools, universities, hospitals, sports teams or leagues, courts as institutions, and similar named institutions belong in organization extraction—not in `people`—even when they release statements, investigate, confirm, or are the grammatical subject ("The Civilian Office of Police Accountability released…", "the agency posted on X")
 - **Institutional name signals:** names containing **Office**, **Department**, **Bureau**, **Agency**, **Administration**, **Authority**, **Commission**, **Board**, **Division**, **Service**, **Corporation**, **Company**, **Foundation**, **Institute**, **Association**, **Union**, **School**, **Elementary**, **University**, **Hospital**, **Medical Center**, **Police Department**, **Fire Department**, **Capital**, **Associates**, **LLC**, **Inc.**, **Media**, **News**, or multi-word proper names describing a **body or office** (e.g. "Civilian Office of Police Accountability," "Cook County State's Attorney's Office") are organizations, not people
 - **Associations, companies, schools, media outlets, agencies, and teams are not people:** do not emit names such as `American Gaming Association`, `American Medical Association`, `Kittelson & Associates`, `Engaged Capital`, `Gibson Guitars`, `Finkl Steel`, `Fuller Elementary`, `Glenbard East`, `WBEZ`, `CBS2`, `BBC`, `Chicago Sky`, or `Team USA` as `people.name`. If relevant, they belong in organizations; if they describe a human's employer, put them in `affiliation` only after the human name is known.
+- **Consumer brands alone are not people or organizations:** `Budweiser`, `Google`, `Coca-Cola` as product or brand references belong in neither extract—unless a **named union, executive group, or corporate body** is explicit (`Budweiser employees union`, `Google executive team` → organizations).
+- **Bands are people, not organizations:** `Pearl Jam`, `The Beatles`, and similar musical acts belong in **people** extraction when editorially relevant—not in organizations.
 - **Acronyms and outlets:** all-caps labels like `CTA`, `DHS`, `FBI`, `MLB`, `UIC`, `WBEZ`, `BBC`, and `PBS` are usually institutions in news copy. Do not create a person for an acronym unless the article clearly establishes it as an individual stage name or personal mononym.
 - **People vs. organizations:** extract named **individuals** (officers, spokespeople, directors, employees) when their human name appears; do **not** extract the **organization** itself (e.g. "Detective Maria Lopez of the Chicago Police Department" → person **Maria Lopez**; "Chicago Police Department" alone → not a person)
 - When unsure whether a name is a person or an institution, **omit it from people**—downstream organization extraction handles institutions
@@ -80,6 +83,18 @@ Do not extract:
 - **Do not extract families, households, dynasties, or other collectives as a single person**, even when named (e.g. "the Sackler family," "the Kennedy family," "the Smith family").
 - Only extract **individual people** with their own names. If the article names specific members (e.g. "Richard Sackler and his cousin David Sackler"), extract each named individual separately — not a record for "Sackler family."
 - Couples or pairs described together without individual names ("the couple," "the parents") are not people unless a specific person's name is given.
+
+### Musical groups and bands
+
+Extract **named musical groups, bands, and recording acts** as people when they matter to the story—not as organizations.
+
+- Use the **band or act name** as `name` (`Pearl Jam`, `The Rolling Stones`, `Alice Cooper` when the story refers to the act).
+- Set `type` to `artist_entertainer` and `public_figure`: `true` when the act is widely known.
+- Do **not** emit the same band in organization extraction; bands belong here in `people`.
+
+Examples:
+- `"Pearl Jam announced a spring tour"` → person `Pearl Jam`
+- `"Alice Cooper joined Marc Ribot and Steve Earle on the bill"` → people (each named act or individual as appropriate)
 
 ## Person Identification Rules
 

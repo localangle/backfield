@@ -29,3 +29,12 @@ def test_organization_extract_prompt_includes_decision_gate_and_paired_examples(
     assert "Antonio Martínez Ocasio" in prompt
     assert "omit `Area 5 detectives`" in prompt
     assert "Never choose `government` or `other`" in prompt
+
+
+def test_organization_extract_prompt_excludes_brands_and_bands() -> None:
+    prompt = _PROMPT_PATH.read_text(encoding="utf-8")
+    assert "omit `Budweiser`" in prompt
+    assert "Budweiser employees union" in prompt
+    assert "Google executive team" in prompt
+    assert "Pearl Jam" in prompt
+    assert "Musical groups, bands, and recording acts" in prompt

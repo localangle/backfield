@@ -24,6 +24,8 @@ Paired examples:
 - omit `American Community Survey`; keep `U.S. Census Bureau` when that agency is named and acting
 - omit `Anne Frank House`, `Arc de Triomphe`; keep a **named museum foundation or operating institution** only when that body is the actor—not the landmark name alone
 - omit `American civil society`, `Arizona families`, `Arizona grand jury`; keep a **named office, agency, or committee** only when the institution is explicit
+- omit `Budweiser`, `Google`, `Twitter` as bare **consumer brand or product** names; keep **`Budweiser employees union`**, **`Google executive team`**, or a **named corporate entity** only when that organized body is explicit and acting
+- omit `Pearl Jam`, `The Beatles`, `Alice Cooper` (as the act); those are **bands or musical acts**—extract as **people**, not organizations
 
 ## When to extract
 
@@ -33,6 +35,8 @@ Require a **specific proper-noun institution** (agency, company, school, team, n
 
 ## Do not extract
 
+- **Consumer brands, products, and platforms** named alone—not organizations (`Budweiser`, `Google`, `Coca-Cola`, `Twitter` as incidental platform use). Extract a **named union, division, executive group, subsidiary, or corporate entity** only when that **organized body** is explicit (`Budweiser employees union`, `Google executive team`, `Alphabet Inc.` when the company is the actor)—not the bare brand name alone
+- **Musical groups, bands, and recording acts** (`Pearl Jam`, `The Beatles`, `Alice Cooper` when referring to the act)—extract as **people**, not organizations
 - Individual people
 - **Named human individuals** — coaches, players, athletes, elected officials, artists, musicians, actors, executives, sources, witnesses, and other people quoted or acting in the story are **people**, not organizations (e.g. `"Bears coach Ben Johnson said…"` → person **Ben Johnson**; **Alice Cooper** on a roster with **Marc Ribot** and **Steve Earle** → people; **Antonio Martínez Ocasio**, **Ayo Dosunmu** → people). Extract their **employer, team, or agency** only when **that institution** is the accountable actor in the story—not the person's personal name.
 - **Descriptive or relational person phrases** — omit entirely when the text describes a **person's relationship, wealth, or role** rather than naming an institution (e.g. `"billionaire father of Bill Conway"`, `"his brother"`, `"the victim's mother"`). These are not organizations.
@@ -53,11 +57,13 @@ Require a **specific proper-noun institution** (agency, company, school, team, n
 
 The same name can be an organization, a brand, a work/title, a venue, or an event. Use context.
 
-**Clear organization** — extract normally when people, management, employees, ownership, policy, statements, lawsuits, layoffs, operations, hiring, closures, or organized activity are in view.
+**Clear organization** — extract normally when people, management, employees, ownership, policy, statements, lawsuits, layoffs, operations, hiring, closures, or organized activity are in view—and the text names an **organized body**, not just a **brand** (`Budweiser employees union`, `Google executive team`, `Twitter laid off 20 people` when Twitter-the-company is acting).
 
-**Omit** — when the name is only incidental product, platform, service, venue, title, event context, **geography, law/policy, grant/program, or abstract topic** and does not matter to the story—or when there is **no accountable group of people** behind the name. For awards, games, concerts, festivals, parades, and historical events, **omit the event name** unless the organizing institution is clearly the actor.
+**Omit** — when the name is only a **consumer brand or product** with no accountable group (`Budweiser`, `Google`, `Coca-Cola`); incidental platform, service, venue, title, event context, **geography, law/policy, grant/program, or abstract topic**; or when there is **no accountable group of people** behind the name. **Musical bands and acts** belong in **people** extraction, not here. For awards, games, concerts, festivals, parades, and historical events, **omit the event name** unless the organizing institution is clearly the actor.
 
 Examples of **omit** (not organizations):
+- `"Budweiser"` / `"Google"` / `"Coca-Cola"` as brand or product references → omit (not `"Budweiser"` as `company`)
+- `"Pearl Jam"` / `"The Rolling Stones"` / `"Alice Cooper"` (the act) → band; omit from organizations (people extraction)
 - `"the Affordable Care Act"` / `"ACA health insurance"` → law/program topic; omit (unless a **named agency** is the actor)
 - `"Anti-Weaponization Fund"` / `"Full Service Community Schools grant"` → fund/program topic; omit
 - `"American Community Survey"` → publication/survey title; omit (unless **U.S. Census Bureau** or similar agency is the actor)
@@ -69,8 +75,13 @@ Examples of **omit** (not organizations):
 - `"Donald Trump"` / `"Bernie Sanders"` / `"Antonio Martínez Ocasio"` / `"Ayo Dosunmu"` → people; omit
 - `"Grammy Awards"` / `"Super Bowl"` / `"World War I"` → event/history; omit unless the organizing body is named
 
+Examples of **keep** (organizations):
+- `"Budweiser employees union"` → organization (named union/body)
+- `"Google executive team"` → organization (named executive group)
+- `"Twitter laid off 20 people"` → organization (`company`) when the corporate actor is clear
+
 **Borderline but editorially relevant** — include the row, use the best normal `type`, and set `organization_boundary` to one of:
-- `borderline_brand_platform` — brand/platform/service use may not be organizational ("sent a message on Twitter")
+- `borderline_brand_platform` — only when a **named corporate or platform entity** is acting but context is ambiguous (not a bare consumer brand with no organized body)
 - `borderline_work_title` — column, show, book, film, franchise, publication title, etc. ("Dear Abby answered a reader")
 - `borderline_place_business` — business name may be only a location ("the event happened at Baskin Robbins")
 - `borderline_event_competition` — use only when an organizing body might exist but context is ambiguous. If the mention is just the event/award/game name (`Grammy Awards`, `Super Bowl`, festival title), **omit** instead of using this boundary.
@@ -80,8 +91,11 @@ Do **not** use `other` just because a row is borderline. Omit `organization_boun
 Examples:
 - "Twitter laid off 20 people" → organization (`company`)
 - "Joe sent a message on Twitter" → omit (incidental platform use)
+- "Budweiser employees union voted to strike" → organization
+- "Budweiser" as a product mention only → omit
+- "Google executive team announced layoffs" → organization
+- "Google" as a search engine reference only → omit
 - "AMC announced it would close two theaters" → organization
-- "Baskin Robbins employees gathered" → organization (`local_business`)
 - "The event happened at Baskin Robbins" → omit unless the business itself matters; if editorially relevant but venue-like, `borderline_place_business`
 
 ## Names and types

@@ -25,3 +25,11 @@ def test_person_extract_prompt_includes_institutional_examples() -> None:
     assert "Glenbard East" in prompt
     assert "Chicago Department of Transportation spokesperson" in prompt
     assert "CTA`, `DHS`, `FBI`, `MLB`, `UIC`, `WBEZ`" in prompt
+
+
+def test_person_extract_prompt_includes_band_guidance() -> None:
+    prompt = _PROMPT_PATH.read_text(encoding="utf-8")
+    assert "### Musical groups and bands" in prompt
+    assert "Pearl Jam" in prompt
+    assert "Bands are people, not organizations" in prompt
+    assert "Budweiser employees union" in prompt

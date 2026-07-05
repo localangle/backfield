@@ -73,6 +73,9 @@ export function useCleanupAiReviewPolling(params: {
   }, [])
 
   useEffect(() => {
+    activeReviewIdRef.current = null
+    setReview(null)
+    setProposals([])
     if (!enabled || !stylebookSlug || !checkId) return
     let cancelled = false
     void (async () => {
@@ -80,11 +83,9 @@ export function useCleanupAiReviewPolling(params: {
       try {
         const latest = await getLatestCleanupAiReview(stylebookSlug, checkId)
         if (cancelled || !latest) return
+        if (isTerminalReviewStatus(latest.status)) return
         activeReviewIdRef.current = latest.id
         setReview(latest)
-        if (isTerminalReviewStatus(latest.status)) {
-          await loadProposals(latest.id)
-        }
       } finally {
         if (!cancelled) setLoading(false)
       }

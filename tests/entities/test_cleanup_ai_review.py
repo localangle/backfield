@@ -61,6 +61,66 @@ def test_build_cluster_partition_prompt_includes_person_fields() -> None:
     assert "athlete" in prompt
     assert "Jane Doe homered" in prompt
     assert "Partition every listed id" in prompt
+    assert "same person" in prompt
+    assert "different individuals" in prompt
+    assert "distinct organizations" not in prompt
+
+
+def test_build_cluster_partition_prompt_includes_organization_alias_rules() -> None:
+    prompt = build_cluster_partition_prompt(
+        check_id="duplicate-organizations",
+        members=[
+            CleanupClusterMember(
+                id="org-1",
+                label="President Donald Trump's administration",
+                linked_substrate_count=2,
+                mention_count=3,
+                organization_type="government",
+            ),
+            CleanupClusterMember(
+                id="org-2",
+                label="President Trump's administration",
+                linked_substrate_count=1,
+                mention_count=1,
+                organization_type="government",
+            ),
+        ],
+    )
+    assert "same durable body" in prompt
+    assert "honorific" in prompt
+    assert "President Donald Trump's administration" in prompt
+    assert "President Trump's administration" in prompt
+    assert "different individuals" not in prompt
+    assert "different organizations" in prompt
+
+
+def test_build_cluster_partition_prompt_includes_location_identity_rules() -> None:
+    prompt = build_cluster_partition_prompt(
+        check_id="duplicate-locations",
+        members=[
+            CleanupClusterMember(
+                id="loc-1",
+                label="Advocate Christ Medical Center, Oak Lawn, IL",
+                linked_substrate_count=2,
+                mention_count=3,
+                location_type="place",
+                formatted_address="4440 W 95th St, Oak Lawn, IL",
+            ),
+            CleanupClusterMember(
+                id="loc-2",
+                label="Advocate Christ Medical Center",
+                linked_substrate_count=1,
+                mention_count=1,
+                location_type="place",
+                formatted_address="4440 W 95th St, Oak Lawn, IL",
+            ),
+        ],
+    )
+    assert "same location" in prompt
+    assert "same real-world place" in prompt
+    assert "container geography" in prompt
+    assert "different individuals" not in prompt
+    assert "Presidential" not in prompt
 
 
 def test_parse_cluster_partition_response_requires_full_cover() -> None:
