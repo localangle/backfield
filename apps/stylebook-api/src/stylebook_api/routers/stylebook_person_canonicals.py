@@ -274,6 +274,7 @@ class LinkedPersonSubstrateItem(BaseModel):
     id: int
     name: str
     normalized_name: str
+    mention_count: int = 0
     person_type: str | None = None
     title: str | None = None
     affiliation: str | None = None
@@ -763,12 +764,33 @@ def list_canonical_linked_substrates(
             )
         ).all()
     )
+    person_ids = [int(person.id) for person, _ in rows if person.id is not None]  # type: ignore[arg-type]
+    mention_counts: dict[int, int] = {}
+    if person_ids:
+        mention_counts = {
+            int(person_id): int(count or 0)
+            for person_id, count in session.exec(
+                select(
+                    col(SubstratePersonMention.person_id),
+                    func.count(col(SubstratePersonMention.id)),
+                )
+                .join(SubstrateArticle, SubstrateArticle.id == SubstratePersonMention.article_id)
+                .where(
+                    col(SubstratePersonMention.person_id).in_(person_ids),
+                    SubstratePersonMention.deleted == False,  # noqa: E712
+                    col(SubstrateArticle.project_id).in_(project_ids),
+                    SubstrateArticle.deleted == False,  # noqa: E712
+                )
+                .group_by(col(SubstratePersonMention.person_id))
+            ).all()
+        }
     return LinkedPersonSubstratesResponse(
         substrates=[
             LinkedPersonSubstrateItem(
                 id=int(person.id),  # type: ignore[arg-type]
                 name=str(person.name),
                 normalized_name=str(person.normalized_name or ""),
+                mention_count=mention_counts.get(int(person.id), 0),  # type: ignore[arg-type]
                 person_type=person.person_type,
                 title=(person.title or "").strip() or None,
                 affiliation=(person.affiliation or "").strip() or None,

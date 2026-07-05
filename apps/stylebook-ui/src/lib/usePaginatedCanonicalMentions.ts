@@ -19,12 +19,14 @@ export function usePaginatedCanonicalMentions<TMention>({
   canonicalId,
   stylebookSlug,
   projectFilterSlug,
+  resetKey = "",
   enabled,
   fetchPage,
 }: {
   canonicalId: string | undefined
   stylebookSlug: string | undefined
   projectFilterSlug: string
+  resetKey?: string
   enabled: boolean
   fetchPage: FetchCanonicalMentionsPage<TMention>
 }) {
@@ -35,9 +37,7 @@ export function usePaginatedCanonicalMentions<TMention>({
 
   useEffect(() => {
     setPage(1)
-    setMentions([])
-    setTotal(0)
-  }, [canonicalId, stylebookSlug, projectFilterSlug])
+  }, [canonicalId, stylebookSlug, projectFilterSlug, resetKey])
 
   const loadPage = useCallback(
     async (pageNum: number, quiet = false) => {

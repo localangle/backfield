@@ -174,6 +174,7 @@ class LinkedSubstrateItem(BaseModel):
     id: int
     name: str
     normalized_name: str
+    mention_count: int = 0
     location_type: str
     canonical_link_status: str
     formatted_address: str | None = None
@@ -684,12 +685,33 @@ def list_canonical_linked_substrates(
             )
         ).all()
     )
+    location_ids = [int(loc.id) for loc, _ in rows if loc.id is not None]  # type: ignore[arg-type]
+    mention_counts: dict[int, int] = {}
+    if location_ids:
+        mention_counts = {
+            int(location_id): int(count or 0)
+            for location_id, count in session.exec(
+                select(
+                    col(SubstrateLocationMention.location_id),
+                    func.count(col(SubstrateLocationMention.id)),
+                )
+                .join(SubstrateArticle, SubstrateArticle.id == SubstrateLocationMention.article_id)
+                .where(
+                    col(SubstrateLocationMention.location_id).in_(location_ids),
+                    SubstrateLocationMention.deleted == False,  # noqa: E712
+                    col(SubstrateArticle.project_id).in_(project_ids),
+                    SubstrateArticle.deleted == False,  # noqa: E712
+                )
+                .group_by(col(SubstrateLocationMention.location_id))
+            ).all()
+        }
     return LinkedSubstratesResponse(
         substrates=[
             LinkedSubstrateItem(
                 id=int(loc.id),  # type: ignore[arg-type]
                 name=str(loc.name),
                 normalized_name=str(loc.normalized_name or ""),
+                mention_count=mention_counts.get(int(loc.id), 0),  # type: ignore[arg-type]
                 location_type=str(loc.location_type or ""),
                 canonical_link_status=str(loc.canonical_link_status or ""),
                 formatted_address=(loc.formatted_address or "").strip() or None,
@@ -717,6 +739,10 @@ def list_canonical_location_mentions(
     offset: int = Query(0, ge=0),
     sort: str | None = Query(None, description="article | created_at (default)"),
     sort_direction: str = Query("desc", description="asc or desc"),
+    substrate_location_id: int | None = Query(
+        None,
+        description="Optional linked substrate id to scope mentions to one substrate location.",
+    ),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> LocationMentionsResponse:
@@ -741,6 +767,8 @@ def list_canonical_location_mentions(
         col(SubstrateArticle.project_id).in_(project_ids),
         SubstrateArticle.deleted == False,  # noqa: E712
     ]
+    if substrate_location_id is not None:
+        base_where.append(col(SubstrateLocation.id) == int(substrate_location_id))
 
     total = int(
         session.scalar(

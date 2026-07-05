@@ -38,6 +38,8 @@ export interface CanonicalMentionsSectionProps<
   unlinkingId: number | null
   onUnlink: (substrate: TSubstrate) => void
   onMove: (substrate: TSubstrate) => void
+  selectedSubstrateId?: number | null
+  onSelectedSubstrateChange?: (substrateId: number | null) => void
   pagination?: CanonicalMentionsPagination
 }
 
@@ -52,6 +54,8 @@ export default function CanonicalMentionsSection<
   unlinkingId,
   onUnlink,
   onMove,
+  selectedSubstrateId: controlledSelectedSubstrateId,
+  onSelectedSubstrateChange,
   pagination,
 }: CanonicalMentionsSectionProps<TSubstrate, TMention>) {
   const substratesById = useMemo(
@@ -95,15 +99,35 @@ export default function CanonicalMentionsSection<
   const totalPages = pagination
     ? Math.max(1, Math.ceil(pagination.total / pagination.perPage))
     : 1
-  const [selectedSubstrateId, setSelectedSubstrateId] = useState<number | null>(null)
-  const selectedSubstrate = useMemo(
-    () => displaySubstrates.find((substrate) => substrate.id === selectedSubstrateId) ?? null,
-    [displaySubstrates, selectedSubstrateId],
-  )
+  const showBlockingLoading = loading && substrates.length === 0 && mentionTotal === 0
+  const [internalSelectedSubstrateId, setInternalSelectedSubstrateId] = useState<number | null>(null)
+  const selectedSubstrateId =
+    controlledSelectedSubstrateId !== undefined
+      ? controlledSelectedSubstrateId
+      : internalSelectedSubstrateId
+  const setSelectedSubstrateId = (substrateId: number | null) => {
+    if (controlledSelectedSubstrateId === undefined) {
+      setInternalSelectedSubstrateId(substrateId)
+    }
+    onSelectedSubstrateChange?.(substrateId)
+  }
+  const selectedSubstrate = useMemo(() => {
+    const explicit = displaySubstrates.find((substrate) => substrate.id === selectedSubstrateId) ?? null
+    if (explicit) return explicit
+    return selectableMode ? (displaySubstrates[0] ?? null) : null
+  }, [displaySubstrates, selectableMode, selectedSubstrateId])
+  const activeSelectedSubstrateId = selectedSubstrate?.id ?? null
   const selectedMentions = useMemo(() => {
     if (!selectedSubstrate) return []
     return mentionsBySubstrateId.get(selectedSubstrate.id) ?? []
   }, [mentionsBySubstrateId, selectedSubstrate])
+  const visibleSelectedMentions = useMemo(() => {
+    if (!selectableMode) return selectedMentions
+    if (selectedMentions.length > 0) return selectedMentions
+    // During substrate switches, keep previous rows mounted until the new page loads.
+    if (loading) return mentions
+    return selectedMentions
+  }, [loading, mentions, selectableMode, selectedMentions])
 
   useEffect(() => {
     if (!selectableMode) return
@@ -124,7 +148,7 @@ export default function CanonicalMentionsSection<
         <CardDescription>{config.description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {loading ? (
+        {showBlockingLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading…
@@ -139,8 +163,11 @@ export default function CanonicalMentionsSection<
                   <p className="text-sm font-medium">Linked substrate variants</p>
                   <div className="grid gap-2">
                     {displaySubstrates.map((substrate) => {
-                      const mentionCount = (mentionsBySubstrateId.get(substrate.id) ?? []).length
-                      const selected = selectedSubstrateId === substrate.id
+                      const mentionCount =
+                        typeof substrate.mention_count === "number"
+                          ? substrate.mention_count
+                          : (mentionsBySubstrateId.get(substrate.id) ?? []).length
+                      const selected = activeSelectedSubstrateId === substrate.id
                       return (
                         <div
                           key={`substrate-choice-${substrate.id}`}
@@ -164,7 +191,7 @@ export default function CanonicalMentionsSection<
                                   Project: {substrate.project_name}
                                 </Badge>
                                 <Badge variant="outline" className="font-normal">
-                                  Mentions on page: {mentionCount}
+                                  Mentions: {mentionCount}
                                 </Badge>
                                 {config.renderSubstrateSubtitle(substrate)}
                               </div>
@@ -198,7 +225,7 @@ export default function CanonicalMentionsSection<
                   </div>
                 </div>
 
-                <div className="rounded-md border">
+                <div className="rounded-md border min-h-[18rem]">
                   <div className="border-b px-3 py-2 text-sm">
                     {selectedSubstrate ? (
                       <span>
@@ -231,14 +258,14 @@ export default function CanonicalMentionsSection<
                               Select a substrate above.
                             </TableCell>
                           </TableRow>
-                        ) : selectedMentions.length === 0 ? (
+                        ) : visibleSelectedMentions.length === 0 ? (
                           <TableRow>
                             <TableCell colSpan={4} className="text-sm text-muted-foreground py-3">
                               {config.emptySubstrateMentionsMessage}
                             </TableCell>
                           </TableRow>
                         ) : (
-                          selectedMentions.map((m) => {
+                          visibleSelectedMentions.map((m) => {
                             const articleHref = mentionArticleHref(m)
                             const articleLabel = mentionArticleDisplayTitle(m)
                             return (
@@ -420,7 +447,39 @@ export default function CanonicalMentionsSection<
                 </Table>
               </div>
             )}
-            {pagination ? (
+            {pagination && selectableMode ? (
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-muted-foreground">
+                  Showing {visibleSelectedMentions.length} mention
+                  {visibleSelectedMentions.length === 1 ? "" : "s"}{" "}
+                  for this place on this page · page {pagination.page} of {totalPages} across{" "}
+                  {pagination.total} total mentions.
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={pagination.page <= 1}
+                    onClick={() => pagination.onPageChange(pagination.page - 1)}
+                  >
+                    Previous
+                  </Button>
+                  <div className="text-sm text-muted-foreground">
+                    Page {pagination.page} of {totalPages}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={pagination.page >= totalPages}
+                    onClick={() => pagination.onPageChange(pagination.page + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            ) : pagination ? (
               <Pagination
                 page={pagination.page}
                 perPage={pagination.perPage}

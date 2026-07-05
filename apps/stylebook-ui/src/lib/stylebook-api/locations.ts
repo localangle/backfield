@@ -138,6 +138,7 @@ export interface LinkedSubstrateItem {
   id: number
   name: string
   normalized_name: string
+  mention_count?: number
   location_type: string
   canonical_link_status: string
   formatted_address?: string | null
@@ -342,6 +343,7 @@ export async function getCanonicalLocationMentions(
   _sort?: string,
   sortDirection: "asc" | "desc" = "desc",
   projectFilterSlug?: string,
+  substrateLocationId?: number,
 ): Promise<LocationMentionsResponse> {
   const params = new URLSearchParams({
     limit: limit.toString(),
@@ -349,6 +351,9 @@ export async function getCanonicalLocationMentions(
     sort_direction: sortDirection,
   })
   if (projectFilterSlug) params.set("project", projectFilterSlug)
+  if (typeof substrateLocationId === "number") {
+    params.set("substrate_location_id", String(substrateLocationId))
+  }
   return stylebookJsonFetch<LocationMentionsResponse>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(
       canonicalId,

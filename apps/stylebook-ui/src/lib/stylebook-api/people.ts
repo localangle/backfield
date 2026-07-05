@@ -113,6 +113,7 @@ export interface LinkedPersonSubstrateItem {
   id: number
   name: string
   normalized_name: string
+  mention_count?: number
   person_type?: string | null
   title?: string | null
   affiliation?: string | null

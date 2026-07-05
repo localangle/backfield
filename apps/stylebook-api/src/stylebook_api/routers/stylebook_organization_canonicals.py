@@ -243,6 +243,7 @@ class LinkedOrganizationSubstrateItem(BaseModel):
     id: int
     name: str
     normalized_name: str
+    mention_count: int = 0
     organization_type: str | None = None
     canonical_link_status: str
     project_id: int
@@ -692,12 +693,38 @@ def list_canonical_linked_substrates(
             )
         ).all()
     )
+    organization_ids = [
+        int(organization.id) for organization, _ in rows if organization.id is not None
+    ]  # type: ignore[arg-type]
+    mention_counts: dict[int, int] = {}
+    if organization_ids:
+        mention_counts = {
+            int(organization_id): int(count or 0)
+            for organization_id, count in session.exec(
+                select(
+                    col(SubstrateOrganizationMention.organization_id),
+                    func.count(col(SubstrateOrganizationMention.id)),
+                )
+                .join(
+                    SubstrateArticle,
+                    SubstrateArticle.id == SubstrateOrganizationMention.article_id,
+                )
+                .where(
+                    col(SubstrateOrganizationMention.organization_id).in_(organization_ids),
+                    SubstrateOrganizationMention.deleted == False,  # noqa: E712
+                    col(SubstrateArticle.project_id).in_(project_ids),
+                    SubstrateArticle.deleted == False,  # noqa: E712
+                )
+                .group_by(col(SubstrateOrganizationMention.organization_id))
+            ).all()
+        }
     return LinkedOrganizationSubstratesResponse(
         substrates=[
             LinkedOrganizationSubstrateItem(
                 id=int(organization.id),  # type: ignore[arg-type]
                 name=str(organization.name),
                 normalized_name=str(organization.normalized_name or ""),
+                mention_count=mention_counts.get(int(organization.id), 0),  # type: ignore[arg-type]
                 organization_type=organization.organization_type,
                 canonical_link_status=str(organization.canonical_link_status or ""),
                 project_id=int(project_row.id),  # type: ignore[arg-type]

@@ -15,7 +15,12 @@ import {
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 import { isStylebookApiNotFoundError } from "@/lib/stylebook-api/client"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import type { CleanupEntityType } from "@/lib/cleanupChecks"
 import { usePromptDeleteEmptyCanonical } from "@/lib/usePromptDeleteEmptyCanonical"
+import {
+  useSimilarCanonicalNotice,
+  type SimilarCanonicalMatch,
+} from "@/lib/useSimilarCanonicalNotice"
 import { usePaginatedCanonicalMentions } from "@/lib/usePaginatedCanonicalMentions"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
@@ -39,14 +44,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { SimilarCanonicalNotice } from "@/components/SimilarCanonicalNotice"
 import { LeafletMap } from "@backfield/ui/LeafletMap"
 import { updateCanonicalLocationGeometry } from "@/lib/stylebook-api/locations"
+import { mergeCleanupLocationCanonical } from "@/lib/stylebook-api/cleanup"
 import { Loader2 } from "lucide-react"
 
 /** Continental US when adding the first geometry from an empty draft (matches LeafletMap defaults). */
 const ADD_GEOMETRY_MAP_CENTER: [number, number] = [39.8283, -98.5795]
 /** Match @backfield/ui LeafletMap continental US default framing. */
 const ADD_GEOMETRY_MAP_ZOOM = 3
+const ENTITY_TYPE: CleanupEntityType = "location"
 
 export default function LocationDetail() {
   const { showError, showConfirm } = useAppMessage()
@@ -74,6 +82,7 @@ export default function LocationDetail() {
   const [substrates, setSubstrates] = useState<LinkedSubstrateItem[]>([])
   const [substratesLoading, setSubstratesLoading] = useState(false)
   const [moveSubstrate, setMoveSubstrate] = useState<LinkedSubstrateItem | null>(null)
+  const [selectedMentionSubstrateId, setSelectedMentionSubstrateId] = useState<number | null>(null)
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
   const [substrateGeometryOpen, setSubstrateGeometryOpen] = useState(false)
   const [substrateGeometryLoading, setSubstrateGeometryLoading] = useState(false)
@@ -83,6 +92,7 @@ export default function LocationDetail() {
     null,
   )
   const [adoptingSubstrateGeometry, setAdoptingSubstrateGeometry] = useState(false)
+  const [mergingSimilarId, setMergingSimilarId] = useState<string | null>(null)
 
   const canonicalListHref = useMemo(() => {
     const base = `${catalogBasePath}/locations/canonical`
@@ -137,8 +147,9 @@ export default function LocationDetail() {
         undefined,
         "desc",
         projectFilter,
+        selectedMentionSubstrateId ?? undefined,
       ),
-    [],
+    [selectedMentionSubstrateId],
   )
 
   const {
@@ -154,6 +165,7 @@ export default function LocationDetail() {
     canonicalId: id,
     stylebookSlug,
     projectFilterSlug: evidenceProjectSlug,
+    resetKey: selectedMentionSubstrateId == null ? "" : String(selectedMentionSubstrateId),
     enabled: Boolean(id && stylebookSlug && !deleting && canonical?.id === id),
     fetchPage: fetchLocationMentionsPage,
   })
@@ -177,10 +189,24 @@ export default function LocationDetail() {
     [evidenceProjectSlug],
   )
 
+  const canonicalId = canonical?.id
   useEffect(() => {
-    if (!id || !stylebookSlug || deleting || canonical?.id !== id) return
+    if (!id || !stylebookSlug || deleting || canonicalId !== id) return
     void loadSubstrates(id, stylebookSlug)
-  }, [id, stylebookSlug, deleting, canonical, loadSubstrates])
+  }, [id, stylebookSlug, deleting, canonicalId, loadSubstrates])
+
+  useEffect(() => {
+    if (substrates.length === 0) {
+      setSelectedMentionSubstrateId(null)
+      return
+    }
+    if (
+      selectedMentionSubstrateId == null ||
+      !substrates.some((substrate) => substrate.id === selectedMentionSubstrateId)
+    ) {
+      setSelectedMentionSubstrateId(substrates[0].id)
+    }
+  }, [selectedMentionSubstrateId, substrates])
 
   const refreshCanonicalPage = useCallback(
     async (quiet = false) => {
@@ -213,7 +239,16 @@ export default function LocationDetail() {
     setUnlinkingId(sub.id)
     try {
       await unlinkSubstrateFromCanonical(sub.id, sub.project_slug)
-      await refreshCanonicalPage(true)
+      setSubstrates((prev) => prev.filter((item) => item.id !== sub.id))
+      setCanonical((prev) =>
+        prev
+          ? {
+              ...prev,
+              linked_substrate_count: Math.max(0, Number(prev.linked_substrate_count ?? 0) - 1),
+            }
+          : prev,
+      )
+      await refreshMentions(true)
     } catch (e) {
       showError(e instanceof Error ? e.message : "Unlink failed")
     } finally {
@@ -341,6 +376,43 @@ export default function LocationDetail() {
   )
 
   const geometry = (canonical?.geometry_json as Record<string, unknown> | undefined) ?? null
+  const similarNotice = useSimilarCanonicalNotice({
+    stylebookSlug,
+    canonicalId: canonical?.id,
+    canonicalLabel: canonical?.label,
+    entityType: ENTITY_TYPE,
+    project: evidenceProjectSlug || undefined,
+    enabled: !deleting,
+  })
+
+  const similarDetailHref = useCallback(
+    (canonicalId: string) => {
+      const base = `${catalogBasePath}/locations/canonical/${encodeURIComponent(canonicalId)}`
+      return filterScopeSuffix ? `${base}${filterScopeSuffix}` : base
+    },
+    [catalogBasePath, filterScopeSuffix],
+  )
+
+  const handleMergeIntoSimilar = useCallback(
+    async (match: SimilarCanonicalMatch) => {
+      if (!stylebookSlug || !canonical) return
+      const confirmed = await showConfirm(
+        `Move all linked places from "${canonical.label}" into "${match.label}" and delete "${canonical.label}"?`,
+        { title: "Merge possible duplicate?", confirmLabel: "Merge" },
+      )
+      if (!confirmed) return
+      setMergingSimilarId(match.id)
+      try {
+        await mergeCleanupLocationCanonical(stylebookSlug, canonical.id, match.id)
+        navigate(similarDetailHref(match.id))
+      } catch (error) {
+        showError(error instanceof Error ? error.message : "Could not merge records")
+      } finally {
+        setMergingSimilarId(null)
+      }
+    },
+    [canonical, navigate, showConfirm, showError, similarDetailHref, stylebookSlug],
+  )
 
   return (
     <CanonicalDetailLayout
@@ -372,6 +444,17 @@ export default function LocationDetail() {
       stylebookSlug={stylebookSlug}
       entityId={canonical?.id}
       entityDisplayName={canonical?.label}
+      topNotice={
+        <SimilarCanonicalNotice
+          entityNounPlural="locations"
+          matches={similarNotice.matches}
+          canEdit={canEdit}
+          mergingId={mergingSimilarId}
+          onMerge={(match) => void handleMergeIntoSimilar(match)}
+          onIgnore={similarNotice.ignore}
+          detailHref={similarDetailHref}
+        />
+      }
       details={
         <Card>
           <CardHeader>
@@ -434,6 +517,8 @@ export default function LocationDetail() {
         unlinkingId,
         onUnlink: (s) => void handleUnlinkSubstrate(s),
         onMove: setMoveSubstrate,
+        selectedSubstrateId: selectedMentionSubstrateId,
+        onSelectedSubstrateChange: setSelectedMentionSubstrateId,
         pagination: {
           page: mentionsPage,
           perPage: mentionsPerPage,

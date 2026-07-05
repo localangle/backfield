@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import type {
   CanonicalDetailConfig,
   CanonicalDetailSectionId,
@@ -19,7 +19,39 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Loader2, Trash2 } from "lucide-react"
+import { ChevronDown, Loader2, Trash2 } from "lucide-react"
+import { cn } from "@/lib/utils"
+
+interface AdvancedOptionsSectionProps {
+  defaultOpen?: boolean
+  children: ReactNode
+}
+
+function AdvancedOptionsSection({ defaultOpen = false, children }: AdvancedOptionsSectionProps) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-4 px-6 py-4 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-expanded={open}
+      >
+        <span className="min-w-0 space-y-1">
+          <span className="block text-xl font-semibold tracking-tight">Advanced options</span>
+          <span className="block text-sm font-normal text-muted-foreground">
+            Optional metadata and entity connections.
+          </span>
+        </span>
+        <ChevronDown
+          className={cn("h-5 w-5 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")}
+          aria-hidden
+        />
+      </button>
+      {open ? <div className="space-y-4 border-t bg-muted/10 p-4">{children}</div> : null}
+    </div>
+  )
+}
 
 export interface CanonicalDetailLayoutProps<
   TSubstrate extends CanonicalMentionSubstrate,
@@ -53,6 +85,7 @@ export interface CanonicalDetailLayoutProps<
   stylebookSlug?: string
   entityId?: string
   entityDisplayName?: string
+  topNotice?: ReactNode
   children?: ReactNode
 }
 
@@ -78,6 +111,8 @@ function renderSection<
           unlinkingId={props.mentions.unlinkingId}
           onUnlink={props.mentions.onUnlink}
           onMove={props.mentions.onMove}
+          selectedSubstrateId={props.mentions.selectedSubstrateId}
+          onSelectedSubstrateChange={props.mentions.onSelectedSubstrateChange}
           pagination={props.mentions.pagination}
         />
       )
@@ -119,8 +154,12 @@ export default function CanonicalDetailLayout<
     onDeleteOpenChange,
     deleting,
     onDelete,
+    topNotice,
     children,
   } = props
+  const firstAdvancedSectionId = config.sections.find((sectionId) =>
+    sectionId === "meta" || sectionId === "connections",
+  )
 
   if (loading) {
     return (
@@ -169,9 +208,37 @@ export default function CanonicalDetailLayout<
         </div>
       </div>
 
-      {config.sections.map((sectionId) => (
-        <div key={sectionId}>{renderSection(sectionId, props)}</div>
-      ))}
+      {topNotice}
+
+      {config.sections.map((sectionId) => {
+        const section = renderSection(sectionId, props)
+        if (!section) return null
+        if (sectionId === "meta") {
+          if (firstAdvancedSectionId !== "meta") return null
+          const connectionsSection = renderSection("connections", props)
+          return (
+            <div key="advanced-options">
+              <AdvancedOptionsSection>
+                {section}
+                {connectionsSection}
+              </AdvancedOptionsSection>
+            </div>
+          )
+        }
+        if (sectionId === "connections") {
+          if (firstAdvancedSectionId !== "connections") return null
+          const metaSection = renderSection("meta", props)
+          return (
+            <div key="advanced-options">
+              <AdvancedOptionsSection>
+                {section}
+                {metaSection}
+              </AdvancedOptionsSection>
+            </div>
+          )
+        }
+        return <div key={sectionId}>{section}</div>
+      })}
 
       <Dialog open={deleteOpen} onOpenChange={onDeleteOpenChange}>
         <DialogContent>

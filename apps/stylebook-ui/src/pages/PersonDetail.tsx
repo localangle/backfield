@@ -17,7 +17,12 @@ import {
 } from "@/lib/place-extract-type-label"
 import { isStylebookApiNotFoundError } from "@/lib/stylebook-api/client"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import type { CleanupEntityType } from "@/lib/cleanupChecks"
 import { usePromptDeleteEmptyCanonical } from "@/lib/usePromptDeleteEmptyCanonical"
+import {
+  useSimilarCanonicalNotice,
+  type SimilarCanonicalMatch,
+} from "@/lib/useSimilarCanonicalNotice"
 import { usePaginatedCanonicalMentions } from "@/lib/usePaginatedCanonicalMentions"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
@@ -27,6 +32,8 @@ import CanonicalDetailLayout from "@/components/CanonicalDetailLayout"
 import PersonMetaTab from "@/components/PersonMetaTab"
 import { personCanonicalDetailConfig } from "@/lib/entityConfigs/person/canonicalDetail"
 import { Button } from "@/components/ui/button"
+import { SimilarCanonicalNotice } from "@/components/SimilarCanonicalNotice"
+import { mergeCleanupPersonCanonical } from "@/lib/stylebook-api/cleanup"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -47,6 +54,7 @@ function derivePersonSortKey(label: string, explicit?: string | null): string {
   if (parts.length >= 2) return normalize(parts[parts.length - 1]!)
   return normalize(parts[0] ?? "")
 }
+const ENTITY_TYPE: CleanupEntityType = "person"
 
 export default function PersonDetail() {
   const { showError, showConfirm } = useAppMessage()
@@ -79,6 +87,7 @@ export default function PersonDetail() {
   const [deleting, setDeleting] = useState(false)
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
   const [moveSubstrate, setMoveSubstrate] = useState<LinkedPersonSubstrateItem | null>(null)
+  const [mergingSimilarId, setMergingSimilarId] = useState<string | null>(null)
 
   const canonicalListHref = useMemo(() => {
     const base = `${catalogBasePath}/people/canonical`
@@ -303,6 +312,43 @@ export default function PersonDetail() {
       </Button>
     </div>
   ) : undefined
+  const similarNotice = useSimilarCanonicalNotice({
+    stylebookSlug,
+    canonicalId: person?.id,
+    canonicalLabel: person?.label,
+    entityType: ENTITY_TYPE,
+    project: evidenceProjectSlug || undefined,
+    enabled: !deleting,
+  })
+
+  const similarDetailHref = useCallback(
+    (canonicalId: string) => {
+      const base = `${catalogBasePath}/people/canonical/${encodeURIComponent(canonicalId)}`
+      return filterScopeSuffix ? `${base}${filterScopeSuffix}` : base
+    },
+    [catalogBasePath, filterScopeSuffix],
+  )
+
+  const handleMergeIntoSimilar = useCallback(
+    async (match: SimilarCanonicalMatch) => {
+      if (!stylebookSlug || !person) return
+      const confirmed = await showConfirm(
+        `Move all linked people from "${person.label}" into "${match.label}" and delete "${person.label}"?`,
+        { title: "Merge possible duplicate?", confirmLabel: "Merge" },
+      )
+      if (!confirmed) return
+      setMergingSimilarId(match.id)
+      try {
+        await mergeCleanupPersonCanonical(stylebookSlug, person.id, match.id)
+        navigate(similarDetailHref(match.id))
+      } catch (error) {
+        showError(error instanceof Error ? error.message : "Could not merge records")
+      } finally {
+        setMergingSimilarId(null)
+      }
+    },
+    [navigate, person, showConfirm, showError, similarDetailHref, stylebookSlug],
+  )
 
   return (
     <CanonicalDetailLayout
@@ -335,6 +381,17 @@ export default function PersonDetail() {
       stylebookSlug={stylebookSlug}
       entityId={person?.id}
       entityDisplayName={person?.label}
+      topNotice={
+        <SimilarCanonicalNotice
+          entityNounPlural="people"
+          matches={similarNotice.matches}
+          canEdit={canEdit}
+          mergingId={mergingSimilarId}
+          onMerge={(match) => void handleMergeIntoSimilar(match)}
+          onIgnore={similarNotice.ignore}
+          detailHref={similarDetailHref}
+        />
+      }
       details={
         <Card>
           <CardHeader>

@@ -17,7 +17,12 @@ import {
 } from "@/lib/place-extract-type-label"
 import { isStylebookApiNotFoundError } from "@/lib/stylebook-api/client"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import type { CleanupEntityType } from "@/lib/cleanupChecks"
 import { usePromptDeleteEmptyCanonical } from "@/lib/usePromptDeleteEmptyCanonical"
+import {
+  useSimilarCanonicalNotice,
+  type SimilarCanonicalMatch,
+} from "@/lib/useSimilarCanonicalNotice"
 import { usePaginatedCanonicalMentions } from "@/lib/usePaginatedCanonicalMentions"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
@@ -27,6 +32,8 @@ import CanonicalDetailLayout from "@/components/CanonicalDetailLayout"
 import OrganizationMetaTab from "@/components/OrganizationMetaTab"
 import { organizationCanonicalDetailConfig } from "@/lib/entityConfigs/organization/canonicalDetail"
 import { Button } from "@/components/ui/button"
+import { SimilarCanonicalNotice } from "@/components/SimilarCanonicalNotice"
+import { mergeCleanupOrganizationCanonical } from "@/lib/stylebook-api/cleanup"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -37,6 +44,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+
+const ENTITY_TYPE: CleanupEntityType = "organization"
 
 export default function OrganizationDetail() {
   const { showError, showConfirm } = useAppMessage()
@@ -65,6 +74,7 @@ export default function OrganizationDetail() {
   const [deleting, setDeleting] = useState(false)
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
   const [moveSubstrate, setMoveSubstrate] = useState<LinkedOrganizationSubstrateItem | null>(null)
+  const [mergingSimilarId, setMergingSimilarId] = useState<string | null>(null)
 
   const canonicalListHref = useMemo(() => {
     const base = `${catalogBasePath}/organizations/canonical`
@@ -277,6 +287,43 @@ export default function OrganizationDetail() {
       </Button>
     </div>
   ) : undefined
+  const similarNotice = useSimilarCanonicalNotice({
+    stylebookSlug,
+    canonicalId: organization?.id,
+    canonicalLabel: organization?.label,
+    entityType: ENTITY_TYPE,
+    project: evidenceProjectSlug || undefined,
+    enabled: !deleting,
+  })
+
+  const similarDetailHref = useCallback(
+    (canonicalId: string) => {
+      const base = `${catalogBasePath}/organizations/canonical/${encodeURIComponent(canonicalId)}`
+      return filterScopeSuffix ? `${base}${filterScopeSuffix}` : base
+    },
+    [catalogBasePath, filterScopeSuffix],
+  )
+
+  const handleMergeIntoSimilar = useCallback(
+    async (match: SimilarCanonicalMatch) => {
+      if (!stylebookSlug || !organization) return
+      const confirmed = await showConfirm(
+        `Move all linked organizations from "${organization.label}" into "${match.label}" and delete "${organization.label}"?`,
+        { title: "Merge possible duplicate?", confirmLabel: "Merge" },
+      )
+      if (!confirmed) return
+      setMergingSimilarId(match.id)
+      try {
+        await mergeCleanupOrganizationCanonical(stylebookSlug, organization.id, match.id)
+        navigate(similarDetailHref(match.id))
+      } catch (error) {
+        showError(error instanceof Error ? error.message : "Could not merge records")
+      } finally {
+        setMergingSimilarId(null)
+      }
+    },
+    [navigate, organization, showConfirm, showError, similarDetailHref, stylebookSlug],
+  )
 
   return (
     <CanonicalDetailLayout
@@ -309,6 +356,17 @@ export default function OrganizationDetail() {
       stylebookSlug={stylebookSlug}
       entityId={organization?.id}
       entityDisplayName={organization?.label}
+      topNotice={
+        <SimilarCanonicalNotice
+          entityNounPlural="organizations"
+          matches={similarNotice.matches}
+          canEdit={canEdit}
+          mergingId={mergingSimilarId}
+          onMerge={(match) => void handleMergeIntoSimilar(match)}
+          onIgnore={similarNotice.ignore}
+          detailHref={similarDetailHref}
+        />
+      }
       details={
         <Card>
           <CardHeader>

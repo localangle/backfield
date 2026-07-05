@@ -96,6 +96,7 @@ export interface LinkedOrganizationSubstrateItem {
   id: number
   name: string
   normalized_name: string
+  mention_count?: number
   organization_type?: string | null
   canonical_link_status: string
   project_id: number

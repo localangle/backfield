@@ -12,6 +12,7 @@ export type CanonicalDetailSectionId =
 export interface CanonicalMentionSubstrate {
   id: number
   name: string
+  mention_count?: number
   project_slug: string
   project_name: string
 }
