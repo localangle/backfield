@@ -22,6 +22,7 @@ import {
   type SimilarCanonicalMatch,
 } from "@/lib/useSimilarCanonicalNotice"
 import { usePaginatedCanonicalMentions } from "@/lib/usePaginatedCanonicalMentions"
+import { useSelectedMentionSubstrate } from "@/lib/useSelectedMentionSubstrate"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { useAppMessage } from "@/components/AppMessageProvider"
@@ -82,7 +83,6 @@ export default function LocationDetail() {
   const [substrates, setSubstrates] = useState<LinkedSubstrateItem[]>([])
   const [substratesLoading, setSubstratesLoading] = useState(false)
   const [moveSubstrate, setMoveSubstrate] = useState<LinkedSubstrateItem | null>(null)
-  const [selectedMentionSubstrateId, setSelectedMentionSubstrateId] = useState<number | null>(null)
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
   const [substrateGeometryOpen, setSubstrateGeometryOpen] = useState(false)
   const [substrateGeometryLoading, setSubstrateGeometryLoading] = useState(false)
@@ -131,6 +131,12 @@ export default function LocationDetail() {
     void loadCanonical(id, stylebookSlug)
   }, [id, stylebookSlug, deleting, evidenceProjectSlug, loadCanonical])
 
+  const {
+    selectedSubstrateId: selectedMentionSubstrateId,
+    setSelectedSubstrateId: setSelectedMentionSubstrateId,
+    resetKey: mentionsResetKey,
+  } = useSelectedMentionSubstrate(substrates)
+
   const fetchLocationMentionsPage = useCallback(
     (
       canonicalId: string,
@@ -165,7 +171,7 @@ export default function LocationDetail() {
     canonicalId: id,
     stylebookSlug,
     projectFilterSlug: evidenceProjectSlug,
-    resetKey: selectedMentionSubstrateId == null ? "" : String(selectedMentionSubstrateId),
+    resetKey: mentionsResetKey,
     enabled: Boolean(id && stylebookSlug && !deleting && canonical?.id === id),
     fetchPage: fetchLocationMentionsPage,
   })
@@ -194,19 +200,6 @@ export default function LocationDetail() {
     if (!id || !stylebookSlug || deleting || canonicalId !== id) return
     void loadSubstrates(id, stylebookSlug)
   }, [id, stylebookSlug, deleting, canonicalId, loadSubstrates])
-
-  useEffect(() => {
-    if (substrates.length === 0) {
-      setSelectedMentionSubstrateId(null)
-      return
-    }
-    if (
-      selectedMentionSubstrateId == null ||
-      !substrates.some((substrate) => substrate.id === selectedMentionSubstrateId)
-    ) {
-      setSelectedMentionSubstrateId(substrates[0].id)
-    }
-  }, [selectedMentionSubstrateId, substrates])
 
   const refreshCanonicalPage = useCallback(
     async (quiet = false) => {

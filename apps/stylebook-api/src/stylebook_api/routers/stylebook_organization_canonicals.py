@@ -751,6 +751,10 @@ def list_canonical_organization_mentions(
     offset: int = Query(0, ge=0),
     sort: str | None = Query(None, description="article | created_at (default)"),
     sort_direction: str = Query("desc", description="asc or desc"),
+    substrate_organization_id: int | None = Query(
+        None,
+        description="Optional linked substrate id to scope mentions to one substrate organization.",
+    ),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> OrganizationMentionsResponse:
@@ -775,6 +779,8 @@ def list_canonical_organization_mentions(
         col(SubstrateArticle.project_id).in_(project_ids),
         SubstrateArticle.deleted == False,  # noqa: E712
     ]
+    if substrate_organization_id is not None:
+        base_where.append(col(SubstrateOrganization.id) == int(substrate_organization_id))
 
     total = int(
         session.scalar(

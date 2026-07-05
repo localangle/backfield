@@ -820,6 +820,10 @@ def list_canonical_person_mentions(
     offset: int = Query(0, ge=0),
     sort: str | None = Query(None, description="article | created_at (default)"),
     sort_direction: str = Query("desc", description="asc or desc"),
+    substrate_person_id: int | None = Query(
+        None,
+        description="Optional linked substrate id to scope mentions to one substrate person.",
+    ),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> PersonMentionsResponse:
@@ -844,6 +848,8 @@ def list_canonical_person_mentions(
         col(SubstrateArticle.project_id).in_(project_ids),
         SubstrateArticle.deleted == False,  # noqa: E712
     ]
+    if substrate_person_id is not None:
+        base_where.append(col(SubstratePerson.id) == int(substrate_person_id))
 
     total = int(
         session.scalar(

@@ -87,7 +87,7 @@ export default function Cleanup() {
       })
       setRunSnapshots(applyChecksToSnapshots(response.checks))
     } catch (error) {
-      showError(error instanceof Error ? error.message : "Failed to load cleanup checks")
+      showError(error instanceof Error ? error.message : "Failed to load reviews")
     } finally {
       setHubLoading(false)
     }
@@ -129,7 +129,7 @@ export default function Cleanup() {
           ...prev,
           [checkId]: { ...prev[checkId], loading: false },
         }))
-        showError(error instanceof Error ? error.message : "Failed to run cleanup check")
+        showError(error instanceof Error ? error.message : "Failed to run review")
       }
     },
     [stylebookSlug, projectFilterSlug, showError],
@@ -159,7 +159,7 @@ export default function Cleanup() {
           ...prev,
           [checkId]: { ...prev[checkId], loading: false },
         }))
-        showError(error instanceof Error ? error.message : "Failed to run cleanup check")
+        showError(error instanceof Error ? error.message : "Failed to run review")
       }
     },
     [stylebookSlug, projectFilterSlug, pollRun, showError],
@@ -180,7 +180,7 @@ export default function Cleanup() {
           [checkId]: { ...prev[checkId], loading: false, status: "cancelled" },
         }))
       } catch (error) {
-        showError(error instanceof Error ? error.message : "Failed to stop cleanup check")
+        showError(error instanceof Error ? error.message : "Failed to stop review")
       }
     },
     [stylebookSlug, projectFilterSlug, showError],
@@ -192,8 +192,8 @@ export default function Cleanup() {
         <Breadcrumbs items={[{ label: crumbRoot.label }]} className="mb-3" />
         <h1 className="text-3xl font-bold">{selectedStylebookLabel}</h1>
         <p className="text-muted-foreground mt-2 max-w-3xl">
-          These checks surface common issues in the curation of canonical objects. Run a check to
-          count open items, then open it to review and fix records manually.
+          These reviews surface common issues in the curation of canonical records. Run one to
+          count open items, then open it to fix records manually.
         </p>
       </div>
 
@@ -211,7 +211,7 @@ export default function Cleanup() {
           <thead className="bg-muted/50 text-left">
             <tr>
               <th className="px-4 py-3 font-medium" aria-label="Type" />
-              <th className="px-4 py-3 font-medium">Check</th>
+              <th className="px-4 py-3 font-medium">Review</th>
               <th className="px-4 py-3 font-medium text-right">Issues</th>
               <th className="px-4 py-3 font-medium">Last run</th>
               <th className="px-4 py-3 font-medium text-right">Actions</th>
@@ -223,7 +223,7 @@ export default function Cleanup() {
                 <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
                   <span className="inline-flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                    Loading checks…
+                    Loading reviews…
                   </span>
                 </td>
               </tr>
@@ -298,7 +298,7 @@ function CleanupCheckRow({
         {snapshot.loading ? (
           <span className="inline-flex items-center justify-end gap-2 text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            <span className="sr-only">Running check</span>
+            <span className="sr-only">Running review</span>
           </span>
         ) : hasRun ? (
           <span className={count > 0 ? "font-semibold text-orange-600" : "text-muted-foreground"}>

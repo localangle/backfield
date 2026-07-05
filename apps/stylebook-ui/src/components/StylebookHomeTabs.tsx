@@ -21,7 +21,7 @@ export function StylebookHomeTabs() {
         Entities
       </NavLink>
       <NavLink to={cleanupPath} className={tabClass}>
-        Checks
+        Review
       </NavLink>
       <NavLink to={recentPath} className={tabClass}>
         Recent

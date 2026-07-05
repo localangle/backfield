@@ -5,11 +5,24 @@ import {
   listCanonicalPeople,
 } from "@/lib/api"
 import type { CleanupEntityType } from "@/lib/cleanupChecks"
+import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 import { duplicateSearchQuery, isMaterialDuplicateLabel } from "@/lib/similarCanonicalMatch"
 
 export interface SimilarCanonicalMatch {
   id: string
   label: string
+  /** Short context line shown under the name, e.g. title/affiliation or type/address. */
+  sublabel?: string
+}
+
+function joinSublabelParts(parts: Array<string | null | undefined>): string | undefined {
+  const cleaned = parts.map((part) => (part ?? "").trim()).filter(Boolean)
+  return cleaned.length > 0 ? cleaned.join(" · ") : undefined
+}
+
+function typeLabelOrNull(rawType: string | null | undefined): string | null {
+  const trimmed = (rawType ?? "").trim()
+  return trimmed ? placeExtractTypeLabel(trimmed) : null
 }
 
 const SEARCH_LIMIT = 25
@@ -45,7 +58,11 @@ async function searchCanonicalsByType(
 ): Promise<SimilarCanonicalMatch[]> {
   if (entityType === "person") {
     const res = await listCanonicalPeople(stylebookSlug, q, SEARCH_LIMIT, 0, undefined, project)
-    return res.canonicals.map((c) => ({ id: c.id, label: c.label }))
+    return res.canonicals.map((c) => ({
+      id: c.id,
+      label: c.label,
+      sublabel: joinSublabelParts([c.title, c.affiliation]),
+    }))
   }
   if (entityType === "organization") {
     const res = await listCanonicalOrganizations(
@@ -56,10 +73,18 @@ async function searchCanonicalsByType(
       undefined,
       project,
     )
-    return res.canonicals.map((c) => ({ id: c.id, label: c.label }))
+    return res.canonicals.map((c) => ({
+      id: c.id,
+      label: c.label,
+      sublabel: joinSublabelParts([typeLabelOrNull(c.organization_type)]),
+    }))
   }
   const res = await listCanonicalLocations(stylebookSlug, q, SEARCH_LIMIT, 0, undefined, project)
-  return res.canonicals.map((c) => ({ id: c.id, label: c.label }))
+  return res.canonicals.map((c) => ({
+    id: c.id,
+    label: c.label,
+    sublabel: joinSublabelParts([typeLabelOrNull(c.location_type), c.formatted_address]),
+  }))
 }
 
 /**

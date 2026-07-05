@@ -24,6 +24,7 @@ import {
   type SimilarCanonicalMatch,
 } from "@/lib/useSimilarCanonicalNotice"
 import { usePaginatedCanonicalMentions } from "@/lib/usePaginatedCanonicalMentions"
+import { useSelectedMentionSubstrate } from "@/lib/useSelectedMentionSubstrate"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { useAppMessage } from "@/components/AppMessageProvider"
@@ -135,6 +136,12 @@ export default function OrganizationDetail() {
     [evidenceProjectSlug],
   )
 
+  const {
+    selectedSubstrateId: selectedMentionSubstrateId,
+    setSelectedSubstrateId: setSelectedMentionSubstrateId,
+    resetKey: mentionsResetKey,
+  } = useSelectedMentionSubstrate(substrates)
+
   const fetchOrganizationMentionsPage = useCallback(
     (
       canonicalId: string,
@@ -151,8 +158,9 @@ export default function OrganizationDetail() {
         undefined,
         "desc",
         projectFilter,
+        selectedMentionSubstrateId ?? undefined,
       ),
-    [],
+    [selectedMentionSubstrateId],
   )
 
   const {
@@ -168,6 +176,7 @@ export default function OrganizationDetail() {
     canonicalId: id,
     stylebookSlug,
     projectFilterSlug: evidenceProjectSlug,
+    resetKey: mentionsResetKey,
     enabled: Boolean(id && stylebookSlug && !deleting && organization?.id === id),
     fetchPage: fetchOrganizationMentionsPage,
   })
@@ -192,10 +201,11 @@ export default function OrganizationDetail() {
     void loadOrganization(id, stylebookSlug)
   }, [id, stylebookSlug, deleting, loadOrganization])
 
+  const canonicalId = organization?.id
   useEffect(() => {
-    if (!id || !stylebookSlug || deleting || organization?.id !== id) return
+    if (!id || !stylebookSlug || deleting || canonicalId !== id) return
     void loadSubstrates(id, stylebookSlug)
-  }, [id, stylebookSlug, deleting, organization, loadSubstrates])
+  }, [id, stylebookSlug, deleting, canonicalId, loadSubstrates])
 
   const tableLoading = substratesLoading || mentionsLoading
 
@@ -207,7 +217,16 @@ export default function OrganizationDetail() {
     setUnlinkingId(sub.id)
     try {
       await unlinkOrganizationSubstrateFromCanonical(sub.id, sub.project_slug)
-      await refreshCanonicalPage(true)
+      setSubstrates((prev) => prev.filter((item) => item.id !== sub.id))
+      setOrganization((prev) =>
+        prev
+          ? {
+              ...prev,
+              linked_substrate_count: Math.max(0, Number(prev.linked_substrate_count ?? 0) - 1),
+            }
+          : prev,
+      )
+      await refreshMentions(true)
     } catch (e) {
       showError(e instanceof Error ? e.message : "Unlink failed")
     } finally {
@@ -433,6 +452,8 @@ export default function OrganizationDetail() {
         unlinkingId,
         onUnlink: (s) => void handleUnlinkSubstrate(s),
         onMove: setMoveSubstrate,
+        selectedSubstrateId: selectedMentionSubstrateId,
+        onSelectedSubstrateChange: setSelectedMentionSubstrateId,
         pagination: {
           page: mentionsPage,
           perPage: mentionsPerPage,

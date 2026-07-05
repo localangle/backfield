@@ -279,13 +279,13 @@ export async function pollCleanupCheckRun(params: {
   const intervalMs = params.intervalMs ?? 1500
   let latest = await getLatestCleanupCheckRun(params)
   if (!latest) {
-    throw new Error(`Cleanup check run not found: ${params.checkId}`)
+    throw new Error(`Review run not found: ${params.checkId}`)
   }
   while (ACTIVE_RUN_STATUSES.has(latest.status)) {
     await new Promise((resolve) => window.setTimeout(resolve, intervalMs))
     latest = await getLatestCleanupCheckRun(params)
     if (!latest) {
-      throw new Error(`Cleanup check run not found: ${params.checkId}`)
+      throw new Error(`Review run not found: ${params.checkId}`)
     }
   }
   return latest
@@ -306,7 +306,7 @@ export async function runCleanupCheck(params: {
   })
   const check = response.checks.find((row) => row.id === params.checkId)
   if (!check) {
-    throw new Error(`Cleanup check not found: ${params.checkId}`)
+    throw new Error(`Review not found: ${params.checkId}`)
   }
   return check
 }
@@ -448,7 +448,7 @@ export async function getCleanupCheckResults(
     case "questionable-person-canonicals":
       return getQuestionablePersonCanonicals(params)
     default:
-      throw new Error(`Unknown cleanup check: ${params.checkId}`)
+      throw new Error(`Unknown review: ${params.checkId}`)
   }
 }
 

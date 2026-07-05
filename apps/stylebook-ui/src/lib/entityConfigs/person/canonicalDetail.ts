@@ -26,6 +26,8 @@ export const personCanonicalDetailConfig: CanonicalDetailConfig<
   sections: ["details", "mentions", "meta", "connections"],
   mentions: {
     description: "Article mentions are grouped by linked person. Unlink or reassign people below.",
+    substrateDisplayMode: "selectable",
+    substrateNoun: "person",
     columnHeaders: {
       substrateArticle: "Person / article",
       nature: "Nature",

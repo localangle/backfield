@@ -452,8 +452,8 @@ export default function CanonicalMentionsSection<
                 <div className="text-sm text-muted-foreground">
                   Showing {visibleSelectedMentions.length} mention
                   {visibleSelectedMentions.length === 1 ? "" : "s"}{" "}
-                  for this place on this page · page {pagination.page} of {totalPages} across{" "}
-                  {pagination.total} total mentions.
+                  for this {config.substrateNoun ?? "record"} on this page · page {pagination.page}{" "}
+                  of {totalPages} across {pagination.total} total mentions.
                 </div>
                 <div className="flex items-center gap-2">
                   <Button

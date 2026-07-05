@@ -26,6 +26,8 @@ export const organizationCanonicalDetailConfig: CanonicalDetailConfig<
   mentions: {
     description:
       "Article mentions are grouped by linked organization. Unlink or reassign organizations below.",
+    substrateDisplayMode: "selectable",
+    substrateNoun: "organization",
     columnHeaders: {
       substrateArticle: "Organization / article",
       nature: "Nature",

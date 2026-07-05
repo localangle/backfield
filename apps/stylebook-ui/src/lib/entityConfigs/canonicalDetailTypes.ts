@@ -34,6 +34,8 @@ export interface CanonicalMentionsSectionConfig<
 > {
   description: string
   substrateDisplayMode?: "grouped" | "selectable"
+  /** Product noun for one linked record, e.g. "place", "person", "organization". */
+  substrateNoun?: string
   columnHeaders: {
     substrateArticle: string
     nature: string

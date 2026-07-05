@@ -732,12 +732,12 @@ export default function CleanupCheck() {
   if (!config) {
     return (
       <div className="space-y-4">
-        <p className="text-muted-foreground">Unknown cleanup check.</p>
+        <p className="text-muted-foreground">Unknown review.</p>
         <Link
           to={`${catalogBasePath}/cleanup${catalogScopeSuffix}`}
           className="text-primary hover:underline"
         >
-          Back to cleanup
+          Back to review
         </Link>
       </div>
     )
@@ -751,7 +751,7 @@ export default function CleanupCheck() {
         <Breadcrumbs
           items={[
             { label: crumbRoot.label, to: `${catalogBasePath}${catalogScopeSuffix}` },
-            { label: "Checks", to: cleanupHubPath },
+            { label: "Review", to: cleanupHubPath },
             { label: config.title },
           ]}
           className="mb-3"
@@ -837,10 +837,10 @@ export default function CleanupCheck() {
       ) : needsRun ? (
         <p className="text-muted-foreground py-8 text-center">
           {checkRunStatus === "running" || checkRunStatus === "queued"
-            ? "This check is running. Results will appear here when it finishes."
+            ? "This review is running. Results will appear here when it finishes."
             : checkRunStatus === "failed"
-              ? "This check failed. Run it again from the Checks tab to see candidates."
-              : "Run this check from the Checks tab to see candidates."}
+              ? "This review failed. Run it again from the Review tab to see candidates."
+              : "Run this review from the Review tab to see candidates."}
         </p>
       ) : config.kind === "cluster" &&
         clusterResults &&

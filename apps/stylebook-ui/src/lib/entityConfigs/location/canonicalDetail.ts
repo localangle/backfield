@@ -19,6 +19,7 @@ export const locationCanonicalDetailConfig: CanonicalDetailConfig<
   mentions: {
     description: "Article mentions are grouped by place. Unlink or reassign places below.",
     substrateDisplayMode: "selectable",
+    substrateNoun: "place",
     columnHeaders: {
       substrateArticle: "Place / article",
       nature: "Nature",

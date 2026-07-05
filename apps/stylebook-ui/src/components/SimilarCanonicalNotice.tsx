@@ -40,12 +40,19 @@ export function SimilarCanonicalNotice({
               key={match.id}
               className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-background/60 px-3 py-2"
             >
-              <Link
-                to={detailHref(match.id)}
-                className="min-w-0 break-words text-sm font-medium text-primary hover:underline"
-              >
-                {match.label}
-              </Link>
+                  <div className="min-w-0">
+                    <Link
+                      to={detailHref(match.id)}
+                      className="break-words text-sm font-medium text-primary hover:underline"
+                    >
+                      {match.label}
+                    </Link>
+                    {match.sublabel ? (
+                      <div className="mt-0.5 break-words text-xs text-muted-foreground">
+                        {match.sublabel}
+                      </div>
+                    ) : null}
+                  </div>
               {canEdit ? (
                 <Button
                   type="button"
