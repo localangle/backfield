@@ -246,6 +246,70 @@ def _head_anchor_gate_passes(display_name: str, candidate: CanonicalMatchFeature
     return all(t in blob for t in tokens)
 
 
+_COMPASS_AXIS_EAST: frozenset[str] = frozenset({"east", "eastern"})
+_COMPASS_AXIS_WEST: frozenset[str] = frozenset({"west", "western"})
+_COMPASS_AXIS_NORTH: frozenset[str] = frozenset({"north", "northern"})
+_COMPASS_AXIS_SOUTH: frozenset[str] = frozenset({"south", "southern"})
+_COMPOUND_COMPASS_AXES: dict[str, frozenset[str]] = {
+    "northeast": frozenset({"north", "east"}),
+    "northeastern": frozenset({"north", "east"}),
+    "northwest": frozenset({"north", "west"}),
+    "northwestern": frozenset({"north", "west"}),
+    "southeast": frozenset({"south", "east"}),
+    "southeastern": frozenset({"south", "east"}),
+    "southwest": frozenset({"south", "west"}),
+    "southwestern": frozenset({"south", "west"}),
+}
+
+
+def _compass_axes_from_head(display_name: str) -> frozenset[str]:
+    """Compass axes named on the comma head (e.g. ``East Coast, US`` → ``{east}``)."""
+    head = display_name.split(",")[0]
+    loose = _loose_key(head)
+    if not loose:
+        return frozenset()
+    axes: set[str] = set()
+    for token in loose.split():
+        compound = _COMPOUND_COMPASS_AXES.get(token)
+        if compound is not None:
+            axes.update(compound)
+            continue
+        if token in _COMPASS_AXIS_EAST:
+            axes.add("east")
+        if token in _COMPASS_AXIS_WEST:
+            axes.add("west")
+        if token in _COMPASS_AXIS_NORTH:
+            axes.add("north")
+        if token in _COMPASS_AXIS_SOUTH:
+            axes.add("south")
+    return frozenset(axes)
+
+
+def _compass_axes_conflict(left: frozenset[str], right: frozenset[str]) -> bool:
+    if not left or not right:
+        return False
+    if "east" in left and "west" in right:
+        return True
+    if "west" in left and "east" in right:
+        return True
+    if "north" in left and "south" in right:
+        return True
+    if "south" in left and "north" in right:
+        return True
+    return False
+
+
+def _compass_direction_conflict(substrate_name: str, candidate: CanonicalMatchFeatures) -> bool:
+    """True when substrate and candidate name heads name opposing compass directions."""
+    sub_axes = _compass_axes_from_head(substrate_name)
+    if not sub_axes:
+        return False
+    for surface in (str(candidate.label), *candidate.normalized_aliases):
+        if _compass_axes_conflict(sub_axes, _compass_axes_from_head(str(surface))):
+            return True
+    return False
+
+
 def _match_basis_for_audit(location_type: str | None) -> str:
     if (location_type or "").strip().lower() == "address":
         return "string_and_point_geometry"
@@ -537,6 +601,8 @@ def _apply_recall_match_gates(
     sc = float(raw_score)
     gate_lt = _should_apply_head_anchor_gate(location.location_type)
     if gate_lt and not _head_anchor_gate_passes(str(location.name), feat):
+        sc = min(sc, _RECALL_SCORE_DEMOTED)
+    if _compass_direction_conflict(str(location.name), feat):
         sc = min(sc, _RECALL_SCORE_DEMOTED)
     if not types_are_comparable(location.location_type, canon.location_type):
         sc = min(sc, _RECALL_SCORE_DEMOTED)
