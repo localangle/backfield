@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
+
+from agate_utils.prompt_placeholders import substitute_prompt_placeholders
 
 _PROMPT_PATH = (
     Path(__file__).resolve().parents[1].parent
@@ -46,3 +49,23 @@ def test_place_extract_prompt_includes_historical_nature() -> None:
     prompt = _PROMPT_PATH.read_text(encoding="utf-8")
     assert "**historical**" in prompt
     assert "past events, precedent, or historical comparison" in prompt
+
+
+def test_place_extract_prompt_only_text_is_json_path_placeholder() -> None:
+    """Prose format templates like {City} must be escaped as {{City}} in extract.md."""
+    raw = _PROMPT_PATH.read_text(encoding="utf-8")
+    stripped = raw.replace("{{", "").replace("}}", "")
+    placeholders = re.findall(r"\{([^}]+)\}", stripped)
+    assert placeholders == ["text"]
+
+
+def test_place_extract_build_prompt_accepts_article_pipeline_input() -> None:
+    template = _PROMPT_PATH.read_text(encoding="utf-8")
+    flattened = {
+        "text": "Sample article body.",
+        "article_metadata": {"category": "news_story"},
+        "article_embedding": {"embedding": [0.1, 0.2]},
+    }
+    built = substitute_prompt_placeholders(template, flattened)
+    assert "Sample article body." in built
+    assert "{City}" in built or "Paris, France" in built
