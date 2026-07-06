@@ -869,3 +869,77 @@ def test_adjudicate_political_district_coerces_when_district_key_mismatch(monkey
         assert out.decision == CanonicalPersistDecision.MATERIALIZE_NEW
         adj = next(r for r in out.resolution_reasons if r.get("code") == "canonical_adjudication")
         assert adj.get("outcome") == "district_key_mismatch_coerced"
+
+
+def test_adjudicate_political_district_coerces_when_district_kind_conflicts(monkeypatch) -> None:
+    """A judicial-subcircuit row must not link a congressional canonical even if the LLM says so."""
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        pid, sb_id = _bootstrap(session)
+        c1 = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Congressional District 13, IL",
+            slug="congressional-district-13-il",
+            location_type="political_district",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        session.add(c1)
+        session.commit()
+        session.refresh(c1)
+        id1 = str(c1.id)
+
+        # No structured district block: the phrase was misfiled in the city component,
+        # so district_key gating cannot fire and only the keyword gate protects the pair.
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Congressional District 13, Illinois, US",
+            normalized_name="congressional district 13, illinois, us",
+            location_type="political_district",
+            formatted_address="13th subcircuit, Cook County, IL (region estimate)",
+            identity_fingerprint="fp-adj-pd-kind",
+            source_details_json={
+                "place_extract_components": {
+                    "city": "13th subcircuit",
+                    "county": "Cook County",
+                    "state": {"abbr": "IL"},
+                    "country": {"abbr": "US"},
+                }
+            },
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+
+        plan = CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.DEFER,
+            resolution_reasons=(
+                {
+                    "code": "ambiguous_canonical_match",
+                    "best_canonical_id": id1,
+                    "recall_canonical_ids": [id1],
+                },
+            ),
+        )
+
+        def _fake_llm(*_a, **_k) -> str:
+            return (
+                f'{{"canonical_id": "{id1}", "confidence": 0.95, '
+                f'"rationale": "Name matches Congressional District 13."}}'
+            )
+
+        monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
+
+        out = adjudicate_ambiguous_plan_with_llm(
+            session,
+            plan=plan,
+            location=loc,
+            stylebook_id=sb_id,
+            model="gpt-5-nano",
+        )
+
+        assert out.decision != CanonicalPersistDecision.LINK_EXISTING
+        adj = next(r for r in out.resolution_reasons if r.get("code") == "canonical_adjudication")
+        assert adj.get("outcome") == "district_kind_mismatch_coerced"

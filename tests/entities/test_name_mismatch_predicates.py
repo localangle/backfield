@@ -217,6 +217,77 @@ def test_location_merge_allowed_missing_types() -> None:
     )
 
 
+def test_location_mismatch_subcircuit_vs_congressional_district_flagged() -> None:
+    """A judicial subcircuit row must flag when linked to a congressional district canonical."""
+    assert location_link_is_obvious_mismatch(
+        substrate_name="Congressional District 13, Illinois, US",
+        substrate_normalized_name="congressional district 13, illinois, us",
+        substrate_location_type="political_district",
+        components={"city": "13th subcircuit", "county": "Cook County"},
+        formatted_address="13th subcircuit, Cook County, IL (region estimate)",
+        geometry_type="Polygon",
+        canonical_label="Congressional District 13, IL",
+        canonical_location_type="political_district",
+        # The bad UI relink itself wrote this editorial alias; it must not rescue the link.
+        editorial_alias_keys=frozenset({"congressional district 13, illinois, us"}),
+    )
+
+
+def test_location_mismatch_political_district_linked_to_city_flagged() -> None:
+    """Ward/district rows misnamed after their city must flag on a city canonical."""
+    assert location_link_is_obvious_mismatch(
+        substrate_name="Chicago, IL",
+        substrate_normalized_name="chicago, il",
+        substrate_location_type="political_district",
+        components={"city": "Chicago", "state": {"abbr": "IL"}},
+        formatted_address="ward (region estimate)",
+        geometry_type="Polygon",
+        canonical_label="Chicago, IL",
+        canonical_location_type="city",
+    )
+
+
+def test_location_mismatch_same_kind_congressional_district_not_flagged() -> None:
+    assert not location_link_is_obvious_mismatch(
+        substrate_name="Illinois's 9th Congressional District, IL",
+        substrate_normalized_name="illinois's 9th congressional district, il",
+        substrate_location_type="political_district",
+        components={"state": {"abbr": "IL"}},
+        formatted_address="Illinois's 9th Congressional District (region estimate)",
+        geometry_type="Polygon",
+        canonical_label="Congressional District 9, IL",
+        canonical_location_type="political_district",
+    )
+
+
+def test_location_merge_blocked_political_district_into_same_named_city() -> None:
+    """Identity escape hatch must not merge a district canonical into its city."""
+    assert location_merge_pair_blocked(
+        source_label="Chicago, IL",
+        source_location_type="political_district",
+        target_label="Chicago, IL",
+        target_location_type="city",
+    )
+
+
+def test_location_merge_blocked_conflicting_district_kinds() -> None:
+    assert location_merge_pair_blocked(
+        source_label="1st Judicial Subcircuit, IL",
+        source_location_type="political_district",
+        target_label="Congressional District 1, IL",
+        target_location_type="political_district",
+    )
+
+
+def test_location_merge_allowed_same_kind_political_districts() -> None:
+    assert not location_merge_pair_blocked(
+        source_label="Congressional District 13, Illinois, US",
+        source_location_type="political_district",
+        target_label="Congressional District 13, IL",
+        target_location_type="political_district",
+    )
+
+
 def test_location_mismatch_case_only_difference_not_flagged() -> None:
     assert not location_link_is_obvious_mismatch(
         substrate_name="Ymca, West Garfield Park, Chicago, IL",

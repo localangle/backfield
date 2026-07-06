@@ -11,6 +11,7 @@ from backfield_entities.canonical.jurisdiction import (
     container_admin_query_from_components,
     district_identity_from_components,
     district_identity_key,
+    district_kind_keywords_conflict,
     geocode_components_vs_formatted_address_mismatch,
     geojson_bbox_centroid,
     geojson_bbox_diagonal_km,
@@ -167,6 +168,16 @@ _NO_AUTOMATIC_CANONICAL_MATERIALIZATION_TYPES: frozenset[str] = frozenset(
     }
 )
 
+# Types that never auto-materialize a canonical, even with resolved geocode + geometry.
+# Editors can still link these to existing canonicals or create canonicals manually.
+_NEVER_AUTO_MATERIALIZE_TYPES: frozenset[str] = frozenset(
+    {
+        "span",
+        "intersection_road",
+        "intersection_highway",
+    }
+)
+
 # Recall demotion when an address point is far from a neighborhood polygon (pair is denied for
 # autolink via :func:`link_pair_allowed`; this gate only affects comparable scoring paths).
 ADDRESS_NEIGHBORHOOD_AUTOLINK_MAX_KM = 50.0
@@ -303,6 +314,26 @@ def _district_identity_pair_mismatch(
     if not ck:
         return False
     return sub_key != ck
+
+
+def _district_kind_keyword_pair_mismatch(
+    location: SubstrateLocation,
+    canon: StylebookLocationCanonical,
+) -> bool:
+    """True when district-kind keywords disagree for a political-district pairing.
+
+    Catches rows without a structured district identity (e.g. a judicial "subcircuit"
+    phrase misfiled in the city component) that would otherwise fuzzy-match a
+    same-numbered congressional district, ward, or state legislative district.
+    """
+    s_lt = (location.location_type or "").strip().lower()
+    c_lt = (canon.location_type or "").strip().lower()
+    if s_lt != "political_district" and c_lt != "political_district":
+        return False
+    return district_kind_keywords_conflict(
+        (str(location.name or ""), str(location.formatted_address or "")),
+        (str(canon.label or ""), str(canon.formatted_address or "")),
+    )
 
 
 def _address_neighborhood_geometry_demotes_recall(
@@ -513,6 +544,8 @@ def _apply_recall_match_gates(
         sc = min(sc, _RECALL_SCORE_DEMOTED)
     if strict_canonical_gates_enabled() and _district_identity_pair_mismatch(comps, canon):
         sc = min(sc, _RECALL_SCORE_DEMOTED)
+    if strict_canonical_gates_enabled() and _district_kind_keyword_pair_mismatch(location, canon):
+        sc = min(sc, _RECALL_SCORE_DEMOTED)
     if strict_canonical_gates_enabled() and _address_neighborhood_geometry_demotes_recall(
         location, canon, feat
     ):
@@ -635,11 +668,12 @@ def _should_materialize_when_no_canonical_match(location: SubstrateLocation) -> 
     Most location types get a canonical when nothing linked and recall is not ambiguous,
     as long as the row is not a hard geocode failure and has a normalized name.
 
-    Address, intersections, and span / street-road types keep the strict geometry rule.
-    Spans never materialize automatically (always defer).
+    Address and street-road types keep the strict geometry rule. Spans and
+    intersections never materialize automatically (editors can still link them to
+    existing canonicals or create canonicals manually from the queue).
     """
     lt = (location.location_type or "").strip().lower()
-    if lt == "span":
+    if lt in _NEVER_AUTO_MATERIALIZE_TYPES:
         return False
     if _location_type_allows_autocreate_without_strict_geometry(location.location_type):
         st = str(location.status or "")

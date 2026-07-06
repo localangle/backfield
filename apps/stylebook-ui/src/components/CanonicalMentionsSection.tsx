@@ -160,7 +160,7 @@ export default function CanonicalMentionsSection<
             {selectableMode ? (
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <p className="text-sm font-medium">Linked substrate variants</p>
+                  <p className="text-sm font-medium">Linked variations</p>
                   <div className="grid gap-2">
                     {displaySubstrates.map((substrate) => {
                       const mentionCount =
@@ -232,7 +232,7 @@ export default function CanonicalMentionsSection<
                         Showing mentions for <strong>{selectedSubstrate.name}</strong>
                       </span>
                     ) : (
-                      <span className="text-muted-foreground">Select a substrate variant to inspect mentions.</span>
+                      <span className="text-muted-foreground">Select a variation to inspect mentions.</span>
                     )}
                   </div>
                   <div className="w-full overflow-x-auto">
@@ -255,7 +255,7 @@ export default function CanonicalMentionsSection<
                         {!selectedSubstrate ? (
                           <TableRow>
                             <TableCell colSpan={4} className="text-sm text-muted-foreground py-3">
-                              Select a substrate above.
+                              Select a variation above.
                             </TableCell>
                           </TableRow>
                         ) : visibleSelectedMentions.length === 0 ? (
@@ -447,39 +447,31 @@ export default function CanonicalMentionsSection<
                 </Table>
               </div>
             )}
-            {pagination && selectableMode ? (
-              <div className="flex items-center justify-between">
+            {pagination && selectableMode && totalPages > 1 ? (
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={pagination.page <= 1}
+                  onClick={() => pagination.onPageChange(pagination.page - 1)}
+                >
+                  Previous
+                </Button>
                 <div className="text-sm text-muted-foreground">
-                  Showing {visibleSelectedMentions.length} mention
-                  {visibleSelectedMentions.length === 1 ? "" : "s"}{" "}
-                  for this {config.substrateNoun ?? "record"} on this page · page {pagination.page}{" "}
-                  of {totalPages} across {pagination.total} total mentions.
+                  Page {pagination.page} of {totalPages}
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={pagination.page <= 1}
-                    onClick={() => pagination.onPageChange(pagination.page - 1)}
-                  >
-                    Previous
-                  </Button>
-                  <div className="text-sm text-muted-foreground">
-                    Page {pagination.page} of {totalPages}
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={pagination.page >= totalPages}
-                    onClick={() => pagination.onPageChange(pagination.page + 1)}
-                  >
-                    Next
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={pagination.page >= totalPages}
+                  onClick={() => pagination.onPageChange(pagination.page + 1)}
+                >
+                  Next
+                </Button>
               </div>
-            ) : pagination ? (
+            ) : pagination && !selectableMode ? (
               <Pagination
                 page={pagination.page}
                 perPage={pagination.perPage}

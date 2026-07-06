@@ -12,7 +12,7 @@ import {
   type LinkedMention,
   type LinkedSubstrateItem,
 } from "@/lib/api"
-import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
+import { locationTypeManualSelectOptions, placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 import { isStylebookApiNotFoundError } from "@/lib/stylebook-api/client"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import type { CleanupEntityType } from "@/lib/cleanupChecks"
@@ -36,6 +36,13 @@ import { locationCanonicalDetailConfig } from "@/lib/entityConfigs/location/cano
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Dialog,
@@ -77,6 +84,10 @@ export default function LocationDetail() {
   const [label, setLabel] = useState("")
   const [locationType, setLocationType] = useState("")
   const [formattedAddress, setFormattedAddress] = useState("")
+  const orderedLocationTypeOptions = useMemo(
+    () => locationTypeManualSelectOptions(locationType),
+    [locationType],
+  )
   const [saving, setSaving] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -463,13 +474,25 @@ export default function LocationDetail() {
               )}
             </div>
             <div>
-              <Label>Location type</Label>
+              <Label htmlFor="location-type">Location type</Label>
               {editing ? (
-                <Input
-                  value={locationType}
-                  onChange={(e) => setLocationType(e.target.value)}
-                  placeholder="e.g. city, neighborhood"
-                />
+                <Select
+                  value={locationType || "none"}
+                  onValueChange={(v) => setLocationType(v === "none" ? "" : v)}
+                  disabled={!canEdit || saving}
+                >
+                  <SelectTrigger id="location-type" className="mt-1.5">
+                    <SelectValue placeholder="Select location type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {orderedLocationTypeOptions.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {placeExtractTypeLabel(t)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               ) : (
                 <p className="text-sm mt-1.5">
                   {canonical?.location_type ? placeExtractTypeLabel(canonical.location_type) : "—"}

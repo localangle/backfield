@@ -152,6 +152,16 @@ export const ORGANIZATION_EXTRACT_ORGANIZATION_TYPES = [
   "other",
 ] as const
 
+/** Options for manual location-type pickers (taxonomy only, plus legacy current value when editing). */
+export function locationTypeManualSelectOptions(current?: string | null): string[] {
+  const taxonomy = sortReviewQueueTypeFilterOptions([...PLACE_EXTRACT_LOCATION_TYPES])
+  const cur = (current ?? "").trim().toLowerCase()
+  if (cur && !taxonomy.includes(cur)) {
+    return [...taxonomy, cur]
+  }
+  return taxonomy
+}
+
 /** Options for manual organization-type pickers (taxonomy only, plus legacy current value when editing). */
 export function organizationTypeManualSelectOptions(current?: string | null): string[] {
   const taxonomy = sortReviewQueueTypeFilterOptions([...ORGANIZATION_EXTRACT_ORGANIZATION_TYPES])
