@@ -28,6 +28,17 @@ def is_address_like_location_type(location_type: str | None) -> bool:
     return lt in ADDRESS_LIKE_LOCATION_TYPES
 
 
+# PlaceExtract editorial role (``nature``); prompt: place_extract/prompts/extract.md.
+PLACE_MENTION_NATURE_VALUES: tuple[str, ...] = (
+    "primary",
+    "secondary",
+    "subject",
+    "context",
+    "historical",
+    "person",
+    "unknown",
+)
+
 # Order matches the "Valid types are" section of the PlaceExtract classification prompt.
 PLACE_EXTRACT_LOCATION_TYPES: tuple[str, ...] = (
     "place",

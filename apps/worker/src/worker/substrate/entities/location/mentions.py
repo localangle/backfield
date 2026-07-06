@@ -14,6 +14,7 @@ from backfield_db.text_sanitize import strip_nul_bytes
 from backfield_entities.entities.linking.substrate_actions import (
     dispose_orphan_substrate_without_requeue,
 )
+from backfield_entities.entities.location.types import PLACE_MENTION_NATURE_VALUES
 from sqlalchemy import func
 from sqlmodel import Session, col, select
 
@@ -23,9 +24,7 @@ from worker.substrate.entities.location.upsert import _display_name_for_place_en
 
 # Primary editorial role (PlaceExtract `nature`). Extras: `nature_secondary_tags` in extraction JSON
 # → `SubstrateLocationMention.nature_secondary_tags_json`.
-_NATURE_PRIMARY_ALLOWED = frozenset(
-    {"primary", "secondary", "subject", "context", "person", "unknown"}
-)
+_NATURE_PRIMARY_ALLOWED = frozenset(PLACE_MENTION_NATURE_VALUES)
 _NATURE_PRIMARY_SYNONYMS: dict[str, str] = {
     "setting": "primary",
     "main": "primary",

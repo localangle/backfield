@@ -149,7 +149,8 @@ For **each** location object, set exactly one primary **`nature`** value describ
 - **primary** — Where the main news event (or events) happens: crime scene, construction site, weather-affected area, game venue, key meeting place, etc.
 - **secondary** — A consequential but supporting location (e.g. hospital after a crash, secondary scene in a developing story).
 - **subject** — The place is the focus of coverage: restaurant review, profile of a venue, or an item in a list (e.g. “10 best parks in San Francisco”).
-- **context** — Referenced for background, history, or non-event context without being the main scene.
+- **context** — Referenced for general background or non-event context without being the main scene (policy backdrop, regional characterization).
+- **historical** — Cited for past events, precedent, or historical comparison (e.g. "similar floods in 1927," "where the treaty was signed in 1919"); the place matters as history, not as the current scene.
 - **person** — Tied to a person: where they were quoted, hometown, identifying employer campus, etc.
 - **unknown** — Use only when none of the above clearly applies.
 

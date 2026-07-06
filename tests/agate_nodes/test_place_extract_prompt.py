@@ -40,3 +40,9 @@ def test_place_extract_prompt_excludes_non_location_candidate_patterns() -> None
     assert "NFL Scouting Combine" in prompt
     assert "Organization names with inferred headquarters or branch geocodes" in prompt
     assert "American Medical Association, IL" in prompt
+
+
+def test_place_extract_prompt_includes_historical_nature() -> None:
+    prompt = _PROMPT_PATH.read_text(encoding="utf-8")
+    assert "**historical**" in prompt
+    assert "past events, precedent, or historical comparison" in prompt

@@ -36,6 +36,8 @@ export function mentionNatureBadgeClass(raw: string | null | undefined): string 
       return "border-violet-500/40 bg-violet-500/10 text-violet-900 dark:text-violet-200"
     case "context":
       return "border-sky-500/40 bg-sky-500/10 text-sky-900 dark:text-sky-100"
+    case "historical":
+      return "border-indigo-500/40 bg-indigo-500/10 text-indigo-900 dark:text-indigo-100"
     case "person":
       return "border-amber-500/45 bg-amber-500/12 text-amber-950 dark:text-amber-100"
     default:
