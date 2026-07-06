@@ -1,11 +1,16 @@
-"""Tests that PlaceExtract prompt excludes non-geographic candidates."""
+"""Tests for PlaceExtract prompt resolution and placeholder substitution."""
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
 
-from agate_utils.prompt_placeholders import substitute_prompt_placeholders
+from agate_nodes.place_extract.prompt_template import (
+    normalize_prompt_for_comparison,
+    resolve_place_extract_prompt,
+    substitute_prompt_placeholders,
+)
+from agate_utils.prompt_placeholders import extract_json_path
 
 _PROMPT_PATH = (
     Path(__file__).resolve().parents[1].parent
@@ -59,13 +64,34 @@ def test_place_extract_prompt_only_text_is_json_path_placeholder() -> None:
     assert placeholders == ["text"]
 
 
-def test_place_extract_build_prompt_accepts_article_pipeline_input() -> None:
-    template = _PROMPT_PATH.read_text(encoding="utf-8")
+def test_resolve_place_extract_prompt_prefers_live_bundled_snapshot() -> None:
+    bundled = "Intro\nformat **`{{City}}, {{Country}}`**\nFooter {text}"
+    stale_graph = "Intro\nformat **`{City}, {Country}`**\nFooter {text}"
+    assert resolve_place_extract_prompt(bundled=bundled, custom=stale_graph) == bundled
+
+
+def test_resolve_place_extract_prompt_keeps_true_custom_override() -> None:
+    bundled = "Default extraction rules.\n{text}"
+    custom = "Custom project rules only for us.\n{text}"
+    assert resolve_place_extract_prompt(bundled=bundled, custom=custom) == custom
+
+
+def test_substitute_prompt_placeholders_leaves_unknown_prose_tokens() -> None:
+    template = "Format as `{City}, {Country}`.\n\n{text}"
     flattened = {
-        "text": "Sample article body.",
+        "text": "Article body.",
         "article_metadata": {"category": "news_story"},
-        "article_embedding": {"embedding": [0.1, 0.2]},
     }
-    built = substitute_prompt_placeholders(template, flattened)
-    assert "Sample article body." in built
-    assert "{City}" in built or "Paris, France" in built
+    built = substitute_prompt_placeholders(
+        template,
+        flattened,
+        extract_json_path=extract_json_path,
+    )
+    assert "{City}, {Country}" in built
+    assert "Article body." in built
+
+
+def test_normalize_prompt_for_comparison_unifies_brace_escapes() -> None:
+    assert normalize_prompt_for_comparison("{{City}}, {{ST}}") == normalize_prompt_for_comparison(
+        "{City}, {ST}"
+    )

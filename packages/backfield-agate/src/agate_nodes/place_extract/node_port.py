@@ -33,6 +33,10 @@ from agate_nodes.place_extract.compact_array_parse import (
 )
 from agate_nodes.place_extract.compact_expand import expand_compact_entry
 from agate_nodes.place_extract.compact_prompt import COMPACT_OUTPUT_INSTRUCTIONS
+from agate_nodes.place_extract.prompt_template import (
+    resolve_place_extract_prompt,
+    substitute_prompt_placeholders,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +65,10 @@ class PlaceExtractParams(BaseModel):
     )
     prompt: str = Field(
         default="",
-        description="Custom prompt override. If provided, this takes precedence over prompt_file."
+        description=(
+            "Optional prompt override saved with the graph. At runtime, the bundled "
+            "prompt_file is preferred when this matches the bundled template."
+        ),
     )
     llmTimeout: int = Field(
         default=600,
@@ -180,49 +187,19 @@ class PlaceExtractNode:
             return [self._sanitize_for_prompt(item) for item in value]
         return value
     
+    def _extract_for_prompt(self, input_dict: Dict[str, Any], path_spec: str) -> Any:
+        value = self._extract_json_path(input_dict, path_spec)
+        return self._sanitize_for_prompt(value)
+
     def _build_prompt(self, input_dict: Dict[str, Any], prompt_template: str) -> str:
         """
-        Replace {json_path} placeholders in prompt_template using the provided input_dict.
-        Skips escaped braces ({{ and }}) to avoid treating them as placeholders.
-        Automatically sanitizes custom_geographies to remove geometry data.
+        Replace {json_path} placeholders when present in input; leave others literal.
         """
-        # Temporarily replace escaped braces with markers to avoid matching them
-        # Use unique markers that won't appear in the actual content
-        ESCAPED_OPEN = "___ESCAPED_OPEN_BRACE___"
-        ESCAPED_CLOSE = "___ESCAPED_CLOSE_BRACE___"
-        
-        # Replace {{ with marker
-        temp_template = prompt_template.replace("{{", ESCAPED_OPEN)
-        temp_template = temp_template.replace("}}", ESCAPED_CLOSE)
-        
-        # Now find placeholders (these will only match unescaped braces)
-        placeholders = re.findall(r'\{([^}]+)\}', temp_template)
-        prompt = temp_template
-        
-        for placeholder in placeholders:
-            placeholder_key = placeholder.strip()
-            try:
-                value = self._extract_json_path(input_dict, placeholder_key)
-                # Sanitize geometry data before serializing
-                sanitized_value = self._sanitize_for_prompt(value)
-                if isinstance(sanitized_value, (dict, list)):
-                    serialized = json.dumps(sanitized_value, indent=2)
-                elif isinstance(sanitized_value, str):
-                    serialized = sanitized_value
-                else:
-                    serialized = json.dumps(sanitized_value)
-                prompt = prompt.replace(f'{{{placeholder}}}', serialized)
-            except Exception as e:
-                raise ValueError(
-                    f"Failed to extract JSON path '{placeholder_key}': {str(e)}\n"
-                    f"Available top-level keys in input: {list(input_dict.keys())}"
-                ) from e
-        
-        # Restore escaped braces
-        prompt = prompt.replace(ESCAPED_OPEN, "{{")
-        prompt = prompt.replace(ESCAPED_CLOSE, "}}")
-        
-        return prompt
+        return substitute_prompt_placeholders(
+            prompt_template,
+            input_dict,
+            extract_json_path=self._extract_for_prompt,
+        )
     
     async def run(
         self,
@@ -273,11 +250,12 @@ class PlaceExtractNode:
                 f"Node data keys: {[list(v.keys()) if isinstance(v, dict) else 'not dict' for v in input_dict.values()]}"
             )
         
-        # Use custom prompt if provided, otherwise load from prompt_file
-        if params.prompt and params.prompt.strip():
-            prompt_template = params.prompt
-        else:
-            prompt_template = self._load_prompt_template(params.prompt_file)
+        # Prefer live bundled prompt; saved graphs often carry stale prompt snapshots.
+        bundled_prompt = self._load_prompt_template(params.prompt_file)
+        prompt_template = resolve_place_extract_prompt(
+            bundled=bundled_prompt,
+            custom=params.prompt,
+        )
         
         # Build prompt using JSON path placeholders
         prompt = self._build_prompt(flattened_input, prompt_template)
