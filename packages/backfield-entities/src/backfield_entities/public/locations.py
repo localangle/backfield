@@ -8,6 +8,7 @@ from enum import StrEnum
 from typing import Any
 
 from backfield_db import (
+    StylebookLocationAlias,
     StylebookLocationCanonical,
     SubstrateArticle,
     SubstrateLocation,
@@ -15,10 +16,11 @@ from backfield_db import (
     SubstrateLocationMentionOccurrence,
 )
 from pydantic import BaseModel
-from sqlalchemy import case, exists, literal, or_
+from sqlalchemy import case, exists, literal
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, func, select
 
+from backfield_entities.catalog.search import catalog_label_alias_ilike_filter
 from backfield_entities.public.articles import PublicArticleOut
 from backfield_entities.public.entity_articles import (
     collect_mention_article_pairs,
@@ -175,12 +177,14 @@ def location_filters(
     ]
     q_text = (params.q or "").strip()
     if q_text:
-        esc = _escape_ilike_metacharacters(q_text)
-        term = f"%{esc}%"
         filters.append(
-            or_(
-                col(StylebookLocationCanonical.label).ilike(term, escape="\\"),
-                col(StylebookLocationCanonical.formatted_address).ilike(term, escape="\\"),
+            catalog_label_alias_ilike_filter(
+                q_text,
+                label_column=col(StylebookLocationCanonical.label),
+                canonical_id_column=col(StylebookLocationCanonical.id),
+                alias_model=StylebookLocationAlias,
+                alias_canonical_id_column=col(StylebookLocationAlias.location_canonical_id),
+                alias_normalized_column=col(StylebookLocationAlias.normalized_alias),
             )
         )
     location_type = (params.location_type or "").strip()

@@ -9,6 +9,7 @@ from sqlalchemy import or_, text
 from sqlmodel import Session, col, select
 
 from backfield_entities.canonical.link_matrix import types_are_comparable
+from backfield_entities.text.match_normalize import match_fold_key, normalize_match_text
 
 # Low threshold: precision is handled in :mod:`canonical_match_score`.
 _PG_SIMILARITY_THRESHOLD: float = 0.12
@@ -22,10 +23,10 @@ def _distinct_query_strings(*candidates: str | None) -> list[str]:
     for raw in candidates:
         if raw is None:
             continue
-        v = raw.strip().lower()
-        if v and v not in seen:
-            seen.add(v)
-            out.append(v)
+        for variant in (normalize_match_text(raw), match_fold_key(raw)):
+            if variant and variant not in seen:
+                seen.add(variant)
+                out.append(variant)
     return out
 
 

@@ -8,17 +8,16 @@
  * comma-separated qualifiers like state or country).
  */
 
+import { matchFoldKey, normalizeMatchText } from "@/lib/matchNormalize"
+
 function normalizeForDuplicateCompare(value: string): string {
-  let normalized = value
-    .trim()
-    .toLowerCase()
+  let normalized = normalizeMatchText(value)
     .replace(/[\u2010-\u2015]/g, "-") // unicode dashes → hyphen
     .replace(/\./g, "")
-    .replace(/\s+/g, " ")
   if (normalized.startsWith("the ")) {
     normalized = normalized.slice(4)
   }
-  return normalized
+  return matchFoldKey(normalized)
 }
 
 function commaSegments(value: string): string[] {

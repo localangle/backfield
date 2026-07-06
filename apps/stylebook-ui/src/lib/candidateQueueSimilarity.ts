@@ -5,11 +5,10 @@ import type { QueueCandidateBase } from "@/lib/entityConfigs/candidateQueueTypes
 
 export const CREATE_LINK_NUDGE_MIN_SCORE = 0.86
 
+import { matchFoldKey } from "@/lib/matchNormalize"
+
 export function normalizeLabelForCompare(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ")
+  return matchFoldKey(value)
 }
 
 function diceBigramCoefficient(a: string, b: string): number {

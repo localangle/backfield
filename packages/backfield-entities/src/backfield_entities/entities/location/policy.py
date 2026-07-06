@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocation
+from backfield_db import StylebookLocationCanonical, SubstrateLocation
 from sqlmodel import Session, col, select
 
 from backfield_entities.canonical.jurisdiction import (
@@ -45,6 +45,9 @@ from backfield_entities.canonical.retrieval import (
     load_canonical_match_features,
     retrieve_candidate_canonical_ids,
 )
+from backfield_entities.entities.location.recall import (
+    canonical_ids_from_location_name_keys,
+)
 from backfield_entities.entities.location.review_display import deferred_policy_display_message
 from backfield_entities.entities.location.types import (
     ADDRESS_PLACE_KIND_PRIVATE_RESIDENCE,
@@ -59,6 +62,7 @@ from backfield_entities.ingest.geocode_cache.resolve import (
 from backfield_entities.ingest.geocode_cache.sanity import (
     substrate_canonical_link_blocked_by_content_sanity,
 )
+from backfield_entities.text.match_normalize import match_fold_key
 
 # Scores at or below this value are treated as gate-demoted (just under recall floor).
 _RECALL_SCORE_DEMOTED: float = RECALL_MIN_SCORE - 0.001
@@ -71,23 +75,14 @@ def find_existing_canonical_id_by_alias(
     normalized_name: str,
 ) -> str | None:
     """Return ``StylebookLocationCanonical.id`` if an alias matches in this Stylebook."""
-    norm = str(normalized_name)
-    stmt = (
-        select(StylebookLocationCanonical)
-        .join(
-            StylebookLocationAlias,
-            StylebookLocationAlias.location_canonical_id == StylebookLocationCanonical.id,
-        )
-        .where(
-            StylebookLocationCanonical.stylebook_id == stylebook_id,
-            StylebookLocationAlias.normalized_alias == norm,
-        )
-        .limit(1)
+    ids = canonical_ids_from_location_name_keys(
+        session,
+        stylebook_id=stylebook_id,
+        name_or_norm=str(normalized_name),
     )
-    canon = session.exec(stmt).first()
-    if canon is None or canon.id is None:
+    if not ids:
         return None
-    return str(canon.id)
+    return ids[0]
 
 
 def find_existing_canonical_id_by_normalized_label(
@@ -102,6 +97,9 @@ def find_existing_canonical_id_by_normalized_label(
         n = normalize_substrate_cache_query(str(raw or ""))
         if n:
             queries.add(n)
+        folded = match_fold_key(str(raw or ""))
+        if folded:
+            queries.add(folded)
     if not queries:
         return None
     canons = session.exec(
@@ -114,7 +112,11 @@ def find_existing_canonical_id_by_normalized_label(
     for canon in canons:
         if canon.id is None:
             continue
-        if normalize_substrate_cache_query(str(canon.label)) in queries:
+        label_keys = {
+            normalize_substrate_cache_query(str(canon.label)),
+            match_fold_key(str(canon.label)),
+        }
+        if label_keys & queries:
             winners.append(canon)
     if len(winners) != 1:
         return None

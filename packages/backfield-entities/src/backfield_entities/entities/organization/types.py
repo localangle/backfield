@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from backfield_entities.text.match_normalize import (
+    alias_lookup_keys,
+    match_fold_key,
+    normalize_match_text,
+)
+
 ORGANIZATION_NATURE_VALUES: tuple[str, ...] = (
     "primary",
     "actor",
@@ -43,9 +49,11 @@ ORGANIZATION_TYPE_VALUES: tuple[str, ...] = (
 
 
 def normalize_organization_text(value: str | None) -> str:
-    if value is None:
-        return ""
-    return " ".join(str(value).strip().lower().split())
+    return normalize_match_text(value)
+
+
+def organization_match_key(value: str | None) -> str:
+    return match_fold_key(value)
 
 
 _ORGANIZATION_ACRONYM_STOP_WORDS: frozenset[str] = frozenset(
@@ -140,11 +148,11 @@ def organization_canonical_alias_keys(value: str | None) -> tuple[str, ...]:
     norm = normalize_organization_text(value)
     if not norm:
         return ()
-    keys: list[str] = [norm]
+    keys: list[str] = list(alias_lookup_keys(value))
     acr = organization_acronym_from_name(value)
     # Skip collision-prone two-letter derived acronyms (e.g. Colorado Rockies and
     # Cincinnati Reds both → ``cr``). Longer acronyms (CPS, NBA) remain useful.
-    if acr and acr != norm and len(acr) > 2:
+    if acr and acr != norm and len(acr) > 2 and acr not in keys:
         keys.append(acr)
     out: list[str] = []
     seen: set[str] = set()
@@ -156,19 +164,8 @@ def organization_canonical_alias_keys(value: str | None) -> tuple[str, ...]:
 
 
 def organization_substrate_alias_lookup_keys(value: str | None) -> tuple[str, ...]:
-    """Lookup keys when matching a substrate name against stored aliases.
-
-    Multi-word names use the full normalized form only so shared derived
-    acronyms (e.g. Colorado Rockies and Cincinnati Reds → ``cr``) do not
-    auto-link unrelated organizations. Acronym-like single-token substrate
-    names (e.g. ``CPS``, ``NBA``) still match stored acronym aliases.
-    """
-    norm = normalize_organization_text(value)
-    if not norm:
-        return ()
-    if organization_looks_like_acronym(value) or " " not in norm:
-        return (norm,)
-    return (norm,)
+    """Lookup keys when matching a substrate name against stored aliases."""
+    return alias_lookup_keys(value)
 
 
 # Backward-compatible alias for canonical seeding call sites.

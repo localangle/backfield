@@ -10,6 +10,8 @@ from typing import Any, Literal
 
 from number_parser import parse_number, parse_ordinal
 
+from backfield_entities.text.match_normalize import match_fold_key
+
 # Collapse punctuation so "West Garfield Park, Chicago, IL" and "West Garfield Park — Chicago IL"
 # compare as the same place name for scoring.
 _LOOSE_TOKEN_RE = re.compile(r"[^a-z0-9]+")
@@ -203,6 +205,18 @@ def _loose_key(value: str) -> str:
     return " ".join(t.split())
 
 
+def _append_surface(out: list[str], seen: set[str], raw: str) -> None:
+    s = raw.strip().lower()
+    if not s or s in seen:
+        return
+    seen.add(s)
+    out.append(s)
+    folded = match_fold_key(s)
+    if folded and folded not in seen:
+        seen.add(folded)
+        out.append(folded)
+
+
 def _substrate_surface_strings(substrate: SubstrateMatchInput) -> list[str]:
     """Distinct non-empty lowercased strings to compare against canonical naming.
 
@@ -216,10 +230,7 @@ def _substrate_surface_strings(substrate: SubstrateMatchInput) -> list[str]:
         substrate.name,
         substrate.formatted_address or "",
     ):
-        s = raw.strip().lower()
-        if s and s not in seen:
-            seen.add(s)
-            out.append(s)
+        _append_surface(out, seen, raw)
     return out
 
 
@@ -234,10 +245,7 @@ def _substrate_name_surface_strings(substrate: SubstrateMatchInput) -> list[str]
     seen: set[str] = set()
     out: list[str] = []
     for raw in (substrate.normalized_name, substrate.name):
-        s = raw.strip().lower()
-        if s and s not in seen:
-            seen.add(s)
-            out.append(s)
+        _append_surface(out, seen, raw)
     return out
 
 
@@ -297,26 +305,37 @@ def _string_score_surface_vs_candidate(norm: str, candidate: CanonicalMatchFeatu
     if not norm:
         return 0.0
     loose_n = _loose_key(norm)
+    fold_n = match_fold_key(norm)
     parts: list[float] = []
     label_lower = candidate.label.strip().lower()
     loose_label = _loose_key(candidate.label)
+    fold_label = match_fold_key(candidate.label)
     if norm == label_lower:
         parts.append(1.0)
     if loose_n and loose_n == loose_label:
         parts.append(1.0)
+    if fold_n and fold_label and fold_n == fold_label:
+        parts.append(1.0)
     parts.append(_ratio(norm, label_lower))
     if loose_n:
         parts.append(_ratio(loose_n, loose_label))
+    if fold_n and fold_label:
+        parts.append(_ratio(fold_n, fold_label))
     for a in candidate.normalized_aliases:
         a_st = a.strip().lower()
+        fold_a = match_fold_key(a)
         parts.append(_ratio(norm, a_st))
         if norm == a_st:
             parts.append(1.0)
         loose_a = _loose_key(a)
         if loose_n and loose_n == loose_a:
             parts.append(1.0)
+        if fold_n and fold_a and fold_n == fold_a:
+            parts.append(1.0)
         if loose_n:
             parts.append(_ratio(loose_n, loose_a))
+        if fold_n and fold_a:
+            parts.append(_ratio(fold_n, fold_a))
     return max(parts) if parts else 0.0
 
 

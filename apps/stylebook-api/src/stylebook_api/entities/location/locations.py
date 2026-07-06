@@ -16,6 +16,7 @@ from backfield_db import (
 )
 from backfield_db.text_sanitize import strip_nul_bytes
 from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
+from backfield_entities.catalog.search import substrate_name_ilike_filter
 from backfield_entities.entities.linking.substrate_actions import (
     finalize_substrate_after_article_scoped_remove,
     link_substrate_to_canonical_atomic,
@@ -288,10 +289,13 @@ def list_locations(
     if st is not None:
         filters.append(st)
     if q:
-        term = f"%{q.strip()}%"
-        name_m = col(SubstrateLocation.name).ilike(term)
-        norm_m = col(SubstrateLocation.normalized_name).ilike(term)
-        filters.append(name_m | norm_m)
+        filters.append(
+            substrate_name_ilike_filter(
+                q,
+                name_column=col(SubstrateLocation.name),
+                normalized_name_column=col(SubstrateLocation.normalized_name),
+            )
+        )
     if type_filter and type_filter != "all":
         filters.append(SubstrateLocation.location_type == type_filter)
 
@@ -343,10 +347,13 @@ def list_location_options(
     if st is not None:
         filters.append(st)
     if q:
-        term = f"%{q.strip()}%"
-        name_m = col(SubstrateLocation.name).ilike(term)
-        norm_m = col(SubstrateLocation.normalized_name).ilike(term)
-        filters.append(name_m | norm_m)
+        filters.append(
+            substrate_name_ilike_filter(
+                q,
+                name_column=col(SubstrateLocation.name),
+                normalized_name_column=col(SubstrateLocation.normalized_name),
+            )
+        )
     stmt = (
         select(SubstrateLocation.id, SubstrateLocation.name, SubstrateLocation.location_type)
         .where(*filters)

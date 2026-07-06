@@ -20,6 +20,7 @@ from backfield_entities.entities.organization.types import (
     normalize_organization_text,
     normalize_organization_type,
     organization_looks_like_acronym,
+    organization_match_key,
     organization_tier1_identity_compatible,
     organization_types_are_link_compatible,
 )
@@ -33,10 +34,11 @@ def organization_name_matches_canonical(
     organization: SubstrateOrganization,
     canon: StylebookOrganizationCanonical,
 ) -> bool:
-    norm = normalize_organization_text(organization.normalized_name or organization.name)
-    if not norm:
+    if not organization_match_key(organization.normalized_name or organization.name):
         return False
-    return normalize_organization_text(canon.label) == norm
+    return organization_match_key(canon.label) == organization_match_key(
+        organization.normalized_name or organization.name
+    )
 
 
 def organization_type_matches_canonical(

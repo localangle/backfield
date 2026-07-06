@@ -8,6 +8,7 @@ from uuid import UUID
 
 from backfield_db import (
     BackfieldProject,
+    StylebookOrganizationAlias,
     StylebookOrganizationCanonical,
     SubstrateArticle,
     SubstrateOrganization,
@@ -21,6 +22,7 @@ from backfield_entities.activity import (
     log_stylebook_activity_safe,
 )
 from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
+from backfield_entities.catalog.search import catalog_label_alias_ilike_filter
 from backfield_entities.entities.organization.persist import create_standalone_canonical
 from backfield_entities.entities.organization.types import (
     ORGANIZATION_TYPE_VALUES,
@@ -178,9 +180,18 @@ def _canonical_filters(
     ]
     q_text = (q or "").strip()
     if q_text:
-        esc = _escape_ilike_metacharacters(q_text)
-        term = f"%{esc}%"
-        filters.append(col(StylebookOrganizationCanonical.label).ilike(term, escape="\\"))
+        filters.append(
+            catalog_label_alias_ilike_filter(
+                q_text,
+                label_column=col(StylebookOrganizationCanonical.label),
+                canonical_id_column=col(StylebookOrganizationCanonical.id),
+                alias_model=StylebookOrganizationAlias,
+                alias_canonical_id_column=col(
+                    StylebookOrganizationAlias.organization_canonical_id
+                ),
+                alias_normalized_column=col(StylebookOrganizationAlias.normalized_alias),
+            )
+        )
     if type_filter is not None:
         tf = type_filter.strip()
         if tf:

@@ -22,14 +22,15 @@ from backfield_entities.canonical.link import (
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_WAIVED,
 )
-from backfield_entities.canonical.match_score import _loose_key
 from backfield_entities.canonical.plan_types import CanonicalPersistDecision, CanonicalPersistPlan
 from backfield_entities.canonical.slug import (
     allocate_unique_canonical_slug,
     flush_new_canonical_with_slug_retry,
 )
 from backfield_entities.entities.location.policy import plan_has_ambiguous_canonical_match
+from backfield_entities.entities.location.recall import location_alias_lookup_keys
 from backfield_entities.geo.h3_index import apply_h3_fields
+from backfield_entities.text.match_normalize import normalize_match_text
 
 
 def _h3_field_kwargs(
@@ -62,23 +63,12 @@ def assert_canonical_link_invariant(location: SubstrateLocation) -> None:
 
 
 def _normalize_alias_text(text: str) -> str:
-    return text.strip().lower()
+    return normalize_match_text(text)
 
 
 def normalized_alias_variants(normalized_alias: str) -> tuple[str, ...]:
-    """Stable variants for recall/exact matching.
-
-    We keep this conservative: only add an ordinal-stripped form so that strings like
-    ``15th Ward`` and ``Ward 15`` share more overlap in recall.
-    """
-    norm = str(normalized_alias).strip().lower()
-    if not norm:
-        return ()
-    # Use the same ordinal normalization as the scorer's loose-key path.
-    stripped = _loose_key(norm)
-    if stripped and stripped != norm:
-        return (norm, stripped)
-    return (norm,)
+    """Stable variants for recall/exact matching (accent, apostrophe, loose key)."""
+    return location_alias_lookup_keys(normalized_alias)
 
 
 def seed_aliases_for_canonical_label(

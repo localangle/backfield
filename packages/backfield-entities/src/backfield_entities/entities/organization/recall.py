@@ -13,9 +13,11 @@ from backfield_entities.entities.organization.types import (
     multiword_organization_names_share_ambiguous_acronym,
     normalize_organization_text,
     normalize_organization_type,
+    organization_match_key,
     organization_names_match_via_acronym,
     organization_substrate_alias_lookup_keys,
 )
+from backfield_entities.text.match_normalize import escape_ilike_metacharacters
 
 ORGANIZATION_RECALL_MIN_SCORE = 40
 ORGANIZATION_RECALL_DEFAULT_LIMIT = 24
@@ -27,12 +29,16 @@ def canonical_ids_from_organization_name_keys(
     stylebook_id: int,
     name_or_norm: str,
 ) -> list[str]:
-    """Canonical ids whose alias ``normalized_alias`` matches exactly."""
+    """Canonical ids whose alias ``normalized_alias`` matches accent-insensitively."""
     lookup_keys = set(organization_substrate_alias_lookup_keys(name_or_norm))
-    if not lookup_keys:
+    match_key = organization_match_key(name_or_norm)
+    if not lookup_keys and not match_key:
         return []
+    all_keys = set(lookup_keys)
+    if match_key:
+        all_keys.add(match_key)
     stmt = (
-        select(StylebookOrganizationCanonical.id)
+        select(StylebookOrganizationCanonical.id, StylebookOrganizationAlias.normalized_alias)
         .join(
             StylebookOrganizationAlias,
             StylebookOrganizationAlias.organization_canonical_id
@@ -40,14 +46,50 @@ def canonical_ids_from_organization_name_keys(
         )
         .where(
             StylebookOrganizationCanonical.stylebook_id == stylebook_id,
-            StylebookOrganizationAlias.normalized_alias.in_(lookup_keys),
+            col(StylebookOrganizationAlias.normalized_alias).in_(all_keys),
             StylebookOrganizationAlias.suppressed.is_(False),
         )
     )
     out: list[str] = []
     seen: set[str] = set()
-    for cid in session.exec(stmt).all():
+    for cid, norm_alias in session.exec(stmt).all():
         if cid is None:
+            continue
+        if match_key and organization_match_key(str(norm_alias or "")) != match_key:
+            continue
+        cid_str = str(cid)
+        if cid_str not in seen:
+            seen.add(cid_str)
+            out.append(cid_str)
+    if out or not match_key:
+        return out
+
+    tokens = match_key.split()
+    if not tokens:
+        return []
+    search_tok = max((t for t in tokens if len(t) >= 2), key=len, default="")
+    if len(search_tok) < 2:
+        return []
+    esc = escape_ilike_metacharacters(search_tok)
+    pat = f"%{esc}%"
+    scan_stmt = (
+        select(StylebookOrganizationCanonical.id, StylebookOrganizationAlias.normalized_alias)
+        .join(
+            StylebookOrganizationAlias,
+            StylebookOrganizationAlias.organization_canonical_id
+            == StylebookOrganizationCanonical.id,
+        )
+        .where(
+            StylebookOrganizationCanonical.stylebook_id == stylebook_id,
+            StylebookOrganizationAlias.suppressed.is_(False),
+            col(StylebookOrganizationAlias.normalized_alias).like(pat, escape="\\"),
+        )
+        .limit(120)
+    )
+    for cid, norm_alias in session.exec(scan_stmt).all():
+        if cid is None:
+            continue
+        if organization_match_key(str(norm_alias or "")) != match_key:
             continue
         cid_str = str(cid)
         if cid_str not in seen:

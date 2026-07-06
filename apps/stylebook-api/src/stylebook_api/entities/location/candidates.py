@@ -28,6 +28,7 @@ from backfield_entities.canonical.link import (
     CANONICAL_LINK_WAIVED,
 )
 from backfield_entities.canonical.slug import allocate_unique_canonical_slug
+from backfield_entities.catalog.search import substrate_name_ilike_filter
 from backfield_entities.entities.linking.substrate_actions import (
     rank_canonical_suggestions_for_substrate,
 )
@@ -35,7 +36,7 @@ from backfield_entities.entities.location.persist import refresh_aliases_for_lin
 from backfield_entities.entities.location.types import PLACE_EXTRACT_LOCATION_TYPES
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import exists, or_
+from sqlalchemy import exists
 from sqlmodel import Session, col, func, select
 
 from stylebook_api.catalog_scope import StylebookSlugQuery
@@ -102,11 +103,11 @@ def _open_candidate_filters(
         SubstrateLocation.canonical_link_status == CANONICAL_LINK_PENDING,
     ]
     if q:
-        term = f"%{q.strip()}%"
         filters.append(
-            or_(
-                col(SubstrateLocation.name).ilike(term),
-                col(SubstrateLocation.normalized_name).ilike(term),
+            substrate_name_ilike_filter(
+                q,
+                name_column=col(SubstrateLocation.name),
+                normalized_name_column=col(SubstrateLocation.normalized_name),
             )
         )
     if type_filter:
@@ -133,11 +134,11 @@ def _deferred_candidate_filters(
         SubstrateLocation.canonical_link_status == CANONICAL_LINK_WAIVED,
     ]
     if q:
-        term = f"%{q.strip()}%"
         filters.append(
-            or_(
-                col(SubstrateLocation.name).ilike(term),
-                col(SubstrateLocation.normalized_name).ilike(term),
+            substrate_name_ilike_filter(
+                q,
+                name_column=col(SubstrateLocation.name),
+                normalized_name_column=col(SubstrateLocation.normalized_name),
             )
         )
     if type_filter:

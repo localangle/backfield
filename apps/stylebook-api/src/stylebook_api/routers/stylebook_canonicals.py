@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from backfield_db import (
     BackfieldProject,
+    StylebookLocationAlias,
     StylebookLocationCanonical,
     SubstrateArticle,
     SubstrateLocation,
@@ -18,6 +19,7 @@ from backfield_entities.activity import (
     EVENT_CANONICAL_UPDATED,
     log_stylebook_activity_safe,
 )
+from backfield_entities.catalog.search import catalog_label_alias_ilike_filter
 from backfield_entities.entities.location.persist import create_standalone_canonical
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -120,9 +122,16 @@ def _canonical_filters(
     filters: list[ColumnElement[bool]] = [StylebookLocationCanonical.stylebook_id == stylebook_id]
     q_text = (q or "").strip()
     if q_text:
-        esc = _escape_ilike_metacharacters(q_text)
-        term = f"%{esc}%"
-        filters.append(col(StylebookLocationCanonical.label).ilike(term, escape="\\"))
+        filters.append(
+            catalog_label_alias_ilike_filter(
+                q_text,
+                label_column=col(StylebookLocationCanonical.label),
+                canonical_id_column=col(StylebookLocationCanonical.id),
+                alias_model=StylebookLocationAlias,
+                alias_canonical_id_column=col(StylebookLocationAlias.location_canonical_id),
+                alias_normalized_column=col(StylebookLocationAlias.normalized_alias),
+            )
+        )
     if type_filter is not None:
         tf = type_filter.strip()
         if tf:

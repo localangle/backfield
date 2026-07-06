@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-import unicodedata
+from backfield_entities.text.match_normalize import (
+    alias_lookup_keys,
+    match_fold_key,
+    normalize_match_text,
+)
 
 PERSON_NATURE_VALUES: tuple[str, ...] = (
     "subject",
@@ -55,18 +59,12 @@ PERSON_TYPE_LEGACY_ALIASES: dict[str, str] = {
 
 
 def normalize_person_text(value: str | None) -> str:
-    if value is None:
-        return ""
-    return " ".join(str(value).strip().lower().split())
+    return normalize_match_text(value)
 
 
 def person_match_key(value: str | None) -> str:
     """Accent-insensitive key for person-name equality (display text unchanged elsewhere)."""
-    normalized = normalize_person_text(value)
-    if not normalized:
-        return ""
-    decomposed = unicodedata.normalize("NFKD", normalized)
-    return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+    return match_fold_key(value)
 
 
 def person_names_match(a: str | None, b: str | None) -> bool:
@@ -94,13 +92,7 @@ def normalize_person_type(value: str | None) -> str | None:
 
 def person_alias_lookup_keys(value: str | None) -> tuple[str, ...]:
     """Stored ``normalized_alias`` variants for recall and exact alias lookup."""
-    norm = normalize_person_text(value)
-    if not norm:
-        return ()
-    folded = person_match_key(value)
-    if folded != norm:
-        return (norm, folded)
-    return (norm,)
+    return alias_lookup_keys(value)
 
 
 def normalize_person_sort_key(value: str | None) -> str | None:

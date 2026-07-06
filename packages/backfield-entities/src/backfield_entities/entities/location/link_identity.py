@@ -94,7 +94,7 @@ _LOCATION_STOP_WORDS: frozenset[str] = frozenset(
 
 def normalize_location_alias_key(value: str | None) -> str:
     """Normalized alias key for location substrate names."""
-    return " ".join(str(value or "").strip().lower().split())
+    return normalize_substrate_cache_query(str(value or ""))
 
 
 def _compare_key(text: str) -> str:
