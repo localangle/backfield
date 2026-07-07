@@ -21,10 +21,11 @@ Never emit as `organizations.name`:
 | Publications, surveys, datasets | `American Community Survey`, `Consumer Price Index`, `Statistical Abstract` | The publishing agency (`U.S. Census Bureau`) |
 | Geography, landmarks, venues | `Grant Park`, `Kenwood`, `Anne Frank House`, `Arc de Triomphe`, `the Chicago area`, `downtown` | The governing or operating body (`Grant Park Advisory Council`, `Kenwood Academy High School`) |
 | Broad descriptors and role groups | `American civil society`, `Arizona families`, `Arizona grand jury`, `prosecutors`, `Area 5 detectives`, `residents`, `officials` | A named office or department (`Chicago Police Department`) |
+| Generic public-service groups or laws with geography | `Illinois police departments`, `Illinois DMVs`, `Illinois state law`, `state courts`, `local schools` | A specific named body (`Chicago Police Department`, `Illinois Secretary of State`, `Illinois Supreme Court`) |
 | Concepts, industries, topics | `artificial intelligence`, `climate change`, `inflation`, `social media` | Nothing — even when capitalized or central to the story |
 | Metonyms with no named body | `"City Hall said"` with no named government body | The named body when the text provides one |
 
-Skip generic references without a named institution ("the agency," "police," "school officials"); article bylines and publication credits; and historical, religious, or fictional entities unless they act as real-world organizations in the story.
+Skip generic references without a named institution ("the agency," "police," "school officials," "Illinois police departments," "Illinois state law"); article bylines and publication credits; and historical, religious, or fictional entities unless they act as real-world organizations in the story.
 
 ## Borderline cousins
 

@@ -17,8 +17,9 @@ Rules for compact output:
 - **Field 0 (`name`) is only for named institutions.** Never emit people
   (`Ayo Dosunmu`), bands (`Pearl Jam`), bare brands (`Budweiser`), laws or funds
   (`Affordable Care Act`), events (`Grammy Awards`), creative works, places or
-  landmarks (`Grant Park`), or broad descriptors (`Arizona families`). When
-  unsure, omit the row.
+  landmarks (`Grant Park`), broad descriptors (`Arizona families`), generic public-service
+  groups (`Illinois police departments`, `Illinois DMVs`), or geography-qualified laws
+  (`Illinois state law`). When unsure, omit the row.
 - Each organization is ONE JSON array with fields in this order:
   0. name — required string; institution or group name only (never an individual person's name).
      In prep scorelines, never a bare token—expand to full school/team name per rules above.

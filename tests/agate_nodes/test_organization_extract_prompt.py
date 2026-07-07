@@ -27,6 +27,9 @@ def test_organization_extract_prompt_includes_hard_stops_table() -> None:
     assert "Anne Frank House" in prompt
     assert "American civil society" in prompt
     assert "Area 5 detectives" in prompt
+    assert "Illinois police departments" in prompt
+    assert "Illinois DMVs" in prompt
+    assert "Illinois state law" in prompt
     assert "Never choose `government` or `other`" in prompt
 
 
