@@ -298,3 +298,45 @@ def test_rejects_more_than_three_subjects() -> None:
             ],
             allowed_categories=["travel", "other", "recipes", "obituaries"],
         )
+
+
+def test_parse_subject_deduplicates_duplicate_categories() -> None:
+    parsed = parse_subject_metadata_response(
+        [
+            {
+                "category": "prep_youth_sports",
+                "rationale": "High school football game recap.",
+                "confidence": 0.92,
+            },
+            {
+                "category": "prep_youth_sports",
+                "rationale": "Youth athletics are the focus.",
+                "confidence": 0.81,
+            },
+        ],
+        allowed_categories=["prep_youth_sports", "other"],
+    )
+    assert len(parsed) == 1
+    assert parsed[0].category == "prep_youth_sports"
+    assert parsed[0].confidence == 0.92
+
+
+def test_parse_subject_deduplicates_alias_categories_resolving_to_same_slug() -> None:
+    parsed = parse_subject_metadata_response(
+        [
+            {
+                "category": "prep_youth_sports",
+                "rationale": "High school football game recap.",
+                "confidence": 0.88,
+            },
+            {
+                "category": "sports",
+                "rationale": "Prep football championship coverage.",
+                "confidence": 0.95,
+            },
+        ],
+        allowed_categories=["pro_sports", "college_sports", "prep_youth_sports", "other"],
+    )
+    assert len(parsed) == 1
+    assert parsed[0].category == "prep_youth_sports"
+    assert parsed[0].confidence == 0.95

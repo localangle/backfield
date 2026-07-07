@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from pydantic import BaseModel, field_validator
 
 from agate_nodes.article_metadata.category_labels import resolve_allowed_category
 from agate_nodes.article_metadata.presets import MAX_MULTI_VALUE_COUNT
+
+logger = logging.getLogger(__name__)
 
 
 class ArticleMetadataLLMResponse(BaseModel):
@@ -477,7 +480,28 @@ def parse_multi_value_metadata_response(
         if resolved_category != parsed.category:
             parsed = parsed.model_copy(update={"category": resolved_category})
         if parsed.category in seen_categories:
-            raise ValueError(f"Duplicate subject category {parsed.category!r}")
+            for index, existing in enumerate(parsed_items):
+                if existing.category != parsed.category:
+                    continue
+                if parsed.confidence > existing.confidence:
+                    logger.warning(
+                        "[ArticleMetadata] dropped duplicate category %r "
+                        "(kept higher confidence %.2f over %.2f)",
+                        parsed.category,
+                        parsed.confidence,
+                        existing.confidence,
+                    )
+                    parsed_items[index] = parsed
+                else:
+                    logger.warning(
+                        "[ArticleMetadata] dropped duplicate category %r "
+                        "(kept higher confidence %.2f over %.2f)",
+                        parsed.category,
+                        existing.confidence,
+                        parsed.confidence,
+                    )
+                break
+            continue
         seen_categories.add(parsed.category)
         parsed_items.append(parsed)
 
