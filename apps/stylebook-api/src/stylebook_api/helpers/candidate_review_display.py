@@ -28,7 +28,7 @@ _DEFAULT_CODE_MESSAGES: dict[str, str] = {
     "organization_canonical_type_mismatch": ORGANIZATION_CANONICAL_TYPE_MISMATCH_MESSAGE,
     "child": "Identified as a child",
     "animal": "Identified as an animal",
-    "not_a_person": "Not a person — organization, institution, law, or media outlet",
+    "not_a_person": "Not a person — organization, institution, role label, or product",
     "stage_name_or_alias": "Stage name or alias — confirm full identity before linking",
     "pseudonym": "Descriptive pseudonym — defer linking until a legal identity is known",
     "first_name_only": "First name only — confirm full identity before linking",

@@ -17,6 +17,25 @@ Extract a person only if:
 
 **IMPORTANT**: Do not extract people who are only referred to generically without a name, such as "a store owner," "the dispatcher," "a teacher," "residents," or "witnesses" unless a specific name is provided. The same rule applies to **role-plus-agency** phrases with no personal name (e.g. "a Border Patrol agent," "an Illinois Border Patrol agent," "the undercover officer")—**omit them entirely**.
 
+## Hard stops — check every row before you emit it
+
+**`name` must be a personal name** (first + last, or an established individual mononym like `Prince`). Before adding any row to `people`, ask: *Is this string the name of a human being?* If not, **omit the row** (or use organization extraction when appropriate).
+
+| If the string looks like… | Example from news copy | Action |
+|---------------------------|------------------------|--------|
+| Role or role + agency, no personal name | `Illinois Border Patrol agent`, `ICE agent`, `federal authorities`, `Chicago police officer` | **Omit** — never use as `name` |
+| Government agency or acronym | `ATF`, `Alcohol, Tobacco, Firearms and Explosives`, `National Transportation Safety Board`, `Illinois Gaming Board` | **Omit from people** — organization extract |
+| Company or brand | `H&R Block`, `American Ancestors` | **Omit from people** — organization extract |
+| School or campus | `Loyola Academy`, `Glenbard East High School` | **Omit from people** — organization extract |
+| Law or statute | `Presidential Records Act of 1978` | **Omit** |
+| Media outlet or call sign | `ESPN 1000`, `WBEZ`, `CBS2` | **Omit from people** — organization extract |
+| Software / AI product | `Gemini AI`, `ChatGPT` | **Omit** — not a person |
+| City, state, or place name alone | `Anchorage`, `Chicago` (when the story means the place, not a resident) | **Omit** — place extract, not people |
+
+When you are unsure whether a string is a person or an institution, **omit it from `people`**. A missing row is always better than inventing a person record for an organization, role label, or product.
+
+If you already emitted a borderline row and recognize it is not a person, set `review_handling`: `auto_defer`, `review_reason_code`: `not_a_person`.
+
 ## Who Should NOT Be Included
 
 Do not extract:
@@ -77,7 +96,8 @@ Do not extract:
   - "Chicago police officer"
   - "a Border Patrol agent…" / "shot by a Border Patrol agent" (no agent name given)
   - "an undercover officer," "a detective," "a prosecutor" (when no personal name appears)
-- **Never use a role, job title, or role-plus-agency phrase as `name`** — e.g. not `"Illinois Border Patrol agent"`, `"Chicago police officer"`, `"store owner"`. Those belong in `title` and `affiliation` only **after** a personal name is established; if no first name, last name, or full personal name appears for that individual anywhere in the article, **do not extract them**
+- **Never use a role, job title, or role-plus-agency phrase as `name`** — e.g. not `"Illinois Border Patrol agent"`, `"ICE agent"`, `"Chicago police officer"`, `"federal authorities"`, `"store owner"`. Those belong in `title` and `affiliation` only **after** a personal name is established; if no first name, last name, or full personal name appears for that individual anywhere in the article, **do not extract them**
+- **Government agencies, boards, and acronyms are not people:** do not emit `ATF`, `ICE`, `Illinois Gaming Board`, `National Transportation Safety Board`, `Alcohol, Tobacco, Firearms and Explosives`, `H&R Block`, `American Ancestors`, `Gemini AI`, or similar institutions/products as `people.name`.
 - Only extract if a specific name (first name, last name, or full name) is provided in the article
 - Crowds or groups ("residents said…") should never be extracted, even if they are quoted
 
@@ -301,7 +321,7 @@ For each extracted person, set review fields so Stylebook can route the candidat
 |-----------|-------------------|----------------------|--------------------------|
 | Child (minor) | `auto_defer` | `child` | Identified as a child |
 | Animal (named pet, etc.) | `auto_defer` | `animal` | Identified as an animal |
-| Organization, school, law, or media outlet mis-tagged as a person | `auto_defer` | `not_a_person` | Not a person — organization, institution, law, or media outlet |
+| Organization, school, law, media outlet, role label, or product mis-tagged as a person | `auto_defer` | `not_a_person` | Not a person — organization, institution, role label, or product |
 | Stage name, nickname, or alias without a clear legal/full name (e.g. "Prince") | `flag_review` | `stage_name_or_alias` | Short explanation |
 | Descriptive pseudonym or anonymous-source label (e.g. "TRUTH-TELLER IN ARKANSAS", "Hurting Heart in Georgia") | `flag_review` | `pseudonym` | Short explanation |
 | First name only in the article (no surname or full name elsewhere) | `flag_review` | `first_name_only` | Short explanation |

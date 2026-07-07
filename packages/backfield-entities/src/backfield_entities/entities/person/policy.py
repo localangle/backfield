@@ -216,7 +216,11 @@ def _defer_review_reason_for_person(
 def _defer_plan_for_non_person_entity(person: SubstratePerson) -> CanonicalPersistPlan | None:
     """Catch mis-tagged institutions/laws/media already in the queue without review flags."""
     person_name = str(person.name or person.normalized_name or "").strip()
-    if not person_name or not looks_like_non_person_entity(person_name):
+    if not person_name or not looks_like_non_person_entity(
+        person_name,
+        title=person.title,
+        affiliation=person.affiliation,
+    ):
         return None
     return CanonicalPersistPlan(
         decision=CanonicalPersistDecision.DEFER,
@@ -318,7 +322,11 @@ def person_may_materialize_canonical_after_recall(person: SubstratePerson) -> bo
     details = person_source_details(person)
     code = person_review_reason_code_from_source(details)
     person_name = str(person.name or person.normalized_name or "")
-    if looks_like_non_person_entity(person_name):
+    if looks_like_non_person_entity(
+        person_name,
+        title=person.title,
+        affiliation=person.affiliation,
+    ):
         return False
     if person_review_blocks_auto_materialize(
         reason_code=code,

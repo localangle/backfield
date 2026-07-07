@@ -185,9 +185,21 @@ def test_non_person_entity_heuristic() -> None:
     assert looks_like_non_person_entity("Loyola Academy")
     assert looks_like_non_person_entity("WBEZ")
     assert looks_like_non_person_entity("Glenbard East High School")
+    assert looks_like_non_person_entity("Illinois Border Patrol agent")
+    assert looks_like_non_person_entity("ICE agent")
+    assert looks_like_non_person_entity("federal authorities")
+    assert looks_like_non_person_entity("ATF")
+    assert looks_like_non_person_entity("Alcohol, Tobacco, Firearms and Explosives")
+    assert looks_like_non_person_entity("Gemini AI")
+    assert looks_like_non_person_entity("American Ancestors")
+    assert looks_like_non_person_entity("H&R Block")
+    assert looks_like_non_person_entity("Illinois Gaming Board")
+    assert looks_like_non_person_entity("National Transportation Safety Board")
+    assert looks_like_non_person_entity("Alaska medical board")
     assert not looks_like_non_person_entity("John Smith")
     assert not looks_like_non_person_entity("Prince")
     assert not looks_like_non_person_entity("Maria")
+    assert not looks_like_non_person_entity("Adam Saracco")
 
 
 def test_finalize_non_person_from_name() -> None:
@@ -207,7 +219,16 @@ def test_policy_non_person_ai_review_recommends_defer() -> None:
     engine = _engine()
     with Session(engine) as session:
         sb_id, pid = _seed(session)
-        for name in ("ESPN 1000", "Presidential Records Act of 1978", "Loyola Academy"):
+        for name in (
+            "ESPN 1000",
+            "Presidential Records Act of 1978",
+            "Loyola Academy",
+            "Illinois Border Patrol agent",
+            "ATF",
+            "H&R Block",
+            "Gemini AI",
+            "ICE agent",
+        ):
             normalized = name.lower()
             person = SubstratePerson(
                 project_id=pid,

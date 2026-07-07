@@ -28,7 +28,7 @@ FLAG_REVIEW_REASON_CODES: frozenset[str] = frozenset(
 _DEFAULT_MESSAGES: dict[str, str] = {
     REASON_CHILD: "Identified as a child",
     REASON_ANIMAL: "Identified as an animal",
-    REASON_NOT_A_PERSON: "Not a person — organization, institution, law, or media outlet",
+    REASON_NOT_A_PERSON: "Not a person — organization, institution, role label, or product",
     REASON_STAGE_NAME_OR_ALIAS: "Stage name or alias — confirm full identity before linking",
     REASON_PSEUDONYM: "Descriptive pseudonym — defer linking until a legal identity is known",
     REASON_FIRST_NAME_ONLY: "First name only — confirm full identity before linking",
@@ -68,14 +68,67 @@ _SCHOOL_OR_CAMPUS_RE = re.compile(
 )
 _INSTITUTION_RE = re.compile(
     r"\b("
-    r"office of|department of|bureau of|agency|administration|authority|commission|"
+    r"office of|department of|bureau of|bureau|agency|administration|authority|commission|"
     r"board of|division of|corporation|company|foundation|institute|association|"
     r"union|medical center|police department|fire department|school board|"
     r"county clerk|state attorney|attorney general|city council|"
-    r"chamber of commerce|public library|memorial hospital"
+    r"chamber of commerce|public library|memorial hospital|"
+    r"gaming board|medical board|safety board|transportation board|"
+    r"ancestors|explosives|firearms"
     r")\b",
     re.IGNORECASE,
 )
+_BOARD_OR_COMMISSION_SUFFIX_RE = re.compile(r"\b(board|commission)\s*$", re.IGNORECASE)
+_ROLE_NOUNS = (
+    "agent",
+    "officer",
+    "official",
+    "officials",
+    "authorities",
+    "spokesperson",
+    "detective",
+    "prosecutor",
+    "inspector",
+    "commissioner",
+    "employee",
+    "employees",
+    "worker",
+    "workers",
+    "staff",
+    "personnel",
+    "representative",
+    "representatives",
+    "investigator",
+    "investigators",
+    "supervisor",
+    "supervisors",
+    "regulator",
+    "regulators",
+)
+_ROLE_ONLY_ENDING_RE = re.compile(
+    r"\b(?:" + "|".join(_ROLE_NOUNS) + r")\s*$",
+    re.IGNORECASE,
+)
+_GENERIC_AUTHORITY_RE = re.compile(
+    r"\b("
+    r"federal|state|local|city|county|national"
+    r")\s+(authorities|officials|agents|officers|law enforcement|regulators)\b",
+    re.IGNORECASE,
+)
+_AGENCY_ACRONYM_RE = re.compile(
+    r"^(?:ATF|ICE|FBI|CIA|DHS|DEA|EPA|FDA|CDC|IRS|TSA|CBP|NTSB|SEC|FTC|OSHA|FEMA|USDA|"
+    r"NOAA|NSF|GAO|HUD|DOJ|DOL|DOT|HHS|CMS|NIH|USGS|INS|CBP)$",
+    re.IGNORECASE,
+)
+_CORPORATE_MARKER_RE = re.compile(
+    r"&|\b(?:inc|llc|corp|ltd|co)\.?\s*$",
+    re.IGNORECASE,
+)
+_AI_OR_PRODUCT_RE = re.compile(
+    r"\b(?:chatgpt|gemini|copilot|claude|openai|anthropic)\b|\bAI\s*$",
+    re.IGNORECASE,
+)
+_COMMA_LIST_INSTITUTION_RE = re.compile(r"^[^,]+,\s*[^,]+,\s*[^,]+")
 _BROADCAST_CALL_SIGN_RE = re.compile(
     r"^(?:W|K)[A-Z]{2,3}(?:\s+\d{1,4})?(?:\s+(?:AM|FM))?$",
     re.IGNORECASE,
@@ -166,8 +219,37 @@ def _descriptor_words_look_descriptive(descriptor: str) -> bool:
     return False
 
 
-def looks_like_non_person_entity(name: str) -> bool:
-    """Heuristic: institutions, schools, legislation, and broadcast outlets mis-tagged as people."""
+def _looks_like_personal_name(name: str) -> bool:
+    """True for conventional first/last personal names without institutional or role tokens."""
+    token = name.strip()
+    if not token or _ROLE_ONLY_ENDING_RE.search(token):
+        return False
+    if (
+        _SCHOOL_OR_CAMPUS_RE.search(token)
+        or _INSTITUTION_RE.search(token)
+        or _BOARD_OR_COMMISSION_SUFFIX_RE.search(token)
+        or _CORPORATE_MARKER_RE.search(token)
+        or _TRAILING_CHANNEL_NUMBER_RE.search(token)
+    ):
+        return False
+    name_tokens: list[str] = []
+    for part in re.split(r"\s+", token):
+        if not part or not part[0].isalpha():
+            continue
+        if part.lower() in _ROLE_NOUNS:
+            return False
+        if part[0].isupper():
+            name_tokens.append(part)
+    return len(name_tokens) >= 2
+
+
+def looks_like_non_person_entity(
+    name: str,
+    *,
+    title: str | None = None,
+    affiliation: str | None = None,
+) -> bool:
+    """Heuristic: institutions, role labels, agencies, and products mis-tagged as people."""
     token = name.strip()
     if not token:
         return False
@@ -177,10 +259,32 @@ def looks_like_non_person_entity(name: str) -> bool:
         return True
     if _INSTITUTION_RE.search(token):
         return True
+    if _BOARD_OR_COMMISSION_SUFFIX_RE.search(token):
+        return True
+    if _GENERIC_AUTHORITY_RE.search(token):
+        return True
+    if _AGENCY_ACRONYM_RE.fullmatch(token):
+        return True
+    if _CORPORATE_MARKER_RE.search(token):
+        return True
+    if _AI_OR_PRODUCT_RE.search(token):
+        return True
+    if _COMMA_LIST_INSTITUTION_RE.match(token):
+        return True
     if _BROADCAST_CALL_SIGN_RE.fullmatch(token):
         return True
     if _TRAILING_CHANNEL_NUMBER_RE.search(token):
         return True
+    if _ROLE_ONLY_ENDING_RE.search(token):
+        return True
+    title_clean = (title or "").strip()
+    if title_clean and title_clean.casefold() == token.casefold():
+        return True
+    aff_clean = (affiliation or "").strip()
+    if aff_clean and token.casefold() in aff_clean.casefold() and len(token.split()) >= 3:
+        return True
+    if _looks_like_personal_name(token):
+        return False
     return False
 
 
@@ -279,11 +383,13 @@ def apply_non_person_review_override(
     handling: ReviewHandling,
     reason_code: str | None,
     message: str | None,
+    title: str | None = None,
+    affiliation: str | None = None,
 ) -> tuple[ReviewHandling, str | None, str | None]:
     """Route institutions, laws, and media outlets out of person linking."""
     if reason_code in AUTO_WAIVE_REASON_CODES:
         return handling, reason_code, message
-    if not looks_like_non_person_entity(name):
+    if not looks_like_non_person_entity(name, title=title, affiliation=affiliation):
         return handling, reason_code, message
     return (
         REVIEW_HANDLING_AUTO_DEFER,
@@ -352,11 +458,17 @@ def finalize_review_fields_from_entry(entry: dict[str, Any]) -> dict[str, Any]:
             message=message,
         )
     if name:
+        title_raw = entry.get("title")
+        aff_raw = entry.get("affiliation")
+        title = title_raw.strip() if isinstance(title_raw, str) else None
+        affiliation = aff_raw.strip() if isinstance(aff_raw, str) else None
         handling, code, message = apply_non_person_review_override(
             name,
             handling=handling,
             reason_code=code,
             message=message,
+            title=title,
+            affiliation=affiliation,
         )
     if name:
         handling, code, message = apply_deterministic_review_overrides(
