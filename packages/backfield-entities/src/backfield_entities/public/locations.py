@@ -16,7 +16,7 @@ from backfield_db import (
     SubstrateLocationMentionOccurrence,
 )
 from pydantic import BaseModel
-from sqlalchemy import case, exists, literal
+from sqlalchemy import case, exists, literal, or_
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, func, select
 
@@ -177,14 +177,21 @@ def location_filters(
     ]
     q_text = (params.q or "").strip()
     if q_text:
+        esc = _escape_ilike_metacharacters(q_text)
+        address_term = f"%{esc}%"
         filters.append(
-            catalog_label_alias_ilike_filter(
-                q_text,
-                label_column=col(StylebookLocationCanonical.label),
-                canonical_id_column=col(StylebookLocationCanonical.id),
-                alias_model=StylebookLocationAlias,
-                alias_canonical_id_column=col(StylebookLocationAlias.location_canonical_id),
-                alias_normalized_column=col(StylebookLocationAlias.normalized_alias),
+            or_(
+                catalog_label_alias_ilike_filter(
+                    q_text,
+                    label_column=col(StylebookLocationCanonical.label),
+                    canonical_id_column=col(StylebookLocationCanonical.id),
+                    alias_model=StylebookLocationAlias,
+                    alias_canonical_id_column=col(StylebookLocationAlias.location_canonical_id),
+                    alias_normalized_column=col(StylebookLocationAlias.normalized_alias),
+                ),
+                col(StylebookLocationCanonical.formatted_address).ilike(
+                    address_term, escape="\\"
+                ),
             )
         )
     location_type = (params.location_type or "").strip()

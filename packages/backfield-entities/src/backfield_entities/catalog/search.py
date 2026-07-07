@@ -13,17 +13,19 @@ from backfield_entities.text.match_normalize import (
     normalize_match_text,
 )
 
-_UNICODE_APOSTROPHE_FROM = literal("\u2018\u2019\u02bc\u0060")
-_UNICODE_APOSTROPHE_TO = literal("''''")
+_UNICODE_APOSTROPHES = ("\u2018", "\u2019", "\u02bc", "\u0060")
 
 
 def label_apostrophe_normalized(column: Any) -> Any:
-    """SQL expression: lowercase label with unicode apostrophes mapped to ASCII ``'``."""
-    return func.lower(
-        func.trim(
-            func.translate(column, _UNICODE_APOSTROPHE_FROM, _UNICODE_APOSTROPHE_TO),
-        )
-    )
+    """SQL expression: lowercase label with unicode apostrophes mapped to ASCII ``'``.
+
+    Uses nested ``replace()`` instead of ``translate()`` so the expression works on
+    both Postgres (runtime) and SQLite (test fixtures).
+    """
+    expr = column
+    for apostrophe in _UNICODE_APOSTROPHES:
+        expr = func.replace(expr, apostrophe, "'")
+    return func.lower(func.trim(expr))
 
 
 def _ilike_terms_for_query(q_text: str) -> list[str]:

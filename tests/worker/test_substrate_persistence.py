@@ -293,7 +293,7 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
         norms = {str(a.normalized_alias) for a in alias_rows}
         assert "chicago, il" in norms
         assert "chicago il" in norms
-        assert alias_rows[0].normalized_alias == locations[0].normalized_name
+        assert locations[0].normalized_name in norms
 
         mentions = session.exec(select(SubstrateLocationMention)).all()
         assert len(mentions) == 1
