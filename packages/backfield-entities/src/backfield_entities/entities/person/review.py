@@ -13,11 +13,14 @@ REVIEW_HANDLING_AUTO_DEFER: ReviewHandling = "auto_defer"
 
 REASON_CHILD = "child"
 REASON_ANIMAL = "animal"
+REASON_NOT_A_PERSON = "not_a_person"
 REASON_STAGE_NAME_OR_ALIAS = "stage_name_or_alias"
 REASON_PSEUDONYM = "pseudonym"
 REASON_FIRST_NAME_ONLY = "first_name_only"
 
-AUTO_WAIVE_REASON_CODES: frozenset[str] = frozenset({REASON_CHILD, REASON_ANIMAL})
+AUTO_WAIVE_REASON_CODES: frozenset[str] = frozenset(
+    {REASON_CHILD, REASON_ANIMAL, REASON_NOT_A_PERSON}
+)
 FLAG_REVIEW_REASON_CODES: frozenset[str] = frozenset(
     {REASON_STAGE_NAME_OR_ALIAS, REASON_PSEUDONYM, REASON_FIRST_NAME_ONLY}
 )
@@ -25,6 +28,7 @@ FLAG_REVIEW_REASON_CODES: frozenset[str] = frozenset(
 _DEFAULT_MESSAGES: dict[str, str] = {
     REASON_CHILD: "Identified as a child",
     REASON_ANIMAL: "Identified as an animal",
+    REASON_NOT_A_PERSON: "Not a person — organization, institution, law, or media outlet",
     REASON_STAGE_NAME_OR_ALIAS: "Stage name or alias — confirm full identity before linking",
     REASON_PSEUDONYM: "Descriptive pseudonym — defer linking until a legal identity is known",
     REASON_FIRST_NAME_ONLY: "First name only — confirm full identity before linking",
@@ -48,6 +52,35 @@ _DESCRIPTIVE_PSEUDONYM_WORD_RE = re.compile(
     r"(ing|er|or|ist|ian|heart|voice|teller|whistle|source)$",
     re.IGNORECASE,
 )
+_LEGISLATION_RE = re.compile(
+    r"\b("
+    r"act|law|statute|ordinance|legislation|amendment|bill|treaty|decree|resolution"
+    r")\b.*\b\d{4}\b|\brecords act\b|\bact of \d{4}\b",
+    re.IGNORECASE,
+)
+_SCHOOL_OR_CAMPUS_RE = re.compile(
+    r"\b("
+    r"academy|high school|elementary school|middle school|prep school|primary school|"
+    r"secondary school|charter school|school district|university|college|"
+    r"community college|medical school|law school|business school"
+    r")\b",
+    re.IGNORECASE,
+)
+_INSTITUTION_RE = re.compile(
+    r"\b("
+    r"office of|department of|bureau of|agency|administration|authority|commission|"
+    r"board of|division of|corporation|company|foundation|institute|association|"
+    r"union|medical center|police department|fire department|school board|"
+    r"county clerk|state attorney|attorney general|city council|"
+    r"chamber of commerce|public library|memorial hospital"
+    r")\b",
+    re.IGNORECASE,
+)
+_BROADCAST_CALL_SIGN_RE = re.compile(
+    r"^(?:W|K)[A-Z]{2,3}(?:\s+\d{1,4})?(?:\s+(?:AM|FM))?$",
+    re.IGNORECASE,
+)
+_TRAILING_CHANNEL_NUMBER_RE = re.compile(r"\b\d{3,4}\s*$")
 
 
 def default_review_message(code: str) -> str:
@@ -130,6 +163,24 @@ def _descriptor_words_look_descriptive(descriptor: str) -> bool:
         token = part.strip()
         if token and _DESCRIPTIVE_PSEUDONYM_WORD_RE.search(token):
             return True
+    return False
+
+
+def looks_like_non_person_entity(name: str) -> bool:
+    """Heuristic: institutions, schools, legislation, and broadcast outlets mis-tagged as people."""
+    token = name.strip()
+    if not token:
+        return False
+    if _LEGISLATION_RE.search(token):
+        return True
+    if _SCHOOL_OR_CAMPUS_RE.search(token):
+        return True
+    if _INSTITUTION_RE.search(token):
+        return True
+    if _BROADCAST_CALL_SIGN_RE.fullmatch(token):
+        return True
+    if _TRAILING_CHANNEL_NUMBER_RE.search(token):
+        return True
     return False
 
 
@@ -222,6 +273,25 @@ def apply_inferred_surname_review_flag(
     )
 
 
+def apply_non_person_review_override(
+    name: str,
+    *,
+    handling: ReviewHandling,
+    reason_code: str | None,
+    message: str | None,
+) -> tuple[ReviewHandling, str | None, str | None]:
+    """Route institutions, laws, and media outlets out of person linking."""
+    if reason_code in AUTO_WAIVE_REASON_CODES:
+        return handling, reason_code, message
+    if not looks_like_non_person_entity(name):
+        return handling, reason_code, message
+    return (
+        REVIEW_HANDLING_AUTO_DEFER,
+        REASON_NOT_A_PERSON,
+        message or default_review_message(REASON_NOT_A_PERSON),
+    )
+
+
 def apply_pseudonym_review_override(
     name: str,
     *,
@@ -276,6 +346,13 @@ def finalize_review_fields_from_entry(entry: dict[str, Any]) -> dict[str, Any]:
     )
     if name:
         handling, code, message = apply_pseudonym_review_override(
+            name,
+            handling=handling,
+            reason_code=code,
+            message=message,
+        )
+    if name:
+        handling, code, message = apply_non_person_review_override(
             name,
             handling=handling,
             reason_code=code,

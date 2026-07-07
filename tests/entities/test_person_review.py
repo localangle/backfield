@@ -19,6 +19,7 @@ from backfield_entities.entities.person.review import (
     REASON_ANIMAL,
     REASON_CHILD,
     REASON_FIRST_NAME_ONLY,
+    REASON_NOT_A_PERSON,
     REASON_PSEUDONYM,
     REASON_STAGE_NAME_OR_ALIAS,
     apply_deterministic_review_overrides,
@@ -27,6 +28,7 @@ from backfield_entities.entities.person.review import (
     inferred_surname_from_review_message,
     looks_like_descriptive_pseudonym,
     looks_like_first_name_only_token,
+    looks_like_non_person_entity,
     parse_review_fields_from_entry,
     person_inferred_surname_from_details,
     person_review_blocks_auto_materialize,
@@ -175,6 +177,63 @@ def test_descriptive_pseudonym_heuristic() -> None:
     assert looks_like_descriptive_pseudonym("Hurting Heart in Georgia")
     assert not looks_like_descriptive_pseudonym("Prince")
     assert not looks_like_descriptive_pseudonym("John Smith")
+
+
+def test_non_person_entity_heuristic() -> None:
+    assert looks_like_non_person_entity("ESPN 1000")
+    assert looks_like_non_person_entity("Presidential Records Act of 1978")
+    assert looks_like_non_person_entity("Loyola Academy")
+    assert looks_like_non_person_entity("WBEZ")
+    assert looks_like_non_person_entity("Glenbard East High School")
+    assert not looks_like_non_person_entity("John Smith")
+    assert not looks_like_non_person_entity("Prince")
+    assert not looks_like_non_person_entity("Maria")
+
+
+def test_finalize_non_person_from_name() -> None:
+    out = finalize_review_fields_from_entry(
+        {
+            "name": "Loyola Academy",
+            "review_handling": "none",
+            "mentions": [{"text": "Loyola Academy announced a new program.", "quote": False}],
+        }
+    )
+    assert out["review_handling"] == "auto_defer"
+    assert out["review_reason_code"] == REASON_NOT_A_PERSON
+    assert out["needs_review"] is False
+
+
+def test_policy_non_person_ai_review_recommends_defer() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed(session)
+        for name in ("ESPN 1000", "Presidential Records Act of 1978", "Loyola Academy"):
+            normalized = name.lower()
+            person = SubstratePerson(
+                project_id=pid,
+                name=name,
+                normalized_name=normalized,
+                identity_fingerprint=person_identity_fingerprint(normalized_name=normalized),
+                canonical_link_status=CANONICAL_LINK_PENDING,
+                source_details_json={"review_handling": "none"},
+            )
+            session.add(person)
+            session.commit()
+            session.refresh(person)
+
+            plan = decide_person_canonical_persist_plan(session, stylebook_id=sb_id, person=person)
+            assert plan.decision == CanonicalPersistDecision.DEFER
+            apply_candidate_ai_review_recommendation(session, person=person, plan=plan)
+            session.commit()
+            session.refresh(person)
+            raw = person.canonical_review_reasons_json
+            assert isinstance(raw, list)
+            assert any(
+                isinstance(x, dict) and x.get("suggested_action") == "defer" for x in raw
+            ), name
+            assert not any(
+                isinstance(x, dict) and x.get("suggested_action") == "materialize_new" for x in raw
+            ), name
 
 
 def test_finalize_pseudonym_from_name() -> None:

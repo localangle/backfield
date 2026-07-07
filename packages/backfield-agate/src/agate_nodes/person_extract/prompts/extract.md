@@ -50,7 +50,10 @@ Do not extract:
 - Example: "WBEZ reported…", "the American Medical Association said…", "CTA said…", "MLB announced…", "the FBI assisted…" — these are organizations or institutions, not people
 - Statements by unnamed institutions ("the agency said") do not count as persons
 - **No organization should ever appear as a person.** Government bodies, agencies, departments, offices, bureaus, commissions, boards, companies, nonprofits, unions, schools, universities, hospitals, sports teams or leagues, courts as institutions, and similar named institutions belong in organization extraction—not in `people`—even when they release statements, investigate, confirm, or are the grammatical subject ("The Civilian Office of Police Accountability released…", "the agency posted on X")
-- **Institutional name signals:** names containing **Office**, **Department**, **Bureau**, **Agency**, **Administration**, **Authority**, **Commission**, **Board**, **Division**, **Service**, **Corporation**, **Company**, **Foundation**, **Institute**, **Association**, **Union**, **School**, **Elementary**, **University**, **Hospital**, **Medical Center**, **Police Department**, **Fire Department**, **Capital**, **Associates**, **LLC**, **Inc.**, **Media**, **News**, or multi-word proper names describing a **body or office** (e.g. "Civilian Office of Police Accountability," "Cook County State's Attorney's Office") are organizations, not people
+- **Legislation and formal instruments** — Do not emit laws, acts, statutes, ordinances, treaties, or bills (e.g. `Presidential Records Act of 1978`, `Clean Air Act`, `First Amendment`). These belong in neither people nor organizations unless a **named individual sponsor** is quoted.
+- **Schools, academies, and campuses** — Do not emit schools or educational institutions as people (e.g. `Loyola Academy`, `Glenbard East`, `University of Chicago`). Put them in organizations when relevant, or omit when only mentioned as institutions.
+- **Broadcast and media outlets** — Do not emit radio/TV stations, call signs, or channel brands as people (e.g. `ESPN 1000`, `WBEZ`, `CBS2`, `NBC 5`). These are organizations or omitted brand references—not people—even when the story quotes or cites them.
+- **Institutional name signals:** names containing **Office**, **Department**, **Bureau**, **Agency**, **Administration**, **Authority**, **Commission**, **Board**, **Division**, **Service**, **Corporation**, **Company**, **Foundation**, **Institute**, **Association**, **Union**, **School**, **Academy**, **Elementary**, **University**, **Hospital**, **Medical Center**, **Police Department**, **Fire Department**, **Capital**, **Associates**, **LLC**, **Inc.**, **Media**, **News**, or multi-word proper names describing a **body or office** (e.g. "Civilian Office of Police Accountability," "Cook County State's Attorney's Office") are organizations, not people
 - **Associations, companies, schools, media outlets, agencies, and teams are not people:** do not emit names such as `American Gaming Association`, `American Medical Association`, `Kittelson & Associates`, `Engaged Capital`, `Gibson Guitars`, `Finkl Steel`, `Fuller Elementary`, `Glenbard East`, `WBEZ`, `CBS2`, `BBC`, `Chicago Sky`, or `Team USA` as `people.name`. If relevant, they belong in organizations; if they describe a human's employer, put them in `affiliation` only after the human name is known.
 - **Consumer brands alone are not people or organizations:** `Budweiser`, `Google`, `Coca-Cola` as product or brand references belong in neither extract—unless a **named union, executive group, or corporate body** is explicit (`Budweiser employees union`, `Google executive team` → organizations).
 - **Bands are people, not organizations:** `Pearl Jam`, `The Beatles`, and similar musical acts belong in **people** extraction when editorially relevant—not in organizations.
@@ -298,13 +301,14 @@ For each extracted person, set review fields so Stylebook can route the candidat
 |-----------|-------------------|----------------------|--------------------------|
 | Child (minor) | `auto_defer` | `child` | Identified as a child |
 | Animal (named pet, etc.) | `auto_defer` | `animal` | Identified as an animal |
+| Organization, school, law, or media outlet mis-tagged as a person | `auto_defer` | `not_a_person` | Not a person — organization, institution, law, or media outlet |
 | Stage name, nickname, or alias without a clear legal/full name (e.g. "Prince") | `flag_review` | `stage_name_or_alias` | Short explanation |
 | Descriptive pseudonym or anonymous-source label (e.g. "TRUTH-TELLER IN ARKANSAS", "Hurting Heart in Georgia") | `flag_review` | `pseudonym` | Short explanation |
 | First name only in the article (no surname or full name elsewhere) | `flag_review` | `first_name_only` | Short explanation |
 | Surname inferred from a family reference (relative named with first name only in text) | `flag_review` | `first_name_only` | Note which relative established the surname (e.g. Rocky Wirtz → Peter Wirtz) |
 | Normal named person with full identity | `none` | omit or empty | omit |
 
-- Use `auto_defer` only for **children** and **animals** (these are auto-removed from the linking queue when auto-apply is on).
+- Use `auto_defer` for **children**, **animals**, and **non-person entities** (organizations, schools, laws, media outlets) that must not become Stylebook people.
 - Use `flag_review` for **aliases**, **pseudonyms**, **first-name-only** mentions, and **inferred surnames from family references** — they stay in the **open** queue for editors; do not use `auto_defer` for those.
 - When `review_handling` is `none`, omit `review_reason_code` and `review_message` (or use empty strings).
 
@@ -324,7 +328,7 @@ Each person object **must** include:
 - `nature_secondary_tags`: array of strings (same vocabulary; often empty)
 - `mentions`: array of objects, each with `"text"` (string) and `"quote"` (boolean)
 - `review_handling`: string — `none`, `flag_review`, or `auto_defer` (see Review routing above)
-- `review_reason_code`: string — when handling is not `none`: `child`, `animal`, `stage_name_or_alias`, `pseudonym`, or `first_name_only`
+- `review_reason_code`: string — when handling is not `none`: `child`, `animal`, `not_a_person`, `stage_name_or_alias`, `pseudonym`, or `first_name_only`
 - `review_message`: string — short editor-facing explanation when handling is not `none`
 - `surname_inferred_from_relative`: boolean — `true` when `name` includes a surname inferred from a family reference (see **Surnames from family references**); omit or `false` otherwise
 
