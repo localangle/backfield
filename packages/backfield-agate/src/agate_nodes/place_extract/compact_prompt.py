@@ -6,7 +6,7 @@ from agate_nodes.place_extract.compact_codes import COMPACT_CODE_LEGEND
 
 COMPACT_OUTPUT_INSTRUCTIONS = """\
 Return ONLY compact JSON with this shape:
-{"locations": [["location", "type", "nature", "address_place_kind", "description", "geocode_hints"], ...]}
+{"locations": [["location", "type", "nature", "address_place_kind", "description", "geocode_hints", "evidence_anchor"], ...]}
 
 Rules for compact output:
 - Apply all editorial inclusion, exclusion, typing, and formatting rules above —
@@ -24,13 +24,17 @@ Rules for compact output:
   28th Avenue, Minneapolis, MN`).
 - **Neighborhoods and regions:** include city/state in `location` when inferable
   (`Longfellow, Minneapolis, MN`); emit parent city/state rows for region types.
-- Each location is ONE JSON array with EXACTLY six string fields in this order:
+- Each location is ONE JSON array with EXACTLY seven string fields in this order:
   1. location — full geocodable string per the rules above
   2. type — short type code (see legend below)
   3. nature — short nature code (see legend below)
   4. address_place_kind — short kind code for street-level types; use "" for all other types
   5. description — one brief sentence on the location's role in the story
   6. geocode_hints — concise disambiguation/context for downstream geocoding; use "" when not needed
+  7. evidence_anchor — the shortest useful verbatim phrase copied from the article that justifies
+     this location. This can differ from `location` when the output is normalized (`1400 block of
+     West Argyle Street` for `1400 W Argyle St, Chicago, IL`; `Ald. Jessie Fuentes (26th)` for
+     `Ward 26, Chicago, IL`). Use "" only when no article phrase supports the row.
 - Do NOT use full enum names (e.g. intersection_highway) or objects with keys.
 - Do NOT include components, mentions, original_text, nature_secondary_tags, or any other fields.
 - Output every distinct editorially relevant location from the article.

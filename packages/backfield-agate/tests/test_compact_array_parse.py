@@ -17,12 +17,14 @@ def test_row_to_entry_expands_codes() -> None:
             "",
             "Festival venue.",
             "",
+            "Grant Park",
         ]
     )
     assert entry["location"] == "Grant Park, Chicago, IL"
     assert entry["type"] == "place"
     assert entry["nature"] == "primary"
     assert entry["address_place_kind"] == ""
+    assert entry["evidence_anchor"] == "Grant Park"
 
 
 def test_row_to_entry_pads_short_rows() -> None:
@@ -31,6 +33,7 @@ def test_row_to_entry_pads_short_rows() -> None:
     assert entry["type"] == "city"
     assert entry["description"] == ""
     assert entry["geocode_hints"] == ""
+    assert entry["evidence_anchor"] == ""
 
 
 def test_parse_compact_locations_accepts_object_rows() -> None:

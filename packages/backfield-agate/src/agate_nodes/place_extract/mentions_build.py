@@ -308,7 +308,27 @@ def _mention_records_for_spans(article_text: str, spans: list[tuple[int, int]]) 
     return mentions
 
 
-def build_mentions(article_text: str, location: str, location_type: str) -> list[dict[str, str]]:
+def build_mentions_for_evidence_anchor(
+    article_text: str,
+    evidence_anchor: str,
+) -> list[dict[str, str]]:
+    """Build mention context from a short verbatim anchor copied from the article."""
+    anchor = evidence_anchor.strip()
+    if not anchor:
+        return []
+    span = find_mention_span(article_text, anchor)
+    if span is None:
+        return []
+    return _mention_records_for_spans(article_text, [span])
+
+
+def build_mentions(
+    article_text: str,
+    location: str,
+    location_type: str,
+    *,
+    allow_synthetic_fallback: bool = False,
+) -> list[dict[str, str]]:
     """Reconstruct ``[{text}]`` mentions by locating the place in the article."""
     spans: list[tuple[int, int]] = []
     seen_spans: set[tuple[int, int]] = set()
@@ -337,6 +357,6 @@ def build_mentions(article_text: str, location: str, location_type: str) -> list
             return _mention_records_for_spans(article_text, [span])
 
     location = location.strip()
-    if location:
+    if allow_synthetic_fallback and location:
         return [{"text": location}]
     return []
