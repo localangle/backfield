@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
+from backfield_entities.entities.person.types import normalize_person_text
+
 ReviewHandling = Literal["none", "flag_review", "auto_defer"]
 
 REVIEW_HANDLING_NONE: ReviewHandling = "none"
@@ -134,6 +136,85 @@ _BROADCAST_CALL_SIGN_RE = re.compile(
     re.IGNORECASE,
 )
 _TRAILING_CHANNEL_NUMBER_RE = re.compile(r"\b\d{3,4}\s*$")
+_PLACE_VENUE_RE = re.compile(
+    r"\b("
+    r"airport|international airport|regional airport|airfield|air base|"
+    r"train station|bus station|transit center|convention center|"
+    r"stadium|arena|ballpark|speedway|raceway|terminal"
+    r")\b",
+    re.IGNORECASE,
+)
+_LEGISLATIVE_BODY_RE = re.compile(
+    r"\b("
+    r"general assembly|legislative assembly|state legislature|national legislature|"
+    r"provincial legislature|parliament|house of representatives|"
+    r"city council|county board|board of supervisors"
+    r")\b",
+    re.IGNORECASE,
+)
+_GEOGRAPHIC_SUFFIX_RE = re.compile(
+    r"\b(aires|angeles|orleans|borough|burgh|shire)\s*$",
+    re.IGNORECASE,
+)
+_SAN_PREFIX_PLACE_RE = re.compile(r"^San\s+[A-Z]", re.IGNORECASE)
+_KNOWN_PLACE_NAME_KEYS: frozenset[str] = frozenset(
+    {
+        "anchorage",
+        "atlanta",
+        "austin",
+        "baltimore",
+        "birmingham",
+        "boston",
+        "buffalo",
+        "charlotte",
+        "chicago",
+        "cincinnati",
+        "cleveland",
+        "columbus",
+        "dallas",
+        "denver",
+        "detroit",
+        "honolulu",
+        "houston",
+        "indianapolis",
+        "jacksonville",
+        "kansas city",
+        "las vegas",
+        "lexington",
+        "louisville",
+        "memphis",
+        "miami",
+        "milwaukee",
+        "minneapolis",
+        "nashville",
+        "omaha",
+        "orlando",
+        "philadelphia",
+        "phoenix",
+        "pittsburgh",
+        "portland",
+        "raleigh",
+        "richmond",
+        "sacramento",
+        "seattle",
+        "tampa",
+        "toledo",
+        "tucson",
+        "tulsa",
+        "wichita",
+        "buenos aires",
+        "hong kong",
+        "los angeles",
+        "new york",
+        "san antonio",
+        "san diego",
+        "san francisco",
+        "san jose",
+        "salt lake city",
+        "st louis",
+        "saint louis",
+    }
+)
 
 
 def default_review_message(code: str) -> str:
@@ -219,6 +300,27 @@ def _descriptor_words_look_descriptive(descriptor: str) -> bool:
     return False
 
 
+def _place_name_key(name: str) -> str:
+    return normalize_person_text(name)
+
+
+def _looks_like_place_or_venue_name(name: str) -> bool:
+    token = name.strip()
+    if not token:
+        return False
+    if _PLACE_VENUE_RE.search(token):
+        return True
+    if _SAN_PREFIX_PLACE_RE.match(token):
+        return True
+    key = _place_name_key(token)
+    if key in _KNOWN_PLACE_NAME_KEYS:
+        return True
+    parts = [p for p in re.split(r"\s+", token) if p]
+    if len(parts) >= 2 and _GEOGRAPHIC_SUFFIX_RE.search(parts[-1]):
+        return True
+    return False
+
+
 def _looks_like_personal_name(name: str) -> bool:
     """True for conventional first/last personal names without institutional or role tokens."""
     token = name.strip()
@@ -230,6 +332,9 @@ def _looks_like_personal_name(name: str) -> bool:
         or _BOARD_OR_COMMISSION_SUFFIX_RE.search(token)
         or _CORPORATE_MARKER_RE.search(token)
         or _TRAILING_CHANNEL_NUMBER_RE.search(token)
+        or _PLACE_VENUE_RE.search(token)
+        or _LEGISLATIVE_BODY_RE.search(token)
+        or _looks_like_place_or_venue_name(token)
     ):
         return False
     name_tokens: list[str] = []
@@ -276,6 +381,12 @@ def looks_like_non_person_entity(
     if _TRAILING_CHANNEL_NUMBER_RE.search(token):
         return True
     if _ROLE_ONLY_ENDING_RE.search(token):
+        return True
+    if _PLACE_VENUE_RE.search(token):
+        return True
+    if _LEGISLATIVE_BODY_RE.search(token):
+        return True
+    if _looks_like_place_or_venue_name(token):
         return True
     title_clean = (title or "").strip()
     if title_clean and title_clean.casefold() == token.casefold():

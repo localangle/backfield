@@ -196,10 +196,17 @@ def test_non_person_entity_heuristic() -> None:
     assert looks_like_non_person_entity("Illinois Gaming Board")
     assert looks_like_non_person_entity("National Transportation Safety Board")
     assert looks_like_non_person_entity("Alaska medical board")
+    assert looks_like_non_person_entity("Buenos Aires")
+    assert looks_like_non_person_entity("O'Hare Airport")
+    assert looks_like_non_person_entity("Illinois General Assembly")
+    assert looks_like_non_person_entity("General Assembly")
+    assert looks_like_non_person_entity("Anchorage")
     assert not looks_like_non_person_entity("John Smith")
     assert not looks_like_non_person_entity("Prince")
     assert not looks_like_non_person_entity("Maria")
     assert not looks_like_non_person_entity("Adam Saracco")
+    assert not looks_like_non_person_entity("John Ford")
+    assert not looks_like_non_person_entity("Grant Park")
 
 
 def test_finalize_non_person_from_name() -> None:
@@ -228,6 +235,9 @@ def test_policy_non_person_ai_review_recommends_defer() -> None:
             "H&R Block",
             "Gemini AI",
             "ICE agent",
+            "Buenos Aires",
+            "O'Hare Airport",
+            "Illinois General Assembly",
         ):
             normalized = name.lower()
             person = SubstratePerson(
