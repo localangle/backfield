@@ -28,7 +28,9 @@ def test_place_extract_prompt_excludes_non_location_candidate_patterns() -> None
     prompt = _PROMPT_PATH.read_text(encoding="utf-8")
     assert "People with appended geography" in prompt
     assert "Brandon Johnson, Chicago, IL" in prompt
-    assert "Sports teams, leagues, divisions, eras, and associations" in prompt
+    assert "Sports teams, games, leagues, divisions, eras, and associations" in prompt
+    assert "Bears-Packers game" in prompt
+    assert "Game 7" in prompt
     assert "1969 Bears" in prompt
     assert "American Basketball Association" in prompt
     assert "American League Central" in prompt
@@ -46,6 +48,9 @@ def test_place_extract_prompt_excludes_non_location_candidate_patterns() -> None
     assert "103rd Street, Chicago, IL" in prompt
     assert "Training camps, combines, drafts, tournaments, and event names" in prompt
     assert "NFL Scouting Combine" in prompt
+    assert "Venue interiors and subparts" in prompt
+    assert "concession stand" in prompt
+    assert "dugout" in prompt
     assert "Organization names with inferred headquarters or branch geocodes" in prompt
     assert "American Medical Association, IL" in prompt
 
