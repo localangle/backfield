@@ -12,7 +12,13 @@ IMPORTANT: Return each organization as a JSON ARRAY using the positional schema 
 Ignore any earlier per-key object description in this prompt; emit arrays, not objects.
 
 Rules for compact output:
-- Apply all editorial inclusion, exclusion, typing, and formatting rules above.
+- Apply all editorial inclusion, exclusion, typing, and formatting rules above —
+  especially **Hard stops**.
+- **Field 0 (`name`) is only for named institutions.** Never emit people
+  (`Ayo Dosunmu`), bands (`Pearl Jam`), bare brands (`Budweiser`), laws or funds
+  (`Affordable Care Act`), events (`Grammy Awards`), creative works, places or
+  landmarks (`Grant Park`), or broad descriptors (`Arizona families`). When
+  unsure, omit the row.
 - Each organization is ONE JSON array with fields in this order:
   0. name — required string; institution or group name only (never an individual person's name).
      In prep scorelines, never a bare token—expand to full school/team name per rules above.

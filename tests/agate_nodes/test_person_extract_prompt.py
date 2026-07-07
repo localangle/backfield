@@ -16,20 +16,23 @@ _PROMPT_PATH = (
 )
 
 
-def test_person_extract_prompt_includes_institutional_examples() -> None:
+def test_person_extract_prompt_includes_hard_stops_table() -> None:
     prompt = _PROMPT_PATH.read_text(encoding="utf-8")
+    assert "## Hard stops — the person test" in prompt
     assert "WBEZ reported" in prompt
-    assert "American Medical Association said" in prompt
+    assert "American Medical Association announced" in prompt
     assert "Kittelson & Associates" in prompt
-    assert "Gibson Guitars" in prompt
+    assert "Engaged Capital" in prompt
     assert "Glenbard East" in prompt
-    assert "Chicago Department of Transportation spokesperson" in prompt
-    assert "CTA`, `DHS`, `FBI`, `MLB`, `UIC`, `WBEZ`" in prompt
+    assert "ESPN 1000" in prompt
+    assert "Presidential Records Act of 1978" in prompt
+    assert "Buenos Aires" in prompt
+    assert "Illinois General Assembly" in prompt
+    assert "`CTA`, `DHS`, `PBS`" in prompt
 
 
 def test_person_extract_prompt_includes_band_guidance() -> None:
     prompt = _PROMPT_PATH.read_text(encoding="utf-8")
-    assert "### Musical groups and bands" in prompt
+    assert "bands are people" in prompt
     assert "Pearl Jam" in prompt
-    assert "Bands are people, not organizations" in prompt
-    assert "Budweiser employees union" in prompt
+    assert "Do not put bands in organization extraction" in prompt

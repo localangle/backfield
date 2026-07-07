@@ -16,25 +16,25 @@ _PROMPT_PATH = (
 )
 
 
-def test_organization_extract_prompt_includes_decision_gate_and_paired_examples() -> None:
+def test_organization_extract_prompt_includes_hard_stops_table() -> None:
     prompt = _PROMPT_PATH.read_text(encoding="utf-8")
-    assert "## Organization decision gate" in prompt
-    assert "omit `Grant Park`; keep `Grant Park Advisory Council`" in prompt
-    assert "omit `Affordable Care Act`" in prompt
-    assert "omit `Anti-Weaponization Fund`" in prompt
-    assert "omit `A Mighty Wind`" in prompt
-    assert "omit `American Community Survey`" in prompt
-    assert "omit `Anne Frank House`" in prompt
-    assert "omit `American civil society`" in prompt
-    assert "Antonio Martínez Ocasio" in prompt
-    assert "omit `Area 5 detectives`" in prompt
+    assert "## Hard stops — the organization test" in prompt
+    assert "Grant Park Advisory Council" in prompt
+    assert "Affordable Care Act" in prompt
+    assert "Anti-Weaponization Fund" in prompt
+    assert "A Mighty Wind" in prompt
+    assert "American Community Survey" in prompt
+    assert "Anne Frank House" in prompt
+    assert "American civil society" in prompt
+    assert "Area 5 detectives" in prompt
     assert "Never choose `government` or `other`" in prompt
 
 
 def test_organization_extract_prompt_excludes_brands_and_bands() -> None:
     prompt = _PROMPT_PATH.read_text(encoding="utf-8")
-    assert "omit `Budweiser`" in prompt
+    assert "`Budweiser`, `Google`, `Coca-Cola`" in prompt
     assert "Budweiser employees union" in prompt
     assert "Google executive team" in prompt
     assert "Pearl Jam" in prompt
-    assert "Musical groups, bands, and recording acts" in prompt
+    assert "Bands and musical acts" in prompt
+    assert "bands belong in **people** extraction" in prompt
