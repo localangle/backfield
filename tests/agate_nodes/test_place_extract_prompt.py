@@ -26,32 +26,34 @@ _PROMPT_PATH = (
 
 def test_place_extract_prompt_excludes_non_location_candidate_patterns() -> None:
     prompt = _PROMPT_PATH.read_text(encoding="utf-8")
-    assert "People with appended geography" in prompt
+    assert "## Hard stops — the place test" in prompt
+    assert "Person with appended geography" in prompt
     assert "Brandon Johnson, Chicago, IL" in prompt
-    assert "Sports teams, games, leagues, divisions, eras, and associations" in prompt
+    assert "Sports team, game, league, division, or era" in prompt
     assert "Bears-Packers game" in prompt
     assert "Game 7" in prompt
     assert "1969 Bears" in prompt
     assert "American Basketball Association" in prompt
     assert "American League Central" in prompt
     assert "Eastern Conference" in prompt
-    assert "Athletic districts and scholastic conferences" in prompt
+    assert "Athletic conference, class, or bracket" in prompt
+    assert "Class 3a, IL" in prompt
+    assert "IHSA 4A" in prompt
     assert "West Suburban Conference Silver" in prompt
-    assert "Demographic and identity-based area labels" in prompt
+    assert "Demographic or identity-based area label" in prompt
     assert "Black neighborhoods, Chicago, IL" in prompt
-    assert "Broad descriptive macro-areas" in prompt
+    assert "Broad descriptive macro-area" in prompt
     assert "Forty States, US" in prompt
     assert "International cities" in prompt
     assert "Paris, France" in prompt
     assert "Washington, DC vs Washington state" in prompt
     assert "Street-type spelling" in prompt
     assert "103rd Street, Chicago, IL" in prompt
-    assert "Training camps, combines, drafts, tournaments, and event names" in prompt
     assert "NFL Scouting Combine" in prompt
-    assert "Venue interiors and subparts" in prompt
+    assert "Venue interior or subpart" in prompt
     assert "concession stand" in prompt
     assert "dugout" in prompt
-    assert "Organization names with inferred headquarters or branch geocodes" in prompt
+    assert "Organization with inferred headquarters" in prompt
     assert "American Medical Association, IL" in prompt
 
 
@@ -59,6 +61,20 @@ def test_place_extract_prompt_includes_historical_nature() -> None:
     prompt = _PROMPT_PATH.read_text(encoding="utf-8")
     assert "**historical**" in prompt
     assert "past events, precedent, or historical comparison" in prompt
+
+
+def test_place_extract_prompt_normalizes_block_addresses() -> None:
+    prompt = _PROMPT_PATH.read_text(encoding="utf-8")
+    assert "**Block addresses (critical)**" in prompt
+    assert "6500 S Hermitage Ave, Chicago, IL" in prompt
+    assert "never the verbatim \"block of\" phrase" in prompt
+    assert "Wrong: `6500 block of South Hermitage Avenue, Chicago, IL`" in prompt
+    assert "**Neighborhoods and regions**:" in prompt
+    assert "Longfellow, Minneapolis, MN" in prompt
+    assert "**Intersections**:" in prompt
+    assert "Main Street and 2nd Street, Chicago, IL" in prompt
+    assert "**Spans**:" in prompt
+    assert "Lake Street from Nicollet Avenue to 28th Avenue, Minneapolis, MN" in prompt
 
 
 def test_place_extract_prompt_only_text_is_json_path_placeholder() -> None:

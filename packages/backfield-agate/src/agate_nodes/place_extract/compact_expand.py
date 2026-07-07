@@ -9,7 +9,7 @@ from agate_nodes.place_extract.compact_codes import (
     VALID_ADDRESS_PLACE_KINDS,
     expand_nature,
 )
-from agate_nodes.place_extract.components_build import build_components
+from agate_nodes.place_extract.components_build import build_components, normalize_journalistic_block_address
 from agate_nodes.place_extract.mentions_build import build_mentions
 
 STREET_LEVEL_TYPES = frozenset(
@@ -51,7 +51,7 @@ def expand_compact_entry(
 ) -> dict[str, Any]:
     """Expand one compact row dict into a full location dict for ``place_from_llm_location_entry``."""
     ctx = context or extract_article_context(article_text)
-    location = str(entry.get("location") or "").strip()
+    location = normalize_journalistic_block_address(str(entry.get("location") or "").strip())
     location_type = str(entry.get("type") or "").strip()
     components = build_components(location, location_type, ctx)
     mentions = build_mentions(article_text, location, location_type)

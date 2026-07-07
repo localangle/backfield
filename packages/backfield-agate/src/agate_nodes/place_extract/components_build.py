@@ -38,6 +38,34 @@ SPAN_TO_RE = re.compile(
     r"^(?P<street>.+?)\s+(?:from\s+)?(?P<start>.+?)\s+to\s+(?P<end>.+)$",
     flags=re.IGNORECASE,
 )
+_BLOCK_OF_RE = re.compile(r"(\d+)\s+block\s+of\s+", flags=re.IGNORECASE)
+_STREET_TYPE_ABBREVS = (
+    (re.compile(r"\bAvenue\b", flags=re.IGNORECASE), "Ave"),
+    (re.compile(r"\bStreet\b", flags=re.IGNORECASE), "St"),
+    (re.compile(r"\bBoulevard\b", flags=re.IGNORECASE), "Blvd"),
+    (re.compile(r"\bRoad\b", flags=re.IGNORECASE), "Rd"),
+)
+_DIRECTION_ABBREVS = (
+    (re.compile(r"\bSouth\b", flags=re.IGNORECASE), "S"),
+    (re.compile(r"\bNorth\b", flags=re.IGNORECASE), "N"),
+    (re.compile(r"\bEast\b", flags=re.IGNORECASE), "E"),
+    (re.compile(r"\bWest\b", flags=re.IGNORECASE), "W"),
+)
+
+
+def normalize_journalistic_block_address(location: str) -> str:
+    """Convert ``6500 block of South Hermitage Avenue`` to ``6500 S Hermitage Ave``."""
+    if not _BLOCK_OF_RE.search(location):
+        return location
+    parts = [part.strip() for part in location.split(",") if part.strip()]
+    if not parts:
+        return location
+    head = _BLOCK_OF_RE.sub(r"\1 ", parts[0], count=1)
+    for pattern, replacement in _DIRECTION_ABBREVS:
+        head = pattern.sub(replacement, head)
+    for pattern, replacement in _STREET_TYPE_ABBREVS:
+        head = pattern.sub(replacement, head)
+    return ", ".join([head, *parts[1:]])
 
 
 def _empty_components() -> dict[str, Any]:
@@ -208,6 +236,7 @@ def build_components(
     context: ArticleContext,
 ) -> dict[str, Any]:
     """Build production-shaped components deterministically from a location string."""
+    location = normalize_journalistic_block_address(location)
     components = _empty_components()
     parts, city, state_abbr, county_from_parts = _parse_location_parts(location)
 
