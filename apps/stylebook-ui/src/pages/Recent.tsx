@@ -3,22 +3,15 @@ import { Breadcrumbs } from "@/components/Breadcrumbs"
 import { StylebookHomeTabs } from "@/components/StylebookHomeTabs"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { ActivityEventSummary } from "@/lib/activityEvents"
 import { listStylebookActivity, type StylebookActivityEvent } from "@/lib/api"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 
 const PER_PAGE = 25
 
-function eventSummary(event: StylebookActivityEvent): string {
-  const base = event.event_type.split("_").join(" ")
-  const entity = event.entity_label || event.entity_id || event.entity_type || "record"
-  const related = event.related_entity_label || event.related_entity_id
-  if (related) return `${base}: ${entity} -> ${related}`
-  return `${base}: ${entity}`
-}
-
 export default function Recent() {
-  const { stylebookSlug } = useProjectCatalogScope()
+  const { stylebookSlug, catalogBasePath, catalogScopeSuffix } = useProjectCatalogScope()
   const crumbRoot = useScopeBreadcrumbRoot()
   const [events, setEvents] = useState<StylebookActivityEvent[]>([])
   const [total, setTotal] = useState(0)
@@ -96,7 +89,13 @@ export default function Recent() {
           <ul className="divide-y">
             {events.map((event) => (
               <li key={event.id} className="p-4">
-                <div className="text-sm font-medium">{eventSummary(event)}</div>
+                <div className="text-sm font-medium">
+                  <ActivityEventSummary
+                    event={event}
+                    catalogBasePath={catalogBasePath}
+                    scopeSuffix={catalogScopeSuffix}
+                  />
+                </div>
                 <div className="mt-1 text-xs text-muted-foreground">
                   {new Date(event.created_at).toLocaleString()} - {event.source} - {event.actor_type}
                 </div>
