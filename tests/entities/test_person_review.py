@@ -29,6 +29,7 @@ from backfield_entities.entities.person.review import (
     looks_like_descriptive_pseudonym,
     looks_like_first_name_only_token,
     looks_like_non_person_entity,
+    looks_like_vague_person_descriptor,
     parse_review_fields_from_entry,
     person_inferred_surname_from_details,
     person_review_blocks_auto_materialize,
@@ -179,6 +180,19 @@ def test_descriptive_pseudonym_heuristic() -> None:
     assert not looks_like_descriptive_pseudonym("John Smith")
 
 
+def test_vague_person_descriptor_heuristic() -> None:
+    assert looks_like_vague_person_descriptor("18-year-old")
+    assert looks_like_vague_person_descriptor("21-year-old man")
+    assert looks_like_vague_person_descriptor("a woman")
+    assert looks_like_vague_person_descriptor("the victim")
+    assert looks_like_vague_person_descriptor("unidentified man")
+    assert looks_like_vague_person_descriptor("elderly woman")
+    assert looks_like_vague_person_descriptor("two men")
+    assert not looks_like_vague_person_descriptor("John Smith")
+    assert not looks_like_vague_person_descriptor("Maria")
+    assert not looks_like_vague_person_descriptor("Martin Murillo")
+
+
 def test_non_person_entity_heuristic() -> None:
     assert looks_like_non_person_entity("ESPN 1000")
     assert looks_like_non_person_entity("Presidential Records Act of 1978")
@@ -201,6 +215,8 @@ def test_non_person_entity_heuristic() -> None:
     assert looks_like_non_person_entity("Illinois General Assembly")
     assert looks_like_non_person_entity("General Assembly")
     assert looks_like_non_person_entity("Anchorage")
+    assert looks_like_non_person_entity("18-year-old")
+    assert looks_like_non_person_entity("the victim")
     assert not looks_like_non_person_entity("John Smith")
     assert not looks_like_non_person_entity("Prince")
     assert not looks_like_non_person_entity("Maria")

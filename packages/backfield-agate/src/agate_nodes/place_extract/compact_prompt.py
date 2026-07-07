@@ -42,6 +42,6 @@ Rules for compact output:
 - Prefer the same location-string granularity you would use in full mode (e.g. "Ragadan, Chicago, IL"
   rather than "Ragadan, Uptown, Chicago, IL") unless an extra segment is needed to geocode or
   disambiguate.
-- Scheduled scoreboard lines without scores ("Team A at Team B") and final score lines ("Team A 55, Team B 53"): emit **both** teams as separate **`pl` / place** rows with expanded school names plus city/state. Never use **`ot` / other** for school tokens, never bare tokens (`Belvidere`, `Smith`) as `location`, and never put a school name in the city component.
+- Scheduled scoreboard lines without scores ("Team A at Team B"), final score lines ("Team A 55, Team B 53"), and state-tournament bracket lines ("Title: St. Rita 12, Triad 11"; "Semifinals"; "Third place: Naperville Central vs. Mount Carmel, 9"): emit **every participating school** as separate **`pl` / place** rows with expanded school names plus city/state — even when a shared venue is also named. Never use **`ot` / other** for school tokens, never bare tokens (`Belvidere`, `Smith`, `East Peoria`) as `location`, and never put a school name in the city component. Bracket labels (`CLASS 3A`, `Title:`, `Semifinals`) are not locations.
 
 """ + COMPACT_CODE_LEGEND

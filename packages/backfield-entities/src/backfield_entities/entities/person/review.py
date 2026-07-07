@@ -111,6 +111,33 @@ _ROLE_ONLY_ENDING_RE = re.compile(
     r"\b(?:" + "|".join(_ROLE_NOUNS) + r")\s*$",
     re.IGNORECASE,
 )
+_AGE_DESCRIPTOR_RE = re.compile(
+    r"^(?:an?\s+)?\d{1,3}[- ]year[- ]old"
+    r"(?:\s+(?:man|woman|boy|girl|male|female|student|teen(?:ager)?))?\s*$",
+    re.IGNORECASE,
+)
+_VAGUE_ARTICLE_ROLE_RE = re.compile(
+    r"^(?:an?\s+|the\s+)?(?:\d+\s+)?(?:unidentified|unknown|unnamed|unamed)\s+"
+    r"(?:man|woman|boy|girl|male|female|person|suspect|victim|driver|passenger|shooter|gunman)\s*$",
+    re.IGNORECASE,
+)
+_VAGUE_DEMOGRAPHIC_ROLE_RE = re.compile(
+    r"^(?:an?\s+|the\s+)?(?:(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+)?(?:"
+    r"man|men|woman|women|boy|girl|male|female|person|people|victim|victims|suspect|suspects|"
+    r"driver|passenger|pedestrian|bystander|witness|teen(?:ager)?|youth|child|children|student|resident"
+    r")s?\s*$",
+    re.IGNORECASE,
+)
+_VAGUE_QUALIFIER_ROLE_RE = re.compile(
+    r"^(?:young|old|elderly|unidentified|unknown|unnamed|unamed)\s+"
+    r"(?:man|woman|person|male|female|suspect|victim|driver|passenger|shooter|gunman)s?\s*$",
+    re.IGNORECASE,
+)
+_VAGUE_STANDALONE_ROLE_RE = re.compile(
+    r"^(?:the\s+)?(?:victim|suspect|driver|passenger|shooter|gunman|assailant|intruder|robber|witness|bystander)s?\s*$",
+    re.IGNORECASE,
+)
+_SKIP_PERSON_EXTRACT_PREFIX = "non-qualifying person name:"
 _GENERIC_AUTHORITY_RE = re.compile(
     r"\b("
     r"federal|state|local|city|county|national"
@@ -348,6 +375,44 @@ def _looks_like_personal_name(name: str) -> bool:
     return len(name_tokens) >= 2
 
 
+def looks_like_vague_person_descriptor(name: str) -> bool:
+    """Heuristic: age/demographic/role labels with no personal name."""
+    token = name.strip()
+    if not token:
+        return False
+    if _AGE_DESCRIPTOR_RE.fullmatch(token):
+        return True
+    if _VAGUE_ARTICLE_ROLE_RE.fullmatch(token):
+        return True
+    if _VAGUE_DEMOGRAPHIC_ROLE_RE.fullmatch(token):
+        return True
+    if _VAGUE_QUALIFIER_ROLE_RE.fullmatch(token):
+        return True
+    if _VAGUE_STANDALONE_ROLE_RE.fullmatch(token):
+        return True
+    return False
+
+
+def should_skip_person_extract_entry(
+    name: str,
+    *,
+    title: str | None = None,
+    affiliation: str | None = None,
+) -> bool:
+    """True when PersonExtract should omit a row instead of emitting a person record."""
+    if looks_like_vague_person_descriptor(name):
+        return True
+    return looks_like_non_person_entity(name, title=title, affiliation=affiliation)
+
+
+def skip_person_extract_entry_error(name: str) -> str:
+    return f"{_SKIP_PERSON_EXTRACT_PREFIX} {name!r}"
+
+
+def is_skippable_person_extract_error(message: str) -> bool:
+    return message.startswith(_SKIP_PERSON_EXTRACT_PREFIX)
+
+
 def looks_like_non_person_entity(
     name: str,
     *,
@@ -358,6 +423,8 @@ def looks_like_non_person_entity(
     token = name.strip()
     if not token:
         return False
+    if looks_like_vague_person_descriptor(token):
+        return True
     if _LEGISLATION_RE.search(token):
         return True
     if _SCHOOL_OR_CAMPUS_RE.search(token):

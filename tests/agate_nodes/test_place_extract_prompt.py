@@ -63,6 +63,14 @@ def test_place_extract_prompt_includes_historical_nature() -> None:
     assert "past events, precedent, or historical comparison" in prompt
 
 
+def test_place_extract_prompt_includes_tournament_scoreline_rules() -> None:
+    prompt = _PROMPT_PATH.read_text(encoding="utf-8")
+    assert "**Venue does not replace schools:**" in prompt
+    assert "Title: St. Rita 12, Triad 11" in prompt
+    assert "Third place: Naperville Central vs. Mount Carmel, 9" in prompt
+    assert "still extract every named school and venue on the same lines" in prompt
+
+
 def test_place_extract_prompt_normalizes_block_addresses() -> None:
     prompt = _PROMPT_PATH.read_text(encoding="utf-8")
     assert "**Block addresses (critical)**" in prompt

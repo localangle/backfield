@@ -31,6 +31,14 @@ def test_person_extract_prompt_includes_hard_stops_table() -> None:
     assert "`CTA`, `DHS`, `PBS`" in prompt
 
 
+def test_person_extract_prompt_includes_vague_descriptor_exclusion() -> None:
+    prompt = _PROMPT_PATH.read_text(encoding="utf-8")
+    assert "Vague or unidentified descriptor, no personal name" in prompt
+    assert "`18-year-old`" in prompt
+    assert "`the victim`" in prompt
+    assert "no name was given" in prompt
+
+
 def test_person_extract_prompt_includes_band_guidance() -> None:
     prompt = _PROMPT_PATH.read_text(encoding="utf-8")
     assert "bands are people" in prompt

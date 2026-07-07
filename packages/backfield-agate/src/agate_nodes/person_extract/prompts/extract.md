@@ -13,6 +13,7 @@ Never emit as `people.name`:
 | Category | Examples | Where it belongs |
 |----------|----------|------------------|
 | Role or role + agency, no personal name | `ICE agent`, `Illinois Border Patrol agent`, `Chicago police officer`, `federal authorities`, `store owner`, `the mayor` | Omit entirely |
+| Vague or unidentified descriptor, no personal name | `18-year-old`, `21-year-old man`, `a woman`, `the victim`, `unidentified man`, `two men`, `teenager`, `elderly woman` | Omit entirely — no name was given |
 | Government body, agency, or acronym | `ATF`, `DHS`, `FBI`, `Alcohol, Tobacco, Firearms and Explosives`, `National Transportation Safety Board`, `Illinois Gaming Board`, `Cook County State's Attorney's Office` | Organization extract |
 | Legislature or governing body | `Illinois General Assembly`, `General Assembly`, `City Council`, `County Board` | Organization extract |
 | Company, firm, or fund | `H&R Block`, `Engaged Capital`, `Permanent Capital`, `BlackEdge Capital`, `Kittelson & Associates`, `Finkl Steel`, `American Ancestors` | Organization extract |
@@ -41,7 +42,7 @@ If a borderline row must be emitted anyway, set `review_handling`: `auto_defer`,
 
 ## Identity rules
 
-1. **A name is required.** Generic titles alone ("the mayor," "a detective") never create a person. Title-only references may merge into an existing named person's record but cannot create one.
+1. **A name is required.** Generic titles, demographics, and role labels alone never create a person — not even when the person is central to the story (`18-year-old`, `the victim`, `a man`, `unidentified woman`). Title-only references may merge into an existing named person's record but cannot create one.
 2. **Merge coreferences** into one record: full name → last name → pronouns → nicknames → role references, when clearly the same person ("Superintendent Lisa Johnson" → "Johnson" → "the superintendent").
 3. **Surnames from family references**: when the article names a relative of someone with an established surname (`Rocky Wirtz's brother, Peter` → `Peter Wirtz`), use the full inferred name, set `surname_inferred_from_relative`: `true`, and route with `review_handling`: `flag_review`, `review_reason_code`: `first_name_only`. Do not infer from vague references when the anchor surname is not established in the same passage.
 4. **Namesakes stay separate.** Two people sharing a last name get separate entries; merge only with unambiguous evidence.

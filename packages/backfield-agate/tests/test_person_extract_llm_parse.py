@@ -94,6 +94,23 @@ def test_person_from_llm_entry_invalid_nature_becomes_other() -> None:
     assert person.nature == "other"
 
 
+def test_person_from_llm_entry_skips_vague_descriptor() -> None:
+    with pytest.raises(ValueError, match="non-qualifying person name: '18-year-old'"):
+        person_from_llm_entry(
+            {
+                "name": "18-year-old",
+                "role_in_story": "Fatally shot in Englewood",
+                "nature": "victim",
+                "mentions": [
+                    {
+                        "text": "An 18-year-old was fatally shot in Englewood.",
+                        "quote": False,
+                    }
+                ],
+            }
+        )
+
+
 def test_person_from_llm_entry_requires_mentions() -> None:
     with pytest.raises(ValueError, match="mentions"):
         person_from_llm_entry(
