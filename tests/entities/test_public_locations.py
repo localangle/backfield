@@ -192,6 +192,42 @@ def test_search_public_locations_by_geo_point() -> None:
         assert total == 0
 
 
+def test_postgres_geo_bbox_location_type_binds_without_error() -> None:
+    """BBox geo search must not glue ORDER BY onto the :location_type bind param."""
+    from sqlalchemy import text
+
+    location_type_filter = "AND slc.location_type = :location_type"
+    order_sql = "\nORDER BY lower(slc.label), slc.id"
+    stmt = text(
+        """
+        WITH search_area AS (
+            SELECT ST_SetSRID(
+                ST_MakeEnvelope(:min_lng, :min_lat, :max_lng, :max_lat, 4326),
+                4326
+            )::geography AS geom
+        )
+        SELECT slc.id
+        FROM stylebook_location_canonical slc
+        CROSS JOIN search_area sa
+        WHERE slc.stylebook_id = :stylebook_id
+          AND slc.status = 'active'
+          AND slc.geometry IS NOT NULL
+          AND ST_DWithin(slc.geometry::geography, sa.geom, 0)
+        """
+        + location_type_filter
+        + order_sql
+    )
+    assert "location_typeORDER" not in stmt._bindparams
+    stmt.bindparams(
+        stylebook_id=1,
+        min_lng=-87.7,
+        min_lat=41.8,
+        max_lng=-87.5,
+        max_lat=42.0,
+        location_type="place",
+    )
+
+
 def test_get_public_location_and_mentions() -> None:
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)

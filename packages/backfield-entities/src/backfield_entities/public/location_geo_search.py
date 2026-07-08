@@ -186,7 +186,7 @@ def _postgres_geo_ids(
             )::geography AS geom
         )
         """
-        order_sql = "ORDER BY lower(slc.label), slc.id"
+        order_sql = "\nORDER BY lower(slc.label), slc.id"
 
     location_type_filter = ""
     if (params.location_type or "").strip():

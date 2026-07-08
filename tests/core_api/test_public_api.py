@@ -1458,6 +1458,17 @@ def test_public_locations_list_search_and_geo(public_client: TestClient) -> None
     assert gbody["pagination"]["total"] == 1
     assert gbody["items"][0]["label"] == "City Hall"
 
+    geo_bbox = public_client.get(
+        "/public/v1/projects/general/locations/geo-search",
+        headers=headers,
+        params={
+            "bbox": "-87.7,41.7,-87.5,41.9",
+            "location_type": "place",
+        },
+    )
+    assert geo_bbox.status_code == 200
+    assert geo_bbox.json()["search_mode"] == "bbox"
+
     types = public_client.get("/public/v1/projects/general/locations/types", headers=headers)
     assert types.status_code == 200
     assert "place" in types.json()["types"]
