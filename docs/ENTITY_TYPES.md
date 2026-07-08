@@ -26,9 +26,9 @@ Registry source of truth: `packages/backfield-entities/src/backfield_entities/re
 
 ## Stylebook catalog transfer (create, import, export)
 
-Org-admin **Export** / **Import** (Agate **Manage stylebooks**, `worker.tasks.export_stylebook_bundle` / `import_stylebook_bundle`) copies **canonical rows only** — no meta, connections, substrate, or candidate queues. Import seeds a primary alias per canonical (locations and people) with `stylebook_bundle_import` provenance so rows are not treated as ingest orphans. New UUIDs are assigned on import.
+Org-admin **Export** / **Import** (Agate **Manage stylebooks**, `worker.tasks.export_stylebook_bundle` / `import_stylebook_bundle`) copies **canonical rows** plus **aliases**, **project-scoped meta**, and **connections** whose endpoints are both in the exported stylebook. It does **not** copy substrate/candidate queues, geocode cache, semantic embeddings, or activity log rows. Import assigns new canonical UUIDs; meta and connections resolve projects by slug (optional `project_mappings` on import, otherwise same-slug projects in the target org).
 
-Implementation hub: [`packages/backfield-entities/src/backfield_entities/catalog/full_bundle.py`](../packages/backfield-entities/src/backfield_entities/catalog/full_bundle.py). Manifest **`schema_version`** is **3** for new exports; import accepts **1**, **2**, or **3**.
+Implementation hub: [`packages/backfield-entities/src/backfield_entities/catalog/full_bundle.py`](../packages/backfield-entities/src/backfield_entities/catalog/full_bundle.py). Manifest **`schema_version`** is **4** for new exports; import accepts **1**–**4**.
 
 | Concern | Location | Person | Organization / work (future) |
 |---------|----------|--------|------------------------------|
@@ -36,6 +36,8 @@ Implementation hub: [`packages/backfield-entities/src/backfield_entities/catalog
 | **Bulk import format** | GeoJSON (`POST …/import/geojson/…`) | CSV (`POST …/import/csv/people/…`) | CSV (`POST …/import/csv/organizations/…`) for organization; work TBD |
 | **Import registry** | `(geojson, locations)` → `_GeoJsonLocationsImporter` | `(csv, people)` → `CsvPeopleImporter` | `(csv, organizations)` → `CsvOrganizationsImporter`; work TBD |
 | **Bundle export shard** | `canonicals/locations/part-*.jsonl`, manifest `kind: canonical_location` | `canonicals/people/part-*.jsonl`, manifest `kind: canonical_person` | `canonicals/organizations/part-*.jsonl`, `kind: canonical_organization` (organization); work TBD |
+| **Bundle sidecar shards (v4+)** | `aliases/locations/…`, `meta/locations/…` | `aliases/people/…`, `meta/people/…` | `aliases/organizations/…`, `meta/organizations/…` |
+| **Bundle connections (v4+)** | `connections/part-*.jsonl`, manifest `kind: connection` | same | same |
 | **Bundle import** | Handles `kind: canonical` (legacy v1/v2) and `canonical_location` | Handles `kind: canonical_person` | Handles `kind: canonical_organization` (organization); work TBD |
 | **Standalone persist helper** | `backfield_entities.entities.location.persist.create_standalone_canonical` | `backfield_entities.entities.person.persist.create_standalone_canonical` | Same pattern under `entities/<type>/persist.py` |
 | **Provenance strings** | `stylebook_ui_manual`, `stylebook_ui_import_geojson` | `stylebook_ui_manual`, `stylebook_ui_import_csv`, `stylebook_bundle_import` | Follow `{surface}_manual` / `{surface}_import_csv` |
@@ -49,7 +51,7 @@ Implementation hub: [`packages/backfield-entities/src/backfield_entities/catalog
 5. **Bundle transfer (same issue or follow-up):** export iterator + import row handler + manifest kind constant; extend tests in `tests/entities/test_full_bundle_roundtrip.py`.
 6. **Docs:** Update this table, [`API.md`](API.md), [`OPERATIONS.md`](OPERATIONS.md) bundle bullets.
 
-**Not in bundle v3:** primary substrate FKs are cleared on export/import; editor must re-link substrate rows in target orgs separately.
+**Not in bundle v4:** substrate rows, candidate/review queue state, geocode cache, semantic embeddings, activity log, or primary substrate FKs (cleared on export/import).
 
 ## Issue 00 — shared foundation
 

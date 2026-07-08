@@ -1459,6 +1459,11 @@ def import_stylebook_bundle_task(job_id: str) -> None:
                 organization_id=org_id,
                 zip_path=tmp_path,
                 new_stylebook_name=str(name).strip(),
+                project_mappings={
+                    str(k): int(v)
+                    for k, v in (req.get("project_mappings") or {}).items()
+                }
+                or None,
                 on_progress=lambda p: _update_bundle_job_progress(engine, job_id, p),
             )
             jid = new_book.id  # type: ignore[union-attr]
