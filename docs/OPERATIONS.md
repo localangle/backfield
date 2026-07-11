@@ -70,6 +70,8 @@ make docker-build-prod-apis \
 
 Each production image bakes `APP_VERSION`, `GIT_SHA`, and `BUILD_TIME` into the environment; `GET /version` on a running container reports those values. Local Compose uses `target: dev` explicitly.
 
+The **`agate-api` prod** image also installs **`backfield-cli`** so cloud one-off ECS tasks can run `backfield-migrate` / `backfield-seed` without changing the API `CMD`. Alembic assets (`alembic.ini` + `alembic/`) are copied into `/app/packages/backfield-db` and resolved via **`BACKFIELD_ALEMBIC_ROOT`** (wheel installs do not package those files).
+
 **Production worker image** uses the same build-arg pattern. The worker is not an HTTP service; startup logs a JSON line with `event=worker_startup`, version metadata, and the resolved `CELERY_WORKER_CONCURRENCY`. Concurrency, prefetch, and child-process limits are driven from environment variables in `apps/worker/scripts/entrypoint.sh` (Compose default concurrency **16** via `CELERY_WORKER_CONCURRENCY`).
 
 ```bash
@@ -121,6 +123,7 @@ All runtime connectivity and secrets are **environment-driven** — no hardcoded
 | Concern | Primary variables | Notes |
 |--------|-------------------|-------|
 | Database | `BACKFIELD_DATABASE_URL`, `DATABASE_URL`, `BACKFIELD_DATABASE_URL_DIRECT` | Runtime traffic uses the pooled URL; migrations use `_DIRECT` when set. |
+| Alembic root | `BACKFIELD_ALEMBIC_ROOT` | Optional. Directory containing `alembic.ini` / `alembic/` (set in `agate-api` prod image). |
 | Redis / Celery | `REDIS_URL`, `CELERY_QUEUE`, `CELERY_WORKER_CONCURRENCY` | Required for async runs and worker execution. |
 | Encryption | `MASTER_ENCRYPTION_KEY` | Required on **agate-api**, **worker**, **core-api**, **stylebook-api** for project/org secrets. |
 | Session auth | `SESSION_SECRET` | Shared across services that verify the session cookie. |
