@@ -14,7 +14,7 @@ Backfield uses a **fresh schema**. Agate-owned tables use the **`agate_` prefix*
 | Shared AI model configuration and usage tracking | `packages/backfield-db` | `backfield_ai_*` tables for model catalog, project overrides, default roles, and LLM call cost records |
 
 
-Do **not** run multiple services that each invoke `alembic upgrade` on startup for the same revision path; use the standalone migration command (`backfield migrate` / compose **`migrate`** service, or `make migrate` locally).
+Do **not** run multiple services that each invoke `alembic upgrade` on startup for the same revision path; use the standalone migration command (`backfield migrate` / `backfield-migrate`, compose **`migrate`** service, or `make migrate` locally). In production images, Alembic assets may live outside the installed wheel; set **`BACKFIELD_ALEMBIC_ROOT`** to the directory that contains `alembic.ini` and `alembic/` (the `agate-api` prod image sets this).
 
 ## Connection pooling (PgBouncer)
 

@@ -32,15 +32,23 @@ def ensure_database_exists() -> None:
     port = url.port or 5432
     user = url.username or "postgres"
     password = url.password or "postgres"
+    # Honor sslmode from the URL (required for RDS / RDS Proxy TLS).
+    sslmode = url.query.get("sslmode")
+    if isinstance(sslmode, (list, tuple)):
+        sslmode = sslmode[0] if sslmode else None
+
+    connect_kwargs: dict = {
+        "host": host,
+        "port": port,
+        "user": user,
+        "password": password,
+        "dbname": "postgres",
+    }
+    if sslmode:
+        connect_kwargs["sslmode"] = sslmode
 
     # Creating a database cannot run inside a transaction.
-    with psycopg.connect(
-        host=host,
-        port=port,
-        user=user,
-        password=password,
-        dbname="postgres",
-    ) as conn:
+    with psycopg.connect(**connect_kwargs) as conn:
         conn.autocommit = True
         with conn.cursor() as cur:
             cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (target_db,))

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -30,8 +31,31 @@ _TRANSIENT_DB_ERROR_MARKERS = (
 
 
 def alembic_root() -> Path:
-    """Return the backfield-db package root containing alembic.ini."""
-    return Path(__file__).resolve().parents[2]
+    """Return the directory containing ``alembic.ini`` and ``alembic/``.
+
+    Resolution order:
+    1. ``BACKFIELD_ALEMBIC_ROOT`` when set (prod images copy Alembic assets there)
+    2. Editable / source-tree layout: ``packages/backfield-db`` (``migrate.py`` → parents[2])
+    """
+    override = (os.environ.get("BACKFIELD_ALEMBIC_ROOT") or "").strip()
+    if override:
+        root = Path(override).expanduser().resolve()
+        if not (root / "alembic.ini").is_file():
+            raise FileNotFoundError(
+                f"BACKFIELD_ALEMBIC_ROOT={root} does not contain alembic.ini"
+            )
+        return root
+
+    # Editable install / repo checkout: .../packages/backfield-db/src/backfield_db/migrate.py
+    candidate = Path(__file__).resolve().parents[2]
+    if (candidate / "alembic.ini").is_file():
+        return candidate
+
+    raise FileNotFoundError(
+        "Alembic config not found. Set BACKFIELD_ALEMBIC_ROOT to the directory "
+        "containing alembic.ini, or install backfield-db in editable mode from "
+        "packages/backfield-db."
+    )
 
 
 def build_alembic_config() -> Config:
