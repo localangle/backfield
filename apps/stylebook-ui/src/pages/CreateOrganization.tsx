@@ -22,12 +22,13 @@ import {
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import {
   ORGANIZATION_EXTRACT_ORGANIZATION_TYPES,
+  ORGANIZATION_TYPE_SELECT_NONE,
   placeExtractTypeLabel,
   sortReviewQueueTypeFilterOptions,
 } from "@/lib/place-extract-type-label"
 import { Loader2 } from "lucide-react"
 
-const CREATE_ORGANIZATION_TYPE_NONE = "__none__"
+const CREATE_ORGANIZATION_TYPE_NONE = ORGANIZATION_TYPE_SELECT_NONE
 
 export default function CreateOrganization() {
   const { showMessage, showError } = useAppMessage()

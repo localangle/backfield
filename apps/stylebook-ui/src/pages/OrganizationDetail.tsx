@@ -13,6 +13,7 @@ import {
 } from "@/lib/api"
 import {
   organizationTypeManualSelectOptions,
+  ORGANIZATION_TYPE_SELECT_NONE,
   placeExtractTypeLabel,
 } from "@/lib/place-extract-type-label"
 import { isStylebookApiNotFoundError } from "@/lib/stylebook-api/client"
@@ -262,6 +263,33 @@ export default function OrganizationDetail() {
     }
   }
 
+  async function handleTypeChange(nextType: string) {
+    if (!organization || !stylebookSlug || editing) return
+    const normalized = nextType.trim() || null
+    const current = (organization.organization_type ?? "").trim() || null
+    if (normalized === current) {
+      setOrganizationType(nextType)
+      return
+    }
+    setOrganizationType(nextType)
+    setSaving(true)
+    try {
+      await patchCanonicalOrganization(
+        organization.id,
+        stylebookSlug,
+        { organization_type: normalized },
+        evidenceProjectSlug || undefined,
+      )
+      await refreshCanonicalPage(true)
+    } catch (e) {
+      console.error(e)
+      setOrganizationType(organization.organization_type ?? "")
+      showError("Failed to update organization type")
+    } finally {
+      setSaving(false)
+    }
+  }
+
   function resetEditFieldsFromOrganization(row: CanonicalOrganization) {
     setLabel(row.label)
     setOrganizationType(row.organization_type ?? "")
@@ -391,57 +419,56 @@ export default function OrganizationDetail() {
           <CardHeader>
             <CardTitle>Details</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {editing ? (
-              <>
-                <div className="space-y-1">
-                  <Label htmlFor="organization-label" className="text-xs font-medium">
-                    Name
-                  </Label>
-                  <Input
-                    id="organization-label"
-                    className="h-8 text-xs"
-                    value={label}
-                    onChange={(e) => setLabel(e.target.value)}
-                    disabled={!canEdit || saving}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="organization-type" className="text-xs font-medium">
-                    Type
-                  </Label>
-                  <Select
-                    value={organizationType || "none"}
-                    onValueChange={(v) => setOrganizationType(v === "none" ? "" : v)}
-                    disabled={!canEdit || saving}
-                  >
-                    <SelectTrigger id="organization-type" className="h-8 text-xs">
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {orderedTypeOptions.map((t) => (
-                        <SelectItem key={t} value={t}>
-                          {placeExtractTypeLabel(t)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </>
-            ) : (
-              <>
-                <div>
-                  <span className="text-muted-foreground">Name:</span> {organization?.label}
-                </div>
-                {organization?.organization_type ? (
-                  <div>
-                    <span className="text-muted-foreground">Type:</span>{" "}
-                    {placeExtractTypeLabel(organization.organization_type)}
-                  </div>
-                ) : null}
-              </>
-            )}
+          <CardContent className="space-y-4 max-w-xl">
+            <div>
+              <Label htmlFor="organization-label">Name</Label>
+              {editing ? (
+                <Input
+                  id="organization-label"
+                  className="mt-1.5"
+                  value={label}
+                  onChange={(e) => setLabel(e.target.value)}
+                  disabled={!canEdit || saving}
+                />
+              ) : (
+                <p className="text-sm mt-1.5">{organization?.label || "—"}</p>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="organization-type">Type</Label>
+              {canEdit ? (
+                <Select
+                  value={organizationType || ORGANIZATION_TYPE_SELECT_NONE}
+                  onValueChange={(value) => {
+                    const next = value === ORGANIZATION_TYPE_SELECT_NONE ? "" : value
+                    if (editing) {
+                      setOrganizationType(next)
+                      return
+                    }
+                    void handleTypeChange(next)
+                  }}
+                  disabled={saving}
+                >
+                  <SelectTrigger id="organization-type" className="mt-1.5">
+                    <SelectValue placeholder="Select type…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ORGANIZATION_TYPE_SELECT_NONE}>None</SelectItem>
+                    {orderedTypeOptions.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {placeExtractTypeLabel(t)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <p className="text-sm mt-1.5">
+                  {organization?.organization_type
+                    ? placeExtractTypeLabel(organization.organization_type)
+                    : "—"}
+                </p>
+              )}
+            </div>
           </CardContent>
         </Card>
       }
