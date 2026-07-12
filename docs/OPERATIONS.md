@@ -115,6 +115,7 @@ Each app ships [`.env.production`](../apps/agate-ui/.env.production) defaults lo
 ## Environment variables
 
 - `BACKFIELD_ENV` / `ENVIRONMENT`: deployment label included on every structured log line (default **`development`** in local Compose).
+- `BACKFIELD_HTTP_PATH_PREFIX`: optional URL path prefix stripped by API apps before routing (e.g. `/api/agate` or `/api/stylebook` when CloudFront forwards the full path). Unset in local Compose; Vite strips the prefix in the browser proxy instead.
 
 ### Runtime configuration surface (production)
 
