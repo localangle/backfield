@@ -55,20 +55,20 @@ def _bundle_object_key(org_id: int, job_id: str) -> str:
 
 
 def _s3_client_bundles() -> Any:
+    """S3 client for bundle staging.
+
+    Prefer explicit keys when set (local MinIO / Compose). Otherwise use the
+    default credential chain (ECS task role in cloud).
+    """
     aws_access_key = os.environ.get("AWS_ACCESS_KEY_ID")
     aws_secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
     aws_session_token = os.environ.get("AWS_SESSION_TOKEN")
-    if not aws_access_key or not aws_secret_key:
-        raise HTTPException(
-            status_code=503,
-            detail="Object storage credentials are not configured for bundle links.",
-        )
-    session_kwargs: dict[str, str] = {
-        "aws_access_key_id": aws_access_key,
-        "aws_secret_access_key": aws_secret_key,
-    }
-    if aws_session_token:
-        session_kwargs["aws_session_token"] = aws_session_token
+    session_kwargs: dict[str, str] = {}
+    if aws_access_key and aws_secret_key:
+        session_kwargs["aws_access_key_id"] = aws_access_key
+        session_kwargs["aws_secret_access_key"] = aws_secret_key
+        if aws_session_token:
+            session_kwargs["aws_session_token"] = aws_session_token
     endpoint = os.environ.get("AWS_S3_ENDPOINT_URL") or os.environ.get("AWS_ENDPOINT_URL")
     if endpoint:
         return boto3.client("s3", endpoint_url=endpoint, **session_kwargs)
