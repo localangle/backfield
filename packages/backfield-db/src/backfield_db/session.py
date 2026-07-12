@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import os
 from collections.abc import Generator
+from contextlib import contextmanager
 from typing import Any
 
 from sqlalchemy import event, text
 from sqlalchemy.engine import Engine, make_url
+from sqlalchemy.pool import NullPool
 from sqlmodel import Session, SQLModel, create_engine
 
 _engine: Engine | None = None
@@ -111,6 +113,28 @@ def get_engine() -> Engine:
         except Exception:
             pass
     return _engine
+
+
+@contextmanager
+def null_pool_session() -> Generator[Session, None, None]:
+    """Open a short-lived Session that does not use the process pool.
+
+    Use when a long-held pooled Session (worker ``pool_size=1``) must not block a
+    nested progress/status write. Disposes the temporary engine after the block.
+    """
+    url = get_database_url()
+    engine = create_engine(
+        url,
+        echo=False,
+        connect_args=_engine_connect_args(url),
+        poolclass=NullPool,
+        pool_pre_ping=True,
+    )
+    try:
+        with Session(engine) as session:
+            yield session
+    finally:
+        engine.dispose()
 
 
 def get_session_factory():
