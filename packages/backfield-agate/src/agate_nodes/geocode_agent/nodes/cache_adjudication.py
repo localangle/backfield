@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, ValidationError
 from agate_utils.geocoding.geocoding_types import stylebook_match_to_geocoding_result
 from agate_utils.llm import call_llm
 
+from ..llm_auth import has_llm_auth
 from ..types import AgentState, normalized_geocode_hints
 
 logger = logging.getLogger(__name__)
@@ -73,8 +74,12 @@ async def adjudicate_stylebook_cache_node(state: AgentState) -> AgentState:
 
     openai_key = state.get("openai_api_key")
     eval_model = state.get("evaluation_llm_model")
-    if not openai_key or not eval_model:
-        _adv_info(state, "[CACHE ADJUDICATION SKIP] Missing OpenAI key or evaluation model")
+    eval_model_config_id = state.get("evaluation_ai_model_config_id")
+    if not has_llm_auth(openai_key, eval_model_config_id) or not eval_model:
+        _adv_info(
+            state,
+            "[CACHE ADJUDICATION SKIP] Missing LLM auth (API key or model config) or evaluation model",
+        )
         return state
 
     location_text = state.get("location_text") or ""

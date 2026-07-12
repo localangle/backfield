@@ -12,6 +12,7 @@ from agate_utils.geocoding.geocoding_types import GeocodingResult, GeocodingResu
 from agate_utils.geocoding.overpass import find_intersection_coordinates_from_text
 from agate_utils.llm import call_llm
 
+from ...llm_auth import has_llm_auth
 from .point import Point
 
 logger = logging.getLogger(__name__)
@@ -100,7 +101,7 @@ class Intersection(Point):
         self,
         openai_api_key: Optional[str],
     ) -> Optional[GeocodingResult]:
-        if not openai_api_key:
+        if not has_llm_auth(openai_api_key, self._geographic_reasoning_model_config_id()):
             return None
 
         try:
@@ -132,8 +133,8 @@ class Intersection(Point):
             return None
 
     def _try_llm_point_estimate(self, openai_api_key: Optional[str]) -> Optional[GeocodingResult]:
-        if not openai_api_key:
-            logger.warning("Intersection LLM estimate requires an OpenAI API key.")
+        if not has_llm_auth(openai_api_key, self._geographic_estimation_model_config_id()):
+            logger.warning("Intersection LLM estimate requires LLM auth (API key or model config).")
             return None
 
         try:

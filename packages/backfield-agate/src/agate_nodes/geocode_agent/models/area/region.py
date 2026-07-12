@@ -8,6 +8,7 @@ from agate_utils.geocoding.geocoding_types import (
     bbox_west_south_east_north_to_polygon_coordinates,
 )
 from agate_utils.llm import call_llm
+from ...llm_auth import has_llm_auth
 from .area import Area
 
 logger = logging.getLogger(__name__)
@@ -65,8 +66,8 @@ class Region(Area):
         openai_api_key: Optional[str] = None,
         **_: dict,
     ) -> Optional[GeocodingResult]:
-        if not openai_api_key:
-            logger.warning("Region geocoding requires an OpenAI API key.")
+        if not has_llm_auth(openai_api_key, self._geographic_estimation_model_config_id()):
+            logger.warning("Region geocoding requires LLM auth (API key or model config).")
             return None
 
         prompt = self._build_prompt()

@@ -177,6 +177,7 @@ Each slice should be demoable on its own.
 
 - Often sits between extract and output bookend (e.g. `PlaceExtract → GeocodeAgent → DBOutput`).
 - May read worker env (`BACKFIELD_PROJECT_ID`) and Stylebook cache bundles — see [`ARCHITECTURE.md`](ARCHITECTURE.md) geocode cache section.
+- **GeocodeAgent** — LLM steps (router, cache adjudication, display-line polish, geographic reasoning/estimation) authenticate via catalog AI model configs (`*AiModelConfigId` node params → org/project integration secrets). A raw `OPENAI_API_KEY` project or org secret remains a legacy fallback when no catalog config id is set.
 - **Article Metadata (`ArticleMetadata`)** — LLM assigns one preset-driven tag (e.g. topic category) from article text; emits consolidated `article_metadata` persisted by **DBOutput** to `substrate_article_meta`. Processed-item **Meta** tab allows editing **category** only (free text). Smoke: `make smoke-article-metadata` (in-process, mocked LLM) or `make smoke-article-metadata-stack` (live stack; create an **Article Metadata starter** graph or set `SMOKE_ARTICLE_METADATA_GRAPH_ID`).
 
 ### Embed

@@ -32,7 +32,7 @@ def test_route_strategy_skips_audit_when_cache_hit() -> None:
     asyncio.run(_run())
 
 
-def test_route_strategy_fallback_without_openai_key() -> None:
+def test_route_strategy_fallback_without_llm_auth() -> None:
     async def _run() -> None:
         state: dict = {
             "location_type": "place",
@@ -47,9 +47,36 @@ def test_route_strategy_fallback_without_openai_key() -> None:
         assert state.get("allow_web_search") is True
         audit = state.get("router_audit")
         assert isinstance(audit, dict)
-        assert audit.get("outcome") == "fallback_no_openai_key"
+        assert audit.get("outcome") == "fallback_no_llm_auth"
         assert "geocode_hints_snippet" in audit
         assert audit.get("geocode_hints_snippet") == ""
+
+    asyncio.run(_run())
+
+
+def test_route_strategy_proceeds_with_catalog_model_config_without_openai_key() -> None:
+    async def _run() -> None:
+        def _fake_llm(*_a: object, **kwargs: object) -> str:
+            assert kwargs.get("openai_api_key") is None
+            assert kwargs.get("model_config_id") == "cfg-router-1"
+            return json.dumps({"strategy": "no_web_search", "rationale": "catalog"})
+
+        state: dict = {
+            "location_type": "place",
+            "location_text": "Example",
+            "location_components": {},
+            "original_text": "",
+            "openai_api_key": None,
+            "router_llm_model": "gpt-4o-mini",
+            "router_ai_model_config_id": "cfg-router-1",
+        }
+        with patch("agate_nodes.geocode_agent.nodes.route_strategy.call_llm", _fake_llm):
+            await route_strategy_node(state)
+        assert state.get("allow_web_search") is False
+        audit = state.get("router_audit")
+        assert isinstance(audit, dict)
+        assert audit.get("outcome") == "llm_ok"
+        assert audit.get("strategy_selected") == "no_web_search"
 
     asyncio.run(_run())
 
