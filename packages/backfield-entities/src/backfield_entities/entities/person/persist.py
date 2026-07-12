@@ -14,6 +14,11 @@ from backfield_db import (
 )
 from sqlmodel import Session, col, func, select
 
+from backfield_entities.activity import (
+    EVENT_CANONICAL_CREATED,
+    EVENT_SUBSTRATE_LINKED,
+    log_stylebook_activity_safe,
+)
 from backfield_entities.canonical.link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
@@ -513,6 +518,20 @@ def apply_canonical_persist_plan(
             provenance=provenance,
             audit_reasons=reasons,
         )
+        log_stylebook_activity_safe(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=int(person.project_id),
+            actor_type="system",
+            source="ingest_pipeline",
+            event_type=EVENT_SUBSTRATE_LINKED,
+            entity_type="person",
+            entity_id=str(person.id) if person.id is not None else None,
+            entity_label=str(person.name),
+            related_entity_type="person",
+            related_entity_id=str(plan.existing_canonical_id),
+            payload_json={"provenance": provenance},
+        )
         return
     materialize_new_canonical_and_link(
         session,
@@ -520,6 +539,22 @@ def apply_canonical_persist_plan(
         person=person,
         provenance=provenance,
         audit_reasons=reasons,
+    )
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=stylebook_id,
+        project_id=int(person.project_id),
+        actor_type="system",
+        source="ingest_pipeline",
+        event_type=EVENT_CANONICAL_CREATED,
+        entity_type="person",
+        entity_id=str(person.stylebook_person_canonical_id)
+        if person.stylebook_person_canonical_id is not None
+        else None,
+        entity_label=str(person.name),
+        related_entity_type="person",
+        related_entity_id=str(person.id) if person.id is not None else None,
+        payload_json={"provenance": provenance, "materialized_from_substrate": True},
     )
 
 

@@ -27,6 +27,7 @@ from backfield_db import (
     SubstratePersonMention,
     SubstratePersonMentionOccurrence,
 )
+from backfield_entities.activity import EVENT_AI_REVIEW_COMPLETED, log_stylebook_activity_safe
 from backfield_entities.quality.cleanup_ai_review import (
     MAX_MENTION_SAMPLES_IN_PROMPT,
     CleanupAiProposalDraft,
@@ -474,6 +475,7 @@ def propose_for_cluster(
     if groups is None:
         return []
     return build_proposals_from_partition(
+        check_id=check_id,
         cluster_id=cluster_id,
         members=members,
         groups=groups,
@@ -545,6 +547,22 @@ def _mark_cleanup_review_succeeded(engine: Any, *, review_id: str) -> None:
             return
         review.status = "succeeded"
         review.updated_at = datetime.now(UTC)
+        log_stylebook_activity_safe(
+            session,
+            stylebook_id=int(review.stylebook_id),
+            actor_type="system",
+            source="cleanup_ai",
+            event_type=EVENT_AI_REVIEW_COMPLETED,
+            entity_type="check",
+            entity_id=str(review.check_id),
+            payload_json={
+                "review_id": str(review.id),
+                "cluster_count": int(review.cluster_count),
+                "processed_cluster_count": int(review.processed_cluster_count),
+                "proposal_count": int(review.proposal_count),
+                "status": "succeeded",
+            },
+        )
         session.add(review)
         session.commit()
 

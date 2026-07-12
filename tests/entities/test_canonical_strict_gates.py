@@ -12,6 +12,8 @@ from backfield_db import (
 )
 from backfield_entities.canonical.jurisdiction import (
     container_admin_query_from_components,
+    district_kind_keyword_from_text,
+    district_kind_keywords_conflict,
     geocode_components_vs_formatted_address_mismatch,
     jurisdiction_from_components,
     parse_jurisdiction_from_formatted_address,
@@ -439,6 +441,109 @@ def test_decide_preflight_defers_on_geocode_state_mismatch(monkeypatch: pytest.M
             isinstance(r, dict) and r.get("code") == "geocode_state_mismatch"
             for r in plan.resolution_reasons
         )
+
+
+@pytest.mark.parametrize(
+    ("text", "expect"),
+    [
+        ("13th subcircuit, Cook County, IL (region estimate)", "judicial"),
+        ("1st Judicial Subcircuit, IL", "judicial"),
+        ("Congressional District 13, IL", "us_house"),
+        ("Illinois's 9th Congressional District (region estimate)", "us_house"),
+        ("Ward 15, Chicago, IL", "ward"),
+        ("State Senate District 42, IL", "state_senate"),
+        ("State House District 12, IL", "state_house"),
+        ("Chicago, IL", None),
+        ("Cook County, IL", None),
+        ("", None),
+    ],
+)
+def test_district_kind_keyword_from_text(text: str, expect: str | None) -> None:
+    assert district_kind_keyword_from_text(text) == expect
+
+
+def test_district_kind_keywords_conflict_requires_both_sides() -> None:
+    # Substrate carries conflicting evidence (misnamed congressional vs subcircuit address).
+    assert district_kind_keywords_conflict(
+        (
+            "Congressional District 13, Illinois, US",
+            "13th subcircuit, Cook County, IL (region estimate)",
+        ),
+        ("Congressional District 13, IL",),
+    )
+    # Same kind on both sides: no conflict.
+    assert not district_kind_keywords_conflict(
+        ("Illinois's 9th Congressional District, IL", None),
+        ("Congressional District 9, IL",),
+    )
+    # One side without a kind keyword: no conflict.
+    assert not district_kind_keywords_conflict(
+        ("13th subcircuit, Cook County, IL", None),
+        ("Cook County, IL",),
+    )
+
+
+def test_decide_subcircuit_does_not_autolink_to_congressional_district(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A misnamed judicial-subcircuit row must not link a congressional district canonical."""
+    monkeypatch.setenv("BACKFIELD_STRICT_CANONICAL_GATES", "1")
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="strict-gates-subcircuit")
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Congressional District 13, IL",
+            slug="congressional-district-13-il",
+            location_type="political_district",
+            subdivision_code="IL",
+            country_code="US",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        cid = str(canon.id)
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=cid,
+                alias_text="Congressional District 13, IL",
+                normalized_alias="congressional district 13, il",
+                provenance="substrate_ingest",
+                suppressed=False,
+            )
+        )
+        session.commit()
+        loc = SubstrateLocation(
+            project_id=1,
+            name="Congressional District 13, Illinois, US",
+            normalized_name="congressional district 13, illinois, us",
+            location_type="political_district",
+            status="resolved",
+            canonical_link_status="unlinked",
+            formatted_address="13th subcircuit, Cook County, IL (region estimate)",
+            source_details_json={
+                "place_extract_components": {
+                    "city": "13th subcircuit",
+                    "county": "Cook County",
+                    "state": {"abbr": "IL"},
+                    "country": {"abbr": "US"},
+                }
+            },
+            identity_fingerprint="fp-strict-subcircuit",
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+        plan = decide_location_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="areas.other",
+            location=loc,
+            entry={"components": loc.source_details_json["place_extract_components"]},
+        )
+        assert plan.decision.value != "link_existing"
+        assert plan.existing_canonical_id is None
 
 
 def test_decide_city_does_not_autolink_to_place_canonical(monkeypatch: pytest.MonkeyPatch) -> None:

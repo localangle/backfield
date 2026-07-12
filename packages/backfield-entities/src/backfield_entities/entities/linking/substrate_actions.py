@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocation
-from sqlmodel import Session, col, func, select
+from sqlmodel import Session, col, select
 
 from backfield_entities.canonical.link import (
     CANONICAL_LINK_LINKED,
@@ -13,7 +13,10 @@ from backfield_entities.canonical.link import (
 )
 from backfield_entities.canonical.link_matrix import link_pair_allowed
 from backfield_entities.canonical.retrieval import retrieve_candidate_canonical_ids
-from backfield_entities.entities.location.persist import refresh_aliases_for_linked_location
+from backfield_entities.entities.location.persist import (
+    normalized_alias_variants,
+    refresh_aliases_for_linked_location,
+)
 from backfield_entities.entities.location.policy import (
     find_existing_canonical_id_by_alias,
     rank_scored_canonical_recall_matches,
@@ -68,33 +71,41 @@ def delete_canonical_alias_if_no_other_linked_substrate(
     normalized_name: str,
     exclude_substrate_location_id: int,
 ) -> bool:
-    """Delete non-suppressed alias when no other linked substrate shares that normalized name."""
+    """Delete non-suppressed alias variants no other linked substrate still covers.
+
+    Prunes every normalized variant of ``normalized_name`` (including the loose,
+    punctuation-stripped form) so unlink does not leave ghost aliases behind.
+    """
     norm = str(normalized_name).strip()
     if not norm:
         return False
-    cnt_stmt = (
-        select(func.count())
-        .select_from(SubstrateLocation)
-        .where(
+    variants = set(normalized_alias_variants(norm))
+    if not variants:
+        return False
+
+    other_names = session.exec(
+        select(SubstrateLocation.normalized_name).where(
             col(SubstrateLocation.stylebook_location_canonical_id) == str(canonical_id),
-            SubstrateLocation.normalized_name == norm,
             col(SubstrateLocation.id) != int(exclude_substrate_location_id),
         )
-    )
-    other = int(session.scalar(cnt_stmt) or 0)
-    if other > 0:
+    ).all()
+    covered: set[str] = set()
+    for other in other_names:
+        covered.update(normalized_alias_variants(str(other or "")))
+
+    to_delete = sorted(variants - covered)
+    if not to_delete:
         return False
-    alias = session.exec(
+    aliases = session.exec(
         select(StylebookLocationAlias).where(
             StylebookLocationAlias.location_canonical_id == str(canonical_id),
-            StylebookLocationAlias.normalized_alias == norm,
+            col(StylebookLocationAlias.normalized_alias).in_(to_delete),
             StylebookLocationAlias.suppressed.is_(False),
         )
-    ).first()
-    if alias is None:
-        return False
-    session.delete(alias)
-    return True
+    ).all()
+    for alias in aliases:
+        session.delete(alias)
+    return len(aliases) > 0
 
 
 def unlink_substrate_from_canonical(

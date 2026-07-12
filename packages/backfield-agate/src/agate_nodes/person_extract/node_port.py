@@ -6,7 +6,6 @@ import asyncio
 import json
 import logging
 import os
-import re
 import time
 from typing import Any
 
@@ -22,6 +21,10 @@ from agate_nodes.person_extract.compact_expand import (
 from agate_nodes.person_extract.compact_prompt import COMPACT_OUTPUT_INSTRUCTIONS
 from agate_nodes.person_extract.llm_person_parse import person_from_llm_entry
 from agate_nodes.person_extract.person_schemas import ExtractedPerson
+from agate_nodes.person_extract.prompt_template import (
+    resolve_person_extract_prompt,
+    substitute_prompt_placeholders,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -113,22 +116,11 @@ class PersonExtractNode:
         return current
 
     def _build_prompt(self, input_dict: dict[str, Any], prompt_template: str) -> str:
-        esc_open = "___ESCAPED_OPEN_BRACE___"
-        esc_close = "___ESCAPED_CLOSE_BRACE___"
-        temp_template = prompt_template.replace("{{", esc_open).replace("}}", esc_close)
-        placeholders = re.findall(r"\{([^}]+)\}", temp_template)
-        prompt = temp_template
-        for placeholder in placeholders:
-            placeholder_key = placeholder.strip()
-            value = self._extract_json_path(input_dict, placeholder_key)
-            if isinstance(value, (dict, list)):
-                serialized = json.dumps(value, indent=2)
-            elif isinstance(value, str):
-                serialized = value
-            else:
-                serialized = json.dumps(value)
-            prompt = prompt.replace(f"{{{placeholder}}}", serialized)
-        return prompt.replace(esc_open, "{{").replace(esc_close, "}}")
+        return substitute_prompt_placeholders(
+            prompt_template,
+            input_dict,
+            extract_json_path=self._extract_json_path,
+        )
 
     def _flatten_input(self, input_dict: dict[str, Any]) -> dict[str, Any]:
         return flatten_upstream_inputs(input_dict)
@@ -159,10 +151,10 @@ class PersonExtractNode:
         flattened_input = self._flatten_input(input_dict)
         text = self._resolve_text(input_dict, flattened_input)
 
-        prompt_template = (
-            params.prompt.strip()
-            if params.prompt and params.prompt.strip()
-            else self._load_prompt_template(params.prompt_file)
+        bundled_prompt = self._load_prompt_template(params.prompt_file)
+        prompt_template = resolve_person_extract_prompt(
+            bundled=bundled_prompt,
+            custom=params.prompt,
         )
         prompt = self._build_prompt(flattened_input, prompt_template)
         use_compact = params.output_mode == "compact"

@@ -33,26 +33,37 @@ import {
   deleteEmptyCleanupLocationCanonical,
   deleteEmptyCleanupOrganizationCanonical,
   deleteEmptyCleanupPersonCanonical,
+  deleteCanonicalPerson,
+  deleteCanonicalOrganization,
   dismissCleanupIssue,
   getCleanupCheckResults,
+  getLatestCleanupCheckRun,
+  listCleanupChecks,
   mergeCleanupLocationCanonical,
   mergeCleanupOrganizationCanonical,
   mergeCleanupPersonCanonical,
   acceptCleanupAiProposal,
   rejectCleanupAiProposal,
-  refreshPersistedCleanupCheckCount,
   type CleanupAiProposal,
+  type CleanupCheckRunStatus,
   type CleanupLocationIssue,
   type CleanupMismatchIssue,
+  type CleanupQuestionableOrganizationIssue,
+  type CleanupQuestionablePersonIssue,
   type PaginatedDuplicateClustersResponse,
   type PaginatedCleanupListResults,
   type PaginatedCleanupLocationIssuesResponse,
   type PaginatedCleanupMismatchIssuesResponse,
+  type PaginatedCleanupQuestionableOrganizationsResponse,
+  type PaginatedCleanupQuestionablePeopleResponse,
 } from "@/lib/api"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 
 const PER_PAGE = 25
+type CleanupQuestionableCanonicalIssue =
+  | CleanupQuestionableOrganizationIssue
+  | CleanupQuestionablePersonIssue
 
 async function mergeCleanupCanonical(
   entityType: CleanupEntityType,
@@ -112,6 +123,7 @@ export default function CleanupCheck() {
   const urlQuery = searchParams.get("q") ?? ""
   const [searchQuery, setSearchQuery] = useState(() => urlQuery)
   const [loading, setLoading] = useState(true)
+  const [checkRunStatus, setCheckRunStatus] = useState<CleanupCheckRunStatus>("never_run")
   const [page, setPage] = useState(1)
   const [clusterResults, setClusterResults] =
     useState<PaginatedDuplicateClustersResponse | null>(null)
@@ -121,6 +133,10 @@ export default function CleanupCheck() {
   const dismissedCleanupPairsRef = useRef<Set<string>>(new Set())
   const [aiDialogOpen, setAiDialogOpen] = useState(false)
   const [stoppingAiReview, setStoppingAiReview] = useState(false)
+  const [questionableBulkAction, setQuestionableBulkAction] = useState<
+    "keep-all" | "delete-all" | null
+  >(null)
+  const questionableBulkActionRef = useRef<"keep-all" | "delete-all" | null>(null)
   const isClusterCheck = config?.kind === "cluster"
 
   const {
@@ -162,7 +178,7 @@ export default function CleanupCheck() {
   const refreshHubCheckCount = useCallback(async () => {
     if (!stylebookSlug || !config) return
     try {
-      await refreshPersistedCleanupCheckCount({
+      await listCleanupChecks({
         stylebookSlug,
         checkId: config.id,
         project: projectFilterSlug || undefined,
@@ -170,6 +186,21 @@ export default function CleanupCheck() {
     } catch {
       // Hub refreshes on next visit; ignore background sync failures.
     }
+  }, [stylebookSlug, config, projectFilterSlug])
+
+  useEffect(() => {
+    if (!stylebookSlug || !config) return
+    void getLatestCleanupCheckRun({
+      stylebookSlug,
+      checkId: config.id,
+      project: projectFilterSlug || undefined,
+    })
+      .then((run) => {
+        setCheckRunStatus(run?.status ?? "never_run")
+      })
+      .catch(() => {
+        setCheckRunStatus("never_run")
+      })
   }, [stylebookSlug, config, projectFilterSlug])
 
   useEffect(() => {
@@ -376,6 +407,164 @@ export default function CleanupCheck() {
     [stylebookSlug, config, showError, refreshHubCheckCount],
   )
 
+  const isQuestionableCanonicalCheck =
+    config?.id === "questionable-organization-canonicals" ||
+    config?.id === "questionable-person-canonicals"
+  const questionableCanonicalResults = useMemo(() => {
+    if (!isQuestionableCanonicalCheck) return null
+    return listResults as
+      | PaginatedCleanupQuestionableOrganizationsResponse
+      | PaginatedCleanupQuestionablePeopleResponse
+      | null
+  }, [isQuestionableCanonicalCheck, listResults])
+
+  const loadAllQuestionableCanonicals = useCallback(async () => {
+    if (!stylebookSlug || !config) return []
+    const rows: CleanupQuestionableCanonicalIssue[] = []
+    let pageNum = 1
+    let hasNext = true
+    while (hasNext) {
+      const response = await getCleanupCheckResults({
+        stylebookSlug,
+        checkId: config.id,
+        project: projectFilterSlug || undefined,
+        page: pageNum,
+        perPage: 200,
+      })
+      const paginated = response as
+        | PaginatedCleanupQuestionableOrganizationsResponse
+        | PaginatedCleanupQuestionablePeopleResponse
+      rows.push(...paginated.canonicals)
+      hasNext = paginated.has_next
+      pageNum += 1
+    }
+    return rows
+  }, [stylebookSlug, config, projectFilterSlug])
+
+  const handleKeepQuestionableCanonical = useCallback(
+    async (canonicalId: string) => {
+      await handleDismissListIssue(canonicalId)
+    },
+    [handleDismissListIssue],
+  )
+
+  const handleDeleteQuestionableCanonical = useCallback(
+    async (canonicalId: string) => {
+      if (!stylebookSlug || !config) return
+      try {
+        if (config.entityType === "person") {
+          await deleteCanonicalPerson(canonicalId, stylebookSlug)
+        } else {
+          await deleteCanonicalOrganization(canonicalId, stylebookSlug)
+        }
+        setListResults((prev) =>
+          prev ? applyDismissCanonicalToListResults(prev, canonicalId) : prev,
+        )
+        void refreshHubCheckCount()
+      } catch (error) {
+        showError(
+          error instanceof Error
+            ? error.message
+            : `Failed to delete ${entitySingular(config.entityType)}`,
+        )
+      }
+    },
+    [stylebookSlug, config, showError, refreshHubCheckCount],
+  )
+
+  const handleKeepAllQuestionableCanonicals = useCallback(async () => {
+    if (!stylebookSlug || !config || questionableBulkActionRef.current !== null) return
+    questionableBulkActionRef.current = "keep-all"
+    setQuestionableBulkAction("keep-all")
+    try {
+      const rows = await loadAllQuestionableCanonicals()
+      if (rows.length === 0) return
+      for (const row of rows) {
+        await dismissCleanupIssue({
+          stylebookSlug,
+          checkId: config.id,
+          canonicalId: row.id,
+        })
+      }
+      const dismissedIds = new Set(rows.map((row) => row.id))
+      setListResults((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          canonicals: (prev.canonicals as CleanupQuestionableCanonicalIssue[]).filter(
+            (row) => !dismissedIds.has(row.id),
+          ),
+          total: Math.max(0, prev.total - rows.length),
+        } as PaginatedCleanupListResults
+      })
+      void refreshHubCheckCount()
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Failed to keep records")
+    } finally {
+      questionableBulkActionRef.current = null
+      setQuestionableBulkAction(null)
+    }
+  }, [stylebookSlug, config, loadAllQuestionableCanonicals, showError, refreshHubCheckCount])
+
+  const handleDeleteAllQuestionableCanonicals = useCallback(async () => {
+    if (!stylebookSlug || !config || questionableBulkActionRef.current !== null) return
+    questionableBulkActionRef.current = "delete-all"
+    setQuestionableBulkAction("delete-all")
+    try {
+      const rows = await loadAllQuestionableCanonicals()
+      if (rows.length === 0) return
+      let deleted = 0
+      const deletedIds = new Set<string>()
+      const failures: string[] = []
+      for (const row of rows) {
+        try {
+          if (config.entityType === "person") {
+            await deleteCanonicalPerson(row.id, stylebookSlug)
+          } else {
+            await deleteCanonicalOrganization(row.id, stylebookSlug)
+          }
+          deleted += 1
+          deletedIds.add(row.id)
+        } catch (error) {
+          failures.push(
+            error instanceof Error ? error.message : `Failed to delete ${row.label}`,
+          )
+        }
+      }
+      if (deletedIds.size > 0) {
+        setListResults((prev) => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            canonicals: (prev.canonicals as CleanupQuestionableCanonicalIssue[]).filter(
+              (row) => !deletedIds.has(row.id),
+            ),
+            total: Math.max(0, prev.total - deletedIds.size),
+          } as PaginatedCleanupListResults
+        })
+      }
+      void refreshHubCheckCount()
+      if (deleted > 0 && failures.length === 0) {
+        return
+      }
+      if (deleted === 0 && failures.length > 0) {
+        showError(failures[0])
+        return
+      }
+      if (failures.length > 0) {
+        const singular = entitySingular(config.entityType)
+        showError(
+          `Deleted ${deleted} ${singular}${deleted === 1 ? "" : "s"}. ${failures.length} could not be deleted.`,
+        )
+      }
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Failed to delete records")
+    } finally {
+      questionableBulkActionRef.current = null
+      setQuestionableBulkAction(null)
+    }
+  }, [stylebookSlug, config, loadAllQuestionableCanonicals, showError, refreshHubCheckCount])
+
   const applyAcceptedMergeProposal = useCallback(
     (proposal: CleanupAiProposal) => {
       const targetCanonicalId = proposal.target_canonical_id
@@ -515,20 +704,40 @@ export default function CleanupCheck() {
     return { page: 1, total: 0, hasNext: false, hasPrev: false }
   }, [clusterResults, listResults])
 
+  const handleRefreshEmptyPage = useCallback(() => {
+    if (!clusterResults) {
+      void loadResults()
+      return
+    }
+    const lastPage = Math.max(1, Math.ceil(clusterResults.total / PER_PAGE))
+    if (clusterResults.page > lastPage) {
+      setPage(lastPage)
+      return
+    }
+    void loadResults()
+  }, [clusterResults, loadResults])
+
   const showAiReviewControls =
     canEdit &&
     isClusterCheck &&
+    checkRunStatus === "succeeded" &&
     (loading || pagination.total > 0 || aiReviewActive)
+
+  const needsRun =
+    checkRunStatus === "never_run" ||
+    checkRunStatus === "queued" ||
+    checkRunStatus === "running" ||
+    checkRunStatus === "failed"
 
   if (!config) {
     return (
       <div className="space-y-4">
-        <p className="text-muted-foreground">Unknown cleanup check.</p>
+        <p className="text-muted-foreground">Unknown review.</p>
         <Link
           to={`${catalogBasePath}/cleanup${catalogScopeSuffix}`}
           className="text-primary hover:underline"
         >
-          Back to cleanup
+          Back to review
         </Link>
       </div>
     )
@@ -542,7 +751,7 @@ export default function CleanupCheck() {
         <Breadcrumbs
           items={[
             { label: crumbRoot.label, to: `${catalogBasePath}${catalogScopeSuffix}` },
-            { label: "Checks", to: cleanupHubPath },
+            { label: "Review", to: cleanupHubPath },
             { label: config.title },
           ]}
           className="mb-3"
@@ -625,6 +834,19 @@ export default function CleanupCheck() {
           <Loader2 className="h-5 w-5 animate-spin" />
           Loading…
         </div>
+      ) : needsRun ? (
+        <p className="text-muted-foreground py-8 text-center">
+          {checkRunStatus === "running" || checkRunStatus === "queued"
+            ? "This review is running. Results will appear here when it finishes."
+            : checkRunStatus === "failed"
+              ? "This review failed. Run it again from the Review tab to see candidates."
+              : "Run this review from the Review tab to see candidates."}
+        </p>
+      ) : config.kind === "cluster" &&
+        clusterResults &&
+        clusterResults.clusters.length === 0 &&
+        clusterResults.total > 0 ? (
+        <EmptyCleanupPageAction itemLabel="clusters" onRefresh={handleRefreshEmptyPage} />
       ) : config.kind === "cluster" ? (
         <DuplicateClusterList
           clusters={clusterResults?.clusters ?? []}
@@ -645,6 +867,19 @@ export default function CleanupCheck() {
           locationDetailHref={detailHref}
           canEdit={canEdit}
           onDismiss={canEdit ? handleDismissListIssue : undefined}
+        />
+      ) : isQuestionableCanonicalCheck ? (
+        <QuestionableCanonicalsList
+          canonicals={questionableCanonicalResults?.canonicals ?? []}
+          totalOpen={questionableCanonicalResults?.total ?? 0}
+          entityType={entityType}
+          detailHref={detailHref}
+          canEdit={canEdit}
+          bulkAction={questionableBulkAction}
+          onKeep={canEdit ? handleKeepQuestionableCanonical : undefined}
+          onDelete={canEdit ? handleDeleteQuestionableCanonical : undefined}
+          onKeepAll={canEdit ? handleKeepAllQuestionableCanonicals : undefined}
+          onDeleteAll={canEdit ? handleDeleteAllQuestionableCanonicals : undefined}
         />
       ) : (
         <MismatchedLinksList
@@ -676,6 +911,25 @@ export default function CleanupCheck() {
           }
         />
       ) : null}
+    </div>
+  )
+}
+
+function EmptyCleanupPageAction({
+  itemLabel,
+  onRefresh,
+}: {
+  itemLabel: string
+  onRefresh: () => void
+}) {
+  return (
+    <div className="flex flex-col items-center gap-3 py-8 text-center">
+      <p className="text-muted-foreground">
+        This page is clear, but there may be more {itemLabel} to review.
+      </p>
+      <Button type="button" variant="outline" onClick={onRefresh}>
+        Refresh and show more
+      </Button>
     </div>
   )
 }
@@ -818,6 +1072,251 @@ function MismatchedLinksList({
           })}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+function questionableCategoryLabel(category: string, entityType: CleanupEntityType): string {
+  if (entityType === "person") {
+    switch (category) {
+      case "organization_like":
+        return "Likely an organization"
+      case "role_phrase":
+        return "Likely an unnamed role"
+      default:
+        return "Likely not a person"
+    }
+  }
+  switch (category) {
+    case "person_like":
+      return "Likely a person"
+    case "place_like":
+      return "Likely a place"
+    case "law_policy_program":
+      return "Likely a law or program"
+    case "event_award_history":
+      return "Likely an event or award"
+    case "generic_group":
+      return "Likely a broad group or descriptor"
+    case "work_or_topic":
+      return "Likely a film, publication, or topic"
+    default:
+      return "Likely not an organization"
+  }
+}
+
+function questionableMentionPreview(mentions: string[]): string {
+  const shown = mentions.filter(Boolean)
+  if (shown.length === 0) {
+    return "No sample mentions"
+  }
+  return shown.join("; ")
+}
+
+function QuestionableCanonicalsList({
+  canonicals,
+  totalOpen,
+  entityType,
+  detailHref,
+  canEdit = false,
+  bulkAction = null,
+  onKeep,
+  onDelete,
+  onKeepAll,
+  onDeleteAll,
+}: {
+  canonicals: CleanupQuestionableCanonicalIssue[]
+  totalOpen: number
+  entityType: CleanupEntityType
+  detailHref: (canonicalId: string) => string
+  canEdit?: boolean
+  bulkAction?: "keep-all" | "delete-all" | null
+  onKeep?: (canonicalId: string) => void | Promise<void>
+  onDelete?: (canonicalId: string) => void | Promise<void>
+  onKeepAll?: () => void | Promise<void>
+  onDeleteAll?: () => void | Promise<void>
+}) {
+  const showActions = canEdit && onKeep && onDelete
+  const showBulkActions = showActions && onKeepAll && onDeleteAll && totalOpen > 0
+  const bulkBusy = bulkAction !== null
+  const keepingAll = bulkAction === "keep-all"
+  const deletingAll = bulkAction === "delete-all"
+
+  if (canonicals.length === 0) {
+    return (
+      <p className="text-muted-foreground py-8 text-center">
+        {entityType === "person"
+          ? "No questionable person canonicals in this stylebook."
+          : "No questionable organization canonicals in this stylebook."}
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {showBulkActions ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={bulkBusy}
+            onClick={() => void onKeepAll()}
+          >
+            {keepingAll ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            ) : null}
+            <span className={keepingAll ? "ml-1.5" : undefined}>
+              {keepingAll ? "Keeping all…" : `Keep all (${totalOpen.toLocaleString()})`}
+            </span>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            disabled={bulkBusy}
+            onClick={() => void onDeleteAll()}
+          >
+            {deletingAll ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            ) : null}
+            <span className={deletingAll ? "ml-1.5" : undefined}>
+              {deletingAll ? "Deleting all…" : `Delete all (${totalOpen.toLocaleString()})`}
+            </span>
+          </Button>
+        </div>
+      ) : null}
+      <div className="rounded-lg border overflow-x-auto">
+      <table className="w-full min-w-[1100px] table-fixed text-sm">
+        <colgroup>
+          {showActions ? (
+            <>
+              <col style={{ width: "24%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "22%" }} />
+              <col style={{ width: "24%" }} />
+              <col style={{ width: "6%" }} />
+              <col style={{ width: "6%" }} />
+              <col style={{ width: "6%" }} />
+            </>
+          ) : (
+            <>
+              <col style={{ width: "27%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "27%" }} />
+              <col style={{ width: "22%" }} />
+              <col style={{ width: "5%" }} />
+              <col style={{ width: "5%" }} />
+            </>
+          )}
+        </colgroup>
+        <thead className="bg-muted/50 text-left">
+          <tr>
+            <th className="px-3 py-3 font-medium min-w-0">Name</th>
+            <th className="px-3 py-3 font-medium min-w-0">Issue</th>
+            <th className="px-3 py-3 font-medium min-w-0">Why flagged</th>
+            <th className="px-3 py-3 font-medium min-w-0">Sample mentions</th>
+            <th className="px-3 py-3 font-medium text-right">Linked</th>
+            <th className="px-3 py-3 font-medium text-right">Mentions</th>
+            {showActions ? (
+              <th className="px-3 py-3 font-medium text-right">Action</th>
+            ) : null}
+          </tr>
+        </thead>
+        <tbody>
+          {canonicals.map((canonical) => {
+            const mentionPreview = questionableMentionPreview(canonical.sample_mentions ?? [])
+            const issueLabel = questionableCategoryLabel(canonical.category, entityType)
+            return (
+              <tr key={canonical.id} className="border-t hover:bg-muted/30">
+                <td className="px-3 py-3 align-top min-w-0">
+                  <Link
+                    to={detailHref(canonical.id)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-primary hover:underline block whitespace-normal break-words leading-snug"
+                    title={canonical.label}
+                  >
+                    {canonical.label}
+                  </Link>
+                  <div className="mt-1 text-xs text-muted-foreground whitespace-normal break-words leading-snug">
+                    {entityType === "person" && canonical.person_type
+                      ? placeExtractTypeLabel(canonical.person_type)
+                      : entityType === "organization" && canonical.organization_type
+                        ? placeExtractTypeLabel(canonical.organization_type)
+                      : "—"}
+                  </div>
+                </td>
+                <td className="px-3 py-3 align-top text-muted-foreground min-w-0">
+                  <span className="block whitespace-normal break-words leading-snug" title={issueLabel}>
+                    {issueLabel}
+                  </span>
+                  <div className="mt-1 text-xs whitespace-normal">
+                    {canonical.confidence} confidence
+                  </div>
+                </td>
+                <td className="px-3 py-3 align-top text-muted-foreground min-w-0">
+                  <span
+                    className="block whitespace-normal break-words leading-snug"
+                    title={canonical.explanation}
+                  >
+                    {canonical.explanation}
+                  </span>
+                </td>
+                <td className="px-3 py-3 align-top text-muted-foreground min-w-0">
+                  {(canonical.sample_mentions ?? []).filter(Boolean).length > 0 ? (
+                    <div className="space-y-1">
+                      {(canonical.sample_mentions ?? []).filter(Boolean).map((mention, index) => (
+                        <p
+                          key={`${canonical.id}-mention-${index}`}
+                          className="whitespace-normal break-words leading-snug"
+                        >
+                          {mention}
+                        </p>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="block whitespace-normal">No sample mentions</span>
+                  )}
+                </td>
+                <td className="px-3 py-3 align-top text-right tabular-nums">
+                  {canonical.linked_substrate_count ?? 0}
+                </td>
+                <td className="px-3 py-3 align-top text-right tabular-nums">
+                  {canonical.mention_count ?? 0}
+                </td>
+                {showActions ? (
+                  <td className="px-2 py-3 align-top text-right whitespace-nowrap">
+                    <div className="inline-flex flex-col items-stretch justify-end gap-1.5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={bulkBusy}
+                        onClick={() => void onKeep(canonical.id)}
+                      >
+                        Keep
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        disabled={bulkBusy}
+                        onClick={() => void onDelete(canonical.id)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </td>
+                ) : null}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      </div>
     </div>
   )
 }

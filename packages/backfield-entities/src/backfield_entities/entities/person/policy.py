@@ -17,9 +17,11 @@ from backfield_entities.entities.person.recall import (
     retrieve_person_canonical_candidates,
 )
 from backfield_entities.entities.person.review import (
+    REASON_NOT_A_PERSON,
     REASON_PSEUDONYM,
     REVIEW_HANDLING_AUTO_DEFER,
     default_review_message,
+    looks_like_non_person_entity,
     person_name_is_descriptive_pseudonym,
     person_review_blocks_auto_materialize,
     person_review_reason_code_from_source,
@@ -211,6 +213,26 @@ def _defer_review_reason_for_person(
     return code, message
 
 
+def _defer_plan_for_non_person_entity(person: SubstratePerson) -> CanonicalPersistPlan | None:
+    """Catch mis-tagged institutions/laws/media already in the queue without review flags."""
+    person_name = str(person.name or person.normalized_name or "").strip()
+    if not person_name or not looks_like_non_person_entity(
+        person_name,
+        title=person.title,
+        affiliation=person.affiliation,
+    ):
+        return None
+    return CanonicalPersistPlan(
+        decision=CanonicalPersistDecision.DEFER,
+        resolution_reasons=(
+            review_reason_dict(
+                code=REASON_NOT_A_PERSON,
+                message=default_review_message(REASON_NOT_A_PERSON),
+            ),
+        ),
+    )
+
+
 def _defer_plan_for_review_only_cases(person: SubstratePerson) -> CanonicalPersistPlan | None:
     """Defer without recall/adjudication (pseudonym, first-name-only, child, animal)."""
     details = person_source_details(person)
@@ -295,11 +317,17 @@ def person_may_materialize_canonical_after_recall(person: SubstratePerson) -> bo
     """True when ``MATERIALIZE_NEW`` is allowed after LLM declines linking recalled canonicals.
 
     Blocked for PersonExtract review routes that require human confirmation before creating
-    a canonical (stage names, inferred surnames, first-name-only, child, animal).
+    a canonical (stage names, inferred surnames, first-name-only, child, animal, not-a-person).
     """
     details = person_source_details(person)
     code = person_review_reason_code_from_source(details)
     person_name = str(person.name or person.normalized_name or "")
+    if looks_like_non_person_entity(
+        person_name,
+        title=person.title,
+        affiliation=person.affiliation,
+    ):
+        return False
     if person_review_blocks_auto_materialize(
         reason_code=code,
         source_details=details,
@@ -329,6 +357,9 @@ def decide_person_canonical_persist_plan(
     review_plan = _defer_plan_for_review_only_cases(person)
     if review_plan is not None:
         return review_plan
+    non_person_plan = _defer_plan_for_non_person_entity(person)
+    if non_person_plan is not None:
+        return non_person_plan
 
     details = person_source_details(person)
     review_code = person_review_reason_code_from_source(details)

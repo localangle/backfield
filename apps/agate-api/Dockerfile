@@ -19,6 +19,7 @@ COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-agate /app/packages/backfield-agate
 COPY packages/backfield-entities /app/packages/backfield-entities
 COPY packages/backfield-auth /app/packages/backfield-auth
+COPY packages/backfield-cli /app/packages/backfield-cli
 COPY apps/agate-api /app/apps/agate-api
 
 RUN uv pip install --system /app/packages/backfield-db \
@@ -26,13 +27,16 @@ RUN uv pip install --system /app/packages/backfield-db \
     && uv pip install --system /app/packages/backfield-entities \
     && uv pip install --system /app/packages/backfield-agate \
     && uv pip install --system /app/packages/backfield-auth \
+    && uv pip install --system "rich>=13.0.0" \
+    && uv pip install --system --no-deps --no-sources /app/packages/backfield-cli \
     && uv pip install --system /app/apps/agate-api
 
 FROM python:3.11-slim AS prod
 
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    BACKFIELD_ALEMBIC_ROOT=/app/packages/backfield-db
 
 ARG APP_VERSION=0.0.0-dev
 ARG GIT_SHA=unknown
@@ -47,6 +51,10 @@ RUN apt-get update \
 
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
+# Alembic assets are not packaged in the backfield-db wheel; copy them explicitly
+# so backfield-migrate can resolve alembic.ini via BACKFIELD_ALEMBIC_ROOT.
+COPY --from=builder /app/packages/backfield-db/alembic.ini /app/packages/backfield-db/alembic.ini
+COPY --from=builder /app/packages/backfield-db/alembic /app/packages/backfield-db/alembic
 
 EXPOSE 8000
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

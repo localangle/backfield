@@ -13,6 +13,7 @@ const tabClass = ({ isActive }: { isActive: boolean }) =>
 export function StylebookHomeTabs() {
   const { catalogBasePath, catalogScopeSuffix } = useProjectCatalogScope()
   const cleanupPath = `${catalogBasePath}/cleanup${catalogScopeSuffix}`
+  const recentPath = `${catalogBasePath}/recent${catalogScopeSuffix}`
 
   return (
     <nav className="flex gap-1 border-b border-border" aria-label="Stylebook home sections">
@@ -20,7 +21,10 @@ export function StylebookHomeTabs() {
         Entities
       </NavLink>
       <NavLink to={cleanupPath} className={tabClass}>
-        Checks
+        Review
+      </NavLink>
+      <NavLink to={recentPath} className={tabClass}>
+        Recent
       </NavLink>
     </nav>
   )

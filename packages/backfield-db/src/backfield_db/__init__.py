@@ -23,10 +23,13 @@ from backfield_db.models import (
     BackfieldWorkspace,
     BackfieldWorkspaceMembership,
     Stylebook,
+    StylebookActivity,
     StylebookBundleJob,
     StylebookCandidateAiReview,
     StylebookCleanupAiProposal,
     StylebookCleanupAiReview,
+    StylebookCleanupCheckResult,
+    StylebookCleanupCheckRun,
     StylebookCleanupDismissal,
     StylebookConnection,
     StylebookLocationAlias,
@@ -58,7 +61,13 @@ from backfield_db.semantic_document_models import (
     SubstrateOrganizationSemanticDocument,
     SubstratePersonSemanticDocument,
 )
-from backfield_db.session import get_engine, get_session_factory, get_session_generator, init_db
+from backfield_db.session import (
+    get_engine,
+    get_session_factory,
+    get_session_generator,
+    init_db,
+    null_pool_session,
+)
 
 __all__ = [
     "AgateGraph",
@@ -81,9 +90,12 @@ __all__ = [
     "BackfieldWorkspace",
     "BackfieldWorkspaceMembership",
     "Stylebook",
+    "StylebookActivity",
     "StylebookBundleJob",
     "StylebookCleanupAiProposal",
     "StylebookCleanupAiReview",
+    "StylebookCleanupCheckResult",
+    "StylebookCleanupCheckRun",
     "StylebookCandidateAiReview",
     "StylebookCleanupDismissal",
     "StylebookMembership",
@@ -121,4 +133,5 @@ __all__ = [
     "get_session_factory",
     "get_session_generator",
     "init_db",
+    "null_pool_session",
 ]

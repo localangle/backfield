@@ -16,6 +16,7 @@ from backfield_ai.embeddings import (
     EmbeddingConfigurationError,
     EmbeddingModelKindError,
     assert_model_config_is_embedding,
+    embed_texts_for_model_config,
     embed_texts_sync,
 )
 
@@ -123,3 +124,41 @@ def test_embed_texts_sync_estimates_cost_via_litellm(
     assert result.estimated_cost == Decimal("0.00002")
     assert result.cost_estimate_source == COST_ESTIMATE_SOURCE_LITELLM
     assert result.cost_estimate_incomplete is False
+
+
+@patch("backfield_ai.embeddings.embed_texts_sync")
+@patch("backfield_ai.embeddings._resolve_embedding_auth")
+def test_embed_texts_for_model_config_does_not_hold_session_during_sync(
+    mock_resolve: MagicMock,
+    mock_sync: MagicMock,
+) -> None:
+    from backfield_ai.embeddings import EmbeddingModelAuth
+
+    mock_resolve.return_value = EmbeddingModelAuth(
+        litellm_model="openai/text-embedding-3-small",
+        api_key="sk-test",
+        api_base=None,
+        model_config_id="cfg-embed",
+    )
+    mock_sync.return_value = MagicMock(batch_error=None, items=[])
+
+    embed_texts_for_model_config(
+        None,
+        project_id=1,
+        model_config_id="cfg-embed",
+        texts=["hello"],
+    )
+
+    mock_resolve.assert_called_once_with(
+        None,
+        project_id=1,
+        model_config_id="cfg-embed",
+    )
+    mock_sync.assert_called_once_with(
+        litellm_model="openai/text-embedding-3-small",
+        texts=["hello"],
+        api_key="sk-test",
+        api_base=None,
+        timeout=120.0,
+        model_config_id="cfg-embed",
+    )

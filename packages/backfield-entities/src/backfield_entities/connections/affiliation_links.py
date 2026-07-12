@@ -87,6 +87,7 @@ def infer_affiliation_person_organization_edges(
             proposal = AutoConnectionEdgeProposal(
                 from_entity_id=person.canonical_id,
                 to_entity_id=org.canonical_id,
+                description=f"{person.label} is affiliated with {org.label}.",
                 nature=nature,
                 confidence=AUTO_CONNECTION_MIN_CONFIDENCE,
                 quote=quote,
@@ -95,6 +96,7 @@ def infer_affiliation_person_organization_edges(
             validation = validate_auto_connection_candidate(
                 from_entity_type="person",
                 to_entity_type="organization",
+                description=proposal.description,
                 nature=proposal.nature,
                 confidence=float(proposal.confidence),
                 quote=proposal.quote,

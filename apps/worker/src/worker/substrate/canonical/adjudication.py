@@ -12,6 +12,7 @@ from backfield_db import StylebookLocationCanonical, SubstrateLocation
 from backfield_entities.canonical.jurisdiction import (
     district_identity_from_components,
     district_identity_key,
+    district_kind_keywords_conflict,
     place_extract_components_from_entry,
 )
 from backfield_entities.canonical.link_matrix import (
@@ -320,10 +321,29 @@ def resolve_location_adjudication_plan(
     ):
         return _reject_link_extra(outcome="content_sanity_coerced")
 
+    s_lt = (location.location_type or "").strip().lower()
+    c_lt = (canon_location_type or "").strip().lower()
+    if ("political_district" in (s_lt, c_lt)) and district_kind_keywords_conflict(
+        (str(location.name or ""), str(location.formatted_address or "")),
+        (str(canon_label or ""), str(canon_fa or "")),
+    ):
+        # e.g. a judicial "subcircuit" row must not link to a same-numbered
+        # congressional district / ward / state legislative district canonical.
+        return _reject_link_extra(
+            outcome="district_kind_mismatch_coerced",
+            district_detail={
+                "substrate_texts": [
+                    str(location.name or ""),
+                    str(location.formatted_address or ""),
+                ],
+                "canonical_label": str(canon_label),
+            },
+        )
+
     sub_key = district_identity_key(
         district_identity_from_components(place_extract_components_from_entry(location, None))
     )
-    if (location.location_type or "").strip().lower() == "political_district" and sub_key:
+    if s_lt == "political_district" and sub_key:
         ck = (canon_district_key or "").strip()
         if ck != sub_key:
             return _reject_link_extra(

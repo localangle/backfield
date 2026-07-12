@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Generator
 from typing import Any
 
@@ -12,8 +13,10 @@ from backfield_db import (
     BackfieldProject,
     BackfieldUser,
     Stylebook,
+    StylebookActivity,
     StylebookCleanupAiProposal,
     StylebookCleanupAiReview,
+    StylebookCleanupCheckRun,
     StylebookLocationCanonical,
     StylebookOrganizationCanonical,
     StylebookPersonCanonical,
@@ -53,6 +56,18 @@ def cleanup_client(
     monkeypatch.setattr(
         "stylebook_api.routers.stylebook_cleanup_ai_review.celery_app.send_task",
         lambda *_args, **_kwargs: None,
+    )
+
+    def _sync_cleanup_check_run_send_task(name, args=None, **_kwargs):
+        if name == "worker.tasks.execute_cleanup_check_run" and args:
+            from worker.tasks import execute_cleanup_check_run
+
+            monkeypatch.setattr("worker.tasks.get_engine", lambda: engine)
+            execute_cleanup_check_run(str(args[0]))
+
+    monkeypatch.setattr(
+        "stylebook_api.routers.stylebook_cleanup.celery_app.send_task",
+        _sync_cleanup_check_run_send_task,
     )
     import importlib
 
@@ -165,6 +180,22 @@ def cleanup_client(
                 label="City Hall",
             )
         )
+        s.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=sb_id,
+                slug="org-crossform-a",
+                label="Cook County State's Attorney's Office",
+                organization_type="government",
+            )
+        )
+        s.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=sb_id,
+                slug="org-crossform-b",
+                label="Office of the Cook County State's Attorney",
+                organization_type="government",
+            )
+        )
         s.commit()
         user_id = int(user.id)
 
@@ -187,6 +218,43 @@ def cleanup_client(
         app.dependency_overrides.clear()
 
 
+ALL_CLEANUP_CHECK_IDS = (
+    "duplicate-locations",
+    "missing-geometry-locations",
+    "mismatched-locations",
+    "duplicate-people",
+    "mismatched-people",
+    "questionable-person-canonicals",
+    "duplicate-organizations",
+    "mismatched-organizations",
+    "questionable-organization-canonicals",
+)
+STANDARD_CLEANUP_CHECK_IDS = tuple(
+    check_id
+    for check_id in ALL_CLEANUP_CHECK_IDS
+    if check_id
+    not in {
+        "questionable-organization-canonicals",
+        "questionable-person-canonicals",
+    }
+)
+
+
+def _start_cleanup_check(client: TestClient, check_id: str) -> dict[str, Any]:
+    response = client.post(f"/v1/stylebooks/default/cleanup/checks/{check_id}/runs")
+    assert response.status_code == 200
+    return response.json()
+
+
+def _run_cleanup_check(client: TestClient, check_id: str) -> dict[str, Any]:
+    return _start_cleanup_check(client, check_id)
+
+
+def _run_all_cleanup_checks(client: TestClient) -> None:
+    for check_id in STANDARD_CLEANUP_CHECK_IDS:
+        _run_cleanup_check(client, check_id)
+
+
 def test_list_cleanup_checks(cleanup_client: tuple[TestClient, Engine]) -> None:
     client, _engine = cleanup_client
     r = client.get("/v1/stylebooks/default/cleanup/checks")
@@ -194,39 +262,125 @@ def test_list_cleanup_checks(cleanup_client: tuple[TestClient, Engine]) -> None:
     body = r.json()
     assert "checks" in body
     ids = {check["id"] for check in body["checks"]}
-    assert ids == {
-        "duplicate-locations",
-        "missing-geometry-locations",
-        "mismatched-locations",
-        "duplicate-people",
-        "mismatched-people",
-        "duplicate-organizations",
-        "mismatched-organizations",
-    }
-    by_id = {check["id"]: check["count"] for check in body["checks"]}
-    assert by_id["duplicate-locations"] == 2
-    assert by_id["duplicate-people"] == 1
-    assert by_id["duplicate-organizations"] == 1
-    assert by_id["missing-geometry-locations"] == 6
-    assert by_id["mismatched-locations"] == 0
-    assert by_id["mismatched-people"] == 0
-    assert by_id["mismatched-organizations"] == 0
-    assert body["total_open"] == sum(by_id.values())
+    assert ids == set(ALL_CLEANUP_CHECK_IDS)
+    for check in body["checks"]:
+        assert check["status"] == "never_run"
+        assert check["count"] == 0
+    assert body["total_open"] == 0
+
+    _run_all_cleanup_checks(client)
+
+    r = client.get("/v1/stylebooks/default/cleanup/checks")
+    assert r.status_code == 200
+    body = r.json()
+    by_id = {check["id"]: check for check in body["checks"]}
+    assert by_id["duplicate-locations"]["count"] == 2
+    assert by_id["duplicate-locations"]["status"] == "succeeded"
+    assert by_id["duplicate-people"]["count"] == 1
+    assert by_id["duplicate-organizations"]["count"] == 2
+    assert by_id["missing-geometry-locations"]["count"] == 6
+    assert by_id["mismatched-locations"]["count"] == 0
+    assert by_id["mismatched-people"]["count"] == 0
+    assert by_id["questionable-person-canonicals"]["count"] == 0
+    assert by_id["questionable-person-canonicals"]["status"] == "never_run"
+    assert by_id["mismatched-organizations"]["count"] == 0
+    assert by_id["questionable-organization-canonicals"]["count"] == 0
+    assert by_id["questionable-organization-canonicals"]["status"] == "never_run"
+    assert body["total_open"] == sum(check["count"] for check in body["checks"])
 
 
 def test_list_cleanup_checks_single_check_id(cleanup_client: tuple[TestClient, Engine]) -> None:
     client, _engine = cleanup_client
+    _run_cleanup_check(client, "duplicate-people")
     r = client.get("/v1/stylebooks/default/cleanup/checks?check_id=duplicate-people")
     assert r.status_code == 200
     body = r.json()
     assert len(body["checks"]) == 1
     assert body["checks"][0]["id"] == "duplicate-people"
     assert body["checks"][0]["count"] == 1
+    assert body["checks"][0]["status"] == "succeeded"
     assert body["total_open"] == 1
+
+
+def test_start_cleanup_check_run_is_idempotent_while_active(
+    cleanup_client: tuple[TestClient, Engine],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, engine = cleanup_client
+    monkeypatch.setattr(
+        "stylebook_api.routers.stylebook_cleanup.celery_app.send_task",
+        lambda *_args, **_kwargs: None,
+    )
+    first = _start_cleanup_check(client, "duplicate-locations")
+    with Session(engine) as session:
+        run = session.get(StylebookCleanupCheckRun, first["id"])
+        assert run is not None
+        run.status = "running"
+        session.add(run)
+        session.commit()
+    second = _start_cleanup_check(client, "duplicate-locations")
+    assert second["id"] == first["id"]
+    assert second["status"] == "running"
+
+
+def test_cancel_cleanup_check_run(
+    cleanup_client: tuple[TestClient, Engine],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, engine = cleanup_client
+    monkeypatch.setattr(
+        "stylebook_api.routers.stylebook_cleanup.celery_app.send_task",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "stylebook_api.routers.stylebook_cleanup.celery_app.control",
+        type("_ctrl", (), {"revoke": staticmethod(lambda *a, **kw: None)})(),
+    )
+    started = _start_cleanup_check(client, "duplicate-locations")
+    with Session(engine) as session:
+        run = session.get(StylebookCleanupCheckRun, started["id"])
+        assert run is not None
+        run.status = "running"
+        session.add(run)
+        session.commit()
+    cancel_resp = client.post(
+        "/v1/stylebooks/default/cleanup/checks/duplicate-locations/runs/cancel"
+    )
+    assert cancel_resp.status_code == 200
+    body = cancel_resp.json()
+    assert body["id"] == started["id"]
+    assert body["status"] == "cancelled"
+
+
+def test_cancel_cleanup_check_run_no_active(
+    cleanup_client: tuple[TestClient, Engine],
+) -> None:
+    client, _engine = cleanup_client
+    resp = client.post(
+        "/v1/stylebooks/default/cleanup/checks/duplicate-locations/runs/cancel"
+    )
+    assert resp.status_code == 400
+    assert "No active check run" in resp.json()["detail"]
+
+
+def test_get_latest_cleanup_check_run(cleanup_client: tuple[TestClient, Engine]) -> None:
+    client, _engine = cleanup_client
+    missing = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-locations/runs/latest")
+    assert missing.status_code == 200
+    assert missing.json() is None
+    run = _run_cleanup_check(client, "duplicate-locations")
+    latest = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-locations/runs/latest")
+    assert latest.status_code == 200
+    body = latest.json()
+    assert body is not None
+    assert body["id"] == run["id"]
+    assert body["status"] == "succeeded"
+    assert body["candidate_count"] == 2
 
 
 def test_duplicate_location_clusters(cleanup_client: tuple[TestClient, Engine]) -> None:
     client, _engine = cleanup_client
+    _run_cleanup_check(client, "duplicate-locations")
     r = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-locations?limit=10")
     assert r.status_code == 200
     body = r.json()
@@ -238,6 +392,7 @@ def test_duplicate_location_clusters(cleanup_client: tuple[TestClient, Engine]) 
 
 def test_missing_geometry_locations(cleanup_client: tuple[TestClient, Engine]) -> None:
     client, _engine = cleanup_client
+    _run_cleanup_check(client, "missing-geometry-locations")
     r = client.get("/v1/stylebooks/default/cleanup/checks/missing-geometry-locations")
     assert r.status_code == 200
     body = r.json()
@@ -306,6 +461,11 @@ def test_merge_cleanup_canonical_relinks_and_deletes_source(
         source_id = str(source.id)
         target_id = str(target.id)
 
+    _run_cleanup_check(client, "duplicate-locations")
+    before = client.get("/v1/stylebooks/default/cleanup/checks?check_id=duplicate-locations")
+    assert before.status_code == 200
+    assert before.json()["checks"][0]["count"] == 2
+
     response = client.post(
         f"/v1/stylebooks/default/cleanup/canonical-locations/{source_id}/merge-into",
         json={"target_canonical_id": target_id},
@@ -326,9 +486,19 @@ def test_merge_cleanup_canonical_relinks_and_deletes_source(
         ).one()
         assert loc.stylebook_location_canonical_id == target_id
 
+    checks = client.get("/v1/stylebooks/default/cleanup/checks?check_id=duplicate-locations")
+    assert checks.status_code == 200
+    assert checks.json()["checks"][0]["count"] == 1
+
+    detail = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-locations?limit=10")
+    assert detail.status_code == 200
+    assert detail.json()["total"] == 1
+    assert "Ward 36, Chicago, IL" not in {cluster["label"] for cluster in detail.json()["clusters"]}
+
 
 def test_duplicate_person_clusters(cleanup_client: tuple[TestClient, Engine]) -> None:
     client, _engine = cleanup_client
+    _run_cleanup_check(client, "duplicate-people")
     response = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-people?limit=10")
     assert response.status_code == 200
     body = response.json()
@@ -337,16 +507,130 @@ def test_duplicate_person_clusters(cleanup_client: tuple[TestClient, Engine]) ->
     assert len(body["clusters"][0]["canonicals"]) == 2
 
 
+def test_dismiss_duplicate_person_cluster_after_member_deleted(
+    cleanup_client: tuple[TestClient, Engine],
+) -> None:
+    client, engine = cleanup_client
+    with Session(engine) as session:
+        sb = session.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        third = StylebookPersonCanonical(
+            stylebook_id=int(sb.id),
+            slug="person-dupe-c",
+            label="Jane Doe",
+        )
+        session.add(third)
+        session.commit()
+
+    _run_cleanup_check(client, "duplicate-people")
+
+    with Session(engine) as session:
+        people = session.exec(
+            select(StylebookPersonCanonical).where(
+                StylebookPersonCanonical.slug.in_(  # type: ignore[union-attr]
+                    ["person-dupe-a", "person-dupe-b", "person-dupe-c"]
+                )
+            )
+        ).all()
+        member_ids_by_slug = {row.slug: str(row.id) for row in people if row.id is not None}
+        session.delete(next(row for row in people if row.slug == "person-dupe-c"))
+        session.commit()
+
+    visible_after_delete = client.get(
+        "/v1/stylebooks/default/cleanup/checks/duplicate-people?limit=10"
+    )
+    assert visible_after_delete.status_code == 200
+    assert visible_after_delete.json()["total"] == 1
+    assert len(visible_after_delete.json()["clusters"][0]["canonicals"]) == 2
+
+    dismiss = client.post(
+        "/v1/stylebooks/default/cleanup/dismissals",
+        json={
+            "check_id": "duplicate-people",
+            "member_ids": [
+                member_ids_by_slug["person-dupe-a"],
+                member_ids_by_slug["person-dupe-b"],
+            ],
+        },
+    )
+    assert dismiss.status_code == 200
+    assert dismiss.json()["dismissed_pair_count"] == 1
+
+    after = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-people?limit=10")
+    assert after.status_code == 200
+    assert after.json()["total"] == 0
+    assert after.json()["clusters"] == []
+
+
 def test_duplicate_organization_clusters(cleanup_client: tuple[TestClient, Engine]) -> None:
     client, _engine = cleanup_client
+    _run_cleanup_check(client, "duplicate-organizations")
     response = client.get(
         "/v1/stylebooks/default/cleanup/checks/duplicate-organizations?limit=10"
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["total"] == 1
+    assert body["total"] == 2
+    # Exact matches sort first ("City Hall"); the cross-form cluster follows.
     assert body["clusters"][0]["label"] == "City Hall"
     assert len(body["clusters"][0]["canonicals"]) == 2
+    cross_form_labels = {
+        canonical["label"] for canonical in body["clusters"][1]["canonicals"]
+    }
+    assert cross_form_labels == {
+        "Cook County State's Attorney's Office",
+        "Office of the Cook County State's Attorney",
+    }
+
+
+def test_dismiss_duplicate_organization_cluster(
+    cleanup_client: tuple[TestClient, Engine],
+) -> None:
+    client, engine = cleanup_client
+    with Session(engine) as session:
+        orgs = session.exec(
+            select(StylebookOrganizationCanonical).where(
+                StylebookOrganizationCanonical.slug.in_(  # type: ignore[union-attr]
+                    ["org-crossform-a", "org-crossform-b"]
+                )
+            )
+        ).all()
+        member_ids = sorted(str(row.id) for row in orgs if row.id is not None)
+    assert len(member_ids) == 2
+
+    _run_cleanup_check(client, "duplicate-organizations")
+
+    before = client.get(
+        "/v1/stylebooks/default/cleanup/checks/duplicate-organizations?limit=10"
+    )
+    assert before.status_code == 200
+    assert before.json()["total"] == 2
+
+    dismiss = client.post(
+        "/v1/stylebooks/default/cleanup/dismissals",
+        json={
+            "check_id": "duplicate-organizations",
+            "member_ids": member_ids,
+        },
+    )
+    assert dismiss.status_code == 200
+    assert dismiss.json()["dismissed_pair_count"] == 1
+
+    after = client.get(
+        "/v1/stylebooks/default/cleanup/checks/duplicate-organizations?limit=10"
+    )
+    assert after.status_code == 200
+    assert after.json()["total"] == 1
+    labels = {
+        canonical["label"]
+        for cluster in after.json()["clusters"]
+        for canonical in cluster["canonicals"]
+    }
+    assert "Cook County State's Attorney's Office" not in labels
+
+    checks = client.get("/v1/stylebooks/default/cleanup/checks")
+    assert checks.status_code == 200
+    by_id = {check["id"]: check["count"] for check in checks.json()["checks"]}
+    assert by_id["duplicate-organizations"] == after.json()["total"]
 
 
 def test_merge_cleanup_person_relinks_and_deletes_source(
@@ -507,6 +791,8 @@ def test_distant_linked_geography_issue(cleanup_client: tuple[TestClient, Engine
         )
         session.commit()
 
+    _run_cleanup_check(client, "missing-geometry-locations")
+
     response = client.get("/v1/stylebooks/default/cleanup/checks/missing-geometry-locations")
     assert response.status_code == 200
     body = response.json()
@@ -529,6 +815,8 @@ def test_dismiss_duplicate_location_cluster(cleanup_client: tuple[TestClient, En
             )
         ).all()
         member_ids = sorted(str(row.id) for row in locs if row.id is not None)
+
+    _run_cleanup_check(client, "duplicate-locations")
 
     before = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-locations?limit=10")
     assert before.status_code == 200
@@ -564,6 +852,8 @@ def test_dismiss_missing_geometry_location(cleanup_client: tuple[TestClient, Eng
             )
         ).one()
         canonical_id = str(missing.id)
+
+    _run_cleanup_check(client, "missing-geometry-locations")
 
     before = client.get("/v1/stylebooks/default/cleanup/checks/missing-geometry-locations")
     assert before.status_code == 200
@@ -616,6 +906,8 @@ def test_mismatched_people_check(cleanup_client: tuple[TestClient, Engine]) -> N
         )
         session.commit()
 
+    _run_cleanup_check(client, "mismatched-people")
+
     checks = client.get("/v1/stylebooks/default/cleanup/checks")
     assert checks.status_code == 200
     by_id = {check["id"]: check["count"] for check in checks.json()["checks"]}
@@ -661,6 +953,8 @@ def test_dismiss_mismatched_person(cleanup_client: tuple[TestClient, Engine]) ->
             )
         )
         session.commit()
+
+    _run_cleanup_check(client, "mismatched-people")
 
     before = client.get("/v1/stylebooks/default/cleanup/checks/mismatched-people")
     assert before.status_code == 200
@@ -712,6 +1006,8 @@ def test_mismatched_organizations_check(cleanup_client: tuple[TestClient, Engine
         )
         session.commit()
 
+    _run_cleanup_check(client, "mismatched-organizations")
+
     checks = client.get("/v1/stylebooks/default/cleanup/checks")
     assert checks.status_code == 200
     by_id = {check["id"]: check["count"] for check in checks.json()["checks"]}
@@ -725,6 +1021,255 @@ def test_mismatched_organizations_check(cleanup_client: tuple[TestClient, Engine
     assert row["label"] == "Globex Industries"
     assert row["mismatched_linked_count"] == 1
     assert "Acme Corporation" in row["mismatched_examples"]
+
+
+def _patch_questionable_org_llm(
+    monkeypatch: pytest.MonkeyPatch,
+    mock_call_llm: Any,
+) -> None:
+    from worker.substrate.cleanup.questionable_organizations_llm import (
+        QuestionableOrganizationLlmContext,
+    )
+
+    monkeypatch.setattr(
+        "worker.tasks._call_llm_with_env_api_keys",
+        mock_call_llm,
+    )
+    monkeypatch.setattr(
+        "worker.substrate.cleanup.questionable_organizations_llm.resolve_questionable_organization_llm_context",
+        lambda _session, scope: QuestionableOrganizationLlmContext(
+            project_id=1,
+            api_key_overlay={"OPENAI_API_KEY": "test-key"},
+            model="gpt-5-nano",
+            model_config_id="test-model",
+        ),
+    )
+
+
+def test_questionable_organization_canonicals_check(
+    cleanup_client: tuple[TestClient, Engine],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, engine = cleanup_client
+    trump_id = ""
+    with Session(engine) as session:
+        sb = session.exec(select(Stylebook)).one()
+        session.add(
+            StylebookPersonCanonical(
+                stylebook_id=int(sb.id),
+                slug="donald-trump-person",
+                label="Donald Trump",
+            )
+        )
+        trump_org = StylebookOrganizationCanonical(
+            stylebook_id=int(sb.id),
+            slug="donald-trump-org",
+            label="Donald Trump",
+            organization_type="government",
+        )
+        session.add(trump_org)
+        session.commit()
+        session.refresh(trump_org)
+        trump_id = str(trump_org.id)
+
+    def mock_call_llm(prompt: str, **_kwargs: object) -> str:
+        assert trump_id in prompt
+        return json.dumps(
+            {
+                "results": [
+                    {
+                        "canonical_id": trump_id,
+                        "decision": "flag",
+                        "category": "person_like",
+                        "confidence": "high",
+                        "explanation": "This label names a person, not an institution.",
+                        "suggested_entity_type": "person",
+                    }
+                ]
+            }
+        )
+
+    _patch_questionable_org_llm(monkeypatch, mock_call_llm)
+    _run_cleanup_check(client, "questionable-organization-canonicals")
+
+    checks = client.get("/v1/stylebooks/default/cleanup/checks")
+    assert checks.status_code == 200
+    by_id = {check["id"]: check["count"] for check in checks.json()["checks"]}
+    assert by_id["questionable-organization-canonicals"] == 1
+
+    response = client.get(
+        "/v1/stylebooks/default/cleanup/checks/questionable-organization-canonicals"
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    row = body["canonicals"][0]
+    assert row["label"] == "Donald Trump"
+    assert row["category"] == "person_like"
+    assert row["confidence"] == "high"
+    assert "person" in row["explanation"].lower()
+    assert "cross_catalog_person" in row["prefilter_signals"]
+
+
+def test_dismiss_questionable_organization_canonical(
+    cleanup_client: tuple[TestClient, Engine],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, engine = cleanup_client
+    trump_id = ""
+    with Session(engine) as session:
+        sb = session.exec(select(Stylebook)).one()
+        session.add(
+            StylebookPersonCanonical(
+                stylebook_id=int(sb.id),
+                slug="donald-trump-person",
+                label="Donald Trump",
+            )
+        )
+        trump_org = StylebookOrganizationCanonical(
+            stylebook_id=int(sb.id),
+            slug="donald-trump-org",
+            label="Donald Trump",
+            organization_type="government",
+        )
+        session.add(trump_org)
+        session.commit()
+        session.refresh(trump_org)
+        trump_id = str(trump_org.id)
+
+    def mock_call_llm(_prompt: str, **_kwargs: object) -> str:
+        return json.dumps(
+            {
+                "results": [
+                    {
+                        "canonical_id": trump_id,
+                        "decision": "flag",
+                        "category": "person_like",
+                        "confidence": "high",
+                        "explanation": "Person label.",
+                        "suggested_entity_type": "person",
+                    }
+                ]
+            }
+        )
+
+    _patch_questionable_org_llm(monkeypatch, mock_call_llm)
+    _run_cleanup_check(client, "questionable-organization-canonicals")
+
+    before = client.get(
+        "/v1/stylebooks/default/cleanup/checks/questionable-organization-canonicals"
+    )
+    assert before.status_code == 200
+    assert before.json()["total"] == 1
+
+    dismiss = client.post(
+        "/v1/stylebooks/default/cleanup/dismissals",
+        json={
+            "check_id": "questionable-organization-canonicals",
+            "canonical_id": trump_id,
+        },
+    )
+    assert dismiss.status_code == 200
+
+    after = client.get(
+        "/v1/stylebooks/default/cleanup/checks/questionable-organization-canonicals"
+    )
+    assert after.status_code == 200
+    assert after.json()["total"] == before.json()["total"] - 1
+    labels = {item["label"] for item in after.json()["canonicals"]}
+    assert "Donald Trump" not in labels
+
+
+def test_questionable_person_canonicals_check(
+    cleanup_client: tuple[TestClient, Engine],
+) -> None:
+    client, engine = cleanup_client
+    wbez_id = ""
+    with Session(engine) as session:
+        sb = session.exec(select(Stylebook)).one()
+        person = StylebookPersonCanonical(
+            stylebook_id=int(sb.id),
+            slug="wbez-person",
+            label="WBEZ",
+            person_type="media_journalism",
+        )
+        session.add(person)
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=int(sb.id),
+                slug="wbez-org",
+                label="WBEZ",
+                organization_type="media",
+            )
+        )
+        session.commit()
+        session.refresh(person)
+        wbez_id = str(person.id)
+
+    _run_cleanup_check(client, "questionable-person-canonicals")
+
+    checks = client.get("/v1/stylebooks/default/cleanup/checks")
+    assert checks.status_code == 200
+    by_id = {check["id"]: check["count"] for check in checks.json()["checks"]}
+    assert by_id["questionable-person-canonicals"] == 1
+
+    response = client.get("/v1/stylebooks/default/cleanup/checks/questionable-person-canonicals")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    row = body["canonicals"][0]
+    assert row["id"] == wbez_id
+    assert row["label"] == "WBEZ"
+    assert row["category"] == "organization_like"
+    assert row["confidence"] == "high"
+    assert row["matching_organization_type"] == "media"
+    assert "cross_catalog_organization" in row["prefilter_signals"]
+    assert "media" in row["explanation"].lower()
+
+
+def test_delete_questionable_person_canonical_updates_cached_count(
+    cleanup_client: tuple[TestClient, Engine],
+) -> None:
+    client, engine = cleanup_client
+    wbez_id = ""
+    with Session(engine) as session:
+        sb = session.exec(select(Stylebook)).one()
+        person = StylebookPersonCanonical(
+            stylebook_id=int(sb.id),
+            slug="wbez-person",
+            label="WBEZ",
+            person_type="media_journalism",
+        )
+        session.add(person)
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=int(sb.id),
+                slug="wbez-org",
+                label="WBEZ",
+                organization_type="media",
+            )
+        )
+        session.commit()
+        session.refresh(person)
+        wbez_id = str(person.id)
+
+    _run_cleanup_check(client, "questionable-person-canonicals")
+    before = client.get("/v1/stylebooks/default/cleanup/checks/questionable-person-canonicals")
+    assert before.status_code == 200
+    assert before.json()["total"] == 1
+
+    delete = client.delete(f"/v1/stylebooks/default/canonical-people/{wbez_id}")
+    assert delete.status_code == 200
+
+    after = client.get("/v1/stylebooks/default/cleanup/checks/questionable-person-canonicals")
+    assert after.status_code == 200
+    assert after.json()["total"] == 0
+
+    checks = client.get(
+        "/v1/stylebooks/default/cleanup/checks?check_id=questionable-person-canonicals"
+    )
+    assert checks.status_code == 200
+    assert checks.json()["checks"][0]["count"] == 0
 
 
 def test_cleanup_ai_review_start_and_proposal_accept(
@@ -824,3 +1369,77 @@ def test_cleanup_ai_review_start_and_proposal_accept(
         "/v1/stylebooks/default/cleanup/ai-review/proposals/proposal-merge-1/reject"
     )
     assert reject.status_code == 409
+
+
+def test_stylebook_activity_feed_lists_recent_events(
+    cleanup_client: tuple[TestClient, Engine],
+) -> None:
+    client, engine = cleanup_client
+    with Session(engine) as session:
+        sb = session.exec(select(Stylebook)).one()
+        session.add(
+            StylebookActivity(
+                stylebook_id=int(sb.id),
+                actor_type="system",
+                source="ingest_pipeline",
+                event_type="canonical_created",
+                entity_type="person",
+                entity_id="person-123",
+                entity_label="Jane Doe",
+            )
+        )
+        session.add(
+            StylebookActivity(
+                stylebook_id=int(sb.id),
+                actor_type="user",
+                source="cleanup_check",
+                event_type="cleanup_merge",
+                entity_type="organization",
+                entity_id="org-456",
+                entity_label="Example Org",
+            )
+        )
+        session.commit()
+
+    response = client.get("/v1/stylebooks/default/activity?limit=10&offset=0")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] >= 2
+    assert payload["events"][0]["event_type"] in {"cleanup_merge", "canonical_created"}
+
+
+def test_stylebook_activity_feed_filters_by_event_type(
+    cleanup_client: tuple[TestClient, Engine],
+) -> None:
+    client, engine = cleanup_client
+    with Session(engine) as session:
+        sb = session.exec(select(Stylebook)).one()
+        session.add(
+            StylebookActivity(
+                stylebook_id=int(sb.id),
+                actor_type="system",
+                source="ingest_pipeline",
+                event_type="canonical_created",
+                entity_type="location",
+                entity_id="loc-1",
+            )
+        )
+        session.add(
+            StylebookActivity(
+                stylebook_id=int(sb.id),
+                actor_type="system",
+                source="connections",
+                event_type="connection_created",
+                entity_type="connection",
+                entity_id="conn-1",
+            )
+        )
+        session.commit()
+
+    response = client.get(
+        "/v1/stylebooks/default/activity?event_type=connection_created&limit=20&offset=0"
+    )
+    assert response.status_code == 200
+    events = response.json()["events"]
+    assert events
+    assert all(event["event_type"] == "connection_created" for event in events)

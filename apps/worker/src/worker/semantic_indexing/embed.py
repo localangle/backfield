@@ -66,7 +66,7 @@ def embed_pending_semantic_documents(
     for batch in batches:
         try:
             result = embed_texts_for_model_config(
-                session,
+                None,
                 project_id=project_id,
                 model_config_id=model_config_id,
                 texts=batch.texts(),

@@ -351,6 +351,64 @@ def stylebook_district_fields_from_components(comps: dict[str, Any]) -> dict[str
     }
 
 
+# Deterministic district-kind signal from display text. PlaceExtract sometimes misfiles a
+# district phrase (e.g. "13th subcircuit") in the city component, leaving no structured
+# district identity, so name/label keywords are the only cheap way to tell a judicial
+# subcircuit from a congressional district from a ward. Single-word keywords match tokens;
+# multi-word keywords match token bigrams.
+_DISTRICT_KIND_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("judicial", ("subcircuit", "judicial")),
+    ("us_house", ("congressional",)),
+    ("ward", ("ward",)),
+    ("state_senate", ("state senate",)),
+    ("state_house", ("state house",)),
+)
+
+_KEYWORD_TOKEN_RE = re.compile(r"[^a-z0-9]+")
+
+
+def district_kind_keyword_from_text(text: str | None) -> str | None:
+    """District kind implied by the head (first comma segment) of a display name, or ``None``."""
+    head = str(text or "").split(",")[0].strip().lower()
+    if not head:
+        return None
+    tokens = [t for t in _KEYWORD_TOKEN_RE.split(head) if t]
+    if not tokens:
+        return None
+    token_set = set(tokens)
+    bigrams = {f"{a} {b}" for a, b in zip(tokens, tokens[1:])}
+    for kind, keywords in _DISTRICT_KIND_KEYWORDS:
+        for kw in keywords:
+            if (" " in kw and kw in bigrams) or (" " not in kw and kw in token_set):
+                return kind
+    return None
+
+
+def district_kind_keywords_conflict(
+    substrate_texts: tuple[str | None, ...],
+    canonical_texts: tuple[str | None, ...],
+) -> bool:
+    """True when both sides carry district-kind keywords and they do not agree.
+
+    A substrate whose own texts disagree (e.g. name says "Congressional District 13" while
+    the geocoded address says "13th subcircuit") conflicts with any single-kind canonical:
+    the identity is uncertain, so the pair should not link without human review.
+    """
+    sub_kinds = {
+        kind
+        for t in substrate_texts
+        if (kind := district_kind_keyword_from_text(t)) is not None
+    }
+    canon_kinds = {
+        kind
+        for t in canonical_texts
+        if (kind := district_kind_keyword_from_text(t)) is not None
+    }
+    if not sub_kinds or not canon_kinds:
+        return False
+    return len(sub_kinds | canon_kinds) >= 2
+
+
 def geojson_point_lon_lat(geometry_json: dict[str, Any] | None) -> tuple[float, float] | None:
     """Lon/lat for a GeoJSON Point, or ``None``."""
     if not isinstance(geometry_json, dict):

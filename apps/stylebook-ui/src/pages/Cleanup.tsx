@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { Link } from "react-router-dom"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { Link, useLocation } from "react-router-dom"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
 import { StylebookHomeTabs } from "@/components/StylebookHomeTabs"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import { Button } from "@/components/ui/button"
-import { Loader2, Play } from "lucide-react"
+import { Loader2, Play, Square } from "lucide-react"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useSelectedStylebookLabel } from "@/lib/stylebookScopeContext"
@@ -14,32 +14,55 @@ import {
   type CleanupCheckConfig,
 } from "@/lib/cleanupChecks"
 import {
-  cleanupLastRunStorageKey,
+  cleanupCheckStaleness,
   formatCleanupLastRun,
-  loadCleanupHubState,
-  type CleanupCheckRunRecord,
+  formatCleanupStalenessLabel,
+  type CleanupCheckStaleness,
 } from "@/lib/cleanupHubLastRun"
-import { refreshPersistedCleanupCheckCount } from "@/lib/api"
+import {
+  cancelCleanupCheckRun,
+  listCleanupChecks,
+  pollCleanupCheckRun,
+  startCleanupCheckRun,
+  type CleanupCheck,
+  type CleanupCheckRunStatus,
+} from "@/lib/api"
 
 type CheckRunSnapshot = {
   count: number | null
   loading: boolean
+  status: CleanupCheckRunStatus
+  lastRunAt?: string
+  errorMessage?: string | null
 }
 
-function runSnapshotsFromStore(
-  store: Record<string, CleanupCheckRunRecord>,
-): Record<string, CheckRunSnapshot> {
+function snapshotFromCheck(check: CleanupCheck): CheckRunSnapshot {
+  const hasRun = check.status !== "never_run"
+  return {
+    count: hasRun ? check.count : null,
+    loading: check.status === "queued" || check.status === "running",
+    status: check.status,
+    lastRunAt: check.completed_at ?? check.ran_at ?? undefined,
+    errorMessage: check.error_message,
+  }
+}
+
+function emptySnapshots(): Record<string, CheckRunSnapshot> {
   return Object.fromEntries(
-    CLEANUP_CHECK_CONFIGS.map((config) => {
-      const record = store[config.id]
-      return [
-        config.id,
-        {
-          count: record ? record.count : null,
-          loading: false,
-        },
-      ]
-    }),
+    CLEANUP_CHECK_CONFIGS.map((config) => [
+      config.id,
+      { count: null, loading: false, status: "never_run" as const },
+    ]),
+  )
+}
+
+function applyChecksToSnapshots(checks: CleanupCheck[]): Record<string, CheckRunSnapshot> {
+  const byId = Object.fromEntries(checks.map((check) => [check.id, snapshotFromCheck(check)]))
+  return Object.fromEntries(
+    CLEANUP_CHECK_CONFIGS.map((config) => [
+      config.id,
+      byId[config.id] ?? { count: null, loading: false, status: "never_run" as const },
+    ]),
   )
 }
 
@@ -49,104 +72,119 @@ export default function Cleanup() {
     useProjectCatalogScope()
   const crumbRoot = useScopeBreadcrumbRoot()
   const selectedStylebookLabel = useSelectedStylebookLabel()
-  const storageKey = useMemo(
-    () => cleanupLastRunStorageKey(stylebookSlug, projectFilterSlug || undefined),
-    [stylebookSlug, projectFilterSlug],
-  )
-  const [lastRunByCheckId, setLastRunByCheckId] = useState<Record<string, string>>({})
-  const [runSnapshots, setRunSnapshots] = useState<Record<string, CheckRunSnapshot>>(() =>
-    runSnapshotsFromStore({}),
-  )
+  const location = useLocation()
+  const [runSnapshots, setRunSnapshots] = useState<Record<string, CheckRunSnapshot>>(emptySnapshots)
+  const [hubLoading, setHubLoading] = useState(true)
+  const pollTokensRef = useRef<Record<string, number>>({})
+
+  const loadHub = useCallback(async () => {
+    if (!stylebookSlug) return
+    setHubLoading(true)
+    try {
+      const response = await listCleanupChecks({
+        stylebookSlug,
+        project: projectFilterSlug || undefined,
+      })
+      setRunSnapshots(applyChecksToSnapshots(response.checks))
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Failed to load reviews")
+    } finally {
+      setHubLoading(false)
+    }
+  }, [stylebookSlug, projectFilterSlug, showError])
 
   useEffect(() => {
-    const { records, lastRunByCheckId: persistedLastRun } = loadCleanupHubState(storageKey)
-    setLastRunByCheckId(persistedLastRun)
-    setRunSnapshots(runSnapshotsFromStore(records))
+    void loadHub()
+  }, [loadHub, location.key])
 
-    if (!stylebookSlug) return
-    const checkIds = Object.keys(persistedLastRun)
-    if (checkIds.length === 0) return
-
-    setRunSnapshots((prev) => {
-      const next = { ...prev }
-      for (const checkId of checkIds) {
-        next[checkId] = {
-          count: records[checkId]?.count ?? prev[checkId]?.count ?? null,
-          loading: true,
+  const pollRun = useCallback(
+    async (checkId: string) => {
+      if (!stylebookSlug) return
+      const token = (pollTokensRef.current[checkId] ?? 0) + 1
+      pollTokensRef.current[checkId] = token
+      try {
+        const run = await pollCleanupCheckRun({
+          stylebookSlug,
+          checkId,
+          project: projectFilterSlug || undefined,
+        })
+        if (pollTokensRef.current[checkId] !== token) return
+        const response = await listCleanupChecks({
+          stylebookSlug,
+          project: projectFilterSlug || undefined,
+          checkId,
+        })
+        const check = response.checks[0]
+        if (!check) return
+        setRunSnapshots((prev) => ({
+          ...prev,
+          [checkId]: snapshotFromCheck(check),
+        }))
+        if (run.status === "failed" && run.error_message) {
+          showError(run.error_message)
         }
+      } catch (error) {
+        if (pollTokensRef.current[checkId] !== token) return
+        setRunSnapshots((prev) => ({
+          ...prev,
+          [checkId]: { ...prev[checkId], loading: false },
+        }))
+        showError(error instanceof Error ? error.message : "Failed to run review")
       }
-      return next
-    })
-
-    let cancelled = false
-    void (async () => {
-      await Promise.all(
-        checkIds.map(async (checkId) => {
-          try {
-            const record = await refreshPersistedCleanupCheckCount({
-              stylebookSlug,
-              checkId,
-              project: projectFilterSlug || undefined,
-            })
-            if (cancelled) return
-            setRunSnapshots((prev) => ({
-              ...prev,
-              [checkId]: { count: record.count, loading: false },
-            }))
-            setLastRunByCheckId((prev) => ({ ...prev, [checkId]: record.ranAtIso }))
-          } catch {
-            if (!cancelled) {
-              setRunSnapshots((prev) => ({
-                ...prev,
-                [checkId]: { ...prev[checkId], loading: false },
-              }))
-            }
-          }
-        }),
-      )
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [storageKey, stylebookSlug, projectFilterSlug])
+    },
+    [stylebookSlug, projectFilterSlug, showError],
+  )
 
   const runCheck = useCallback(
     async (checkId: string) => {
       if (!stylebookSlug) return
       setRunSnapshots((prev) => ({
         ...prev,
-        [checkId]: { ...prev[checkId], loading: true },
+        [checkId]: {
+          ...prev[checkId],
+          loading: true,
+          status: "running",
+          errorMessage: null,
+        },
       }))
       try {
-        const record = await refreshPersistedCleanupCheckCount({
+        await startCleanupCheckRun({
           stylebookSlug,
           checkId,
           project: projectFilterSlug || undefined,
         })
-        setRunSnapshots((prev) => ({
-          ...prev,
-          [checkId]: { count: record.count, loading: false },
-        }))
-        const store = loadCleanupHubState(storageKey)
-        setLastRunByCheckId(store.lastRunByCheckId)
+        await pollRun(checkId)
       } catch (error) {
         setRunSnapshots((prev) => ({
           ...prev,
           [checkId]: { ...prev[checkId], loading: false },
         }))
-        showError(error instanceof Error ? error.message : "Failed to run cleanup check")
+        showError(error instanceof Error ? error.message : "Failed to run review")
       }
     },
-    [stylebookSlug, projectFilterSlug, storageKey, showError],
+    [stylebookSlug, projectFilterSlug, pollRun, showError],
   )
 
-  const runAllChecks = useCallback(async () => {
-    await Promise.all(CLEANUP_CHECK_CONFIGS.map((config) => runCheck(config.id)))
-  }, [runCheck])
-
-  const anyLoading = CLEANUP_CHECK_CONFIGS.some((config) => runSnapshots[config.id]?.loading)
-  const allLoading = CLEANUP_CHECK_CONFIGS.every((config) => runSnapshots[config.id]?.loading)
+  const stopCheck = useCallback(
+    async (checkId: string) => {
+      if (!stylebookSlug) return
+      try {
+        await cancelCleanupCheckRun({
+          stylebookSlug,
+          checkId,
+          project: projectFilterSlug || undefined,
+        })
+        pollTokensRef.current[checkId] = (pollTokensRef.current[checkId] ?? 0) + 1
+        setRunSnapshots((prev) => ({
+          ...prev,
+          [checkId]: { ...prev[checkId], loading: false, status: "cancelled" },
+        }))
+      } catch (error) {
+        showError(error instanceof Error ? error.message : "Failed to stop review")
+      }
+    },
+    [stylebookSlug, projectFilterSlug, showError],
+  )
 
   return (
     <div className="space-y-6">
@@ -154,29 +192,12 @@ export default function Cleanup() {
         <Breadcrumbs items={[{ label: crumbRoot.label }]} className="mb-3" />
         <h1 className="text-3xl font-bold">{selectedStylebookLabel}</h1>
         <p className="text-muted-foreground mt-2 max-w-3xl">
-          These checks surface common issues in the curation of canonical objects. Run a check to
-          count open items, then open it to review and fix records manually.
+          These reviews surface common issues in the curation of canonical records. Run one to
+          count open items, then open it to fix records manually.
         </p>
       </div>
 
       <StylebookHomeTabs />
-
-      <div className="flex items-center justify-end">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={anyLoading}
-          onClick={() => void runAllChecks()}
-        >
-          {allLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Play className="h-4 w-4" />
-          )}
-          <span className="ml-2">Run all checks</span>
-        </Button>
-      </div>
 
       <div className="rounded-lg border overflow-hidden">
         <table className="w-full table-fixed text-sm">
@@ -190,23 +211,34 @@ export default function Cleanup() {
           <thead className="bg-muted/50 text-left">
             <tr>
               <th className="px-4 py-3 font-medium" aria-label="Type" />
-              <th className="px-4 py-3 font-medium">Check</th>
+              <th className="px-4 py-3 font-medium">Review</th>
               <th className="px-4 py-3 font-medium text-right">Issues</th>
               <th className="px-4 py-3 font-medium">Last run</th>
               <th className="px-4 py-3 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {CLEANUP_CHECK_CONFIGS.map((config) => (
-              <CleanupCheckRow
-                key={config.id}
-                config={config}
-                href={`${catalogBasePath}/cleanup/${config.id}${catalogScopeSuffix}`}
-                snapshot={runSnapshots[config.id] ?? { count: null, loading: false }}
-                lastRunAt={lastRunByCheckId[config.id]}
-                onRun={() => void runCheck(config.id)}
-              />
-            ))}
+            {hubLoading ? (
+              <tr className="border-t">
+                <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    Loading reviews…
+                  </span>
+                </td>
+              </tr>
+            ) : (
+              CLEANUP_CHECK_CONFIGS.map((config) => (
+                <CleanupCheckRow
+                  key={config.id}
+                  config={config}
+                  href={`${catalogBasePath}/cleanup/${config.id}${catalogScopeSuffix}`}
+                  snapshot={runSnapshots[config.id] ?? { count: null, loading: false, status: "never_run" }}
+                  onRun={() => void runCheck(config.id)}
+                  onStop={() => void stopCheck(config.id)}
+                />
+              ))
+            )}
           </tbody>
         </table>
       </div>
@@ -218,17 +250,17 @@ function CleanupCheckRow({
   config,
   href,
   snapshot,
-  lastRunAt,
   onRun,
+  onStop,
 }: {
   config: CleanupCheckConfig
   href: string
   snapshot: CheckRunSnapshot
-  lastRunAt?: string
   onRun: () => void
+  onStop: () => void
 }) {
   const Icon = cleanupEntityIcon(config.entityType)
-  const hasRun = snapshot.count !== null
+  const hasRun = snapshot.status !== "never_run"
   const count = snapshot.count ?? 0
 
   return (
@@ -258,12 +290,15 @@ function CleanupCheckRow({
           </span>
         )}
         <p className="text-muted-foreground mt-1 line-clamp-2">{config.description}</p>
+        {snapshot.status === "failed" && snapshot.errorMessage ? (
+          <p className="text-destructive mt-1 text-xs line-clamp-2">{snapshot.errorMessage}</p>
+        ) : null}
       </td>
       <td className="px-4 py-3 text-right tabular-nums">
         {snapshot.loading ? (
           <span className="inline-flex items-center justify-end gap-2 text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            <span className="sr-only">Running check</span>
+            <span className="sr-only">Running review</span>
           </span>
         ) : hasRun ? (
           <span className={count > 0 ? "font-semibold text-orange-600" : "text-muted-foreground"}>
@@ -274,29 +309,65 @@ function CleanupCheckRow({
         )}
       </td>
       <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
-        {formatCleanupLastRun(lastRunAt)}
+        {snapshot.lastRunAt ? (
+          <div>{formatCleanupLastRun(snapshot.lastRunAt)}</div>
+        ) : null}
+        <CleanupStalenessIndicator
+          staleness={cleanupCheckStaleness(snapshot.lastRunAt)}
+          label={formatCleanupStalenessLabel(snapshot.lastRunAt)}
+        />
       </td>
       <td className="px-4 py-3 text-right">
         <div className="inline-flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={snapshot.loading}
-            onClick={onRun}
-          >
-            {snapshot.loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
+          {snapshot.loading ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onStop}
+            >
+              <Square className="h-3.5 w-3.5" />
+              <span className="ml-1.5">Stop</span>
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onRun}
+            >
               <Play className="h-4 w-4" />
-            )}
-            <span className="ml-1.5">Run</span>
-          </Button>
+              <span className="ml-1.5">Run</span>
+            </Button>
+          )}
           <Button type="button" variant="ghost" size="sm" asChild>
             <Link to={href}>Review</Link>
           </Button>
         </div>
       </td>
     </tr>
+  )
+}
+
+const STALENESS_STYLES: Record<CleanupCheckStaleness, { dotClass: string; textClass: string }> = {
+  fresh: { dotClass: "bg-green-500", textClass: "text-green-700" },
+  aging: { dotClass: "bg-yellow-500", textClass: "text-yellow-700" },
+  stale: { dotClass: "bg-red-500", textClass: "text-red-700" },
+  never: { dotClass: "bg-red-500", textClass: "text-red-700" },
+}
+
+function CleanupStalenessIndicator({
+  staleness,
+  label,
+}: {
+  staleness: CleanupCheckStaleness
+  label: string
+}) {
+  const { dotClass, textClass } = STALENESS_STYLES[staleness]
+  return (
+    <div className="mt-1 flex items-center gap-1.5">
+      <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dotClass}`} aria-hidden />
+      <span className={`text-xs ${textClass}`}>{label}</span>
+    </div>
   )
 }

@@ -293,7 +293,7 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
         norms = {str(a.normalized_alias) for a in alias_rows}
         assert "chicago, il" in norms
         assert "chicago il" in norms
-        assert alias_rows[0].normalized_alias == locations[0].normalized_name
+        assert locations[0].normalized_name in norms
 
         mentions = session.exec(select(SubstrateLocationMention)).all()
         assert len(mentions) == 1
@@ -2265,7 +2265,7 @@ def test_persist_place_materializes_instead_of_autolinking_city_parent() -> None
 
 
 def test_persist_defers_intersection_without_geometry_when_no_match() -> None:
-    """Intersection types keep strict materialization (geometry + resolved); otherwise defer."""
+    """Intersections never auto-materialize canonicals; without a match they defer."""
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
 
@@ -2309,6 +2309,69 @@ def test_persist_defers_intersection_without_geometry_when_no_match() -> None:
             project_id=project_id,
             graph_id="graph-1",
             run_id="run-xsect",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        from backfield_db import SubstrateLocation
+
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 1
+        assert locs[0].canonical_link_status == CANONICAL_LINK_PENDING
+        assert locs[0].stylebook_location_canonical_id is None
+        canon_rows = session.exec(select(StylebookLocationCanonical)).all()
+        assert len(canon_rows) == 0
+
+
+def test_persist_defers_intersection_even_with_resolved_geometry() -> None:
+    """Resolved geocode + geometry no longer auto-materializes intersection canonicals."""
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session, org_slug="org-xsect-geo", project_slug="proj-xsect-geo"
+        )
+        session.add(AgateRun(id="run-xsect-geo", graph_id="graph-1", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": "Crash at Main St and Oak Ave.",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [
+                    {
+                        "id": "pt:1",
+                        "original_text": "Main St and Oak Ave",
+                        "location": "Main St and Oak Ave, Chicago, IL",
+                        "type": "intersection_road",
+                        "geocode": {
+                            "geocode_type": "geocodio",
+                            "result": {
+                                "id": "gc:xsect-geo",
+                                "formatted_address": "Main St & Oak Ave, Chicago, IL",
+                                "geometry": CHICAGO_POINT,
+                            },
+                        },
+                    }
+                ],
+                "needs_review": [],
+            },
+        }
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-1",
+            run_id="run-xsect-geo",
             consolidated=consolidated,
         )
         session.commit()

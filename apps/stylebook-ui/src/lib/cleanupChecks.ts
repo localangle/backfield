@@ -58,6 +58,14 @@ export const CLEANUP_CHECK_CONFIGS: CleanupCheckConfig[] = [
     entityType: "person",
   },
   {
+    id: "questionable-person-canonicals",
+    title: "Questionable person canonicals",
+    description:
+      "Person records that may actually be organizations, agencies, schools, media outlets, teams, or unnamed roles.",
+    kind: "list",
+    entityType: "person",
+  },
+  {
     id: "duplicate-organizations",
     title: "Potential duplicate organizations",
     description:
@@ -70,6 +78,14 @@ export const CLEANUP_CHECK_CONFIGS: CleanupCheckConfig[] = [
     title: "Potential mismatched organizations",
     description:
       "Organizations with linked mentions whose names look unlike this record. Open each record to review the link.",
+    kind: "list",
+    entityType: "organization",
+  },
+  {
+    id: "questionable-organization-canonicals",
+    title: "Questionable organization canonicals",
+    description:
+      "Organization records that may actually be people, places, laws, programs, events, awards, or generic groups.",
     kind: "list",
     entityType: "organization",
   },

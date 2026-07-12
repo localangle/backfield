@@ -8,9 +8,22 @@ export interface Connection {
   to_entity_type: string
   to_entity_id: string
   to_display_name: string
-  nature: string
+  description?: string | null
+  nature?: string | null
   evidence_json?: Record<string, unknown> | null
   created_at?: string | null
+}
+
+export type ConnectionWriteBody = {
+  to_entity_type?: string
+  to_entity_id?: number | string
+  nature?: string | null
+  description?: string | null
+}
+
+export type ConnectionUpdateBody = {
+  nature?: string | null
+  description?: string | null
 }
 
 export interface ConnectionListResponse {
@@ -77,7 +90,7 @@ export async function listConnectionsForLocation(
 export async function createConnectionForLocation(
   locationCanonicalId: string,
   projectSlug: string,
-  body: { to_entity_type: string; to_entity_id: number | string; nature: string },
+  body: ConnectionWriteBody,
 ): Promise<Connection> {
   const q = new URLSearchParams({ project_slug: projectSlug })
   return stylebookJsonFetch<Connection>(
@@ -90,7 +103,7 @@ export async function updateConnectionForLocation(
   locationCanonicalId: string,
   connectionId: number,
   projectSlug: string,
-  body: { nature: string },
+  body: ConnectionUpdateBody,
 ): Promise<Connection> {
   const q = new URLSearchParams({ project_slug: projectSlug })
   return stylebookJsonFetch<Connection>(
@@ -159,7 +172,7 @@ export async function listStylebookConnectionsForOrganization(
 export async function createStylebookConnectionForLocation(
   stylebookSlug: string,
   locationCanonicalId: string,
-  body: { to_entity_type: string; to_entity_id: number | string; nature: string },
+  body: ConnectionWriteBody,
 ): Promise<Connection> {
   return stylebookJsonFetch<Connection>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(locationCanonicalId)}/connections`,
@@ -171,7 +184,7 @@ export async function updateStylebookConnectionForLocation(
   stylebookSlug: string,
   locationCanonicalId: string,
   connectionId: number,
-  body: { nature: string },
+  body: ConnectionUpdateBody,
 ): Promise<Connection> {
   return stylebookJsonFetch<Connection>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(locationCanonicalId)}/connections/${connectionId}`,
@@ -193,7 +206,7 @@ export async function deleteStylebookConnectionForLocation(
 export async function createStylebookConnectionForPerson(
   stylebookSlug: string,
   personCanonicalId: string,
-  body: { to_entity_type: string; to_entity_id: number | string; nature: string },
+  body: ConnectionWriteBody,
 ): Promise<Connection> {
   return stylebookJsonFetch<Connection>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/${encodeURIComponent(personCanonicalId)}/connections`,
@@ -205,7 +218,7 @@ export async function updateStylebookConnectionForPerson(
   stylebookSlug: string,
   personCanonicalId: string,
   connectionId: number,
-  body: { nature: string },
+  body: ConnectionUpdateBody,
 ): Promise<Connection> {
   return stylebookJsonFetch<Connection>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/${encodeURIComponent(personCanonicalId)}/connections/${connectionId}`,
@@ -227,7 +240,7 @@ export async function deleteStylebookConnectionForPerson(
 export async function createStylebookConnectionForOrganization(
   stylebookSlug: string,
   organizationCanonicalId: string,
-  body: { to_entity_type: string; to_entity_id: number | string; nature: string },
+  body: ConnectionWriteBody,
 ): Promise<Connection> {
   return stylebookJsonFetch<Connection>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(organizationCanonicalId)}/connections`,
@@ -239,7 +252,7 @@ export async function updateStylebookConnectionForOrganization(
   stylebookSlug: string,
   organizationCanonicalId: string,
   connectionId: number,
-  body: { nature: string },
+  body: ConnectionUpdateBody,
 ): Promise<Connection> {
   return stylebookJsonFetch<Connection>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(organizationCanonicalId)}/connections/${connectionId}`,

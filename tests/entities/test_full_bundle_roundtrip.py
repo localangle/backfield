@@ -9,16 +9,22 @@ from uuid import uuid4
 
 from backfield_db import (
     BackfieldOrganization,
+    BackfieldProject,
     Stylebook,
+    StylebookConnection,
     StylebookLocationAlias,
     StylebookLocationCanonical,
+    StylebookLocationMeta,
     StylebookOrganizationAlias,
     StylebookOrganizationCanonical,
     StylebookPersonAlias,
     StylebookPersonCanonical,
 )
 from backfield_entities.catalog.full_bundle import (
+    BUNDLE_KIND_ALIAS_LOCATION,
+    BUNDLE_KIND_CONNECTION,
     BUNDLE_KIND_LOCATION,
+    BUNDLE_KIND_META_LOCATION,
     BUNDLE_KIND_ORGANIZATION,
     BUNDLE_KIND_PERSON,
     BUNDLE_SCHEMA_VERSION,
@@ -293,3 +299,161 @@ def test_export_import_roundtrip_includes_organizations(tmp_path: Path) -> None:
         ).all()
         assert len(aliases) >= 1
         assert any(a.provenance == "stylebook_bundle_import" for a in aliases)
+
+
+def test_export_import_roundtrip_includes_aliases_meta_connections(tmp_path: Path) -> None:
+    engine = _engine()
+    zip_path = tmp_path / "bundle-sidecars.zip"
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="Org Sidecars", slug="org-sidecars-bnd")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        oid = int(org.id)  # type: ignore[arg-type]
+
+        project = BackfieldProject(
+            organization_id=oid,
+            name="Demo Project",
+            slug="demo-proj-sidecars",
+        )
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+        project_id = int(project.id)  # type: ignore[arg-type]
+
+        sb = Stylebook(
+            organization_id=oid,
+            name="Sidecar Book",
+            slug="sidecar-book",
+            is_default=True,
+        )
+        session.add(sb)
+        session.commit()
+        session.refresh(sb)
+        sb_id = int(sb.id)  # type: ignore[arg-type]
+
+        loc_id = str(uuid4())
+        person_id = str(uuid4())
+        session.add(
+            StylebookLocationCanonical(
+                id=loc_id,
+                stylebook_id=sb_id,
+                label="City Hall",
+                slug="city-hall",
+                location_type="place",
+                status="active",
+            )
+        )
+        session.add(
+            StylebookPersonCanonical(
+                id=person_id,
+                stylebook_id=sb_id,
+                label="Jane Doe",
+                slug="jane-doe",
+                status="active",
+            )
+        )
+        session.flush()
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=loc_id,
+                alias_text="City Hall",
+                normalized_alias="city hall",
+                provenance="stylebook_ui_manual",
+                suppressed=False,
+            )
+        )
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=loc_id,
+                alias_text="Old City Hall",
+                normalized_alias="old city hall",
+                provenance="ingest_pipeline",
+                suppressed=True,
+            )
+        )
+        session.add(
+            StylebookLocationMeta(
+                project_id=project_id,
+                stylebook_location_canonical_id=loc_id,
+                meta_type="note",
+                data_json={"body": "Landmark building"},
+                added=True,
+            )
+        )
+        session.add(
+            StylebookConnection(
+                project_id=project_id,
+                from_entity_type="person",
+                from_entity_id=person_id,
+                to_entity_type="location",
+                to_entity_id=loc_id,
+                nature="works_at",
+                description="Jane Doe works at City Hall.",
+            )
+        )
+        session.commit()
+
+        export_stylebook_bundle(
+            session,
+            organization_id=oid,
+            stylebook_id=sb_id,
+            zip_path=zip_path,
+        )
+
+    manifest = read_manifest_from_zip(zip_path)
+    assert manifest["schema_version"] == BUNDLE_SCHEMA_VERSION
+    kinds = {fe["kind"] for fe in manifest["files"] if fe.get("kind") != "manifest"}
+    assert BUNDLE_KIND_ALIAS_LOCATION in kinds
+    assert BUNDLE_KIND_META_LOCATION in kinds
+    assert BUNDLE_KIND_CONNECTION in kinds
+    assert manifest["project_slices"]
+
+    with Session(engine) as session:
+        new_book, stats = import_stylebook_bundle(
+            session,
+            organization_id=oid,
+            zip_path=zip_path,
+            new_stylebook_name="Imported Sidecar Book",
+            project_mappings={"demo-proj-sidecars": project_id},
+        )
+        new_id = int(new_book.id)  # type: ignore[arg-type]
+        assert stats["aliases"] == 2
+        assert stats["meta"] == 1
+        assert stats["connections"] == 1
+
+        imported_loc = session.exec(
+            select(StylebookLocationCanonical).where(
+                StylebookLocationCanonical.stylebook_id == new_id,
+            )
+        ).one()
+        imported_person = session.exec(
+            select(StylebookPersonCanonical).where(
+                StylebookPersonCanonical.stylebook_id == new_id,
+            )
+        ).one()
+        aliases = session.exec(
+            select(StylebookLocationAlias).where(
+                StylebookLocationAlias.location_canonical_id == str(imported_loc.id),
+            )
+        ).all()
+        assert len(aliases) == 2
+        assert any(a.normalized_alias == "old city hall" and a.suppressed for a in aliases)
+
+        meta_rows = session.exec(
+            select(StylebookLocationMeta).where(
+                StylebookLocationMeta.stylebook_location_canonical_id == str(imported_loc.id),
+            )
+        ).all()
+        assert len(meta_rows) == 1
+        assert meta_rows[0].data_json == {"body": "Landmark building"}
+
+        connections = session.exec(
+            select(StylebookConnection).where(
+                StylebookConnection.project_id == project_id,
+                StylebookConnection.to_entity_id == str(imported_loc.id),
+            )
+        ).all()
+        assert len(connections) == 1
+        assert connections[0].from_entity_id == str(imported_person.id)
+        assert connections[0].to_entity_id == str(imported_loc.id)

@@ -16,6 +16,7 @@ ROLE_ARRAY_FIELDS = (
     "address_place_kind",
     "description",
     "geocode_hints",
+    "evidence_anchor",
 )
 
 

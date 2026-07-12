@@ -81,3 +81,31 @@ export function formatCleanupLastRun(ranAtIso: string | undefined): string {
   if (Number.isNaN(date.getTime())) return "—"
   return date.toLocaleString()
 }
+
+export type CleanupCheckStaleness = "fresh" | "aging" | "stale" | "never"
+
+/** Fresh < 2 days; aging 2–4 days; stale 5+ days or never run. */
+export function cleanupCheckStaleness(ranAtIso: string | undefined): CleanupCheckStaleness {
+  if (!ranAtIso) return "never"
+  const date = new Date(ranAtIso)
+  if (Number.isNaN(date.getTime())) return "never"
+  const daysSinceRun = (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)
+  if (daysSinceRun >= 5) return "stale"
+  if (daysSinceRun >= 2) return "aging"
+  return "fresh"
+}
+
+function cleanupDaysSinceRun(ranAtIso: string): number {
+  const date = new Date(ranAtIso)
+  if (Number.isNaN(date.getTime())) return Number.POSITIVE_INFINITY
+  return Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+export function formatCleanupStalenessLabel(ranAtIso: string | undefined): string {
+  if (!ranAtIso) return "Not run yet"
+  const days = cleanupDaysSinceRun(ranAtIso)
+  if (!Number.isFinite(days)) return "Not run yet"
+  if (days === 0) return "Run today"
+  if (days === 1) return "Run yesterday"
+  return `Last run ${days} days ago`
+}

@@ -70,3 +70,15 @@ def test_place_with_embedded_street_address() -> None:
     assert "2800" in components["address"]
     assert "Division" in components["address"]
     assert components["city"] == "Chicago"
+
+
+def test_block_address_normalizes_journalistic_phrasing() -> None:
+    ctx = extract_article_context(
+        "Shooting on the 6500 block of South Hermitage Avenue in Chicago."
+    )
+    location = "6500 block of South Hermitage Avenue, Chicago, IL"
+    components = build_components(location, "address", ctx)
+    assert components["address"] == "6500 S Hermitage Ave"
+    assert components["city"] == "Chicago"
+    assert components["state"] == {"name": "Illinois", "abbr": "IL"}
+

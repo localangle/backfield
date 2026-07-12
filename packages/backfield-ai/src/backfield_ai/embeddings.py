@@ -351,18 +351,27 @@ def _api_key_for_catalog_provider(
     )
 
 
-def embed_texts_for_model_config(
+@dataclass(frozen=True)
+class EmbeddingModelAuth:
+    """Resolved LiteLLM routing for one catalog embedding model (no live DB session)."""
+
+    litellm_model: str
+    api_key: str
+    api_base: str | None
+    model_config_id: str
+
+
+def resolve_embedding_auth_for_model_config(
     session: Session,
     *,
     project_id: int,
     model_config_id: str,
-    texts: list[str],
-    timeout: float = 120.0,
-) -> LiteLLMEmbeddingBatchResult:
-    """Resolve catalog auth for an embedding model and run a LiteLLM batch."""
+) -> EmbeddingModelAuth:
+    """Load catalog embedding model credentials (caller should release the session before I/O)."""
     from backfield_ai.catalog_runtime import resolve_llm_auth_for_model_config
     from backfield_ai.model_resolve import _load_enabled_org_config
 
+    config_id = model_config_id.strip()
     proj = session.get(BackfieldProject, project_id)
     if proj is None:
         raise EmbeddingConfigurationError("Project not found.")
@@ -372,14 +381,14 @@ def embed_texts_for_model_config(
         session,
         organization_id=org_id,
         project_id=project_id,
-        config_id=model_config_id.strip(),
+        config_id=config_id,
     )
     assert_model_config_is_embedding(cfg)
 
     lm, api_key, api_base = resolve_llm_auth_for_model_config(
         session,
         project_id=project_id,
-        model_config_id=model_config_id,
+        model_config_id=config_id,
         fallback_litellm_model=effective_litellm_model_row(
             litellm_model=cfg.litellm_model,
             provider=str(cfg.provider),
@@ -403,12 +412,55 @@ def embed_texts_for_model_config(
         raise EmbeddingConfigurationError(
             "Azure OpenAI embeddings require an API base URL on the credential or host env.",
         )
-
-    return embed_texts_sync(
+    return EmbeddingModelAuth(
         litellm_model=lm,
-        texts=texts,
         api_key=api_key,
         api_base=api_base,
+        model_config_id=config_id,
+    )
+
+
+def _resolve_embedding_auth(
+    session: Session | None,
+    *,
+    project_id: int,
+    model_config_id: str,
+) -> EmbeddingModelAuth:
+    if session is not None:
+        return resolve_embedding_auth_for_model_config(
+            session,
+            project_id=project_id,
+            model_config_id=model_config_id,
+        )
+    from backfield_db.session import get_engine
+
+    with Session(get_engine()) as owned:
+        return resolve_embedding_auth_for_model_config(
+            owned,
+            project_id=project_id,
+            model_config_id=model_config_id,
+        )
+
+
+def embed_texts_for_model_config(
+    session: Session | None,
+    *,
+    project_id: int,
+    model_config_id: str,
+    texts: list[str],
+    timeout: float = 120.0,
+) -> LiteLLMEmbeddingBatchResult:
+    """Resolve catalog auth, then embed via LiteLLM without holding a DB connection."""
+    auth = _resolve_embedding_auth(
+        session,
+        project_id=project_id,
+        model_config_id=model_config_id,
+    )
+    return embed_texts_sync(
+        litellm_model=auth.litellm_model,
+        texts=texts,
+        api_key=auth.api_key,
+        api_base=auth.api_base,
         timeout=timeout,
-        model_config_id=model_config_id.strip(),
+        model_config_id=auth.model_config_id,
     )

@@ -21,6 +21,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
   DialogContent,
@@ -40,6 +41,7 @@ import ConnectionEvidenceBlock from "@/components/ConnectionEvidenceBlock"
 import ConnectionsGraph from "@/components/ConnectionsGraph"
 import NatureAutocomplete from "@/components/NatureAutocomplete"
 import Pagination from "@/components/Pagination"
+import { formatConnectionSummaryLabel } from "@/lib/connectionEvidence"
 import type { EntityType as ConnectionsEntityType } from "@/lib/entityTypes"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { fetchProjects, type Project } from "@/lib/stylebook-api/projects"
@@ -73,6 +75,10 @@ function getDetailUrl(
   return `${prefix}/locations/canonical/${entityId}${scopeSuffix}`
 }
 
+function connectionSummaryLabel(conn: Connection): string {
+  return formatConnectionSummaryLabel(conn)
+}
+
 export default function ConnectionsSection({
   entityType,
   entityId,
@@ -97,12 +103,14 @@ export default function ConnectionsSection({
   const [selectedTargetName, setSelectedTargetName] = useState<string | null>(null)
   const [addTargetType, setAddTargetType] = useState<'person' | 'location' | 'organization' | 'work'>('person')
   const [nature, setNature] = useState('')
+  const [description, setDescription] = useState('')
   const [natureSuggestions, setNatureSuggestions] = useState<string[]>([])
   const [natureSearch, setNatureSearch] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   const [editConnection, setEditConnection] = useState<Connection | null>(null)
   const [editNature, setEditNature] = useState('')
+  const [editDescription, setEditDescription] = useState('')
   const [editNatureSuggestions, setEditNatureSuggestions] = useState<string[]>([])
   const [editSubmitting, setEditSubmitting] = useState(false)
 
@@ -239,16 +247,21 @@ export default function ConnectionsSection({
       entityType === 'location' ? 'person' : entityType === 'person' ? 'location' : 'person'
     )
     setNature('')
+    setDescription('')
     setNatureSearch('')
   }
 
   const handleAddSubmit = async () => {
-    if (selectedTargetId == null || !nature.trim()) return
+    if (selectedTargetId == null) return
+    const trimmedNature = nature.trim()
+    const trimmedDescription = description.trim()
+    if (!trimmedNature && !trimmedDescription) return
     const toType = addTargetType
     const body = {
       to_entity_type: toType,
       to_entity_id: selectedTargetId,
-      nature: nature.trim(),
+      ...(trimmedNature ? { nature: trimmedNature } : {}),
+      ...(trimmedDescription ? { description: trimmedDescription } : {}),
     }
     const canonicalId = String(entityId)
     setSubmitting(true)
@@ -273,13 +286,20 @@ export default function ConnectionsSection({
 
   const handleEditOpen = (conn: Connection) => {
     setEditConnection(conn)
-    setEditNature(conn.nature)
+    setEditNature(conn.nature ?? '')
+    setEditDescription(conn.description ?? '')
   }
 
   const handleEditSubmit = async () => {
     if (!editConnection) return
+    const trimmedNature = editNature.trim()
+    const trimmedDescription = editDescription.trim()
+    if (!trimmedNature && !trimmedDescription) return
     const canonicalId = String(entityId)
-    const body = { nature: editNature.trim() }
+    const body = {
+      nature: trimmedNature || null,
+      description: trimmedDescription || null,
+    }
     setEditSubmitting(true)
     try {
       if (entityType === "location") {
@@ -464,7 +484,10 @@ export default function ConnectionsSection({
                           </>
                         )}
                       </div>
-                      <p className="mt-0.5 text-xs text-muted-foreground">{conn.nature}</p>
+                      <p className="mt-0.5 text-sm text-foreground">{connectionSummaryLabel(conn)}</p>
+                      {conn.nature?.trim() ? (
+                        <p className="mt-0.5 text-xs text-muted-foreground">{conn.nature.replace(/_/g, " ")}</p>
+                      ) : null}
                       <ConnectionEvidenceBlock evidence={conn.evidence_json} />
                     </TableCell>
                     <TableCell className="align-top">
@@ -473,7 +496,7 @@ export default function ConnectionsSection({
                           variant="outline"
                           size="sm"
                           onClick={() => handleEditOpen(conn)}
-                          title="Edit nature"
+                          title="Edit connection"
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -675,13 +698,24 @@ export default function ConnectionsSection({
                 />
               )}
             </div>
+            <div>
+              <Label htmlFor="connection-description">Description</Label>
+              <Textarea
+                id="connection-description"
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder="Describe the relationship in a sentence or less."
+                className="mt-1"
+                rows={3}
+              />
+            </div>
             <NatureAutocomplete
-              label="Nature of connection"
+              label="Nature (optional)"
               value={nature}
               onChange={setNature}
               onSearchChange={setNatureSearch}
               suggestions={natureSuggestions}
-              placeholder="e.g. mayor, born in"
+              placeholder="e.g. works for, located at"
             />
           </div>
           <DialogFooter>
@@ -690,7 +724,11 @@ export default function ConnectionsSection({
             </Button>
             <Button
               onClick={handleAddSubmit}
-              disabled={selectedTargetId == null || !nature.trim() || submitting}
+              disabled={
+                selectedTargetId == null ||
+                (!nature.trim() && !description.trim()) ||
+                submitting
+              }
             >
               {submitting ? 'Adding...' : 'Add connection'}
             </Button>
@@ -703,22 +741,38 @@ export default function ConnectionsSection({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit connection</DialogTitle>
-            <DialogDescription>Change the nature of this connection.</DialogDescription>
+            <DialogDescription>
+              Update the description or nature of this connection.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="edit-connection-description">Description</Label>
+              <Textarea
+                id="edit-connection-description"
+                value={editDescription}
+                onChange={(event) => setEditDescription(event.target.value)}
+                placeholder="Describe the relationship in a sentence or less."
+                className="mt-1"
+                rows={3}
+              />
+            </div>
             <NatureAutocomplete
-              label="Nature"
+              label="Nature (optional)"
               value={editNature}
               onChange={setEditNature}
               suggestions={editNatureSuggestions}
-              placeholder="e.g. mayor, born in"
+              placeholder="e.g. works for, located at"
             />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditConnection(null)}>
               Cancel
             </Button>
-            <Button onClick={handleEditSubmit} disabled={!editNature.trim() || editSubmitting}>
+            <Button
+              onClick={handleEditSubmit}
+              disabled={(!editNature.trim() && !editDescription.trim()) || editSubmitting}
+            >
               {editSubmitting ? 'Saving...' : 'Save'}
             </Button>
           </DialogFooter>
@@ -731,8 +785,9 @@ export default function ConnectionsSection({
           <DialogHeader>
             <DialogTitle>Delete connection</DialogTitle>
             <DialogDescription>
-              Remove the connection &quot;{entityDisplayName}&quot; — {deleteConnection?.nature} — &quot;
-              {deleteConnection && otherDisplayName(deleteConnection)}&quot;? This cannot be undone.
+              Remove the connection between &quot;{entityDisplayName}&quot; and &quot;
+              {deleteConnection && otherDisplayName(deleteConnection)}&quot;
+              {deleteConnection ? ` (${connectionSummaryLabel(deleteConnection)})` : ""}? This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

@@ -22,6 +22,7 @@ from backfield_entities.ingest.geocode_cache.fingerprint import (
     substrate_location_cache_query_fingerprint,
 )
 from backfield_entities.ingest.geocode_cache.sanity import cache_hit_sane_for_substrate
+from backfield_entities.text.match_normalize import match_fold_key
 
 _DEFAULT_ADJUDICATION_CANDIDATE_LIMIT: int = 18
 
@@ -130,10 +131,22 @@ def _canonical_matches_normalized_query(
     if c.id is None:
         return False
     cid = str(c.id)
-    if normalize_substrate_cache_query(str(c.label)) == normalized_query:
+    query_keys = {
+        normalize_substrate_cache_query(normalized_query),
+        match_fold_key(normalized_query),
+    }
+    label_keys = {
+        normalize_substrate_cache_query(str(c.label)),
+        match_fold_key(str(c.label)),
+    }
+    if query_keys & label_keys:
         return True
     for raw_alias in alias_map.get(cid, ()):
-        if normalize_substrate_cache_query(raw_alias) == normalized_query:
+        alias_keys = {
+            normalize_substrate_cache_query(raw_alias),
+            match_fold_key(raw_alias),
+        }
+        if query_keys & alias_keys:
             return True
     return False
 

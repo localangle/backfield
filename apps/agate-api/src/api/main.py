@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 from api.routers import graphs, health, nodes, projects, runs, templates
+from backfield_auth.path_prefix import install_path_prefix
 from backfield_auth.request_logging_middleware import RequestLoggingMiddleware
 from backfield_auth.structured_logging import configure_structured_logging
 from fastapi import FastAPI
@@ -32,6 +33,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(RequestLoggingMiddleware, service_name="agate-api")
+# Outermost: strip CloudFront path prefix (e.g. /api/agate) before routing.
+install_path_prefix(app)
 
 app.include_router(health.router)
 app.include_router(projects.router)

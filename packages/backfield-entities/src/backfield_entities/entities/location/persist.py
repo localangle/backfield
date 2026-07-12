@@ -7,6 +7,11 @@ from typing import Any
 from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocation
 from sqlmodel import Session, select
 
+from backfield_entities.activity import (
+    EVENT_CANONICAL_CREATED,
+    EVENT_SUBSTRATE_LINKED,
+    log_stylebook_activity_safe,
+)
 from backfield_entities.canonical.jurisdiction import (
     place_extract_components_from_entry,
     stylebook_district_fields_from_components,
@@ -17,14 +22,15 @@ from backfield_entities.canonical.link import (
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_WAIVED,
 )
-from backfield_entities.canonical.match_score import _loose_key
 from backfield_entities.canonical.plan_types import CanonicalPersistDecision, CanonicalPersistPlan
 from backfield_entities.canonical.slug import (
     allocate_unique_canonical_slug,
     flush_new_canonical_with_slug_retry,
 )
 from backfield_entities.entities.location.policy import plan_has_ambiguous_canonical_match
+from backfield_entities.entities.location.recall import location_alias_lookup_keys
 from backfield_entities.geo.h3_index import apply_h3_fields
+from backfield_entities.text.match_normalize import normalize_match_text
 
 
 def _h3_field_kwargs(
@@ -57,23 +63,12 @@ def assert_canonical_link_invariant(location: SubstrateLocation) -> None:
 
 
 def _normalize_alias_text(text: str) -> str:
-    return text.strip().lower()
+    return normalize_match_text(text)
 
 
-def _normalized_alias_variants(normalized_alias: str) -> tuple[str, ...]:
-    """Stable variants for recall/exact matching.
-
-    We keep this conservative: only add an ordinal-stripped form so that strings like
-    ``15th Ward`` and ``Ward 15`` share more overlap in recall.
-    """
-    norm = str(normalized_alias).strip().lower()
-    if not norm:
-        return ()
-    # Use the same ordinal normalization as the scorer's loose-key path.
-    stripped = _loose_key(norm)
-    if stripped and stripped != norm:
-        return (norm, stripped)
-    return (norm,)
+def normalized_alias_variants(normalized_alias: str) -> tuple[str, ...]:
+    """Stable variants for recall/exact matching (accent, apostrophe, loose key)."""
+    return location_alias_lookup_keys(normalized_alias)
 
 
 def seed_aliases_for_canonical_label(
@@ -87,7 +82,7 @@ def seed_aliases_for_canonical_label(
     clean = label.strip()
     if not clean:
         return
-    for norm in _normalized_alias_variants(_normalize_alias_text(clean)):
+    for norm in normalized_alias_variants(_normalize_alias_text(clean)):
         upsert_alias_for_canonical_text(
             session,
             canon_id=canon_id,
@@ -136,7 +131,7 @@ def _upsert_alias_for_canonical(
     location: SubstrateLocation,
     provenance: str,
 ) -> None:
-    for norm in _normalized_alias_variants(str(location.normalized_name)):
+    for norm in normalized_alias_variants(str(location.normalized_name)):
         upsert_alias_for_canonical_text(
             session,
             canon_id=canon_id,
@@ -491,6 +486,20 @@ def apply_canonical_persist_plan(
             provenance=provenance,
             audit_reasons=reasons,
         )
+        log_stylebook_activity_safe(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=int(location.project_id),
+            actor_type="system",
+            source="ingest_pipeline",
+            event_type=EVENT_SUBSTRATE_LINKED,
+            entity_type="location",
+            entity_id=str(location.id) if location.id is not None else None,
+            entity_label=str(location.name),
+            related_entity_type="location",
+            related_entity_id=str(plan.existing_canonical_id),
+            payload_json={"provenance": provenance},
+        )
         return
     materialize_new_canonical_and_link(
         session,
@@ -498,4 +507,20 @@ def apply_canonical_persist_plan(
         location=location,
         provenance=provenance,
         audit_reasons=reasons,
+    )
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=stylebook_id,
+        project_id=int(location.project_id),
+        actor_type="system",
+        source="ingest_pipeline",
+        event_type=EVENT_CANONICAL_CREATED,
+        entity_type="location",
+        entity_id=str(location.stylebook_location_canonical_id)
+        if location.stylebook_location_canonical_id is not None
+        else None,
+        entity_label=str(location.name),
+        related_entity_type="location",
+        related_entity_id=str(location.id) if location.id is not None else None,
+        payload_json={"provenance": provenance, "materialized_from_substrate": True},
     )

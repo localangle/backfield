@@ -33,6 +33,7 @@ from agate_runtime.s3_batch import (
     parse_s3_text_json_document,
     s3_max_files_from_params,
 )
+from agate_utils.llm import call_llm
 from backfield_ai.credentials import merge_project_and_org_llm_api_keys
 from backfield_ai.tracking_context import (
     LlmAttemptTrackingContext,
@@ -50,13 +51,19 @@ from backfield_db import (
     StylebookBundleJob,
     StylebookCandidateAiReview,
     StylebookCleanupAiReview,
+    StylebookCleanupCheckRun,
 )
-from backfield_db.session import get_engine
+from backfield_db.session import get_engine, null_pool_session
 from backfield_entities.catalog.candidate_ai_review import list_open_candidate_ids_for_review
 from backfield_entities.catalog.full_bundle import export_stylebook_bundle, import_stylebook_bundle
 from backfield_entities.ingest.semantic_indexing.reindex_contract import SemanticReindexScope
 from backfield_entities.processed_item_article_link import (
     resolve_substrate_article_id_for_processed_item,
+)
+from backfield_entities.quality.check_runs import (
+    CleanupRunScope,
+    build_cleanup_check_items,
+    persist_cleanup_check_results,
 )
 from backfield_entities.quality.finders._duplicate_labels import DEFAULT_FULL_SIMILARITY_THRESHOLD
 from backfield_entities.quality.finders.duplicate_locations import (
@@ -366,6 +373,20 @@ def _env_overlay(updates: dict[str, str]):
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = prev
+
+
+def _call_llm_with_env_api_keys(prompt: str, **kwargs: Any) -> str:
+    """Pass org/project API keys explicitly; ``call_llm`` does not read env by default."""
+    return call_llm(
+        prompt,
+        openai_api_key=os.getenv("OPENAI_API_KEY"),
+        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
+        gemini_api_key=os.getenv("GEMINI_API_KEY"),
+        openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
+        azure_api_key=os.getenv("AZURE_API_KEY"),
+        azure_api_base=os.getenv("AZURE_API_BASE"),
+        **kwargs,
+    )
 
 
 def _project_system_prompt_from_settings(settings_json: str | None) -> str | None:
@@ -1279,8 +1300,9 @@ def _s3_client_stylebook_bundles() -> Any:
     return boto3.client("s3", **session_kwargs)
 
 
-def _fail_stylebook_bundle_job(engine: Any, job_id: str, message: str) -> None:
-    with Session(engine) as session:
+def _fail_stylebook_bundle_job(job_id: str, message: str) -> None:
+    # Unpooled Session: must not nest on the worker pool while export/import holds it.
+    with null_pool_session() as session:
         job = session.get(StylebookBundleJob, job_id)
         if job is None:
             return
@@ -1291,8 +1313,9 @@ def _fail_stylebook_bundle_job(engine: Any, job_id: str, message: str) -> None:
         session.commit()
 
 
-def _update_bundle_job_progress(engine: Any, job_id: str, payload: dict[str, Any]) -> None:
-    with Session(engine) as session:
+def _update_bundle_job_progress(job_id: str, payload: dict[str, Any]) -> None:
+    # Unpooled Session: must not nest on the worker pool while export/import holds it.
+    with null_pool_session() as session:
         job = session.get(StylebookBundleJob, job_id)
         if job is None:
             return
@@ -1313,7 +1336,7 @@ def export_stylebook_bundle_task(job_id: str) -> None:
     try:
         _stylebook_bundle_bucket_prefix()
     except ValueError as e:
-        _fail_stylebook_bundle_job(engine, job_id, str(e))
+        _fail_stylebook_bundle_job(job_id, str(e))
         return
 
     with Session(engine) as session:
@@ -1358,7 +1381,7 @@ def export_stylebook_bundle_task(job_id: str) -> None:
                 organization_id=org_id,
                 stylebook_id=int(sb_id),
                 zip_path=tmp_path,
-                on_progress=lambda p: _update_bundle_job_progress(engine, job_id, p),
+                on_progress=lambda p: _update_bundle_job_progress(job_id, p),
             )
         client = _s3_client_stylebook_bundles()
         client.upload_file(
@@ -1385,7 +1408,7 @@ def export_stylebook_bundle_task(job_id: str) -> None:
             session.commit()
     except Exception as e:
         logger.exception("export_stylebook_bundle_task failed")
-        _fail_stylebook_bundle_job(engine, job_id, str(e))
+        _fail_stylebook_bundle_job(job_id, str(e))
     finally:
         if tmp_path:
             Path(tmp_path).unlink(missing_ok=True)
@@ -1398,7 +1421,7 @@ def import_stylebook_bundle_task(job_id: str) -> None:
     try:
         _stylebook_bundle_bucket_prefix()
     except ValueError as e:
-        _fail_stylebook_bundle_job(engine, job_id, str(e))
+        _fail_stylebook_bundle_job(job_id, str(e))
         return
 
     with Session(engine) as session:
@@ -1412,12 +1435,12 @@ def import_stylebook_bundle_task(job_id: str) -> None:
         bucket = job.s3_bucket
         key = job.s3_key
         if not bucket or not key:
-            _fail_stylebook_bundle_job(engine, job_id, "import job missing s3_bucket or s3_key")
+            _fail_stylebook_bundle_job(job_id, "import job missing s3_bucket or s3_key")
             return
         req = job.import_request_json or {}
         name = req.get("new_stylebook_name") or req.get("name")
         if not name or not str(name).strip():
-            _fail_stylebook_bundle_job(engine, job_id, "import job missing new_stylebook_name")
+            _fail_stylebook_bundle_job(job_id, "import job missing new_stylebook_name")
             return
         job.status = "running"
         job.updated_at = datetime.now(UTC)
@@ -1438,7 +1461,12 @@ def import_stylebook_bundle_task(job_id: str) -> None:
                 organization_id=org_id,
                 zip_path=tmp_path,
                 new_stylebook_name=str(name).strip(),
-                on_progress=lambda p: _update_bundle_job_progress(engine, job_id, p),
+                project_mappings={
+                    str(k): int(v)
+                    for k, v in (req.get("project_mappings") or {}).items()
+                }
+                or None,
+                on_progress=lambda p: _update_bundle_job_progress(job_id, p),
             )
             jid = new_book.id  # type: ignore[union-attr]
             new_sb_id = int(jid)  # type: ignore[arg-type]
@@ -1454,7 +1482,7 @@ def import_stylebook_bundle_task(job_id: str) -> None:
             session.commit()
     except Exception as e:
         logger.exception("import_stylebook_bundle_task failed")
-        _fail_stylebook_bundle_job(engine, job_id, str(e))
+        _fail_stylebook_bundle_job(job_id, str(e))
     finally:
         if tmp_path:
             Path(tmp_path).unlink(missing_ok=True)
@@ -1594,6 +1622,122 @@ def execute_cleanup_ai_review(review_id: str) -> None:
     except Exception as exc:
         logger.exception("execute_cleanup_ai_review failed")
         _fail_cleanup_ai_review(engine, review_id, str(exc))
+
+
+def _fail_cleanup_check_run(engine: Any, run_id: str, message: str) -> None:
+    with Session(engine) as session:
+        run = session.get(StylebookCleanupCheckRun, run_id)
+        if run is None:
+            return
+        if str(run.status) in ("succeeded", "failed", "cancelled"):
+            return
+        run.status = "failed"
+        run.error_message = message[:10000]
+        run.completed_at = datetime.now(UTC)
+        run.updated_at = datetime.now(UTC)
+        session.add(run)
+        session.commit()
+
+
+@celery_app.task(name="worker.tasks.execute_cleanup_check_run")
+def execute_cleanup_check_run(run_id: str) -> None:
+    """Execute one queued cleanup check run and persist cached candidate rows."""
+    engine = get_engine()
+    with Session(engine) as session:
+        run = session.get(StylebookCleanupCheckRun, run_id)
+        if run is None:
+            return
+        if run.status != "queued":
+            return
+        stylebook = session.get(Stylebook, int(run.stylebook_id))
+        if stylebook is None:
+            _fail_cleanup_check_run(engine, run_id, "Stylebook not found")
+            return
+        scope_payload = run.scope_json if isinstance(run.scope_json, dict) else {}
+        try:
+            scope = CleanupRunScope(
+                stylebook_id=int(run.stylebook_id),
+                organization_id=int(
+                    scope_payload.get("organization_id", stylebook.organization_id)
+                ),
+                check_id=str(run.check_id),
+                full_threshold=float(
+                    scope_payload.get("full_threshold", DEFAULT_FULL_SIMILARITY_THRESHOLD)
+                ),
+                head_threshold=float(
+                    scope_payload.get("head_threshold", LOCATION_HEAD_THRESHOLD)
+                ),
+                project_ids=tuple(scope_payload["project_ids"])
+                if isinstance(scope_payload.get("project_ids"), list)
+                else None,
+                project_slug=scope_payload.get("project_slug"),
+            )
+        except (TypeError, ValueError) as exc:
+            _fail_cleanup_check_run(engine, run_id, f"Invalid run scope: {exc}")
+            return
+        run.status = "running"
+        run.started_at = datetime.now(UTC)
+        run.error_message = None
+        run.updated_at = datetime.now(UTC)
+        session.add(run)
+        session.commit()
+
+    try:
+        with Session(engine) as session:
+            run = session.get(StylebookCleanupCheckRun, run_id)
+            if run is None:
+                return
+            scope_payload = run.scope_json if isinstance(run.scope_json, dict) else {}
+            scope = CleanupRunScope(
+                stylebook_id=int(run.stylebook_id),
+                organization_id=int(scope_payload.get("organization_id", 0)),
+                check_id=str(run.check_id),
+                full_threshold=float(
+                    scope_payload.get("full_threshold", DEFAULT_FULL_SIMILARITY_THRESHOLD)
+                ),
+                head_threshold=float(
+                    scope_payload.get("head_threshold", LOCATION_HEAD_THRESHOLD)
+                ),
+                project_ids=tuple(scope_payload["project_ids"])
+                if isinstance(scope_payload.get("project_ids"), list)
+                else None,
+                project_slug=scope_payload.get("project_slug"),
+            )
+            if scope.check_id == "questionable-organization-canonicals":
+                from worker.substrate.canonical.parallel_llm import (
+                    canonical_adjudication_max_concurrent,
+                )
+                from worker.substrate.cleanup.questionable_organizations_llm import (
+                    resolve_questionable_organization_llm_context,
+                )
+
+                llm_context = resolve_questionable_organization_llm_context(
+                    session,
+                    scope=scope,
+                )
+                with _env_overlay(llm_context.api_key_overlay):
+                    items = build_cleanup_check_items(
+                        session,
+                        scope=scope,
+                        call_llm=_call_llm_with_env_api_keys,
+                        questionable_org_model=llm_context.model,
+                        questionable_org_model_config_id=llm_context.model_config_id,
+                        questionable_org_max_workers=canonical_adjudication_max_concurrent(),
+                    )
+            else:
+                items = build_cleanup_check_items(session, scope=scope, call_llm=call_llm)
+            session.refresh(run)
+            if str(run.status) == "cancelled":
+                return
+            persist_cleanup_check_results(session, run=run, items=items)
+            run.status = "succeeded"
+            run.completed_at = datetime.now(UTC)
+            run.updated_at = datetime.now(UTC)
+            session.add(run)
+            session.commit()
+    except Exception as exc:
+        logger.exception("execute_cleanup_check_run failed")
+        _fail_cleanup_check_run(engine, run_id, str(exc))
 
 
 def _fail_candidate_ai_review(engine: Any, review_id: str, message: str) -> None:

@@ -8,13 +8,21 @@ from uuid import UUID
 
 from backfield_db import (
     BackfieldProject,
+    StylebookOrganizationAlias,
     StylebookOrganizationCanonical,
     SubstrateArticle,
     SubstrateOrganization,
     SubstrateOrganizationMention,
     SubstrateOrganizationMentionOccurrence,
 )
+from backfield_entities.activity import (
+    EVENT_CANONICAL_CREATED,
+    EVENT_CANONICAL_DELETED,
+    EVENT_CANONICAL_UPDATED,
+    log_stylebook_activity_safe,
+)
 from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
+from backfield_entities.catalog.search import catalog_label_alias_ilike_filter
 from backfield_entities.entities.organization.persist import create_standalone_canonical
 from backfield_entities.entities.organization.types import (
     ORGANIZATION_TYPE_VALUES,
@@ -35,6 +43,12 @@ from stylebook_api.stylebook_scope import (
 )
 
 router = APIRouter(prefix="/v1/stylebooks", tags=["stylebook-organization-canonicals"])
+
+
+def _created_by_user_id(auth: dict[str, Any]) -> int | None:
+    if auth.get("type") != "session" or auth.get("user") is None:
+        return None
+    return int(auth["user"].id)  # type: ignore[union-attr]
 
 
 def _escape_ilike_metacharacters(s: str) -> str:
@@ -166,9 +180,18 @@ def _canonical_filters(
     ]
     q_text = (q or "").strip()
     if q_text:
-        esc = _escape_ilike_metacharacters(q_text)
-        term = f"%{esc}%"
-        filters.append(col(StylebookOrganizationCanonical.label).ilike(term, escape="\\"))
+        filters.append(
+            catalog_label_alias_ilike_filter(
+                q_text,
+                label_column=col(StylebookOrganizationCanonical.label),
+                canonical_id_column=col(StylebookOrganizationCanonical.id),
+                alias_model=StylebookOrganizationAlias,
+                alias_canonical_id_column=col(
+                    StylebookOrganizationAlias.organization_canonical_id
+                ),
+                alias_normalized_column=col(StylebookOrganizationAlias.normalized_alias),
+            )
+        )
     if type_filter is not None:
         tf = type_filter.strip()
         if tf:
@@ -231,6 +254,7 @@ class LinkedOrganizationSubstrateItem(BaseModel):
     id: int
     name: str
     normalized_name: str
+    mention_count: int = 0
     organization_type: str | None = None
     canonical_link_status: str
     project_id: int
@@ -486,6 +510,18 @@ def create_canonical_organization(
         organization_type=normalize_organization_type(body.organization_type),
         provenance="stylebook_ui_manual",
     )
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="manual_ui",
+        event_type=EVENT_CANONICAL_CREATED,
+        entity_type="organization",
+        entity_id=str(canon.id),
+        entity_label=str(canon.label),
+        payload_json={"organization_type": canon.organization_type},
+    )
     session.commit()
     session.refresh(canon)
 
@@ -539,6 +575,18 @@ def patch_canonical_organization(
         else:
             canon.organization_type = normalize_organization_type(str(v).strip() or None)
 
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="manual_ui",
+        event_type=EVENT_CANONICAL_UPDATED,
+        entity_type="organization",
+        entity_id=str(canon.id),
+        entity_label=str(canon.label),
+        payload_json=updates,
+    )
     session.add(canon)
     session.commit()
     session.refresh(canon)
@@ -596,6 +644,18 @@ def delete_canonical_organization(
         ]
         session.add(organization)
 
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="manual_ui",
+        event_type=EVENT_CANONICAL_DELETED,
+        entity_type="organization",
+        entity_id=str(canon.id),
+        entity_label=str(canon.label),
+        payload_json={"unlinked_substrate_count": len(linked)},
+    )
     session.delete(canon)
     session.commit()
     return {
@@ -644,12 +704,38 @@ def list_canonical_linked_substrates(
             )
         ).all()
     )
+    organization_ids = [
+        int(organization.id) for organization, _ in rows if organization.id is not None
+    ]  # type: ignore[arg-type]
+    mention_counts: dict[int, int] = {}
+    if organization_ids:
+        mention_counts = {
+            int(organization_id): int(count or 0)
+            for organization_id, count in session.exec(
+                select(
+                    col(SubstrateOrganizationMention.organization_id),
+                    func.count(col(SubstrateOrganizationMention.id)),
+                )
+                .join(
+                    SubstrateArticle,
+                    SubstrateArticle.id == SubstrateOrganizationMention.article_id,
+                )
+                .where(
+                    col(SubstrateOrganizationMention.organization_id).in_(organization_ids),
+                    SubstrateOrganizationMention.deleted == False,  # noqa: E712
+                    col(SubstrateArticle.project_id).in_(project_ids),
+                    SubstrateArticle.deleted == False,  # noqa: E712
+                )
+                .group_by(col(SubstrateOrganizationMention.organization_id))
+            ).all()
+        }
     return LinkedOrganizationSubstratesResponse(
         substrates=[
             LinkedOrganizationSubstrateItem(
                 id=int(organization.id),  # type: ignore[arg-type]
                 name=str(organization.name),
                 normalized_name=str(organization.normalized_name or ""),
+                mention_count=mention_counts.get(int(organization.id), 0),  # type: ignore[arg-type]
                 organization_type=organization.organization_type,
                 canonical_link_status=str(organization.canonical_link_status or ""),
                 project_id=int(project_row.id),  # type: ignore[arg-type]
@@ -676,6 +762,10 @@ def list_canonical_organization_mentions(
     offset: int = Query(0, ge=0),
     sort: str | None = Query(None, description="article | created_at (default)"),
     sort_direction: str = Query("desc", description="asc or desc"),
+    substrate_organization_id: int | None = Query(
+        None,
+        description="Optional linked substrate id to scope mentions to one substrate organization.",
+    ),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> OrganizationMentionsResponse:
@@ -700,6 +790,8 @@ def list_canonical_organization_mentions(
         col(SubstrateArticle.project_id).in_(project_ids),
         SubstrateArticle.deleted == False,  # noqa: E712
     ]
+    if substrate_organization_id is not None:
+        base_where.append(col(SubstrateOrganization.id) == int(substrate_organization_id))
 
     total = int(
         session.scalar(

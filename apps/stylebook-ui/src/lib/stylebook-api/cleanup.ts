@@ -1,11 +1,14 @@
 import { stylebookJsonFetch } from "@/lib/stylebook-api/client"
-import {
-  cleanupLastRunStorageKey,
-  saveCleanupCheckRun,
-  type CleanupCheckRunRecord,
-} from "@/lib/cleanupHubLastRun"
 
 export type CleanupCheckKind = "cluster" | "list"
+
+export type CleanupCheckRunStatus =
+  | "never_run"
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
 
 export interface CleanupCheck {
   id: string
@@ -14,6 +17,27 @@ export interface CleanupCheck {
   entity_type: string
   kind: CleanupCheckKind
   count: number
+  status: CleanupCheckRunStatus
+  run_id?: string | null
+  started_at?: string | null
+  completed_at?: string | null
+  ran_at?: string | null
+  error_message?: string | null
+}
+
+export interface CleanupCheckRun {
+  id: string
+  stylebook_id: number
+  check_id: string
+  status: Exclude<CleanupCheckRunStatus, "never_run">
+  scope_hash: string
+  candidate_count: number
+  error_message?: string | null
+  started_at?: string | null
+  completed_at?: string | null
+  ran_at?: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface CleanupChecksResponse {
@@ -107,9 +131,51 @@ export interface PaginatedCleanupMismatchIssuesResponse {
   has_prev: boolean
 }
 
+export interface CleanupQuestionableOrganizationIssue extends CleanupMismatchIssue {
+  prefilter_score: number
+  prefilter_signals: string[]
+  llm_decision: string
+  category: string
+  confidence: string
+  explanation: string
+  suggested_entity_type: string
+  sample_mentions: string[]
+}
+
+export interface CleanupQuestionablePersonIssue extends CleanupMismatchIssue {
+  prefilter_score: number
+  prefilter_signals: string[]
+  category: string
+  confidence: string
+  explanation: string
+  suggested_entity_type: string
+  matching_organization_type?: string | null
+  sample_mentions: string[]
+}
+
+export interface PaginatedCleanupQuestionableOrganizationsResponse {
+  canonicals: CleanupQuestionableOrganizationIssue[]
+  total: number
+  page: number
+  per_page: number
+  has_next: boolean
+  has_prev: boolean
+}
+
+export interface PaginatedCleanupQuestionablePeopleResponse {
+  canonicals: CleanupQuestionablePersonIssue[]
+  total: number
+  page: number
+  per_page: number
+  has_next: boolean
+  has_prev: boolean
+}
+
 export type PaginatedCleanupListResults =
   | PaginatedCleanupLocationIssuesResponse
   | PaginatedCleanupMismatchIssuesResponse
+  | PaginatedCleanupQuestionableOrganizationsResponse
+  | PaginatedCleanupQuestionablePeopleResponse
 
 export interface ListCleanupChecksParams {
   stylebookSlug: string
@@ -145,6 +211,16 @@ function paginatedClusterQuery(params: GetCleanupCheckResultsParams): string {
   return q.toString()
 }
 
+function cleanupCheckRunPath(stylebookSlug: string, checkId: string): string {
+  return `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/cleanup/checks/${encodeURIComponent(checkId)}/runs`
+}
+
+function cleanupScopeQuery(project?: string): string {
+  const q = new URLSearchParams()
+  if (project) q.set("project", project)
+  return q.toString()
+}
+
 export async function listCleanupChecks(
   params: ListCleanupChecksParams,
 ): Promise<CleanupChecksResponse> {
@@ -157,31 +233,106 @@ export async function listCleanupChecks(
   )
 }
 
-export async function runCleanupCheckCount(
-  params: ListCleanupChecksParams & { checkId: string },
-): Promise<CleanupCheck> {
-  const response = await listCleanupChecks(params)
+export async function startCleanupCheckRun(params: {
+  stylebookSlug: string
+  checkId: string
+  project?: string
+}): Promise<CleanupCheckRun> {
+  const suffix = cleanupScopeQuery(params.project)
+  return stylebookJsonFetch<CleanupCheckRun>(
+    `${cleanupCheckRunPath(params.stylebookSlug, params.checkId)}${suffix ? `?${suffix}` : ""}`,
+    { method: "POST" },
+  )
+}
+
+export async function cancelCleanupCheckRun(params: {
+  stylebookSlug: string
+  checkId: string
+  project?: string
+}): Promise<CleanupCheckRun> {
+  const suffix = cleanupScopeQuery(params.project)
+  return stylebookJsonFetch<CleanupCheckRun>(
+    `${cleanupCheckRunPath(params.stylebookSlug, params.checkId)}/cancel${suffix ? `?${suffix}` : ""}`,
+    { method: "POST" },
+  )
+}
+
+export async function getLatestCleanupCheckRun(params: {
+  stylebookSlug: string
+  checkId: string
+  project?: string
+}): Promise<CleanupCheckRun | null> {
+  const suffix = cleanupScopeQuery(params.project)
+  return stylebookJsonFetch<CleanupCheckRun | null>(
+    `${cleanupCheckRunPath(params.stylebookSlug, params.checkId)}/latest${suffix ? `?${suffix}` : ""}`,
+  )
+}
+
+const ACTIVE_RUN_STATUSES = new Set<CleanupCheckRun["status"]>(["queued", "running"])
+
+export async function pollCleanupCheckRun(params: {
+  stylebookSlug: string
+  checkId: string
+  project?: string
+  intervalMs?: number
+}): Promise<CleanupCheckRun> {
+  const intervalMs = params.intervalMs ?? 1500
+  let latest = await getLatestCleanupCheckRun(params)
+  if (!latest) {
+    throw new Error(`Review run not found: ${params.checkId}`)
+  }
+  while (ACTIVE_RUN_STATUSES.has(latest.status)) {
+    await new Promise((resolve) => window.setTimeout(resolve, intervalMs))
+    latest = await getLatestCleanupCheckRun(params)
+    if (!latest) {
+      throw new Error(`Review run not found: ${params.checkId}`)
+    }
+  }
+  return latest
+}
+
+/** Start a check run, wait for completion, and return the refreshed hub row. */
+export async function runCleanupCheck(params: {
+  stylebookSlug: string
+  checkId: string
+  project?: string
+}): Promise<CleanupCheck> {
+  await startCleanupCheckRun(params)
+  await pollCleanupCheckRun(params)
+  const response = await listCleanupChecks({
+    stylebookSlug: params.stylebookSlug,
+    project: params.project,
+    checkId: params.checkId,
+  })
   const check = response.checks.find((row) => row.id === params.checkId)
   if (!check) {
-    throw new Error(`Cleanup check not found: ${params.checkId}`)
+    throw new Error(`Review not found: ${params.checkId}`)
   }
   return check
 }
 
-/** Re-fetch a check count and persist it for the Checks hub (same scope as manual Run). */
+/** @deprecated Use runCleanupCheck */
+export async function runCleanupCheckCount(
+  params: ListCleanupChecksParams & { checkId: string },
+): Promise<CleanupCheck> {
+  return runCleanupCheck({
+    stylebookSlug: params.stylebookSlug,
+    checkId: params.checkId,
+    project: params.project,
+  })
+}
+
+/** @deprecated Use runCleanupCheck */
 export async function refreshPersistedCleanupCheckCount(params: {
   stylebookSlug: string
   checkId: string
   project?: string
-}): Promise<CleanupCheckRunRecord> {
-  const result = await runCleanupCheckCount(params)
-  const storageKey = cleanupLastRunStorageKey(params.stylebookSlug, params.project)
-  const record: CleanupCheckRunRecord = {
-    ranAtIso: new Date().toISOString(),
-    count: result.count,
+}): Promise<{ ranAtIso: string; count: number }> {
+  const check = await runCleanupCheck(params)
+  return {
+    ranAtIso: check.completed_at ?? check.ran_at ?? new Date().toISOString(),
+    count: check.count,
   }
-  saveCleanupCheckRun(storageKey, params.checkId, record)
-  return record
 }
 
 export async function getDuplicateLocationClusters(
@@ -256,6 +407,22 @@ export async function getMismatchedLocations(
   )
 }
 
+export async function getQuestionableOrganizationCanonicals(
+  params: GetCleanupCheckResultsParams,
+): Promise<PaginatedCleanupQuestionableOrganizationsResponse> {
+  return stylebookJsonFetch<PaginatedCleanupQuestionableOrganizationsResponse>(
+    `${cleanupCheckResultsPath(params.stylebookSlug, "questionable-organization-canonicals")}?${paginatedListQuery(params)}`,
+  )
+}
+
+export async function getQuestionablePersonCanonicals(
+  params: GetCleanupCheckResultsParams,
+): Promise<PaginatedCleanupQuestionablePeopleResponse> {
+  return stylebookJsonFetch<PaginatedCleanupQuestionablePeopleResponse>(
+    `${cleanupCheckResultsPath(params.stylebookSlug, "questionable-person-canonicals")}?${paginatedListQuery(params)}`,
+  )
+}
+
 export async function getCleanupCheckResults(
   params: GetCleanupCheckResultsParams,
 ): Promise<
@@ -276,8 +443,12 @@ export async function getCleanupCheckResults(
       return getMismatchedOrganizations(params)
     case "mismatched-locations":
       return getMismatchedLocations(params)
+    case "questionable-organization-canonicals":
+      return getQuestionableOrganizationCanonicals(params)
+    case "questionable-person-canonicals":
+      return getQuestionablePersonCanonicals(params)
     default:
-      throw new Error(`Unknown cleanup check: ${params.checkId}`)
+      throw new Error(`Unknown review: ${params.checkId}`)
   }
 }
 

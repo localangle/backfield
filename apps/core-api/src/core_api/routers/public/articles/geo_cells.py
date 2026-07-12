@@ -41,7 +41,8 @@ def aggregate_project_articles_by_geo_cells(
     nature: str | None = Query(
         None,
         description=(
-            "Filter matching location mentions by editorial nature (e.g. primary, secondary)"
+            "Filter matching location mentions by editorial nature "
+            "(e.g. primary, secondary, historical)"
         ),
     ),
     meta_type: str | None = Query(None, description="Include articles with this metadata type"),

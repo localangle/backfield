@@ -12,6 +12,7 @@ export type CanonicalDetailSectionId =
 export interface CanonicalMentionSubstrate {
   id: number
   name: string
+  mention_count?: number
   project_slug: string
   project_name: string
 }
@@ -32,6 +33,9 @@ export interface CanonicalMentionsSectionConfig<
   TMention extends CanonicalMentionRow = CanonicalMentionRow,
 > {
   description: string
+  substrateDisplayMode?: "grouped" | "selectable"
+  /** Product noun for one linked record, e.g. "place", "person", "organization". */
+  substrateNoun?: string
   columnHeaders: {
     substrateArticle: string
     nature: string

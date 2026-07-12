@@ -46,8 +46,10 @@ def _normalize_edges(raw_edges: object) -> list[dict[str, Any]]:
             continue
         from_name = str(edge.get("from_display_name") or "").strip()
         to_name = str(edge.get("to_display_name") or "").strip()
-        nature = str(edge.get("nature") or "").strip()
-        if not from_name or not to_name or not nature:
+        description = str(edge.get("description") or "").strip()
+        nature_raw = edge.get("nature")
+        nature = str(nature_raw).strip() if nature_raw is not None else ""
+        if not from_name or not to_name or (not description and not nature):
             continue
         confidence_raw = edge.get("confidence")
         confidence: float | None
@@ -59,7 +61,8 @@ def _normalize_edges(raw_edges: object) -> list[dict[str, Any]]:
             {
                 "from_display_name": from_name,
                 "to_display_name": to_name,
-                "nature": nature,
+                "description": description or None,
+                "nature": nature or None,
                 "confidence": confidence,
             }
         )

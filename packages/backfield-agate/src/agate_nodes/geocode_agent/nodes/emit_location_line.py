@@ -192,15 +192,36 @@ def _promote_acronyms_in_segment(seg: str) -> str:
     return " ".join(_promote_token_acronym_casing(part) for part in seg.split())
 
 
-def _title_segment_words(seg: str) -> str:
-    """Title-case words in one segment; preserve hyphenated names."""
+def _dash_char_in_token(token: str) -> str:
+    match = re.search(r"[-–—]", token)
+    return match.group(0) if match else "-"
+
+
+def _title_segment_words_leaf(seg: str) -> str:
     seg = seg.strip()
     if not seg:
         return seg
-    if "-" in seg:
-        return "-".join(_title_segment_words(part) for part in seg.split("-"))
     capped = string.capwords(seg)
     return _promote_acronyms_in_segment(capped)
+
+
+def _title_segment_words(seg: str) -> str:
+    """Title-case words in one segment; preserve hyphen / en-dash / em-dash compounds."""
+    seg = seg.strip()
+    if not seg:
+        return seg
+    if re.search(r"[-–—]", seg):
+        parts = re.split(r"(\s*[-–—]\s*)", seg)
+        out: list[str] = []
+        for part in parts:
+            if not part:
+                continue
+            if re.fullmatch(r"\s*[-–—]\s*", part):
+                out.append(_dash_char_in_token(part))
+            else:
+                out.append(_title_segment_words_leaf(part))
+        return "".join(out)
+    return _title_segment_words_leaf(seg)
 
 
 def apply_title_case_location_line(line: str) -> str:
@@ -403,6 +424,53 @@ def refine_location_display_line(line: str) -> str:
 def _first_comma_segment(line: str) -> str:
     parts = [p.strip() for p in line.split(",") if p.strip()]
     return parts[0] if parts else (line or "").strip()
+
+
+def _placename_match_key(text: str) -> str:
+    """Normalize placenames for loose equality (case, dash style, whitespace)."""
+    s = (text or "").strip().casefold()
+    s = s.replace("\u2013", "-").replace("\u2014", "-")
+    return re.sub(r"\s+", " ", s)
+
+
+def restore_preferred_place_head_casing(line: str, preferred_head: str | None) -> str:
+    """When the first comma segment matches ``preferred_head``, keep its article/extract casing."""
+    if not preferred_head or not (line or "").strip():
+        return line
+    parts = [p.strip() for p in line.split(",") if p.strip()]
+    if not parts:
+        return line
+    if _placename_match_key(parts[0]) != _placename_match_key(preferred_head):
+        return line
+    parts[0] = preferred_head.strip()
+    return ", ".join(parts)
+
+
+def _preferred_place_head_from_state(state: AgentState) -> str | None:
+    """Best-effort placename head from extract/geocode inputs (before display formatting)."""
+    components = state.get("location_components") or {}
+    if not isinstance(components, dict):
+        components = {}
+
+    place_name: str | None = None
+    place = components.get("place")
+    if isinstance(place, dict):
+        raw_name = place.get("name")
+        if isinstance(raw_name, str) and raw_name.strip():
+            place_name = raw_name.strip()
+
+    location_text = (state.get("location_text") or "").strip()
+    if "," in location_text:
+        head = _first_comma_segment(location_text)
+        if head:
+            return head
+    if place_name:
+        return place_name
+    if location_text:
+        lt = (state.get("location_type") or "").strip().lower()
+        if lt not in _ADMIN_LOCATION_TYPES_SKIP_POLISH:
+            return location_text
+    return None
 
 
 def accept_named_venue_upgrade(
@@ -677,14 +745,17 @@ async def compute_emit_location_line(
     components_json = json.dumps(components, default=str, ensure_ascii=False)[:2000]
     orig_snip, hints_snip = _story_context_snippets(state)
 
+    preferred_head = _preferred_place_head_from_state(state)
+
     def _finalize(line: str) -> str:
-        return clamp_admin_location_display_line(
+        clamped = clamp_admin_location_display_line(
             location_type,
             location_text,
             formatted_address,
             components,
             line,
         )
+        return restore_preferred_place_head_casing(clamped, preferred_head)
 
     if not openai_key:
         return _finalize(_heuristic_emit_location(location_type, location_text, formatted_address))

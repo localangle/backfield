@@ -96,6 +96,7 @@ export interface LinkedOrganizationSubstrateItem {
   id: number
   name: string
   normalized_name: string
+  mention_count?: number
   organization_type?: string | null
   canonical_link_status: string
   project_id: number
@@ -152,6 +153,7 @@ export async function getCanonicalOrganizationMentions(
   _sort?: string,
   sortDirection: "asc" | "desc" = "desc",
   projectFilterSlug?: string,
+  substrateOrganizationId?: number,
 ): Promise<OrganizationMentionsResponse> {
   const params = new URLSearchParams({
     limit: limit.toString(),
@@ -159,6 +161,9 @@ export async function getCanonicalOrganizationMentions(
     sort_direction: sortDirection,
   })
   if (projectFilterSlug) params.set("project", projectFilterSlug)
+  if (typeof substrateOrganizationId === "number") {
+    params.set("substrate_organization_id", String(substrateOrganizationId))
+  }
   return stylebookJsonFetch<OrganizationMentionsResponse>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(
       canonicalId,

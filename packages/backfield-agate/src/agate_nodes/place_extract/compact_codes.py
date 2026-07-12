@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from backfield_entities.entities.location.types import PLACE_EXTRACT_LOCATION_TYPES
+from backfield_entities.entities.location.types import (
+    PLACE_EXTRACT_LOCATION_TYPES,
+    PLACE_MENTION_NATURE_VALUES,
+)
 
 VALID_TYPES = frozenset(PLACE_EXTRACT_LOCATION_TYPES)
-VALID_NATURES = frozenset({"primary", "secondary", "subject", "context", "person", "unknown"})
+VALID_NATURES = frozenset(PLACE_MENTION_NATURE_VALUES)
 VALID_ADDRESS_PLACE_KINDS = frozenset({"public_named", "private_residence", "unknown"})
 
 LOCATION_TYPE_TO_CODE: dict[str, str] = {
@@ -37,6 +40,7 @@ NATURE_TO_CODE: dict[str, str] = {
     "secondary": "s",
     "subject": "j",
     "context": "c",
+    "historical": "h",
     "person": "r",
     "unknown": "u",
 }
@@ -63,7 +67,7 @@ type (column 2):
   pd political_district  nt natural  ot other
 
 nature (column 3):
-  p primary  s secondary  j subject  c context  r person  u unknown
+  p primary  s secondary  j subject  c context  h historical  r person  u unknown
 
 address_place_kind (column 4; use "" when not street-level):
   pn public_named  pv private_residence  uk unknown

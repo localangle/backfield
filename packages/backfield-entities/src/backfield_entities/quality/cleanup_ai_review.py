@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from backfield_entities.entities.location.link_identity import location_merge_pair_blocked
+
 CleanupAiAction = Literal["merge", "keep_separate"]
 
 MAX_MENTION_SAMPLES_IN_PROMPT = 6
@@ -99,6 +101,75 @@ def _format_member_line(check_id: str, member: CleanupClusterMember) -> str:
     return "- " + " ".join(parts)
 
 
+def _entity_specific_partition_rules(check_id: str) -> str:
+    if check_id == "duplicate-organizations":
+        return (
+            "- Treat the identity question as: do these labels name the same durable "
+            "institution, office, campaign, team, company, union, agency, or organized body?\n"
+            "- For organizations, merge aliases that name the same durable body even when one "
+            "label is longer, includes an honorific, or includes a person's full name while "
+            "another uses surname only.\n"
+            "- Presidential, gubernatorial, mayoral, agency, campaign, team, committee, and "
+            "administration labels should be merged when the labels clearly refer to the same "
+            "body (for example, \"President Donald Trump's administration\" and "
+            "\"President Trump's administration\").\n"
+            "- Type or wording differences are not enough to keep records separate when the "
+            "story mentions are compatible aliases for the same organization.\n"
+            "- Keep separate only when the labels indicate distinct organizations, chapters, "
+            "offices, teams, corporate entities, or time-bounded bodies.\n"
+        )
+    if check_id == "duplicate-people":
+        return (
+            "- Treat the identity question as: do these labels name the same individual human "
+            "or public/stage-name person entity?\n"
+            "- For people, athletes/public figures can change teams, titles, or roles over time; "
+            "those changes alone do not imply a different person.\n"
+            "- Merge nicknames, stage names, first/last-name variants, and fuller/shorter name "
+            "forms only when the surrounding evidence supports the same person.\n"
+            "- Prefer separate groups when evidence suggests different individuals with similar "
+            "names.\n"
+        )
+    if check_id == "duplicate-locations":
+        return (
+            "- Treat the identity question as: do these labels identify the same real-world "
+            "place, address, venue, natural feature, jurisdiction, district, or geography?\n"
+            "- For locations, merge alternate labels, casing variants, suffix variants, and "
+            "formatted-address variants only when they identify the same place.\n"
+            "- Keep separate different branches, campuses, buildings, addresses, neighborhoods, "
+            "jurisdictions, administrative levels, or similarly named places.\n"
+            "- Do not merge a container geography with a finer-grained child place unless the "
+            "labels are clearly two names for the same entity.\n"
+            "- Never merge a specific venue, business, building, or point of interest into the "
+            "city, town, neighborhood, or region that merely contains it. Labels like "
+            "'<Venue>, Chicago, IL' name the venue, not the city; sharing a city/state tail is "
+            "not evidence of identity.\n"
+        )
+    return ""
+
+
+def _entity_specific_task_description(check_id: str) -> str:
+    if check_id == "duplicate-people":
+        return (
+            "Decide which records refer to the same person and which are different people "
+            "(namesakes, similarly named public figures, or unrelated matches)."
+        )
+    if check_id == "duplicate-organizations":
+        return (
+            "Decide which records refer to the same organization and which are different "
+            "organizations (distinct bodies, chapters, offices, teams, companies, or unrelated "
+            "matches)."
+        )
+    if check_id == "duplicate-locations":
+        return (
+            "Decide which records refer to the same location and which are different locations "
+            "(distinct places, branches, addresses, jurisdictions, or unrelated matches)."
+        )
+    return (
+        "Decide which records refer to the same real-world entity and which are different "
+        "entities (namesakes, homonyms, or unrelated matches)."
+    )
+
+
 def build_cluster_partition_prompt(
     *,
     check_id: str,
@@ -111,21 +182,18 @@ def build_cluster_partition_prompt(
     }.get(check_id, "entity")
     member_lines = "\n".join(_format_member_line(check_id, member) for member in members)
     member_ids = sorted({member.id for member in members})
+    task_description = _entity_specific_task_description(check_id)
     return (
         f"You are reviewing a cleanup cluster of possible duplicate {entity_label} records.\n"
         "Each record below is a canonical catalog row grouped because names look similar.\n"
-        "Decide which records refer to the same real-world entity and which are different "
-        "entities (namesakes, homonyms, or unrelated matches).\n\n"
+        f"{task_description}\n\n"
         "Rules:\n"
         "- Partition every listed id into one or more groups.\n"
         "- Records in the same group should be merged into one canonical record.\n"
         "- Records in different groups should be kept separate.\n"
-        "- For athletes/public figures, team or role changes over time "
-        "do not imply a different person.\n"
-        "- Prefer separate groups when evidence suggests different individuals "
-        "with similar names.\n"
         "- Use mention_texts (how the entity appears in stories) to distinguish "
-        "namesakes from the same real-world entity.\n"
+        "same-identity aliases from distinct entities of the same type.\n"
+        f"{_entity_specific_partition_rules(check_id)}"
         "- Every id must appear in exactly one group.\n\n"
         f"Member ids: {member_ids}\n\n"
         f"{member_lines}\n\n"
@@ -182,8 +250,31 @@ def parse_cluster_partition_response(
     return groups
 
 
+def _location_merge_group_blocked(
+    group_members: list[CleanupClusterMember],
+    *,
+    keeper_id: str,
+) -> bool:
+    """True when any member pairs with the keeper across incompatible place kinds."""
+    keeper = next((member for member in group_members if str(member.id) == keeper_id), None)
+    if keeper is None:
+        return False
+    for member in group_members:
+        if str(member.id) == keeper_id:
+            continue
+        if location_merge_pair_blocked(
+            source_label=str(member.label),
+            source_location_type=member.location_type,
+            target_label=str(keeper.label),
+            target_location_type=keeper.location_type,
+        ):
+            return True
+    return False
+
+
 def build_proposals_from_partition(
     *,
+    check_id: str,
     cluster_id: str,
     members: list[CleanupClusterMember],
     groups: list[CleanupClusterPartitionGroup],
@@ -197,6 +288,12 @@ def build_proposals_from_partition(
         group_members = [by_id[member_id] for member_id in group.member_ids if member_id in by_id]
         if len(group_members) >= 2:
             keeper_id = choose_keeper_member_id(group_members)
+            # Never propose merging incompatible place kinds (e.g. a venue into its
+            # containing city); leave those groups for manual review instead.
+            if check_id == "duplicate-locations" and _location_merge_group_blocked(
+                group_members, keeper_id=keeper_id
+            ):
+                continue
             proposals.append(
                 CleanupAiProposalDraft(
                     cluster_id=cluster_id,

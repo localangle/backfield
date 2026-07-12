@@ -9,6 +9,12 @@ from backfield_db import StylebookConnection
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
+from backfield_entities.connections.dedupe import (
+    connection_description_coalesced,
+    connection_nature_coalesced,
+    normalize_connection_description,
+    normalize_connection_nature,
+)
 from backfield_entities.connections.evidence import build_connection_creation_evidence
 from backfield_entities.connections.taxonomy import AUTO_CONNECTION_PROMPT_VERSION
 from backfield_entities.connections.types import AutoConnectionEdgeProposal, LinkedEntitySnapshot
@@ -24,7 +30,8 @@ class WrittenAutoConnection:
     to_entity_type: str
     to_entity_id: str
     to_display_name: str
-    nature: str
+    description: str
+    nature: str | None
     confidence: float
 
 
@@ -77,6 +84,11 @@ def write_auto_connections(
         if from_entity is None or to_entity is None:
             continue
 
+        nature = normalize_connection_nature(edge.nature)
+        description = normalize_connection_description(edge.description)
+        if not description:
+            continue
+
         existing = session.exec(
             select(StylebookConnection).where(
                 StylebookConnection.project_id == int(project_id),
@@ -84,7 +96,8 @@ def write_auto_connections(
                 StylebookConnection.from_entity_id == edge.from_entity_id,
                 StylebookConnection.to_entity_type == to_entity_type,
                 StylebookConnection.to_entity_id == edge.to_entity_id,
-                StylebookConnection.nature == edge.nature.strip().lower(),
+                connection_nature_coalesced() == (nature or ""),
+                connection_description_coalesced() == description,
             )
         ).first()
         if existing is not None:
@@ -94,7 +107,7 @@ def write_auto_connections(
         evidence = build_connection_creation_evidence(
             confidence=float(edge.confidence),
             quote=edge.quote,
-            reason=edge.reason.strip() or edge.nature,
+            reason=edge.reason.strip() or description,
             from_entity_type=from_entity_type,
             from_entity_id=edge.from_entity_id,
             from_display_name=from_entity.label,
@@ -120,7 +133,8 @@ def write_auto_connections(
             from_entity_id=edge.from_entity_id,
             to_entity_type=to_entity_type,
             to_entity_id=edge.to_entity_id,
-            nature=edge.nature.strip().lower(),
+            nature=nature,
+            description=description,
             evidence_json=evidence.to_storage_dict(),
         )
         try:
@@ -130,12 +144,13 @@ def write_auto_connections(
         except IntegrityError:
             skipped_existing += 1
             logger.info(
-                "Skipped duplicate auto-connection %s:%s -> %s:%s (%s)",
+                "Skipped duplicate auto-connection %s:%s -> %s:%s (%s / %s)",
                 from_entity_type,
                 edge.from_entity_id,
                 to_entity_type,
                 edge.to_entity_id,
-                edge.nature,
+                nature,
+                description,
             )
             continue
 
@@ -147,7 +162,8 @@ def write_auto_connections(
                 to_entity_type=to_entity_type,
                 to_entity_id=edge.to_entity_id,
                 to_display_name=to_entity.label,
-                nature=edge.nature.strip().lower(),
+                description=description,
+                nature=nature,
                 confidence=float(edge.confidence),
             )
         )

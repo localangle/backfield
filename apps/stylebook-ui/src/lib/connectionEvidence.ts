@@ -7,6 +7,36 @@ export interface ConnectionCreationEvidenceView {
   reason: string
 }
 
+const MATCH_BASIS_PATTERN = /match_basis\s*=\s*[\w-]+/gi
+
+/** Strip internal auto-connection metadata from user-facing copy. */
+export function sanitizeConnectionDisplayText(text: string): string {
+  return text.replace(MATCH_BASIS_PATTERN, "").replace(/\s+/g, " ").trim()
+}
+
+export function isInternalConnectionMetadata(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed) {
+    return true
+  }
+  return /^match_basis\s*=\s*[\w-]+$/i.test(trimmed)
+}
+
+export function formatConnectionSummaryLabel(conn: {
+  description?: string | null
+  nature?: string | null
+}): string {
+  const description = sanitizeConnectionDisplayText(conn.description?.trim() ?? "")
+  if (description && !isInternalConnectionMetadata(description)) {
+    return description
+  }
+  const nature = conn.nature?.trim()
+  if (nature) {
+    return nature.replace(/_/g, " ")
+  }
+  return "Connection"
+}
+
 export function hasConnectionEvidence(
   evidence: Record<string, unknown> | null | undefined,
 ): boolean {
@@ -36,7 +66,9 @@ export function formatConnectionEvidence(
   }
   const row = evidence as Record<string, unknown>
   const quote = typeof row.quote === 'string' ? row.quote.trim() : ''
-  const reason = typeof row.reason === 'string' ? row.reason.trim() : ''
+  const reason = sanitizeConnectionDisplayText(
+    typeof row.reason === 'string' ? row.reason.trim() : '',
+  )
   if (!quote && !reason) {
     return null
   }

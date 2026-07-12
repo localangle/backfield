@@ -143,15 +143,12 @@ def run_embed_images(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str
         prepared.append(result_data)
         descriptions.append(result_data["generated_text"])
 
-    from backfield_db.session import get_engine
-
-    with Session(get_engine()) as session:
-        batch = embed_texts_for_model_config(
-            session,
-            project_id=project_id,
-            model_config_id=embedding_config_id,
-            texts=descriptions,
-        )
+    batch = embed_texts_for_model_config(
+        None,
+        project_id=project_id,
+        model_config_id=embedding_config_id,
+        texts=descriptions,
+    )
 
     if batch.batch_error:
         raise EmbeddingConfigurationError(batch.batch_error)

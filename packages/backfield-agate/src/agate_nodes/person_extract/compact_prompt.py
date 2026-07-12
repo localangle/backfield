@@ -15,7 +15,14 @@ IMPORTANT: Return each person as a JSON ARRAY using the positional schema below.
 Ignore any earlier per-key object description in this prompt; emit arrays, not objects.
 
 Rules for compact output:
-- Apply all editorial inclusion, exclusion, typing, and formatting rules above.
+- Apply all editorial inclusion, exclusion, typing, and formatting rules above —
+  especially **Hard stops**.
+- **Field 0 (`name`) is only for personal names.** Never emit role labels
+  (`ICE agent`), agencies (`ATF`), boards (`Illinois Gaming Board`), companies or
+  funds (`H&R Block`, `Engaged Capital`), schools, laws, media outlets, AI
+  products (`Gemini AI`), places (`Buenos Aires`, `O'Hare Airport`),
+  legislatures (`General Assembly`), or vague descriptors with no personal name
+  (`18-year-old`, `the victim`, `a woman`, `unidentified man`). When unsure, omit the row.
 - Each person is ONE JSON array with fields in this order:
   0. name — required string; personal name only (never a role or role-plus-agency phrase)
   1. title — role/position only; "" when none

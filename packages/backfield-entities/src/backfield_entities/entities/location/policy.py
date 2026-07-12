@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocation
+from backfield_db import StylebookLocationCanonical, SubstrateLocation
 from sqlmodel import Session, col, select
 
 from backfield_entities.canonical.jurisdiction import (
     container_admin_query_from_components,
     district_identity_from_components,
     district_identity_key,
+    district_kind_keywords_conflict,
     geocode_components_vs_formatted_address_mismatch,
     geojson_bbox_centroid,
     geojson_bbox_diagonal_km,
@@ -44,6 +45,9 @@ from backfield_entities.canonical.retrieval import (
     load_canonical_match_features,
     retrieve_candidate_canonical_ids,
 )
+from backfield_entities.entities.location.recall import (
+    canonical_ids_from_location_name_keys,
+)
 from backfield_entities.entities.location.review_display import deferred_policy_display_message
 from backfield_entities.entities.location.types import (
     ADDRESS_PLACE_KIND_PRIVATE_RESIDENCE,
@@ -58,6 +62,7 @@ from backfield_entities.ingest.geocode_cache.resolve import (
 from backfield_entities.ingest.geocode_cache.sanity import (
     substrate_canonical_link_blocked_by_content_sanity,
 )
+from backfield_entities.text.match_normalize import match_fold_key
 
 # Scores at or below this value are treated as gate-demoted (just under recall floor).
 _RECALL_SCORE_DEMOTED: float = RECALL_MIN_SCORE - 0.001
@@ -70,23 +75,14 @@ def find_existing_canonical_id_by_alias(
     normalized_name: str,
 ) -> str | None:
     """Return ``StylebookLocationCanonical.id`` if an alias matches in this Stylebook."""
-    norm = str(normalized_name)
-    stmt = (
-        select(StylebookLocationCanonical)
-        .join(
-            StylebookLocationAlias,
-            StylebookLocationAlias.location_canonical_id == StylebookLocationCanonical.id,
-        )
-        .where(
-            StylebookLocationCanonical.stylebook_id == stylebook_id,
-            StylebookLocationAlias.normalized_alias == norm,
-        )
-        .limit(1)
+    ids = canonical_ids_from_location_name_keys(
+        session,
+        stylebook_id=stylebook_id,
+        name_or_norm=str(normalized_name),
     )
-    canon = session.exec(stmt).first()
-    if canon is None or canon.id is None:
+    if not ids:
         return None
-    return str(canon.id)
+    return ids[0]
 
 
 def find_existing_canonical_id_by_normalized_label(
@@ -101,6 +97,9 @@ def find_existing_canonical_id_by_normalized_label(
         n = normalize_substrate_cache_query(str(raw or ""))
         if n:
             queries.add(n)
+        folded = match_fold_key(str(raw or ""))
+        if folded:
+            queries.add(folded)
     if not queries:
         return None
     canons = session.exec(
@@ -113,7 +112,11 @@ def find_existing_canonical_id_by_normalized_label(
     for canon in canons:
         if canon.id is None:
             continue
-        if normalize_substrate_cache_query(str(canon.label)) in queries:
+        label_keys = {
+            normalize_substrate_cache_query(str(canon.label)),
+            match_fold_key(str(canon.label)),
+        }
+        if label_keys & queries:
             winners.append(canon)
     if len(winners) != 1:
         return None
@@ -164,6 +167,16 @@ _NO_AUTOMATIC_CANONICAL_MATERIALIZATION_TYPES: frozenset[str] = frozenset(
         "intersection_highway",
         "intersection_road",
         "street_road",
+    }
+)
+
+# Types that never auto-materialize a canonical, even with resolved geocode + geometry.
+# Editors can still link these to existing canonicals or create canonicals manually.
+_NEVER_AUTO_MATERIALIZE_TYPES: frozenset[str] = frozenset(
+    {
+        "span",
+        "intersection_road",
+        "intersection_highway",
     }
 )
 
@@ -231,6 +244,70 @@ def _head_anchor_gate_passes(display_name: str, candidate: CanonicalMatchFeature
     for a in candidate.normalized_aliases:
         blob += " " + _loose_key(a)
     return all(t in blob for t in tokens)
+
+
+_COMPASS_AXIS_EAST: frozenset[str] = frozenset({"east", "eastern"})
+_COMPASS_AXIS_WEST: frozenset[str] = frozenset({"west", "western"})
+_COMPASS_AXIS_NORTH: frozenset[str] = frozenset({"north", "northern"})
+_COMPASS_AXIS_SOUTH: frozenset[str] = frozenset({"south", "southern"})
+_COMPOUND_COMPASS_AXES: dict[str, frozenset[str]] = {
+    "northeast": frozenset({"north", "east"}),
+    "northeastern": frozenset({"north", "east"}),
+    "northwest": frozenset({"north", "west"}),
+    "northwestern": frozenset({"north", "west"}),
+    "southeast": frozenset({"south", "east"}),
+    "southeastern": frozenset({"south", "east"}),
+    "southwest": frozenset({"south", "west"}),
+    "southwestern": frozenset({"south", "west"}),
+}
+
+
+def _compass_axes_from_head(display_name: str) -> frozenset[str]:
+    """Compass axes named on the comma head (e.g. ``East Coast, US`` → ``{east}``)."""
+    head = display_name.split(",")[0]
+    loose = _loose_key(head)
+    if not loose:
+        return frozenset()
+    axes: set[str] = set()
+    for token in loose.split():
+        compound = _COMPOUND_COMPASS_AXES.get(token)
+        if compound is not None:
+            axes.update(compound)
+            continue
+        if token in _COMPASS_AXIS_EAST:
+            axes.add("east")
+        if token in _COMPASS_AXIS_WEST:
+            axes.add("west")
+        if token in _COMPASS_AXIS_NORTH:
+            axes.add("north")
+        if token in _COMPASS_AXIS_SOUTH:
+            axes.add("south")
+    return frozenset(axes)
+
+
+def _compass_axes_conflict(left: frozenset[str], right: frozenset[str]) -> bool:
+    if not left or not right:
+        return False
+    if "east" in left and "west" in right:
+        return True
+    if "west" in left and "east" in right:
+        return True
+    if "north" in left and "south" in right:
+        return True
+    if "south" in left and "north" in right:
+        return True
+    return False
+
+
+def _compass_direction_conflict(substrate_name: str, candidate: CanonicalMatchFeatures) -> bool:
+    """True when substrate and candidate name heads name opposing compass directions."""
+    sub_axes = _compass_axes_from_head(substrate_name)
+    if not sub_axes:
+        return False
+    for surface in (str(candidate.label), *candidate.normalized_aliases):
+        if _compass_axes_conflict(sub_axes, _compass_axes_from_head(str(surface))):
+            return True
+    return False
 
 
 def _match_basis_for_audit(location_type: str | None) -> str:
@@ -303,6 +380,26 @@ def _district_identity_pair_mismatch(
     if not ck:
         return False
     return sub_key != ck
+
+
+def _district_kind_keyword_pair_mismatch(
+    location: SubstrateLocation,
+    canon: StylebookLocationCanonical,
+) -> bool:
+    """True when district-kind keywords disagree for a political-district pairing.
+
+    Catches rows without a structured district identity (e.g. a judicial "subcircuit"
+    phrase misfiled in the city component) that would otherwise fuzzy-match a
+    same-numbered congressional district, ward, or state legislative district.
+    """
+    s_lt = (location.location_type or "").strip().lower()
+    c_lt = (canon.location_type or "").strip().lower()
+    if s_lt != "political_district" and c_lt != "political_district":
+        return False
+    return district_kind_keywords_conflict(
+        (str(location.name or ""), str(location.formatted_address or "")),
+        (str(canon.label or ""), str(canon.formatted_address or "")),
+    )
 
 
 def _address_neighborhood_geometry_demotes_recall(
@@ -505,6 +602,8 @@ def _apply_recall_match_gates(
     gate_lt = _should_apply_head_anchor_gate(location.location_type)
     if gate_lt and not _head_anchor_gate_passes(str(location.name), feat):
         sc = min(sc, _RECALL_SCORE_DEMOTED)
+    if _compass_direction_conflict(str(location.name), feat):
+        sc = min(sc, _RECALL_SCORE_DEMOTED)
     if not types_are_comparable(location.location_type, canon.location_type):
         sc = min(sc, _RECALL_SCORE_DEMOTED)
     if strict_canonical_gates_enabled() and _jurisdiction_pair_demotes_recall_score(
@@ -512,6 +611,8 @@ def _apply_recall_match_gates(
     ):
         sc = min(sc, _RECALL_SCORE_DEMOTED)
     if strict_canonical_gates_enabled() and _district_identity_pair_mismatch(comps, canon):
+        sc = min(sc, _RECALL_SCORE_DEMOTED)
+    if strict_canonical_gates_enabled() and _district_kind_keyword_pair_mismatch(location, canon):
         sc = min(sc, _RECALL_SCORE_DEMOTED)
     if strict_canonical_gates_enabled() and _address_neighborhood_geometry_demotes_recall(
         location, canon, feat
@@ -635,11 +736,12 @@ def _should_materialize_when_no_canonical_match(location: SubstrateLocation) -> 
     Most location types get a canonical when nothing linked and recall is not ambiguous,
     as long as the row is not a hard geocode failure and has a normalized name.
 
-    Address, intersections, and span / street-road types keep the strict geometry rule.
-    Spans never materialize automatically (always defer).
+    Address and street-road types keep the strict geometry rule. Spans and
+    intersections never materialize automatically (editors can still link them to
+    existing canonicals or create canonicals manually from the queue).
     """
     lt = (location.location_type or "").strip().lower()
-    if lt == "span":
+    if lt in _NEVER_AUTO_MATERIALIZE_TYPES:
         return False
     if _location_type_allows_autocreate_without_strict_geometry(location.location_type):
         st = str(location.status or "")

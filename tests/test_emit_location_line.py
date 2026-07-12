@@ -4,10 +4,12 @@ from agate_nodes.geocode_agent.nodes.emit_location_line import (
     _CONTEXT_SNIPPET_MAX,
     _HINTS_SNIPPET_MAX,
     _heuristic_emit_location,
+    _preferred_place_head_from_state,
     _story_context_snippets,
     apply_title_case_location_line,
     clamp_admin_location_display_line,
     refine_location_display_line,
+    restore_preferred_place_head_casing,
     should_skip_location_display_polish,
 )
 
@@ -113,6 +115,44 @@ def test_refine_phd_style_abbrev() -> None:
 def test_refine_ampersand_acronym() -> None:
     out = refine_location_display_line("At&t plaza, dallas, tx")
     assert out == "AT&T Plaza, Dallas, TX"
+
+
+def test_refine_en_dash_compound_title_case() -> None:
+    assert (
+        refine_location_display_line("university of wisconsin–madison, madison, wi")
+        == "University of Wisconsin–Madison, Madison, WI"
+    )
+
+
+def test_restore_preferred_place_head_casing() -> None:
+    assert (
+        restore_preferred_place_head_casing(
+            "University of Wisconsin–madison, Madison, WI",
+            "University of Wisconsin–Madison",
+        )
+        == "University of Wisconsin–Madison, Madison, WI"
+    )
+    assert (
+        restore_preferred_place_head_casing(
+            "University of Wisconsin-Madison, Madison, WI",
+            "University of Wisconsin–Madison",
+        )
+        == "University of Wisconsin–Madison, Madison, WI"
+    )
+
+
+def test_preferred_place_head_from_state_uses_q_head() -> None:
+    head = _preferred_place_head_from_state(
+        {
+            "location_text": "University of Wisconsin–Madison, Madison, WI",
+            "location_type": "place",
+            "location_components": {
+                "place": {"name": "University of Wisconsin–Madison"},
+                "city": "Madison",
+            },
+        }
+    )
+    assert head == "University of Wisconsin–Madison"
 
 
 def test_heuristic_strips_trailing_us_for_domestic() -> None:

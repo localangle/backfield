@@ -12,11 +12,17 @@ import {
   type LinkedMention,
   type LinkedSubstrateItem,
 } from "@/lib/api"
-import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
+import { locationTypeManualSelectOptions, placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 import { isStylebookApiNotFoundError } from "@/lib/stylebook-api/client"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import type { CleanupEntityType } from "@/lib/cleanupChecks"
 import { usePromptDeleteEmptyCanonical } from "@/lib/usePromptDeleteEmptyCanonical"
+import {
+  useSimilarCanonicalNotice,
+  type SimilarCanonicalMatch,
+} from "@/lib/useSimilarCanonicalNotice"
 import { usePaginatedCanonicalMentions } from "@/lib/usePaginatedCanonicalMentions"
+import { useSelectedMentionSubstrate } from "@/lib/useSelectedMentionSubstrate"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { useAppMessage } from "@/components/AppMessageProvider"
@@ -30,6 +36,13 @@ import { locationCanonicalDetailConfig } from "@/lib/entityConfigs/location/cano
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Dialog,
@@ -39,14 +52,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { SimilarCanonicalNotice } from "@/components/SimilarCanonicalNotice"
 import { LeafletMap } from "@backfield/ui/LeafletMap"
 import { updateCanonicalLocationGeometry } from "@/lib/stylebook-api/locations"
+import { mergeCleanupLocationCanonical } from "@/lib/stylebook-api/cleanup"
 import { Loader2 } from "lucide-react"
 
 /** Continental US when adding the first geometry from an empty draft (matches LeafletMap defaults). */
 const ADD_GEOMETRY_MAP_CENTER: [number, number] = [39.8283, -98.5795]
 /** Match @backfield/ui LeafletMap continental US default framing. */
 const ADD_GEOMETRY_MAP_ZOOM = 3
+const ENTITY_TYPE: CleanupEntityType = "location"
 
 export default function LocationDetail() {
   const { showError, showConfirm } = useAppMessage()
@@ -68,6 +84,10 @@ export default function LocationDetail() {
   const [label, setLabel] = useState("")
   const [locationType, setLocationType] = useState("")
   const [formattedAddress, setFormattedAddress] = useState("")
+  const orderedLocationTypeOptions = useMemo(
+    () => locationTypeManualSelectOptions(locationType),
+    [locationType],
+  )
   const [saving, setSaving] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -83,6 +103,7 @@ export default function LocationDetail() {
     null,
   )
   const [adoptingSubstrateGeometry, setAdoptingSubstrateGeometry] = useState(false)
+  const [mergingSimilarId, setMergingSimilarId] = useState<string | null>(null)
 
   const canonicalListHref = useMemo(() => {
     const base = `${catalogBasePath}/locations/canonical`
@@ -121,6 +142,12 @@ export default function LocationDetail() {
     void loadCanonical(id, stylebookSlug)
   }, [id, stylebookSlug, deleting, evidenceProjectSlug, loadCanonical])
 
+  const {
+    selectedSubstrateId: selectedMentionSubstrateId,
+    setSelectedSubstrateId: setSelectedMentionSubstrateId,
+    resetKey: mentionsResetKey,
+  } = useSelectedMentionSubstrate(substrates)
+
   const fetchLocationMentionsPage = useCallback(
     (
       canonicalId: string,
@@ -137,8 +164,9 @@ export default function LocationDetail() {
         undefined,
         "desc",
         projectFilter,
+        selectedMentionSubstrateId ?? undefined,
       ),
-    [],
+    [selectedMentionSubstrateId],
   )
 
   const {
@@ -154,6 +182,7 @@ export default function LocationDetail() {
     canonicalId: id,
     stylebookSlug,
     projectFilterSlug: evidenceProjectSlug,
+    resetKey: mentionsResetKey,
     enabled: Boolean(id && stylebookSlug && !deleting && canonical?.id === id),
     fetchPage: fetchLocationMentionsPage,
   })
@@ -177,10 +206,11 @@ export default function LocationDetail() {
     [evidenceProjectSlug],
   )
 
+  const canonicalId = canonical?.id
   useEffect(() => {
-    if (!id || !stylebookSlug || deleting || canonical?.id !== id) return
+    if (!id || !stylebookSlug || deleting || canonicalId !== id) return
     void loadSubstrates(id, stylebookSlug)
-  }, [id, stylebookSlug, deleting, canonical, loadSubstrates])
+  }, [id, stylebookSlug, deleting, canonicalId, loadSubstrates])
 
   const refreshCanonicalPage = useCallback(
     async (quiet = false) => {
@@ -213,7 +243,16 @@ export default function LocationDetail() {
     setUnlinkingId(sub.id)
     try {
       await unlinkSubstrateFromCanonical(sub.id, sub.project_slug)
-      await refreshCanonicalPage(true)
+      setSubstrates((prev) => prev.filter((item) => item.id !== sub.id))
+      setCanonical((prev) =>
+        prev
+          ? {
+              ...prev,
+              linked_substrate_count: Math.max(0, Number(prev.linked_substrate_count ?? 0) - 1),
+            }
+          : prev,
+      )
+      await refreshMentions(true)
     } catch (e) {
       showError(e instanceof Error ? e.message : "Unlink failed")
     } finally {
@@ -341,6 +380,43 @@ export default function LocationDetail() {
   )
 
   const geometry = (canonical?.geometry_json as Record<string, unknown> | undefined) ?? null
+  const similarNotice = useSimilarCanonicalNotice({
+    stylebookSlug,
+    canonicalId: canonical?.id,
+    canonicalLabel: canonical?.label,
+    entityType: ENTITY_TYPE,
+    project: evidenceProjectSlug || undefined,
+    enabled: !deleting,
+  })
+
+  const similarDetailHref = useCallback(
+    (canonicalId: string) => {
+      const base = `${catalogBasePath}/locations/canonical/${encodeURIComponent(canonicalId)}`
+      return filterScopeSuffix ? `${base}${filterScopeSuffix}` : base
+    },
+    [catalogBasePath, filterScopeSuffix],
+  )
+
+  const handleMergeIntoSimilar = useCallback(
+    async (match: SimilarCanonicalMatch) => {
+      if (!stylebookSlug || !canonical) return
+      const confirmed = await showConfirm(
+        `Move all linked places from "${canonical.label}" into "${match.label}" and delete "${canonical.label}"?`,
+        { title: "Merge possible duplicate?", confirmLabel: "Merge" },
+      )
+      if (!confirmed) return
+      setMergingSimilarId(match.id)
+      try {
+        await mergeCleanupLocationCanonical(stylebookSlug, canonical.id, match.id)
+        navigate(similarDetailHref(match.id))
+      } catch (error) {
+        showError(error instanceof Error ? error.message : "Could not merge records")
+      } finally {
+        setMergingSimilarId(null)
+      }
+    },
+    [canonical, navigate, showConfirm, showError, similarDetailHref, stylebookSlug],
+  )
 
   return (
     <CanonicalDetailLayout
@@ -372,6 +448,17 @@ export default function LocationDetail() {
       stylebookSlug={stylebookSlug}
       entityId={canonical?.id}
       entityDisplayName={canonical?.label}
+      topNotice={
+        <SimilarCanonicalNotice
+          entityNounPlural="locations"
+          matches={similarNotice.matches}
+          canEdit={canEdit}
+          mergingId={mergingSimilarId}
+          onMerge={(match) => void handleMergeIntoSimilar(match)}
+          onIgnore={similarNotice.ignore}
+          detailHref={similarDetailHref}
+        />
+      }
       details={
         <Card>
           <CardHeader>
@@ -387,13 +474,25 @@ export default function LocationDetail() {
               )}
             </div>
             <div>
-              <Label>Location type</Label>
+              <Label htmlFor="location-type">Location type</Label>
               {editing ? (
-                <Input
-                  value={locationType}
-                  onChange={(e) => setLocationType(e.target.value)}
-                  placeholder="e.g. city, neighborhood"
-                />
+                <Select
+                  value={locationType || "none"}
+                  onValueChange={(v) => setLocationType(v === "none" ? "" : v)}
+                  disabled={!canEdit || saving}
+                >
+                  <SelectTrigger id="location-type" className="mt-1.5">
+                    <SelectValue placeholder="Select location type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {orderedLocationTypeOptions.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {placeExtractTypeLabel(t)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               ) : (
                 <p className="text-sm mt-1.5">
                   {canonical?.location_type ? placeExtractTypeLabel(canonical.location_type) : "—"}
@@ -434,6 +533,8 @@ export default function LocationDetail() {
         unlinkingId,
         onUnlink: (s) => void handleUnlinkSubstrate(s),
         onMove: setMoveSubstrate,
+        selectedSubstrateId: selectedMentionSubstrateId,
+        onSelectedSubstrateChange: setSelectedMentionSubstrateId,
         pagination: {
           page: mentionsPage,
           perPage: mentionsPerPage,

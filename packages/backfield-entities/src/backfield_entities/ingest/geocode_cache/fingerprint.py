@@ -7,13 +7,14 @@ import json
 import re
 from typing import Any
 
+from backfield_entities.text.match_normalize import normalize_match_text
+
 _WS_RE = re.compile(r"\s+")
 
 
 def normalize_substrate_cache_query(value: str) -> str:
     """Lowercase single-spaced query key; must stay aligned with worker ingest."""
-    cleaned = _WS_RE.sub(" ", value.strip()).lower()
-    return cleaned
+    return normalize_match_text(value)
 
 
 def _sha256_hex(payload: str) -> str:

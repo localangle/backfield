@@ -113,6 +113,7 @@ export interface LinkedPersonSubstrateItem {
   id: number
   name: string
   normalized_name: string
+  mention_count?: number
   person_type?: string | null
   title?: string | null
   affiliation?: string | null
@@ -174,6 +175,7 @@ export async function getCanonicalPersonMentions(
   _sort?: string,
   sortDirection: "asc" | "desc" = "desc",
   projectFilterSlug?: string,
+  substratePersonId?: number,
 ): Promise<PersonMentionsResponse> {
   const params = new URLSearchParams({
     limit: limit.toString(),
@@ -181,6 +183,9 @@ export async function getCanonicalPersonMentions(
     sort_direction: sortDirection,
   })
   if (projectFilterSlug) params.set("project", projectFilterSlug)
+  if (typeof substratePersonId === "number") {
+    params.set("substrate_person_id", String(substratePersonId))
+  }
   return stylebookJsonFetch<PersonMentionsResponse>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/${encodeURIComponent(
       canonicalId,

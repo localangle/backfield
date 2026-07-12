@@ -177,6 +177,10 @@ def _apply_person_extras(entry: dict[str, Any], extras: dict[str, Any]) -> None:
 
 def is_skippable_compact_row_error(message: str) -> bool:
     """True when a compact row is an LLM placeholder with no extractable person."""
+    from backfield_entities.entities.person.review import is_skippable_person_extract_error
+
+    if is_skippable_person_extract_error(message):
+        return True
     return message in {
         "person entry array must not be empty",
         "Missing required field 'name'",

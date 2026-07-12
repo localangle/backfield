@@ -1,72 +1,80 @@
 # Organization Extraction Service
 
-Extract **editorially relevant organizations** from the text at the end of this prompt.
+Extract every editorially relevant **organization** named in the news text at the end of this prompt. Return only valid JSON.
 
-## When to extract
+An organization is relevant when the article treats it as an **accountable group of people**: employing, announcing, operating, suing, being investigated, regulating, organizing, competing, publishing, deciding, funding, or endorsing.
 
-Extract a named organization when the article treats it as an **accountable group of people**: employing, announcing, operating, suing, being investigated, regulating, organizing, competing, publishing, deciding, funding, endorsing, or similar.
+## Hard stops — the organization test
 
-Require a **specific proper-noun institution** (agency, company, school, team, nonprofit, government body, etc.). Skip generic references without a named institution ("the agency," "police," "school officials") unless the text names the office ("Chicago Police Department," "Cook County State's Attorney's Office").
+Apply this test to **every row before you emit it**: *is `name` a durable institution or organized body of people, named as a specific proper noun?* If not — or if you are unsure — **omit the row**. A missing row is always better than an organization record for a person, place, law, event, or topic. Never choose `government` or `other` just because a name acts grammatically in a sentence.
 
-## Do not extract
+Never emit as `organizations.name`:
 
-- Individual people
-- **Named human individuals** — coaches, players, athletes, elected officials, artists, musicians, executives, sources, witnesses, and other people quoted or acting in the story are **people**, not organizations (e.g. `"Bears coach Ben Johnson said…"` → person **Ben Johnson**; **Alice Cooper** on a roster with **Marc Ribot** and **Steve Earle** → people). Extract their **employer, team, or agency** only when **that institution** is the accountable actor in the story—not the person's personal name.
-- **Descriptive or relational person phrases** — omit entirely when the text describes a **person's relationship, wealth, or role** rather than naming an institution (e.g. `"billionaire father of Bill Conway"`, `"his brother"`, `"the victim's mother"`). These are not organizations.
-- Generic staff or role groups without a named institution ("prosecutors," "coaches," "detectives")
-- Unnamed groups ("residents," "witnesses," "officials")
-- Geography-only places (street, city, building, **landmark, monument, region, or area**) unless the story treats them as institutions—e.g. **Arc de Triomphe**, **the Chicago area**, **downtown**, **the lakefront** belong in location extraction, not organizations
-- **Laws, statutes, acts, bills, regulations, programs, and policies** named as rules or coverage topics—not organizations (`Affordable Care Act`, `No Child Left Behind`, `the tax bill`). Extract an **administering agency or department** only when that **institution** is named and acts (`Centers for Medicare and Medicaid Services`, `U.S. Department of Education`)—not the law's title alone
-- **Concepts, technologies, industries, and abstract topics** without a named institution (`artificial intelligence`, `climate change`, `inflation`, `social media`)—omit; they are not organizations even when capitalized or central to the story
-- Article bylines or publication credits only
-- Metonyms without a proper name ("City Hall said" with no named government body)
-- Historical, religious, mythological, or fictional entities unless they act as real-world organizations in the story
+| Category | Examples | Keep instead (only when named and acting) |
+|----------|----------|-------------------------------------------|
+| Individual people | `Donald Trump`, `Ayo Dosunmu`, `Bears coach Ben Johnson`, `billionaire father of Bill Conway`, `his brother` | Their employer, team, or agency when **that institution** is the actor |
+| Bands and musical acts | `Pearl Jam`, `The Beatles`, `Alice Cooper` (the act) | Nothing — bands belong in **people** extraction |
+| Consumer brands or products alone | `Budweiser`, `Google`, `Coca-Cola`, `Twitter` as incidental platform use | `Budweiser employees union`, `Google executive team`, `Twitter` when the company itself acts (layoffs, lawsuits) |
+| Laws, programs, grants, funds, policies | `Affordable Care Act`, `Anti-Weaponization Fund`, `Full Service Community Schools grant`, `No Child Left Behind` | The administering agency (`Centers for Medicare and Medicaid Services`, `U.S. Department of Education`) |
+| Events, awards, games, historical events | `Grammy Awards`, `Super Bowl`, `World War I`, `Bud Billiken Day parade` | The organizing body (`Recording Academy`, `National Football League`) |
+| Creative works and titles | `A Mighty Wind`, `Hamilton`, `The Daily Show` (the program) | The named studio, network, production company, or presenter |
+| Publications, surveys, datasets | `American Community Survey`, `Consumer Price Index`, `Statistical Abstract` | The publishing agency (`U.S. Census Bureau`) |
+| Geography, landmarks, venues | `Grant Park`, `Kenwood`, `Anne Frank House`, `Arc de Triomphe`, `the Chicago area`, `downtown` | The governing or operating body (`Grant Park Advisory Council`, `Kenwood Academy High School`) |
+| Broad descriptors and role groups | `American civil society`, `Arizona families`, `Arizona grand jury`, `prosecutors`, `Area 5 detectives`, `residents`, `officials` | A named office or department (`Chicago Police Department`) |
+| Generic public-service groups or laws with geography | `Illinois police departments`, `Illinois DMVs`, `Illinois state law`, `state courts`, `local schools` | A specific named body (`Chicago Police Department`, `Illinois Secretary of State`, `Illinois Supreme Court`) |
+| Concepts, industries, topics | `artificial intelligence`, `climate change`, `inflation`, `social media` | Nothing — even when capitalized or central to the story |
+| Metonyms with no named body | `"City Hall said"` with no named government body | The named body when the text provides one |
 
-## Close cousins (brands, works, venues, events)
+Skip generic references without a named institution ("the agency," "police," "school officials," "Illinois police departments," "Illinois state law"); article bylines and publication credits; and historical, religious, or fictional entities unless they act as real-world organizations in the story.
 
-The same name can be an organization, a brand, a work/title, a venue, or an event. Use context.
+## Borderline cousins
 
-**Clear organization** — extract normally when people, management, employees, ownership, policy, statements, lawsuits, layoffs, operations, hiring, closures, or organized activity are in view.
+The same name can be an organization, a brand, a work/title, a venue, or an event — use context. When a borderline mention is editorially relevant, include the row with the best normal `type` and set `organization_boundary`:
 
-**Omit** — when the name is only incidental product, platform, service, venue, title, event context, **geography, law/policy, or abstract topic** and does not matter to the story—or when there is **no accountable group of people** behind the name.
-
-Examples of **omit** (not organizations):
-- `"the Affordable Care Act"` / `"ACA health insurance"` → law/program topic; omit (unless a **named agency** is the actor)
-- `"around the Arc de Triomphe in Paris"` → landmark/geography; omit
-- `"Artificial intelligence"` as a story topic → concept; omit
-- `"the Chicago area"` → region; omit
-
-**Borderline but editorially relevant** — include the row, use the best normal `type`, and set `organization_boundary` to one of:
-- `borderline_brand_platform` — brand/platform/service use may not be organizational ("sent a message on Twitter")
-- `borderline_work_title` — column, show, book, film, franchise, publication title, etc. ("Dear Abby answered a reader")
+- `borderline_brand_platform` — a **named corporate or platform entity** is acting but context is ambiguous (never a bare consumer brand with no organized body)
+- `borderline_work_title` — column, show, book, film, franchise, or publication title ("Dear Abby answered a reader")
 - `borderline_place_business` — business name may be only a location ("the event happened at Baskin Robbins")
-- `borderline_event_competition` — named event/competition may not be an organizing body ("Lollapalooza drew 100,000 people")
+- `borderline_event_competition` — an organizing body might exist but context is ambiguous; if the mention is just the event or award name, **omit** instead
 
-Do **not** use `other` just because a row is borderline. Omit `organization_boundary` for clear organizations.
+Omit `organization_boundary` for clear organizations, and never use `other` just because a row is borderline.
 
 Examples:
-- "Twitter laid off 20 people" → organization (`company`)
-- "Joe sent a message on Twitter" → omit (incidental platform use)
-- "AMC announced it would close two theaters" → organization
-- "Baskin Robbins employees gathered" → organization (`local_business`)
-- "The event happened at Baskin Robbins" → omit unless the business itself matters; if editorially relevant but venue-like, `borderline_place_business`
+- "Twitter laid off 20 people" → organization (`company`); "Joe sent a message on Twitter" → omit
+- "Budweiser employees union voted to strike" → organization; "Budweiser" as a product mention → omit
+- "AMC announced it would close two theaters" → organization (`company`)
 
-## Names and types
+## Names
 
-- Use the most specific conventional proper-noun name.
-- `name` must identify an **institution or group**, not an individual human's given and family name (see **Do not extract**). When unsure whether a proper noun is a person or an organization, **omit it from organizations** if the text treats them as an individual acting, speaking, or being described.
-- Expand acronyms when known ("National Basketball Association" not "NBA") unless expansion is ambiguous.
-- **Schools:** use full school names in scorelines, not bare city tokens ("Brother Rice High School," not "Brother Rice" alone when naming a school institution). **Never** put a bare scoreline token alone in `name` (not `"Belvidere"`, `"Woodstock"`, `"Smith"`, `"Park"`)—expand with your world knowledge to the conventional **full school name** (`Belvidere High School`, `Woodstock High School`, `Smith High School`).
-- **Sports teams:** in athletics coverage, bare school/university names usually mean the **team**, not the campus. Use `sports_team` with pattern `[School] [boys|girls|men's|women's] [sport] team` when sport is inferable from the article. Never emit bare "Mount Carmel," "Brother Rice," or "Cubs" alone as `sports_team`. Map nicknames ("Caravan," "Wolverines") to the school team pattern. Use `school`/`university` only when administration, district, or campus policy is the actor—not players, games, recruiting, or championships.
-- **Prep scorelines (all formats):** when a token appears in a **game result or schedule**—final scores (`St. Louis Park 57 Hopkins 54`, `Belvidere 55, Woodstock 53`, `Brother Rice 48 Marist 41`), scheduled matchups (`Team A at Team B`), or box-score tables—it names a **school team**, not the homonymous city. **Extract both sides.** Expand each token to the full school name plus team when sport is clear (e.g. `Belvidere 55, Woodstock 53` in basketball coverage → `Belvidere High School boys basketball team`, `Woodstock High School boys basketball team`; not `Belvidere` or `Woodstock` alone, and not `school` when the story is about a game). Use dateline, league, sport section, and nearby context to infer state and sport; apply conventional local school names when you know them.
-- **Pro and college teams before player names:** when a team nickname precedes a player, coach, or role descriptor (`Phillies masher Kyle Schwarber`, `Cubs ace`, `Yankees outfielder`), extract the team as `sports_team` using the full conventional name (`Philadelphia Phillies`, `Chicago Cubs`, `New York Yankees`) even if the team is not the grammatical subject of the sentence.
+- Use the most specific conventional proper-noun name; expand acronyms when known (`National Basketball Association`, not `NBA`) unless expansion is ambiguous.
 - One record per organization; merge all `mentions`.
-- `type` slugs: `government`, `law_enforcement`, `court`, `legislative_body`, `political_party`, `school_district`, `school`, `university`, `hospital`, `public_health`, `public_services`, `utilities`, `company`, `local_business`, `financial_institution`, `real_estate`, `nonprofit`, `community_group`, `religious_org`, `culture_arts`, `sports_team`, `sports_league`, `media`, `other`
-- **`other` is not a catch-all.** Use a specific `type` when one clearly fits. Use `other` only for a **named institution** that is genuinely organizational but outside the list (e.g. an unusual membership body with a proper name). If the mention is a **law, place, concept, region, or topic**—or you would choose `other` only because nothing fits—**omit it** from `organizations` instead. Never type a law, landmark, or abstract topic as `government` or `other`.
-- `role_in_story`: short plain-language reason it matters
-- `nature`: `primary`, `actor`, `source`, `subject`, `affected`, `regulator`, `context`, `other`
-- `nature_secondary_tags`: optional 0–2 tags from the same nature vocabulary
-- `mentions`: at least one object with `text` (verbatim snippet) and `quote` (true only for direct quotations) per organization. Prefer a full **sentence or paragraph** containing the organization—not the organization name alone unless the name is the entire sentence.
+- **Schools:** always the full school name (`Brother Rice High School`), never a bare scoreline token (`Belvidere`, `Woodstock`, `Park`) — expand with your world knowledge to the conventional full name.
+- **Sports teams:** in athletics coverage, bare school or university names mean the **team**. Use `sports_team` with the pattern `[School] [boys|girls|men's|women's] [sport] team` when the sport is inferable. Map nicknames ("Caravan," "Wolverines") to the school team pattern. Use `school`/`university` only when administration, district, or campus policy is the actor.
+- **Prep scorelines (all formats):** tokens in game results, schedules, or box scores (`Belvidere 55, Woodstock 53`, `Team A at Team B`) name **school teams**, not the homonymous cities. **Extract both sides**, expanded to full school team names (`Belvidere High School boys basketball team`). Use dateline, league, and sport section to infer state and sport.
+- **Pro and college teams before player names:** when a team nickname precedes a player or role (`Phillies masher Kyle Schwarber`, `Cubs ace`), extract the team as `sports_team` with the full conventional name (`Philadelphia Phillies`, `Chicago Cubs`) even when the team is not the grammatical subject.
+
+## Fields
+
+### type
+
+One slug: `government`, `law_enforcement`, `court`, `legislative_body`, `political_party`, `school_district`, `school`, `university`, `hospital`, `public_health`, `public_services`, `utilities`, `company`, `local_business`, `financial_institution`, `real_estate`, `nonprofit`, `community_group`, `religious_org`, `culture_arts`, `sports_team`, `sports_league`, `media`, `other`
+
+**`other` is not a catch-all.** Use it only for a named institution that is genuinely organizational but outside the list. If you would choose `other` only because nothing fits — or the mention is a law, place, concept, or topic — **omit the row** instead.
+
+### role_in_story
+
+Short plain-language reason the organization matters in this article.
+
+### nature
+
+One of: `primary`, `actor`, `source`, `subject`, `affected`, `regulator`, `context`, `other`
+
+### nature_secondary_tags
+
+Optional 0–2 additional tags from the same vocabulary.
+
+### mentions
+
+At least one object per organization with `text` (verbatim snippet) and `quote` (true only for direct quotations). Prefer a full sentence or paragraph containing the organization — not the name alone unless the name is the entire sentence.
 
 ## Output
 

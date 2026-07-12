@@ -8,11 +8,19 @@ const agateTarget = process.env.VITE_AGATE_API_PROXY_TARGET || "http://localhost
 const stylebookApiTarget =
   process.env.VITE_STYLEBOOK_API_PROXY_TARGET || "http://localhost:8003"
 
+const appRoot = path.dirname(fileURLToPath(import.meta.url))
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
+    // @backfield/ui ships source that imports react-router-dom; without dedupe/alias,
+    // Vite can resolve the package's nested copy and Link/NavLink lose Router context
+    // ("Cannot destructure property 'basename' of useContext(...) as it is null").
+    dedupe: ["react", "react-dom", "react-router", "react-router-dom"],
     alias: {
-      "@": path.resolve(path.dirname(fileURLToPath(import.meta.url)), "./src"),
+      "@": path.resolve(appRoot, "./src"),
+      "react-router-dom": path.resolve(appRoot, "./node_modules/react-router-dom"),
+      "react-router": path.resolve(appRoot, "./node_modules/react-router"),
     },
   },
   test: {

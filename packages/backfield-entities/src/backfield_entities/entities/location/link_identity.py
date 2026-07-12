@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from backfield_entities.canonical.jurisdiction import district_kind_keywords_conflict
+from backfield_entities.canonical.link_matrix import types_are_comparable
 from backfield_entities.ingest.geocode_cache.fingerprint import normalize_substrate_cache_query
 from backfield_entities.ingest.geocode_cache.sanity import cache_hit_sane_for_substrate
 
@@ -92,7 +94,7 @@ _LOCATION_STOP_WORDS: frozenset[str] = frozenset(
 
 def normalize_location_alias_key(value: str | None) -> str:
     """Normalized alias key for location substrate names."""
-    return " ".join(str(value or "").strip().lower().split())
+    return normalize_substrate_cache_query(str(value or ""))
 
 
 def _compare_key(text: str) -> str:
@@ -148,6 +150,62 @@ def location_names_share_obvious_identity(
     return len(head_shared) >= 2
 
 
+_MUNICIPALITY_LOCATION_TYPES: frozenset[str] = frozenset({"city", "town", "village"})
+
+
+def location_district_kind_conflict(
+    *,
+    substrate_texts: tuple[str | None, ...],
+    substrate_location_type: str | None,
+    canonical_texts: tuple[str | None, ...],
+    canonical_location_type: str | None,
+) -> bool:
+    """True when a political-district pairing is an obvious kind error.
+
+    Two deterministic signals:
+    - a ``political_district`` row paired with a municipality (a district is never
+      the same entity as its city, even when the display names match), and
+    - district-kind keywords that disagree across the pair (judicial subcircuit vs
+      congressional district vs ward vs state house/senate).
+    """
+    s_lt = (substrate_location_type or "").strip().lower()
+    c_lt = (canonical_location_type or "").strip().lower()
+    if s_lt != "political_district" and c_lt != "political_district":
+        return False
+    if s_lt == "political_district" and c_lt in _MUNICIPALITY_LOCATION_TYPES:
+        return True
+    if c_lt == "political_district" and s_lt in _MUNICIPALITY_LOCATION_TYPES:
+        return True
+    return district_kind_keywords_conflict(substrate_texts, canonical_texts)
+
+
+def location_merge_pair_blocked(
+    *,
+    source_label: str,
+    source_location_type: str | None,
+    target_label: str,
+    target_location_type: str | None,
+) -> bool:
+    """True when merging these canonicals would be an obvious scale/kind error.
+
+    Blocks merges across deny-listed ``location_type`` pairs (e.g. a venue ``place``
+    into its containing ``city``) unless the labels clearly name the same place —
+    the identity escape hatch keeps mistyped rows of the same place mergeable.
+    Political-district conflicts are blocked without the escape hatch: a district
+    canonical labeled like its city is still not the city.
+    """
+    if location_district_kind_conflict(
+        substrate_texts=(source_label,),
+        substrate_location_type=source_location_type,
+        canonical_texts=(target_label,),
+        canonical_location_type=target_location_type,
+    ):
+        return True
+    if types_are_comparable(source_location_type, target_location_type):
+        return False
+    return not location_names_share_obvious_identity(source_label, target_label)
+
+
 def location_link_is_obvious_mismatch(
     *,
     substrate_name: str,
@@ -161,6 +219,16 @@ def location_link_is_obvious_mismatch(
     editorial_alias_keys: frozenset[str] | set[str] | None = None,
 ) -> bool:
     """True when a linked substrate row is clearly not the same place as the canonical label."""
+    # District-kind conflicts flag before the editorial-alias and equal-name rescues:
+    # the bad link itself often wrote the editorial alias (UI relink refreshes aliases),
+    # and district rows misnamed after their city match the city label exactly.
+    if location_district_kind_conflict(
+        substrate_texts=(substrate_name, formatted_address),
+        substrate_location_type=substrate_location_type,
+        canonical_texts=(canonical_label,),
+        canonical_location_type=canonical_location_type,
+    ):
+        return True
     norm_key = normalize_location_alias_key(substrate_normalized_name or substrate_name)
     alias_keys = editorial_alias_keys or frozenset()
     if norm_key and norm_key in alias_keys:

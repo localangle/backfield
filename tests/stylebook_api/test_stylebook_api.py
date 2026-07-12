@@ -3137,33 +3137,67 @@ def test_stylebook_connection_lists_auto_connection_evidence(
     assert rows[0]["evidence_json"]["confidence"] == 0.94
 
 
-def test_stylebook_connection_exact_edge_unique_constraint(
+def test_stylebook_connection_create_returns_existing_duplicate(
+    editor_client: TestClient,
     stylebook_test_engine: Engine,
 ) -> None:
+    """Creating the same edge twice returns the existing row instead of duplicating."""
     engine = stylebook_test_engine
-    from sqlalchemy.exc import IntegrityError
+    with Session(engine) as s:
+        stylebook = s.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        ca = StylebookLocationCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Dup Conn A",
+            slug="dup-conn-a",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        cb = StylebookLocationCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Dup Conn B",
+            slug="dup-conn-b",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(ca)
+        s.add(cb)
+        s.commit()
+        s.refresh(ca)
+        s.refresh(cb)
+        aid = str(ca.id)
+        bid = str(cb.id)
+
+    first = editor_client.post(
+        f"/v1/stylebooks/default/canonical-locations/{aid}/connections",
+        json={
+            "to_entity_type": "location",
+            "to_entity_id": bid,
+            "nature": "near",
+            "description": "These places are near each other.",
+        },
+    )
+    assert first.status_code == 200
+    first_id = int(first.json()["id"])
+
+    second = editor_client.post(
+        f"/v1/stylebooks/default/canonical-locations/{aid}/connections",
+        json={
+            "to_entity_type": "location",
+            "to_entity_id": bid,
+            "nature": "near",
+            "description": "These places are near each other.",
+        },
+    )
+    assert second.status_code == 200
+    assert int(second.json()["id"]) == first_id
 
     with Session(engine) as s:
-        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
-        first = StylebookConnection(
-            project_id=int(proj.id),
-            from_entity_type="location",
-            from_entity_id="loc-a",
-            to_entity_type="person",
-            to_entity_id="person-a",
-            nature="custom_edge",
-        )
-        duplicate = StylebookConnection(
-            project_id=int(proj.id),
-            from_entity_type="location",
-            from_entity_id="loc-a",
-            to_entity_type="person",
-            to_entity_id="person-a",
-            nature="custom_edge",
-        )
-        s.add(first)
-        s.commit()
-        s.add(duplicate)
-        with pytest.raises(IntegrityError):
-            s.commit()
-        s.rollback()
+        rows = s.exec(
+            select(StylebookConnection).where(
+                StylebookConnection.from_entity_id == aid,
+                StylebookConnection.to_entity_id == bid,
+            )
+        ).all()
+        assert len(rows) == 1

@@ -13,12 +13,19 @@ import {
 } from "@/lib/api"
 import {
   organizationTypeManualSelectOptions,
+  ORGANIZATION_TYPE_SELECT_NONE,
   placeExtractTypeLabel,
 } from "@/lib/place-extract-type-label"
 import { isStylebookApiNotFoundError } from "@/lib/stylebook-api/client"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import type { CleanupEntityType } from "@/lib/cleanupChecks"
 import { usePromptDeleteEmptyCanonical } from "@/lib/usePromptDeleteEmptyCanonical"
+import {
+  useSimilarCanonicalNotice,
+  type SimilarCanonicalMatch,
+} from "@/lib/useSimilarCanonicalNotice"
 import { usePaginatedCanonicalMentions } from "@/lib/usePaginatedCanonicalMentions"
+import { useSelectedMentionSubstrate } from "@/lib/useSelectedMentionSubstrate"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { useAppMessage } from "@/components/AppMessageProvider"
@@ -27,6 +34,8 @@ import CanonicalDetailLayout from "@/components/CanonicalDetailLayout"
 import OrganizationMetaTab from "@/components/OrganizationMetaTab"
 import { organizationCanonicalDetailConfig } from "@/lib/entityConfigs/organization/canonicalDetail"
 import { Button } from "@/components/ui/button"
+import { SimilarCanonicalNotice } from "@/components/SimilarCanonicalNotice"
+import { mergeCleanupOrganizationCanonical } from "@/lib/stylebook-api/cleanup"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -37,6 +46,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+
+const ENTITY_TYPE: CleanupEntityType = "organization"
 
 export default function OrganizationDetail() {
   const { showError, showConfirm } = useAppMessage()
@@ -65,6 +76,7 @@ export default function OrganizationDetail() {
   const [deleting, setDeleting] = useState(false)
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
   const [moveSubstrate, setMoveSubstrate] = useState<LinkedOrganizationSubstrateItem | null>(null)
+  const [mergingSimilarId, setMergingSimilarId] = useState<string | null>(null)
 
   const canonicalListHref = useMemo(() => {
     const base = `${catalogBasePath}/organizations/canonical`
@@ -125,6 +137,12 @@ export default function OrganizationDetail() {
     [evidenceProjectSlug],
   )
 
+  const {
+    selectedSubstrateId: selectedMentionSubstrateId,
+    setSelectedSubstrateId: setSelectedMentionSubstrateId,
+    resetKey: mentionsResetKey,
+  } = useSelectedMentionSubstrate(substrates)
+
   const fetchOrganizationMentionsPage = useCallback(
     (
       canonicalId: string,
@@ -141,8 +159,9 @@ export default function OrganizationDetail() {
         undefined,
         "desc",
         projectFilter,
+        selectedMentionSubstrateId ?? undefined,
       ),
-    [],
+    [selectedMentionSubstrateId],
   )
 
   const {
@@ -158,6 +177,7 @@ export default function OrganizationDetail() {
     canonicalId: id,
     stylebookSlug,
     projectFilterSlug: evidenceProjectSlug,
+    resetKey: mentionsResetKey,
     enabled: Boolean(id && stylebookSlug && !deleting && organization?.id === id),
     fetchPage: fetchOrganizationMentionsPage,
   })
@@ -182,10 +202,11 @@ export default function OrganizationDetail() {
     void loadOrganization(id, stylebookSlug)
   }, [id, stylebookSlug, deleting, loadOrganization])
 
+  const canonicalId = organization?.id
   useEffect(() => {
-    if (!id || !stylebookSlug || deleting || organization?.id !== id) return
+    if (!id || !stylebookSlug || deleting || canonicalId !== id) return
     void loadSubstrates(id, stylebookSlug)
-  }, [id, stylebookSlug, deleting, organization, loadSubstrates])
+  }, [id, stylebookSlug, deleting, canonicalId, loadSubstrates])
 
   const tableLoading = substratesLoading || mentionsLoading
 
@@ -197,7 +218,16 @@ export default function OrganizationDetail() {
     setUnlinkingId(sub.id)
     try {
       await unlinkOrganizationSubstrateFromCanonical(sub.id, sub.project_slug)
-      await refreshCanonicalPage(true)
+      setSubstrates((prev) => prev.filter((item) => item.id !== sub.id))
+      setOrganization((prev) =>
+        prev
+          ? {
+              ...prev,
+              linked_substrate_count: Math.max(0, Number(prev.linked_substrate_count ?? 0) - 1),
+            }
+          : prev,
+      )
+      await refreshMentions(true)
     } catch (e) {
       showError(e instanceof Error ? e.message : "Unlink failed")
     } finally {
@@ -228,6 +258,33 @@ export default function OrganizationDetail() {
     } catch (e) {
       console.error(e)
       showError("Failed to save organization")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleTypeChange(nextType: string) {
+    if (!organization || !stylebookSlug || editing) return
+    const normalized = nextType.trim() || null
+    const current = (organization.organization_type ?? "").trim() || null
+    if (normalized === current) {
+      setOrganizationType(nextType)
+      return
+    }
+    setOrganizationType(nextType)
+    setSaving(true)
+    try {
+      await patchCanonicalOrganization(
+        organization.id,
+        stylebookSlug,
+        { organization_type: normalized },
+        evidenceProjectSlug || undefined,
+      )
+      await refreshCanonicalPage(true)
+    } catch (e) {
+      console.error(e)
+      setOrganizationType(organization.organization_type ?? "")
+      showError("Failed to update organization type")
     } finally {
       setSaving(false)
     }
@@ -277,6 +334,43 @@ export default function OrganizationDetail() {
       </Button>
     </div>
   ) : undefined
+  const similarNotice = useSimilarCanonicalNotice({
+    stylebookSlug,
+    canonicalId: organization?.id,
+    canonicalLabel: organization?.label,
+    entityType: ENTITY_TYPE,
+    project: evidenceProjectSlug || undefined,
+    enabled: !deleting,
+  })
+
+  const similarDetailHref = useCallback(
+    (canonicalId: string) => {
+      const base = `${catalogBasePath}/organizations/canonical/${encodeURIComponent(canonicalId)}`
+      return filterScopeSuffix ? `${base}${filterScopeSuffix}` : base
+    },
+    [catalogBasePath, filterScopeSuffix],
+  )
+
+  const handleMergeIntoSimilar = useCallback(
+    async (match: SimilarCanonicalMatch) => {
+      if (!stylebookSlug || !organization) return
+      const confirmed = await showConfirm(
+        `Move all linked organizations from "${organization.label}" into "${match.label}" and delete "${organization.label}"?`,
+        { title: "Merge possible duplicate?", confirmLabel: "Merge" },
+      )
+      if (!confirmed) return
+      setMergingSimilarId(match.id)
+      try {
+        await mergeCleanupOrganizationCanonical(stylebookSlug, organization.id, match.id)
+        navigate(similarDetailHref(match.id))
+      } catch (error) {
+        showError(error instanceof Error ? error.message : "Could not merge records")
+      } finally {
+        setMergingSimilarId(null)
+      }
+    },
+    [navigate, organization, showConfirm, showError, similarDetailHref, stylebookSlug],
+  )
 
   return (
     <CanonicalDetailLayout
@@ -309,62 +403,72 @@ export default function OrganizationDetail() {
       stylebookSlug={stylebookSlug}
       entityId={organization?.id}
       entityDisplayName={organization?.label}
+      topNotice={
+        <SimilarCanonicalNotice
+          entityNounPlural="organizations"
+          matches={similarNotice.matches}
+          canEdit={canEdit}
+          mergingId={mergingSimilarId}
+          onMerge={(match) => void handleMergeIntoSimilar(match)}
+          onIgnore={similarNotice.ignore}
+          detailHref={similarDetailHref}
+        />
+      }
       details={
         <Card>
           <CardHeader>
             <CardTitle>Details</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {editing ? (
-              <>
-                <div className="space-y-1">
-                  <Label htmlFor="organization-label" className="text-xs font-medium">
-                    Name
-                  </Label>
-                  <Input
-                    id="organization-label"
-                    className="h-8 text-xs"
-                    value={label}
-                    onChange={(e) => setLabel(e.target.value)}
-                    disabled={!canEdit || saving}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="organization-type" className="text-xs font-medium">
-                    Type
-                  </Label>
-                  <Select
-                    value={organizationType || "none"}
-                    onValueChange={(v) => setOrganizationType(v === "none" ? "" : v)}
-                    disabled={!canEdit || saving}
-                  >
-                    <SelectTrigger id="organization-type" className="h-8 text-xs">
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {orderedTypeOptions.map((t) => (
-                        <SelectItem key={t} value={t}>
-                          {placeExtractTypeLabel(t)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </>
-            ) : (
-              <>
-                <div>
-                  <span className="text-muted-foreground">Name:</span> {organization?.label}
-                </div>
-                {organization?.organization_type ? (
-                  <div>
-                    <span className="text-muted-foreground">Type:</span>{" "}
-                    {placeExtractTypeLabel(organization.organization_type)}
-                  </div>
-                ) : null}
-              </>
-            )}
+          <CardContent className="space-y-4 max-w-xl">
+            <div>
+              <Label htmlFor="organization-label">Name</Label>
+              {editing ? (
+                <Input
+                  id="organization-label"
+                  className="mt-1.5"
+                  value={label}
+                  onChange={(e) => setLabel(e.target.value)}
+                  disabled={!canEdit || saving}
+                />
+              ) : (
+                <p className="text-sm mt-1.5">{organization?.label || "—"}</p>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="organization-type">Type</Label>
+              {canEdit ? (
+                <Select
+                  value={organizationType || ORGANIZATION_TYPE_SELECT_NONE}
+                  onValueChange={(value) => {
+                    const next = value === ORGANIZATION_TYPE_SELECT_NONE ? "" : value
+                    if (editing) {
+                      setOrganizationType(next)
+                      return
+                    }
+                    void handleTypeChange(next)
+                  }}
+                  disabled={saving}
+                >
+                  <SelectTrigger id="organization-type" className="mt-1.5">
+                    <SelectValue placeholder="Select type…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ORGANIZATION_TYPE_SELECT_NONE}>None</SelectItem>
+                    {orderedTypeOptions.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {placeExtractTypeLabel(t)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <p className="text-sm mt-1.5">
+                  {organization?.organization_type
+                    ? placeExtractTypeLabel(organization.organization_type)
+                    : "—"}
+                </p>
+              )}
+            </div>
           </CardContent>
         </Card>
       }
@@ -375,6 +479,8 @@ export default function OrganizationDetail() {
         unlinkingId,
         onUnlink: (s) => void handleUnlinkSubstrate(s),
         onMove: setMoveSubstrate,
+        selectedSubstrateId: selectedMentionSubstrateId,
+        onSelectedSubstrateChange: setSelectedMentionSubstrateId,
         pagination: {
           page: mentionsPage,
           perPage: mentionsPerPage,

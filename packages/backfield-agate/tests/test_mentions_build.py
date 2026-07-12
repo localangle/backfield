@@ -1,6 +1,10 @@
 """Tests for deterministic PlaceExtract mention reconstruction."""
 
-from agate_nodes.place_extract.mentions_build import MAX_MENTIONS_PER_LOCATION, build_mentions
+from agate_nodes.place_extract.mentions_build import (
+    MAX_MENTIONS_PER_LOCATION,
+    build_mentions,
+    build_mentions_for_evidence_anchor,
+)
 
 
 def test_dateline_all_caps_match() -> None:
@@ -21,9 +25,28 @@ def test_dedupes_identical_sentences() -> None:
     assert len(mentions) == 1
 
 
-def test_no_match_fallback_uses_location_string() -> None:
+def test_no_match_does_not_synthesize_location_string() -> None:
     mentions = build_mentions("No places here.", "Chicago, IL", "city")
+    assert mentions == []
+
+
+def test_synthetic_location_fallback_is_opt_in() -> None:
+    mentions = build_mentions(
+        "No places here.",
+        "Chicago, IL",
+        "city",
+        allow_synthetic_fallback=True,
+    )
     assert mentions == [{"text": "Chicago, IL"}]
+
+
+def test_evidence_anchor_builds_article_context_for_normalized_location() -> None:
+    article = (
+        "Organizers honored LGBTQ+ leaders, including Ald. Jessie Fuentes (26th), "
+        "who walked in the parade."
+    )
+    mentions = build_mentions_for_evidence_anchor(article, "Ald. Jessie Fuentes (26th)")
+    assert mentions == [{"text": article}]
 
 
 def test_mention_output_is_text_only() -> None:

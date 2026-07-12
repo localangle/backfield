@@ -8,13 +8,21 @@ from uuid import UUID
 
 from backfield_db import (
     BackfieldProject,
+    StylebookPersonAlias,
     StylebookPersonCanonical,
     SubstrateArticle,
     SubstratePerson,
     SubstratePersonMention,
     SubstratePersonMentionOccurrence,
 )
+from backfield_entities.activity import (
+    EVENT_CANONICAL_CREATED,
+    EVENT_CANONICAL_DELETED,
+    EVENT_CANONICAL_UPDATED,
+    log_stylebook_activity_safe,
+)
 from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
+from backfield_entities.catalog.search import catalog_label_alias_ilike_filter
 from backfield_entities.entities.person.persist import create_standalone_canonical
 from backfield_entities.entities.person.types import (
     PERSON_TYPE_VALUES,
@@ -36,6 +44,12 @@ from stylebook_api.stylebook_scope import (
 )
 
 router = APIRouter(prefix="/v1/stylebooks", tags=["stylebook-person-canonicals"])
+
+
+def _created_by_user_id(auth: dict[str, Any]) -> int | None:
+    if auth.get("type") != "session" or auth.get("user") is None:
+        return None
+    return int(auth["user"].id)  # type: ignore[union-attr]
 
 
 def _escape_ilike_metacharacters(s: str) -> str:
@@ -193,9 +207,16 @@ def _canonical_filters(
     filters: list[ColumnElement[bool]] = [StylebookPersonCanonical.stylebook_id == stylebook_id]
     q_text = (q or "").strip()
     if q_text:
-        esc = _escape_ilike_metacharacters(q_text)
-        term = f"%{esc}%"
-        filters.append(col(StylebookPersonCanonical.label).ilike(term, escape="\\"))
+        filters.append(
+            catalog_label_alias_ilike_filter(
+                q_text,
+                label_column=col(StylebookPersonCanonical.label),
+                canonical_id_column=col(StylebookPersonCanonical.id),
+                alias_model=StylebookPersonAlias,
+                alias_canonical_id_column=col(StylebookPersonAlias.person_canonical_id),
+                alias_normalized_column=col(StylebookPersonAlias.normalized_alias),
+            )
+        )
     if type_filter is not None:
         tf = type_filter.strip()
         if tf:
@@ -262,6 +283,7 @@ class LinkedPersonSubstrateItem(BaseModel):
     id: int
     name: str
     normalized_name: str
+    mention_count: int = 0
     person_type: str | None = None
     title: str | None = None
     affiliation: str | None = None
@@ -537,6 +559,18 @@ def create_canonical_person(
         sort_key=body.sort_key,
         provenance="stylebook_ui_manual",
     )
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="manual_ui",
+        event_type=EVENT_CANONICAL_CREATED,
+        entity_type="person",
+        entity_id=str(canon.id),
+        entity_label=str(canon.label),
+        payload_json={"person_type": canon.person_type},
+    )
     session.commit()
     session.refresh(canon)
 
@@ -610,6 +644,18 @@ def patch_canonical_person(
     elif "label" in updates and updates["label"] is not None:
         canon.sort_key = derive_person_sort_key(canon.label)
 
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="manual_ui",
+        event_type=EVENT_CANONICAL_UPDATED,
+        entity_type="person",
+        entity_id=str(canon.id),
+        entity_label=str(canon.label),
+        payload_json=updates,
+    )
     session.add(canon)
     session.commit()
     session.refresh(canon)
@@ -667,6 +713,18 @@ def delete_canonical_person(
         ]
         session.add(person)
 
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="manual_ui",
+        event_type=EVENT_CANONICAL_DELETED,
+        entity_type="person",
+        entity_id=str(canon.id),
+        entity_label=str(canon.label),
+        payload_json={"unlinked_substrate_count": len(linked)},
+    )
     session.delete(canon)
     session.commit()
     return {
@@ -715,12 +773,33 @@ def list_canonical_linked_substrates(
             )
         ).all()
     )
+    person_ids = [int(person.id) for person, _ in rows if person.id is not None]  # type: ignore[arg-type]
+    mention_counts: dict[int, int] = {}
+    if person_ids:
+        mention_counts = {
+            int(person_id): int(count or 0)
+            for person_id, count in session.exec(
+                select(
+                    col(SubstratePersonMention.person_id),
+                    func.count(col(SubstratePersonMention.id)),
+                )
+                .join(SubstrateArticle, SubstrateArticle.id == SubstratePersonMention.article_id)
+                .where(
+                    col(SubstratePersonMention.person_id).in_(person_ids),
+                    SubstratePersonMention.deleted == False,  # noqa: E712
+                    col(SubstrateArticle.project_id).in_(project_ids),
+                    SubstrateArticle.deleted == False,  # noqa: E712
+                )
+                .group_by(col(SubstratePersonMention.person_id))
+            ).all()
+        }
     return LinkedPersonSubstratesResponse(
         substrates=[
             LinkedPersonSubstrateItem(
                 id=int(person.id),  # type: ignore[arg-type]
                 name=str(person.name),
                 normalized_name=str(person.normalized_name or ""),
+                mention_count=mention_counts.get(int(person.id), 0),  # type: ignore[arg-type]
                 person_type=person.person_type,
                 title=(person.title or "").strip() or None,
                 affiliation=(person.affiliation or "").strip() or None,
@@ -750,6 +829,10 @@ def list_canonical_person_mentions(
     offset: int = Query(0, ge=0),
     sort: str | None = Query(None, description="article | created_at (default)"),
     sort_direction: str = Query("desc", description="asc or desc"),
+    substrate_person_id: int | None = Query(
+        None,
+        description="Optional linked substrate id to scope mentions to one substrate person.",
+    ),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> PersonMentionsResponse:
@@ -774,6 +857,8 @@ def list_canonical_person_mentions(
         col(SubstrateArticle.project_id).in_(project_ids),
         SubstrateArticle.deleted == False,  # noqa: E712
     ]
+    if substrate_person_id is not None:
+        base_where.append(col(SubstratePerson.id) == int(substrate_person_id))
 
     total = int(
         session.scalar(

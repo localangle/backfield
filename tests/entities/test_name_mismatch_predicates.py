@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from backfield_entities.entities.location.link_identity import (
     location_link_is_obvious_mismatch,
+    location_merge_pair_blocked,
     location_names_share_obvious_identity,
 )
 from backfield_entities.entities.organization.name_mismatch import (
@@ -168,6 +169,122 @@ def test_location_mismatch_loop_alias_not_flagged() -> None:
         geometry_type="Polygon",
         canonical_label="Loop, Chicago, IL",
         canonical_location_type="neighborhood",
+    )
+
+
+def test_location_merge_blocked_venue_into_containing_city() -> None:
+    assert location_merge_pair_blocked(
+        source_label="Perman, Chicago, IL",
+        source_location_type="place",
+        target_label="Chicago, IL",
+        target_location_type="city",
+    )
+
+
+def test_location_merge_blocked_is_symmetric_for_city_keeper_order() -> None:
+    assert location_merge_pair_blocked(
+        source_label="Chicago, IL",
+        source_location_type="city",
+        target_label="Fox32, Chicago, IL",
+        target_location_type="place",
+    )
+
+
+def test_location_merge_allowed_same_type() -> None:
+    assert not location_merge_pair_blocked(
+        source_label="Chicago Shakespeare Theatre, Chicago, IL",
+        source_location_type="place",
+        target_label="Chicago Shakespeare Theater, Chicago, IL",
+        target_location_type="place",
+    )
+
+
+def test_location_merge_allowed_same_label_cross_type() -> None:
+    assert not location_merge_pair_blocked(
+        source_label="Near North Side, Chicago, IL",
+        source_location_type="place",
+        target_label="Near North Side, Chicago, IL",
+        target_location_type="neighborhood",
+    )
+
+
+def test_location_merge_allowed_missing_types() -> None:
+    assert not location_merge_pair_blocked(
+        source_label="Kentucky",
+        source_location_type=None,
+        target_label="Kentucky, US",
+        target_location_type="state",
+    )
+
+
+def test_location_mismatch_subcircuit_vs_congressional_district_flagged() -> None:
+    """A judicial subcircuit row must flag when linked to a congressional district canonical."""
+    assert location_link_is_obvious_mismatch(
+        substrate_name="Congressional District 13, Illinois, US",
+        substrate_normalized_name="congressional district 13, illinois, us",
+        substrate_location_type="political_district",
+        components={"city": "13th subcircuit", "county": "Cook County"},
+        formatted_address="13th subcircuit, Cook County, IL (region estimate)",
+        geometry_type="Polygon",
+        canonical_label="Congressional District 13, IL",
+        canonical_location_type="political_district",
+        # The bad UI relink itself wrote this editorial alias; it must not rescue the link.
+        editorial_alias_keys=frozenset({"congressional district 13, illinois, us"}),
+    )
+
+
+def test_location_mismatch_political_district_linked_to_city_flagged() -> None:
+    """Ward/district rows misnamed after their city must flag on a city canonical."""
+    assert location_link_is_obvious_mismatch(
+        substrate_name="Chicago, IL",
+        substrate_normalized_name="chicago, il",
+        substrate_location_type="political_district",
+        components={"city": "Chicago", "state": {"abbr": "IL"}},
+        formatted_address="ward (region estimate)",
+        geometry_type="Polygon",
+        canonical_label="Chicago, IL",
+        canonical_location_type="city",
+    )
+
+
+def test_location_mismatch_same_kind_congressional_district_not_flagged() -> None:
+    assert not location_link_is_obvious_mismatch(
+        substrate_name="Illinois's 9th Congressional District, IL",
+        substrate_normalized_name="illinois's 9th congressional district, il",
+        substrate_location_type="political_district",
+        components={"state": {"abbr": "IL"}},
+        formatted_address="Illinois's 9th Congressional District (region estimate)",
+        geometry_type="Polygon",
+        canonical_label="Congressional District 9, IL",
+        canonical_location_type="political_district",
+    )
+
+
+def test_location_merge_blocked_political_district_into_same_named_city() -> None:
+    """Identity escape hatch must not merge a district canonical into its city."""
+    assert location_merge_pair_blocked(
+        source_label="Chicago, IL",
+        source_location_type="political_district",
+        target_label="Chicago, IL",
+        target_location_type="city",
+    )
+
+
+def test_location_merge_blocked_conflicting_district_kinds() -> None:
+    assert location_merge_pair_blocked(
+        source_label="1st Judicial Subcircuit, IL",
+        source_location_type="political_district",
+        target_label="Congressional District 1, IL",
+        target_location_type="political_district",
+    )
+
+
+def test_location_merge_allowed_same_kind_political_districts() -> None:
+    assert not location_merge_pair_blocked(
+        source_label="Congressional District 13, Illinois, US",
+        source_location_type="political_district",
+        target_label="Congressional District 13, IL",
+        target_location_type="political_district",
     )
 
 

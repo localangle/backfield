@@ -12,9 +12,10 @@ from backfield_entities.connections import (
 
 def test_validate_rejects_endpoint_pair_outside_auto_scope() -> None:
     result = validate_auto_connection_candidate(
-        from_entity_type="person",
-        to_entity_type="person",
-        nature="colleague_of",
+        from_entity_type="location",
+        to_entity_type="location",
+        description="Both places appear in the same paragraph.",
+        nature="contains",
         confidence=0.95,
         quote="They worked together.",
     )
@@ -26,6 +27,7 @@ def test_validate_rejects_nature_outside_taxonomy() -> None:
     result = validate_auto_connection_candidate(
         from_entity_type="person",
         to_entity_type="organization",
+        description="She works at Acme.",
         nature="custom editorial label",
         confidence=0.95,
         quote="She works at Acme.",
@@ -34,10 +36,36 @@ def test_validate_rejects_nature_outside_taxonomy() -> None:
     assert result.skip_reason == "nature_not_allowed"
 
 
+def test_validate_rejects_missing_description() -> None:
+    result = validate_auto_connection_candidate(
+        from_entity_type="person",
+        to_entity_type="organization",
+        description="   ",
+        nature="works_for",
+        confidence=0.95,
+        quote="She works at Acme.",
+    )
+    assert result.ok is False
+    assert result.skip_reason == "missing_description"
+
+
+def test_validate_accepts_null_nature_with_description() -> None:
+    result = validate_auto_connection_candidate(
+        from_entity_type="person",
+        to_entity_type="person",
+        description="They served together on the police reform task force.",
+        nature=None,
+        confidence=0.95,
+        quote="They served together on the police reform task force.",
+    )
+    assert result.ok is True
+
+
 def test_validate_rejects_low_confidence() -> None:
     result = validate_auto_connection_candidate(
         from_entity_type="person",
         to_entity_type="organization",
+        description="She works at Acme.",
         nature="works_for",
         confidence=0.89,
         quote="She works at Acme.",
@@ -50,6 +78,7 @@ def test_validate_rejects_person_location_address_targets() -> None:
     result = validate_auto_connection_candidate(
         from_entity_type="person",
         to_entity_type="location",
+        description="She lives at 123 Main St.",
         nature="lives_in",
         confidence=0.95,
         quote="She lives at 123 Main St.",
@@ -63,6 +92,7 @@ def test_validate_rejects_invalid_location_granularity_for_nature() -> None:
     result = validate_auto_connection_candidate(
         from_entity_type="organization",
         to_entity_type="location",
+        description="Acme is at 123 Main St.",
         nature="located_at",
         confidence=0.95,
         quote="Acme is at 123 Main St.",
@@ -76,6 +106,7 @@ def test_validate_accepts_org_located_at_for_address_like_place() -> None:
     result = validate_auto_connection_candidate(
         from_entity_type="organization",
         to_entity_type="location",
+        description="Acme is at 123 Main St.",
         nature="located_at",
         confidence=0.95,
         quote="Acme is at 123 Main St.",
@@ -88,6 +119,7 @@ def test_validate_accepts_person_org_works_for() -> None:
     result = validate_auto_connection_candidate(
         from_entity_type="person",
         to_entity_type="organization",
+        description="Jane Doe works for Acme Corp.",
         nature="works_for",
         confidence=AUTO_CONNECTION_MIN_CONFIDENCE,
         quote="Jane Doe works for Acme Corp.",

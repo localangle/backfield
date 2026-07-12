@@ -95,7 +95,7 @@ export function CleanupAiReviewDialog({
         <DialogHeader>
           <DialogTitle>Review with AI</DialogTitle>
           <DialogDescription>
-            Choose a model to review all duplicate clusters in this check. Suggestions appear when
+            Choose a model to review all duplicate clusters in this review. Suggestions appear when
             the review finishes; you can accept or reject each one.
           </DialogDescription>
         </DialogHeader>

@@ -17,7 +17,7 @@ def apply_subsumption_rules(
 
     out: list[AutoConnectionEdgeProposal] = []
     for group in grouped.values():
-        natures = {edge.nature for edge in group}
+        natures = {edge.nature for edge in group if edge.nature}
         filtered = list(group)
         if "leads" in natures and "works_for" in natures:
             filtered = [edge for edge in filtered if edge.nature != "works_for"]

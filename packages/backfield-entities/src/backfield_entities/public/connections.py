@@ -18,7 +18,8 @@ class PublicConnectionOut(BaseModel):
     to_entity_type: str
     to_entity_id: str
     to_label: str
-    nature: str
+    description: str | None = None
+    nature: str | None = None
 
 
 def _connection_label(
@@ -87,7 +88,8 @@ def list_public_entity_connections(
                     entity_type=str(conn.to_entity_type),
                     entity_id=str(conn.to_entity_id),
                 ),
-                nature=str(conn.nature),
+                description=conn.description,
+                nature=conn.nature,
             )
         )
     return out

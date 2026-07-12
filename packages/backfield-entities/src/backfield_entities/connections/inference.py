@@ -27,6 +27,8 @@ AUTO_CONNECTION_FAMILIES: tuple[tuple[str, str], ...] = (
     ("person", "organization"),
     ("organization", "location"),
     ("person", "location"),
+    ("person", "person"),
+    ("organization", "organization"),
 )
 
 
@@ -139,6 +141,7 @@ def _filter_valid_edges(
         validation = validate_auto_connection_candidate(
             from_entity_type=from_entity_type,
             to_entity_type=to_entity_type,
+            description=proposal.description,
             nature=proposal.nature,
             confidence=float(proposal.confidence),
             quote=proposal.quote,

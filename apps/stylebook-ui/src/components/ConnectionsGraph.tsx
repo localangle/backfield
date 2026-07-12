@@ -42,6 +42,16 @@ function getDetailUrl(
   return `${prefix}/locations/canonical/${entityId}${scopeSuffix}`
 }
 
+function connectionEdgeLabel(conn: Connection): string {
+  const description = conn.description?.trim()
+  if (description) {
+    return description.length > 48 ? `${description.slice(0, 45)}...` : description
+  }
+  const nature = conn.nature?.trim()
+  if (nature) return nature.replace(/_/g, " ")
+  return "Connection"
+}
+
 interface ConnectionsGraphProps {
   entityType: ConnectionsEntityType
   entityId: string | number
@@ -71,7 +81,7 @@ export default function ConnectionsGraph({
         id: `e-${conn.id}`,
         source: fromId,
         target: toId,
-        label: conn.nature,
+        label: connectionEdgeLabel(conn),
         markerEnd: { type: MarkerType.ArrowClosed },
         type: 'straight',
       })

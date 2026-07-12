@@ -8,12 +8,15 @@ AUTO_CONNECTION_MIN_CONFIDENCE = 0.9
 AUTO_CONNECTION_EVIDENCE_SOURCE = "dboutput_auto_connections"
 AUTO_CONNECTION_PROMPT_VERSION = "auto_connections_v1"
 AUTO_CONNECTION_PROMPT_VERSION_WITH_HINTS = "auto_connections_v2"
+AUTO_CONNECTION_PROMPT_VERSION_DESCRIPTION_FIRST = "auto_connections_v3"
 
 AUTO_LINK_ENDPOINT_PAIRS: frozenset[tuple[str, str]] = frozenset(
     {
         ("person", "organization"),
         ("organization", "location"),
         ("person", "location"),
+        ("person", "person"),
+        ("organization", "organization"),
     }
 )
 
@@ -118,10 +121,41 @@ REPRESENTS_PERSON_LOCATION_TYPES: frozenset[str] = frozenset(
     }
 )
 
+PERSON_PERSON_NATURES: frozenset[str] = frozenset(
+    {
+        "supports",
+        "opposes",
+        "family_of",
+        "works_with",
+        "reports_to",
+        "represented_by",
+        "succeeded",
+        "defeated",
+    }
+)
+
+ORGANIZATION_ORGANIZATION_NATURES: frozenset[str] = frozenset(
+    {
+        "supports",
+        "opposes",
+        "parent_of",
+        "partnered_with",
+        "funded_by",
+        "contracted_with",
+        "regulated_by",
+        "sued_by",
+        "member_of",
+        "competes_with",
+        "acquired_by",
+    }
+)
+
 _NATURES_BY_PAIR: dict[tuple[str, str], frozenset[str]] = {
     ("person", "organization"): PERSON_ORGANIZATION_NATURES,
     ("organization", "location"): ORGANIZATION_LOCATION_NATURES,
     ("person", "location"): PERSON_LOCATION_NATURES,
+    ("person", "person"): PERSON_PERSON_NATURES,
+    ("organization", "organization"): ORGANIZATION_ORGANIZATION_NATURES,
 }
 
 _LOCATION_GRANULARITY_BY_NATURE: dict[str, frozenset[str]] = {

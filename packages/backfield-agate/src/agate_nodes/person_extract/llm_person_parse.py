@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from backfield_entities.editorial_text import normalize_editorial_prose
-from backfield_entities.entities.person.review import finalize_review_fields_from_entry
+from backfield_entities.entities.person.review import (
+    finalize_review_fields_from_entry,
+    should_skip_person_extract_entry,
+    skip_person_extract_entry_error,
+)
 from backfield_entities.entities.person.types import (
     PERSON_NATURE_VALUES,
     derive_person_sort_key,
@@ -106,6 +110,8 @@ def person_from_llm_entry(entry: dict[str, Any]) -> ExtractedPerson:
     name = _normalize_name_from_entry(entry)
     title = normalize_editorial_prose(_optional_text(entry.get("title")))
     affiliation = _optional_text(entry.get("affiliation"))
+    if should_skip_person_extract_entry(name, title=title, affiliation=affiliation):
+        raise ValueError(skip_person_extract_entry_error(name))
     person_type = normalize_person_type(_optional_text(entry.get("type")))
     role = normalize_editorial_prose(_optional_text(entry.get("role_in_story")))
     nature = _normalize_nature(entry.get("nature"))

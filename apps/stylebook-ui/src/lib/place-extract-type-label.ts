@@ -82,6 +82,8 @@ export function placeExtractTypeLabel(value: string): string {
   const key = raw.toLowerCase()
   const personMapped = PERSON_TYPE_LABEL_OVERRIDES[key]
   if (personMapped) return personMapped
+  const organizationMapped = ORGANIZATION_TYPE_LABEL_OVERRIDES[key]
+  if (organizationMapped) return organizationMapped
   const mapped = TYPE_LABEL_OVERRIDES[key]
   if (mapped) return mapped
   return raw
@@ -121,6 +123,27 @@ export function personTypeManualSelectOptions(current?: string | null): string[]
   return taxonomy
 }
 
+/** Explicit labels for OrganizationExtract ``type`` values used in Stylebook UI. */
+const ORGANIZATION_TYPE_LABEL_OVERRIDES: Record<string, string> = {
+  law_enforcement: "Law enforcement",
+  legislative_body: "Legislative body",
+  political_party: "Political party",
+  school_district: "School district",
+  public_health: "Public health",
+  public_services: "Public services",
+  local_business: "Local business",
+  financial_institution: "Financial institution",
+  real_estate: "Real estate",
+  community_group: "Community group",
+  religious_org: "Religious organization",
+  culture_arts: "Culture / arts",
+  sports_team: "Sports team",
+  sports_league: "Sports league",
+}
+
+/** Sentinel value for optional organization-type selects (not a real taxonomy slug). */
+export const ORGANIZATION_TYPE_SELECT_NONE = "__none__"
+
 /**
  * Mirror of ``backfield_entities.entities.organization.types.ORGANIZATION_TYPE_VALUES``.
  * Keep in sync when the OrganizationExtract taxonomy changes.
@@ -151,6 +174,16 @@ export const ORGANIZATION_EXTRACT_ORGANIZATION_TYPES = [
   "media",
   "other",
 ] as const
+
+/** Options for manual location-type pickers (taxonomy only, plus legacy current value when editing). */
+export function locationTypeManualSelectOptions(current?: string | null): string[] {
+  const taxonomy = sortReviewQueueTypeFilterOptions([...PLACE_EXTRACT_LOCATION_TYPES])
+  const cur = (current ?? "").trim().toLowerCase()
+  if (cur && !taxonomy.includes(cur)) {
+    return [...taxonomy, cur]
+  }
+  return taxonomy
+}
 
 /** Options for manual organization-type pickers (taxonomy only, plus legacy current value when editing). */
 export function organizationTypeManualSelectOptions(current?: string | null): string[] {

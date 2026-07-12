@@ -279,6 +279,61 @@ class StylebookBundleJob(SQLModel, table=True):
     )
 
 
+class StylebookActivity(SQLModel, table=True):
+    """Durable stylebook activity event stream for Recent feed."""
+
+    __tablename__ = "stylebook_activity"
+    __table_args__ = (
+        Index("ix_stylebook_activity_feed", "stylebook_id", "created_at"),
+        Index(
+            "ix_stylebook_activity_stylebook_event",
+            "stylebook_id",
+            "event_type",
+            "created_at",
+        ),
+        Index(
+            "ix_stylebook_activity_stylebook_entity",
+            "stylebook_id",
+            "entity_type",
+            "entity_id",
+            "created_at",
+        ),
+        Index("ix_stylebook_activity_project_created", "project_id", "created_at"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    project_id: int | None = Field(
+        default=None,
+        foreign_key="backfield_project.id",
+        index=True,
+    )
+    actor_type: str = Field(
+        default="system",
+        sa_column=Column(Text, nullable=False, server_default="system"),
+    )
+    actor_user_id: int | None = Field(
+        default=None,
+        foreign_key="backfield_user.id",
+        index=True,
+    )
+    source: str = Field(sa_column=Column(Text, nullable=False))
+    event_type: str = Field(sa_column=Column(Text, nullable=False))
+    entity_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    entity_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    entity_label: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    related_entity_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    related_entity_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    related_entity_label: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    payload_json: dict[str, Any] | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
 class StylebookCleanupDismissal(SQLModel, table=True):
     """Editor dismissal of a cleanup issue (duplicate pair or list item)."""
 
@@ -399,6 +454,108 @@ class StylebookCleanupAiProposal(SQLModel, table=True):
         default=None,
         foreign_key="backfield_user.id",
         index=True,
+    )
+
+
+class StylebookCleanupCheckRun(SQLModel, table=True):
+    """Background execution of one Stylebook cleanup check for a scoped configuration."""
+
+    __tablename__ = "stylebook_cleanup_check_run"
+    __table_args__ = (
+        Index(
+            "ix_stylebook_cleanup_check_run_lookup",
+            "stylebook_id",
+            "check_id",
+            "scope_hash",
+            "status",
+            "completed_at",
+        ),
+        Index(
+            "ix_stylebook_cleanup_check_run_latest",
+            "stylebook_id",
+            "check_id",
+            "scope_hash",
+            "created_at",
+        ),
+    )
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    check_id: str = Field(sa_column=Column(Text, nullable=False))
+    status: str = Field(
+        default="queued",
+        sa_column=Column(Text, nullable=False, server_default="queued"),
+    )
+    scope_hash: str = Field(sa_column=Column(Text, nullable=False))
+    scope_json: dict[str, Any] | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    algorithm_version: str = Field(sa_column=Column(Text, nullable=False))
+    candidate_count: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    error_message: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    created_by_user_id: int | None = Field(
+        default=None,
+        foreign_key="backfield_user.id",
+        index=True,
+    )
+    started_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    completed_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class StylebookCleanupCheckResult(SQLModel, table=True):
+    """Generic cached candidate row for a cleanup check run."""
+
+    __tablename__ = "stylebook_cleanup_check_result"
+    __table_args__ = (
+        Index("ix_stylebook_cleanup_check_result_run_ordinal", "run_id", "ordinal"),
+        UniqueConstraint("run_id", "item_key", name="uq_stylebook_cleanup_check_result_item"),
+        Index(
+            "ix_stylebook_cleanup_check_result_stylebook_check",
+            "stylebook_id",
+            "check_id",
+            "run_id",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    run_id: str = Field(foreign_key="stylebook_cleanup_check_run.id", index=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    check_id: str = Field(sa_column=Column(Text, nullable=False))
+    ordinal: int = Field(sa_column=Column(Integer, nullable=False))
+    item_kind: str = Field(sa_column=Column(Text, nullable=False))
+    item_key: str = Field(sa_column=Column(Text, nullable=False))
+    label: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    canonical_ids_json: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False),
+    )
+    pair_keys_json: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False),
+    )
+    payload_json: dict[str, Any] | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    searchable_text: str = Field(
+        default="",
+        sa_column=Column(Text, nullable=False, server_default=""),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
 
 
@@ -804,21 +961,18 @@ class StylebookConnection(SQLModel, table=True):
     ``from_entity_id`` / ``to_entity_id`` are TEXT UUID strings for ``location``, ``person``,
     and ``organization`` entities; decimal strings for stub work ids until that catalog uses UUIDs.
 
+    ``description`` is the human-readable relationship sentence shown in Stylebook UI.
+    ``nature`` is an optional normalized slug when one clearly fits the relationship.
+
     ``evidence_json`` is optional creation evidence for auto-linked edges (see
     ``backfield_entities.connections.evidence``). Manual connections leave it null.
+
+    Exact-edge uniqueness is enforced in Postgres via migration
+    ``061_sb_conn_description`` (expression index with ``coalesce`` on nullable fields).
     """
 
     __tablename__ = "stylebook_connections"
     __table_args__ = (
-        UniqueConstraint(
-            "project_id",
-            "from_entity_type",
-            "from_entity_id",
-            "to_entity_type",
-            "to_entity_id",
-            "nature",
-            name="uq_stylebook_connection_exact_edge",
-        ),
         Index(
             "ix_stylebook_connection_from",
             "project_id",
@@ -840,7 +994,8 @@ class StylebookConnection(SQLModel, table=True):
     from_entity_id: str = Field(sa_column=Column(Text, nullable=False, index=True))
     to_entity_type: str = Field(sa_column=Column(Text, nullable=False, index=True))
     to_entity_id: str = Field(sa_column=Column(Text, nullable=False, index=True))
-    nature: str = Field(sa_column=Column(Text, nullable=False, index=True))
+    nature: str | None = Field(default=None, sa_column=Column(Text, nullable=True, index=True))
+    description: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     evidence_json: dict[str, Any] | None = Field(
         default=None,
         sa_column=Column(JSON, nullable=True),
