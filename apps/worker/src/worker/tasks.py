@@ -1281,19 +1281,16 @@ def _stylebook_bundle_bucket_prefix() -> tuple[str, str]:
 
 
 def _s3_client_stylebook_bundles() -> Any:
+    """S3 client for stylebook bundle staging (explicit keys or ECS task role)."""
     aws_access_key = os.environ.get("AWS_ACCESS_KEY_ID")
     aws_secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
     aws_session_token = os.environ.get("AWS_SESSION_TOKEN")
-    if not aws_access_key or not aws_secret_key:
-        raise ValueError(
-            "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set for stylebook bundle staging."
-        )
-    session_kwargs: dict[str, str] = {
-        "aws_access_key_id": aws_access_key,
-        "aws_secret_access_key": aws_secret_key,
-    }
-    if aws_session_token:
-        session_kwargs["aws_session_token"] = aws_session_token
+    session_kwargs: dict[str, str] = {}
+    if aws_access_key and aws_secret_key:
+        session_kwargs["aws_access_key_id"] = aws_access_key
+        session_kwargs["aws_secret_access_key"] = aws_secret_key
+        if aws_session_token:
+            session_kwargs["aws_session_token"] = aws_session_token
     endpoint = os.environ.get("AWS_S3_ENDPOINT_URL") or os.environ.get("AWS_ENDPOINT_URL")
     if endpoint:
         return boto3.client("s3", endpoint_url=endpoint, **session_kwargs)
