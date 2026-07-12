@@ -7,6 +7,7 @@ from agate_utils.geocoding.geocoding_types import GeocodingResult
 from agate_utils.llm import call_llm
 from agate_utils.search import SearchResponse, brave_place_search, search_web_duckduckgo
 
+from ...llm_auth import has_llm_auth
 from .address import Address
 
 logger = logging.getLogger(__name__)
@@ -235,8 +236,8 @@ class Place(Address):
     ) -> Optional[GeocodingResult]:
         logger.info("Starting place geocoding: %s", self.name)
 
-        if not openai_api_key:
-            logger.warning("No OpenAI API key provided; falling back to Address geocoding")
+        if not has_llm_auth(openai_api_key, self._geographic_reasoning_model_config_id()):
+            logger.warning("No LLM auth provided; falling back to Address geocoding")
             return await super().geocode(pelias_api_key, geocodio_api_key, openai_api_key)
 
         if self._input_addressability is not None:

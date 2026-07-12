@@ -11,6 +11,7 @@ from agate_utils.geocoding.geocoding_types import (
 )
 from agate_utils.geocoding.nominatim import NominatimGeocoder
 from agate_utils.llm import call_llm
+from ...llm_auth import has_llm_auth
 from .area import Area
 
 logger = logging.getLogger(__name__)
@@ -106,7 +107,7 @@ class NaturalPlace(Area):
     ) -> Optional[Dict[str, Any]]:
         if not candidates:
             return None
-        if not openai_api_key or len(candidates) == 1:
+        if not has_llm_auth(openai_api_key, self._geographic_reasoning_model_config_id()) or len(candidates) == 1:
             return candidates[0]
 
         prompt = self._build_selection_prompt(candidates=candidates, context=context)
@@ -211,8 +212,8 @@ class NaturalPlace(Area):
         openai_api_key: Optional[str],
         context: Optional[str],
     ) -> Optional[GeocodingResult]:
-        if not openai_api_key:
-            logger.warning("NaturalPlace fallback bounding box requires an OpenAI API key.")
+        if not has_llm_auth(openai_api_key, self._geographic_estimation_model_config_id()):
+            logger.warning("NaturalPlace fallback bounding box requires LLM auth (API key or model config).")
             return None
 
         prompt_path = Path(__file__).parent.parent.parent / "prompts" / "create_natural_bbox.md"

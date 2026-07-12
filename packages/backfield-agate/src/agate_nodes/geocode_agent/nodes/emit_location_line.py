@@ -12,6 +12,7 @@ from typing import Any
 
 from agate_utils.llm import call_llm
 
+from ..llm_auth import has_llm_auth
 from ..types import AgentState
 
 logger = logging.getLogger(__name__)
@@ -731,7 +732,8 @@ async def compute_emit_location_line(
     """
     Produce the human-facing ``location`` string for a geocoded item.
 
-    Uses a small JSON LLM when ``openai_api_key`` is set; otherwise heuristics on ``location_text``.
+    Uses a small JSON LLM when an API key or catalog model config is available;
+    otherwise heuristics on ``location_text``.
     """
     location_type = (state.get("location_type") or "").strip()
     location_text = (state.get("location_text") or "").strip()
@@ -757,7 +759,8 @@ async def compute_emit_location_line(
         )
         return restore_preferred_place_head_casing(clamped, preferred_head)
 
-    if not openai_key:
+    emit_mc = _evaluation_ai_model_config_id_for_emit(state)
+    if not has_llm_auth(openai_key, emit_mc):
         return _finalize(_heuristic_emit_location(location_type, location_text, formatted_address))
     if not model:
         return _finalize(_heuristic_emit_location(location_type, location_text, formatted_address))
@@ -777,8 +780,6 @@ async def compute_emit_location_line(
         f"geocode_hints: {hints_snip}\n"
     )
     prompt = f"{rules}\n---\n{user_block}"
-
-    emit_mc = _evaluation_ai_model_config_id_for_emit(state)
 
     def _sync() -> str:
         return call_llm(
@@ -833,7 +834,8 @@ async def _maybe_upgrade_to_named_place(
 ) -> tuple[str, bool]:
     """Shared LLM + guard path for address or intersection → named ``place`` display upgrade."""
     openai_key = state.get("openai_api_key")
-    if not openai_key:
+    venue_mc = _evaluation_ai_model_config_id_for_emit(state)
+    if not has_llm_auth(openai_key, venue_mc):
         return baseline_location_line, False
     orig_full = (state.get("original_text") or "").strip()
     hints_full = (state.get("geocode_hints") or "").strip()

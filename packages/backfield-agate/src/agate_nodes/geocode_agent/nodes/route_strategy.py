@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from agate_utils.llm import call_llm
 
+from ..llm_auth import has_llm_auth
 from ..types import AgentState
 
 logger = logging.getLogger(__name__)
@@ -94,12 +95,13 @@ async def route_strategy_node(state: AgentState) -> AgentState:
 
     openai_key = state.get("openai_api_key")
     router_model = state.get("router_llm_model")
+    router_model_config_id = state.get("router_ai_model_config_id")
 
-    if not openai_key:
+    if not has_llm_auth(openai_key, router_model_config_id):
         _apply_strategy(state, fallback)
         audit = {
             **audit_core,
-            "outcome": "fallback_no_openai_key",
+            "outcome": "fallback_no_llm_auth",
             "strategy_selected": fallback,
             "attempts": attempts,
         }
