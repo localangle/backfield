@@ -1,4 +1,4 @@
-"""ORM models — table prefixes per owning app (see docs/DATABASE.md)."""
+"""ORM models — table prefixes per owning app (see docs/architecture/database.md)."""
 
 from __future__ import annotations
 

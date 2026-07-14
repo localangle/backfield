@@ -63,5 +63,5 @@ jobs:
             cat release-summary.txt
             echo '```'
             echo
-            echo "Deploy: \`make deploy CLIENT=<client> ENV=staging VERSION=$GITHUB_REF_NAME TF_STATE_BUCKET=<state-bucket> BACKFIELD_ARTIFACT_BUCKET=$BACKFIELD_ARTIFACT_BUCKET\`"
+            echo "Deployment is handled outside this repository. Promote the complete manifest alias \`$GITHUB_REF_NAME\` with the deployment system."
           } >> "$GITHUB_STEP_SUMMARY"

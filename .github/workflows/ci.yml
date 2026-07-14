@@ -245,5 +245,5 @@ jobs:
             cat publish-summary.txt
             echo '```'
             echo
-            echo "Deploy: \`make deploy CLIENT=<client> ENV=staging VERSION=$VERSION TF_STATE_BUCKET=<state-bucket> BACKFIELD_ARTIFACT_BUCKET=$BACKFIELD_ARTIFACT_BUCKET\`"
+            echo "Deployment is handled outside this repository. Promote the complete manifest version \`$VERSION\` with the deployment system."
           } >> "$GITHUB_STEP_SUMMARY"

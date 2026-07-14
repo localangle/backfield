@@ -1,6 +1,6 @@
 /**
- * Processed-item verification: place geometry helpers (overlay v1, LeafletMap parity).
- * See ``docs/API.md`` → *Processed item location overlay (v1)* → *Geometry*.
+ * Processed-item verification: place geometry helpers with LeafletMap parity.
+ * See ``docs/api/processed-item-review.md`` → *Entity review domains*.
  */
 
 import {

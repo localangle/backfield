@@ -1,6 +1,6 @@
-"""Validate GeoJSON geometry inside processed-item review overlays (v1).
+"""Validate GeoJSON geometry inside processed-item review overlays.
 
-See ``docs/API.md`` → *Processed item location overlay (v1)* → *Geometry*.
+See ``docs/api/processed-item-review.md`` → *Entity review domains*.
 """
 
 from __future__ import annotations

@@ -58,7 +58,7 @@ def _engine_connect_args(url: str) -> dict[str, Any]:
 
 
 def _pool_kwargs_from_env() -> dict[str, int]:
-    """Optional pool sizing (per process). See docs/OPERATIONS.md."""
+    """Optional pool sizing (per process). See docs/operations/runtime-configuration.md."""
     out: dict[str, int] = {}
     raw_ps = os.environ.get("BACKFIELD_SQLALCHEMY_POOL_SIZE")
     raw_mo = os.environ.get("BACKFIELD_SQLALCHEMY_MAX_OVERFLOW")

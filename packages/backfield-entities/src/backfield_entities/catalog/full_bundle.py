@@ -1,7 +1,7 @@
 """Full stylebook ZIP export/import (manifest + sharded JSONL).
 
-See docs/OPERATIONS.md for S3 staging env vars used by the worker/API.
-Entity-type catalog create/import/export checklist: docs/ENTITY_TYPES.md.
+See docs/operations/runtime-configuration.md for S3 staging settings.
+See docs/api/stylebook.md for bundle import, transfer, and cleanup behavior.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ from backfield_entities.entities.person.types import derive_person_sort_key
 
 # v2: location canonical rows only (legacy path ``canonicals/part-*.jsonl``, kind ``canonical``).
 # v3: per-entity shards under ``canonicals/{entity}/`` with kinds ``canonical_location``, …
-# v4: adds aliases, project-scoped meta, and connections (see docs/ENTITY_TYPES.md).
+# v4: adds aliases, project-scoped meta, and connections (see docs/api/stylebook.md).
 BUNDLE_SCHEMA_VERSION = 4
 ALLOWED_MANIFEST_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4})
 BUNDLE_KIND_LEGACY_LOCATION = "canonical"

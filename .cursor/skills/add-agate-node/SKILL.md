@@ -3,7 +3,7 @@ name: add-agate-node
 description: >-
   Plan and add an Agate pipeline node (Input, Output, Extract, Enrich, Embed, or Other)
   through an interactive interview that produces a PRD and implementation issues. Read
-  docs/NODES.md first. Hand off to add-entity-type for canonical Extract types that
+  docs/development/nodes.md first. Hand off to add-entity-type for canonical Extract types that
   produce Stylebook entities.
 ---
 
@@ -15,13 +15,13 @@ Use this skill when adding a **net-new Agate pipeline node**.
 
 **Output:** `prd/<slug>/prd.md` then `prd/<slug>/issues/NN-*/issue.md` (gitignored). Hand issues to an agent for implementation.
 
-**Adjustments to existing nodes** (copy, defaults, panel layout without output contract changes): follow [`docs/NODES.md`](../../docs/NODES.md) checklist only — no PRD.
+**Adjustments to existing nodes** (copy, defaults, panel layout without output contract changes): follow [`docs/development/nodes.md`](../../../docs/development/nodes.md) checklist only — no PRD.
 
 **Read first:**
 
-1. [`docs/NODES.md`](../../docs/NODES.md) — profiles, layers, review tiers, persistence gate, checklists
-2. [`docs/FRONTEND.md`](../../docs/FRONTEND.md) — panel design system and sync flow
-3. [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md) — package boundaries
+1. [`docs/development/nodes.md`](../../../docs/development/nodes.md) — profiles, layers, runtime contracts, review integration, and checklists
+2. [`docs/development/frontend/conventions.md`](../../../docs/development/frontend/conventions.md) — shared panel and copy conventions
+3. [`docs/architecture/overview.md`](../../../docs/architecture/overview.md) — package boundaries
 
 **Related skills:** [`add-entity-type`](../add-entity-type/SKILL.md), [`backfield-db-change`](../backfield-db-change/SKILL.md), [`write-a-prd`](../write-a-prd/SKILL.md), [`prd-to-issues`](../prd-to-issues/SKILL.md), [`update-repo-docs`](../update-repo-docs/SKILL.md)
 
@@ -32,7 +32,7 @@ Use this skill when adding a **net-new Agate pipeline node**.
 | Situation | Path |
 |-----------|------|
 | **Net-new node type** | Interview below → PRD → issues |
-| **Tweak existing node** | [`docs/NODES.md`](../../docs/NODES.md) → **Checklist: adjust existing node** |
+| **Tweak existing node** | [`docs/development/nodes.md`](../../../docs/development/nodes.md) → **Checklist** |
 | **Extract → Stylebook canonical entity** | [`add-entity-type`](../add-entity-type/SKILL.md) |
 
 ---
@@ -83,7 +83,7 @@ Record decisions; plan **issue 00** (migration) via [`backfield-db-change`](../b
 |---------|-----------------|
 | **Input** | Bookend type (`TextInput` / `JSONInput` / `S3Input`)? Batch vs inline? |
 | **Output** | `Output` (JSON only) vs `DBOutput` (persist) vs `S3Output` (S3 files)? Stylebook override on DBOutput? |
-| **Extract** | Non-canonical only here. Prompt layout per [`ENTITY_TYPES.md`](../../docs/ENTITY_TYPES.md) |
+| **Extract** | Non-canonical only here. Prompt layout per [`docs/development/nodes.md`](../../../docs/development/nodes.md) → **Extract prompts** |
 | **Enrich** | Mutates upstream key in place vs new key? Feeds which review merge path? |
 | **Embed** | Embedding model; storage target (new table vs semantic indexing pipeline) |
 | **Other** | Flow-control semantics; idempotency; error propagation |
@@ -148,7 +148,7 @@ Each slice is a thin vertical path — demoable on its own.
 | Review (if tier requires) | `apps/agate-api/src/api/processed_item/`, `apps/agate-ui/src/lib/review/` |
 | Tests | `packages/backfield-agate/tests/` or `tests/agate_nodes/` |
 
-Full checklist: [`docs/NODES.md`](../../docs/NODES.md).
+Full checklist: [`docs/development/nodes.md`](../../../docs/development/nodes.md).
 
 ---
 
@@ -167,6 +167,6 @@ After cross-service runtime changes:
 make smoke
 ```
 
-See [`docs/TESTING.md`](../../docs/TESTING.md).
+See [`docs/development/testing.md`](../../../docs/development/testing.md).
 
-When behavior or node workflows change, update [`docs/NODES.md`](../../docs/NODES.md) via [`update-repo-docs`](../update-repo-docs/SKILL.md).
+When behavior or node workflows change, update [`docs/development/nodes.md`](../../../docs/development/nodes.md) via [`update-repo-docs`](../update-repo-docs/SKILL.md).

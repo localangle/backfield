@@ -33,7 +33,7 @@ make build-prd
 
 Optional: `VITE_TIMEZONE=America/Chicago` (default in app code).
 
-**Cross-app links (Agate → Stylebook on processed-item review, sidebar, etc.):** set `VITE_STYLEBOOK_UI_ORIGIN` at build time when Stylebook is not on the same browser origin as Agate. Same-origin deploys can omit it (links use `window.location.origin`). Local dev defaults live in `.env.development` and Compose — see `docs/FRONTEND.md`.
+**Cross-app links (Agate → Stylebook on processed-item review, sidebar, etc.):** set `VITE_STYLEBOOK_UI_ORIGIN` at build time when Stylebook is not on the same browser origin as Agate. Same-origin deploys can omit it (links use `window.location.origin`). Local dev defaults live in `.env.development` and Compose — see [Frontend conventions](../../docs/development/frontend/conventions.md).
 
 ## Deploy
 

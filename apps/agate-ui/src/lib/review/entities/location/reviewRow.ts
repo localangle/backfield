@@ -1,6 +1,6 @@
 /**
  * Review merged-location row metadata from ``GET /runs/{id}/items/{item_id}``.
- * See ``docs/API.md`` → processed item review enrichment.
+ * See ``docs/api/processed-item-review.md`` → *Entity review domains*.
  */
 
 import type { ArticleContext } from '@/lib/api'

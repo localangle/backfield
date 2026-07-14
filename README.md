@@ -68,15 +68,18 @@ backfield init
 backfield doctor
 ```
 
-This verifies that Docker, `uv`, the local environment, and configuration are ready. For the full local workflow and troubleshooting guidance, see [Operations](docs/OPERATIONS.md).
+This verifies that Docker, `uv`, the local environment, and configuration are ready. For the
+full workflow, see [Local development setup](docs/development/local-setup.md); for common
+failures, see [Troubleshooting](docs/operations/troubleshooting.md).
 
 ## Learn more
 
 - [A five-step example: from a story to reusable data](https://docs.backfield.news/platform/simple-example/)
 - [Agate flows and processing](https://docs.backfield.news/platform/agate/)
 - [Stylebook and canonical records](https://docs.backfield.news/platform/stylebook/)
-- [Public API guide](docs/PUBLIC_API.md)
-- [Architecture](docs/ARCHITECTURE.md)
+- [Public API guide](docs/api/public.md)
+- [Architecture](docs/architecture/overview.md)
+- [Repository documentation](docs/README.md)
 - [All documentation](https://docs.backfield.news)
 
 ## For contributors
