@@ -12,6 +12,3 @@
 **/node_modules
 **/dist
 **/*.egg-info
-
-# Optional large local *.db under geocoding data (excluded so image builds do not copy them).
-packages/backfield-agate/src/agate_utils/geocoding/data/*.db

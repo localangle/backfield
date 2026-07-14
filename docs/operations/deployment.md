@@ -32,8 +32,6 @@ The production API stages install non-editable packages and start Uvicorn withou
 
 Agate API's production image also contains `backfield-migrate` and `backfield-seed` for one-off tasks. Alembic assets are copied to `/app/packages/backfield-db`, with `BACKFIELD_ALEMBIC_ROOT` set to that directory.
 
-Docker builds exclude optional large local geocoding databases through the root `.dockerignore`.
-
 ## Static UI builds
 
 Build same-origin production bundles:

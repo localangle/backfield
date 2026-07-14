@@ -130,8 +130,6 @@ make docker-trim
 
 If more space is required, `make docker-prune-build` removes build cache. `make docker-prune-volumes` and `make docker-trim-full` can delete the database volume after the stack is stopped; use them only when local data loss is acceptable.
 
-Large optional geocoding `.db` files under `packages/backfield-agate` also consume host disk, although `.dockerignore` excludes them from image build context.
-
 ## Orphaned Compose resources
 
 Normal cleanup:
