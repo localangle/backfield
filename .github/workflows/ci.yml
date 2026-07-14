@@ -171,20 +171,42 @@ jobs:
         run: |
           set -euo pipefail
           VERSION=$(uv run python scripts/release_manifest.py version --sha "$GITHUB_SHA")
-          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          # Commit time is stable across retries, so build args and image digests are too.
+          BUILD_TIME=$(git show -s --format=%cI "$GITHUB_SHA")
           {
             echo "VERSION=$VERSION"
             echo "BUILD_TIME=$BUILD_TIME"
           } >> "$GITHUB_ENV"
 
+      - id: missing
+        name: Find unpublished image targets
+        run: |
+          set -euo pipefail
+          targets=()
+          while read -r target repository; do
+            if ! aws ecr describe-images \
+              --repository-name "$repository" \
+              --image-ids imageTag="$VERSION" >/dev/null 2>&1; then
+              targets+=("$target")
+            fi
+          done <<'EOF'
+          agate-api backfield-agate-api
+          core-api backfield-core-api
+          stylebook-api backfield-stylebook-api
+          worker backfield-worker
+          EOF
+          echo "targets=${targets[*]}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push production images
+        if: steps.missing.outputs.targets != ''
         env:
           IMAGE_PREFIX: ${{ steps.ecr.outputs.registry }}/
         run: |
+          read -ra TARGETS <<< "${{ steps.missing.outputs.targets }}"
           APP_VERSION="$VERSION" \
           GIT_SHA="$GITHUB_SHA" \
           IMAGE_TAG="$VERSION" \
-          docker buildx bake \
+          docker buildx bake "${TARGETS[@]}" \
             --push \
             --provenance=true \
             --sbom=true \
@@ -223,5 +245,5 @@ jobs:
             cat publish-summary.txt
             echo '```'
             echo
-            echo "Deploy: \`VERSION=$VERSION\`"
+            echo "Deploy: \`make deploy CLIENT=<client> ENV=staging VERSION=$VERSION TF_STATE_BUCKET=<state-bucket> BACKFIELD_ARTIFACT_BUCKET=$BACKFIELD_ARTIFACT_BUCKET\`"
           } >> "$GITHUB_STEP_SUMMARY"
