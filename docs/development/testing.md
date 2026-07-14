@@ -67,7 +67,7 @@ Bundles:
 
 Optional extract and performance harnesses are also exposed by `make help`: place/geocode, people, organizations, article metadata, custom extract, and parallel graph variants. Their `-stack` targets execute through Agate API; the in-process variants use controlled dependencies where implemented.
 
-The handoff and stack extract lanes need the credentials used by their configured model in the root `.env`. The deterministic fast, editorial, import/export, and S3 batch lanes do not require external LLM or geocoder calls.
+The handoff and stack extract lanes need credentials for their configured model. For local runs, configure them through **Settings → AI models**; CI may inject provider keys into its temporary root `.env` as an unattended fallback. The deterministic fast, editorial, import/export, and S3 batch lanes do not require external LLM or geocoder calls.
 
 Session-shaped smoke configuration:
 

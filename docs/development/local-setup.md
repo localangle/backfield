@@ -52,7 +52,7 @@ Copy `.env.example` to `.env` when configuring the stack manually:
 cp .env.example .env
 ```
 
-The file is gitignored. Compose loads it into the API and worker containers. Add the credentials needed by the flows you run. Typically that means at least one LLM provider key; geocoding, search, and object-storage credentials can instead be configured as organization integrations in the product.
+The file is gitignored. Compose loads it into the APIs and worker for shared local secrets, runtime overrides, and optional bundle infrastructure. Configure model credentials in **Settings → AI models** and geocoding, search, and flow object-storage credentials in **Settings → Integrations** rather than adding provider API keys to `.env`.
 
 Local Compose supplies development defaults for `MASTER_ENCRYPTION_KEY`, `SESSION_SECRET`, and `SERVICE_API_TOKEN` when they are absent. Do not reuse those defaults in a deployed environment. An explicitly blank value in `.env` overrides a Compose default.
 
@@ -118,6 +118,6 @@ Docker cleanup targets have different data-loss risk:
 
 ## Local bootstrap behavior
 
-Compose defaults `BACKFIELD_LOCAL_BOOTSTRAP=1` on Agate API. After migrations, it ensures the default organization, workspace, and General project exist and copies allowlisted LLM/Azure keys from the container environment into General project secrets. It does not create graphs and does not copy geocoding, search, or S3 credentials.
+Compose defaults `BACKFIELD_LOCAL_BOOTSTRAP=1` on Agate API. After migrations, it ensures the default organization, workspace, and General project exist. For unattended local or CI compatibility, explicitly injected LLM/Azure environment keys are also copied into General project secrets; normal interactive setup should use the Settings screens. Bootstrap does not create graphs and does not copy geocoding, search, or S3 credentials.
 
 To create the first administrator without the interactive initializer, either use `POST /v1/bootstrap/first-user` on an empty local database or opt into the Core API environment bootstrap described in [runtime configuration](../operations/runtime-configuration.md). Both paths are for local, demo, or CI use. Deployed environments should use the idempotent `backfield seed` command after migrations.

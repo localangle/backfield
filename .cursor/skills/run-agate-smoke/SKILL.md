@@ -8,7 +8,7 @@ description: Validate the Backfield golden path against a live stack. Use when r
 ## Quick Start
 
 1. Ensure the stack is running (`make up` or `make up-detached`).
-2. Put `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` (and optional geocoder keys) in **repo-root `.env`** so Compose loads them into `worker` and `agate-api` (LLM keys are mirrored into General project secrets when `BACKFIELD_LOCAL_BOOTSTRAP=1`).
+2. Configure the flow's model credentials in **Settings → AI models** and any geocoder credentials in **Settings → Integrations**. CI may inject provider keys through its temporary root `.env` as an unattended fallback.
 3. Run `make smoke` (runs `tests/smoke/golden_path_stack.py`; uses `SMOKE_POLL_TIMEOUT_SECONDS`, default 180s). Set **`SMOKE_EMAIL`** and **`SMOKE_PASSWORD`** for the session-shaped path (Core login → `/v1/me/workspaces` → Agate with cookie); omit for service-Bearer-only Agate calls.
 4. If it fails, inspect `make logs` and the relevant service logs.
 

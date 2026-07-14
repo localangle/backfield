@@ -174,9 +174,9 @@ services:
       BACKFIELD_PG_LOCK_TIMEOUT_MS: ${BACKFIELD_PG_LOCK_TIMEOUT_MS:-5000}
       STYLEBOOK_API_URL: http://stylebook-api:8003
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
-      # After migrations (migrate service): sync .env LLM keys into General project secrets (no graphs).
+      # After migrations: ensure the default local org/workspace/project. Provider credentials
+      # should normally be configured in Settings; explicitly injected CI keys are still synced.
       BACKFIELD_LOCAL_BOOTSTRAP: ${BACKFIELD_LOCAL_BOOTSTRAP:-1}
-      # LLM / geocoder keys: set in repo-root .env (see .env.example); loaded via env_file above.
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:8000/health"]
       interval: 5s
@@ -214,7 +214,8 @@ services:
       STYLEBOOK_API_URL: http://stylebook-api:8003
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
       # STYLEBOOK_BUNDLE_* from env_file (../.env); avoid empty compose override (see stylebook-api).
-      # LLM / geocoder keys: repo-root .env via env_file above.
+      # Product-managed model and integration credentials are overlaid for each run.
+      # Container credentials remain an operator/CI fallback.
       PROJECT_SLUG: ${PROJECT_SLUG:-}
       BACKFIELD_PARALLEL_GRAPH_LEVELS: ${BACKFIELD_PARALLEL_GRAPH_LEVELS:-1}
       OVERPASS_MAX_CONCURRENT: ${OVERPASS_MAX_CONCURRENT:-4}

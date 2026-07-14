@@ -74,7 +74,7 @@ Project and organization integration resolution can supply:
 - `GEOCODIO_API_KEY`
 - `BRAVE_SEARCH_API_KEY`
 
-Project secret values override organization integration values when the same environment name is present. `STYLEBOOK_API_URL`, `PROJECT_SLUG`, and `SERVICE_API_TOKEN` enable worker/node access to Stylebook caching and APIs.
+Configure AI credentials through **Settings → AI models** and platform credentials through **Settings → Integrations**. Project overrides take precedence over organization integrations. Container environment keys remain available for unattended CI and operator compatibility, but are not the normal credential-management path. `STYLEBOOK_API_URL`, `PROJECT_SLUG`, and `SERVICE_API_TOKEN` enable worker/node access to Stylebook caching and APIs.
 
 Overpass controls:
 
@@ -86,15 +86,18 @@ Overpass controls:
 
 Public Overpass instances rate-limit parallel workloads. The client honors `Retry-After`, retries transient overload responses, validates JSON responses, and falls back across mirrors.
 
-## S3 input, output, and Stylebook bundles
+## Flow S3 and Stylebook bundles
 
-- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`: S3 credentials.
-- `AWS_S3_ENDPOINT_URL` or `AWS_ENDPOINT_URL`: optional S3-compatible endpoint.
+Configure S3 Input and S3 Output credentials through project or organization integrations. Bucket, prefix, and region remain flow-node settings. Worker environment credentials are a compatibility fallback, not the normal product configuration. `AGATE_TIMEZONE` controls S3 Output date partitions and defaults to `America/Chicago`.
+
+Stylebook bundle storage is operator infrastructure:
+
 - `STYLEBOOK_BUNDLE_S3_BUCKET`: staging bucket for Stylebook import/export. Bundle job routes return 503 when unset.
 - `STYLEBOOK_BUNDLE_S3_PREFIX`: object prefix; defaults to `stylebook-bundles`.
-- `AGATE_TIMEZONE`: S3 Output date partition timezone; defaults to `America/Chicago`.
+- `AWS_S3_ENDPOINT_URL` or `AWS_ENDPOINT_URL`: optional S3-compatible endpoint.
+- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`: explicit credentials when the standard AWS credential chain or task role is unavailable.
 
-Set bundle credentials on both Stylebook API and worker. The browser uploads import bundles through Stylebook API, so the bucket does not need browser upload CORS. Export downloads use presigned GET URLs.
+Set bundle configuration on both Stylebook API and worker. The browser uploads import bundles through Stylebook API, so the bucket does not need browser upload CORS. Export downloads use presigned GET URLs.
 
 In local Compose, put bundle variables in the root `.env`. Do not add an empty `${STYLEBOOK_BUNDLE_S3_BUCKET}` service override: Compose environment entries take precedence over `env_file` and would mask the configured value.
 
@@ -104,7 +107,7 @@ In local Compose, put bundle variables in the root `.env`. Do not add an empty `
 
 ## Local, demo, and CI bootstrap only
 
-- `BACKFIELD_LOCAL_BOOTSTRAP`: Agate API startup ensures the default workspace/project and syncs allowlisted LLM/Azure keys; Compose defaults to `1`.
+- `BACKFIELD_LOCAL_BOOTSTRAP`: Agate API startup ensures the default workspace/project; explicitly injected LLM/Azure keys are also synced for unattended local or CI compatibility. Compose defaults to `1`.
 - `BACKFIELD_BOOTSTRAP_ADMIN_FROM_ENV`: Core API startup creates the first administrator only when no users exist.
 - `BACKFIELD_BOOTSTRAP_ADMIN_EMAIL`
 - `BACKFIELD_BOOTSTRAP_ADMIN_PASSWORD` or `BACKFIELD_BOOTSTRAP_ADMIN_PASSWORD_FILE`
