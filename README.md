@@ -7,7 +7,7 @@ Backfield helps newsrooms turn unstructured stories into organized, reusable edi
 It is built for the work that happens after publication: understanding who and what your newsroom has covered, correcting the record, and building a reliable foundation for future reporting.
 
 <p align="center">
-  <img src="assets/screenshots/agate-flow-builder.png" alt="An Agate flow that extracts and enriches editorial data from an article" width="100%">
+  <img src="docs/screenshots/agate-flow-builder.png" alt="An Agate flow that extracts and enriches editorial data from an article" width="100%">
 </p>
 
 ## What you can do with Backfield
@@ -32,7 +32,7 @@ Stories  →  Agate flows  →  Editor review  →  Stylebook  →  Reusable dat
 The goal is not to replace editorial judgment. Backfield makes automated extraction useful by keeping people in control of the results.
 
 <p align="center">
-  <img src="assets/screenshots/article-review-places.png" alt="Backfield's article review screen, with highlighted place mentions, a map, and editable results" width="100%">
+  <img src="docs/screenshots/article-review-places.png" alt="Backfield's article review screen, with highlighted place mentions, a map, and editable results" width="100%">
 </p>
 
 ## Start locally
