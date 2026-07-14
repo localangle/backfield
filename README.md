@@ -48,6 +48,21 @@ Run `backfield doctor` to verify repo root, uv, Docker, `.venv`, and `.env`.
 
 To manage the stack afterward, use `backfield up`, `backfield down`, `backfield logs`, or `make up` / `make down` / `make logs`.
 
+## Hosted release artifacts
+
+Every successful `main` CI run publishes one immutable Linux/AMD64 release unit:
+
+- four container images tagged `main-<12-char-sha>-amd64`
+- deterministic Agate and Stylebook UI archives
+- checksums, ECR digests, source SHA, scan results, and build metadata in one manifest
+
+Publishing does not deploy to a client. `backfield-cloud` explicitly promotes a manifest version.
+Creating a strict `vX.Y.Z` Git tag on a commit already on `main` adds ECR aliases and a release
+manifest without rebuilding any artifact. Neither `latest` nor mutable branch tags are published.
+
+Repository variables required by the workflows are `AWS_ARTIFACT_PUBLISHER_ROLE_ARN`,
+`BACKFIELD_ARTIFACT_BUCKET`, and `AWS_REGION`.
+
 ## License
 
 Copyright 2026 Local Angle

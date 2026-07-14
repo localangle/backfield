@@ -5,7 +5,7 @@ BACKFIELD := ./scripts/backfield
 APP_VERSION ?= 0.0.0-dev
 GIT_SHA ?= unknown
 BUILD_TIME ?= unknown
-DOCKER_PROD_BUILD_ARGS := --build-arg APP_VERSION=$(APP_VERSION) --build-arg GIT_SHA=$(GIT_SHA) --build-arg BUILD_TIME=$(BUILD_TIME)
+DOCKER_BAKE_ENV := APP_VERSION=$(APP_VERSION) GIT_SHA=$(GIT_SHA) BUILD_TIME=$(BUILD_TIME)
 
 .PHONY: help up up-detached down logs migrate reset-db clear-entity-data docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full docker-build-prod-apis docker-build-prod-agate-api docker-build-prod-core-api docker-build-prod-stylebook-api docker-build-prod-worker test test-unit test-integration lint format bootstrap install-cli-shim install-user-cli uninstall-user-cli smoke smoke-auth smoke-agate-basic smoke-stylebook-basic smoke-agate-stylebook-handoff smoke-worker-async smoke-stylebook-editorial smoke-s3-batch smoke-stylebook-import-export smoke-fast smoke-runtime smoke-slower smoke-place-geocode smoke-place-geocode-stack smoke-people smoke-people-stack smoke-organizations smoke-organizations-stack smoke-article-metadata smoke-article-metadata-stack smoke-custom-extract smoke-custom-extract-stack smoke-parallel-graph smoke-parallel-graph-stack agate-ui-build stylebook-ui-build ui-build
 
@@ -134,18 +134,19 @@ docker-trim-full: docker-trim docker-prune-volumes
 	@echo "docker-trim-full done."
 
 docker-build-prod-agate-api:
-	docker build -f apps/agate-api/Dockerfile --target prod $(DOCKER_PROD_BUILD_ARGS) -t backfield-agate-api:prod .
+	$(DOCKER_BAKE_ENV) docker buildx bake agate-api --load
 
 docker-build-prod-core-api:
-	docker build -f apps/core-api/Dockerfile --target prod $(DOCKER_PROD_BUILD_ARGS) -t backfield-core-api:prod .
+	$(DOCKER_BAKE_ENV) docker buildx bake core-api --load
 
 docker-build-prod-stylebook-api:
-	docker build -f apps/stylebook-api/Dockerfile --target prod $(DOCKER_PROD_BUILD_ARGS) -t backfield-stylebook-api:prod .
+	$(DOCKER_BAKE_ENV) docker buildx bake stylebook-api --load
 
-docker-build-prod-apis: docker-build-prod-agate-api docker-build-prod-core-api docker-build-prod-stylebook-api
+docker-build-prod-apis:
+	$(DOCKER_BAKE_ENV) docker buildx bake agate-api core-api stylebook-api --load
 
 docker-build-prod-worker:
-	docker build -f apps/worker/Dockerfile --target prod $(DOCKER_PROD_BUILD_ARGS) -t backfield-worker:prod .
+	$(DOCKER_BAKE_ENV) docker buildx bake worker --load
 
 test: test-unit test-integration
 
