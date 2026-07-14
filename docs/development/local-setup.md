@@ -109,12 +109,10 @@ BACKFIELD_CONFIRM_CLEAR=1 make clear-entity-data
 
 If a schema change is explicitly documented as incompatible with existing local catalog data, reset the database before bringing the stack back up. Do not assume a destructive migration supports an in-place upgrade.
 
-Docker cleanup targets have different data-loss risk:
+Docker cleanup targets:
 
-- `make docker-prune-build`: build cache only.
 - `make docker-trim`: stopped containers, dangling images, unused networks, and build cache; preserves volumes.
-- `make docker-prune-volumes`: all unused volumes. A stopped stack's database volume may be unused and may be deleted.
-- `make docker-trim-full`: system cleanup followed by volume cleanup; treat it as destructive.
+- `make docker-trim-full`: docker-trim plus unused volumes; treat it as destructive because a stopped stack's database volume may be deleted.
 
 ## Local bootstrap behavior
 

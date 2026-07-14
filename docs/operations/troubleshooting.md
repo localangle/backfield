@@ -128,7 +128,7 @@ Start with cleanup that preserves volumes:
 make docker-trim
 ```
 
-If more space is required, `make docker-prune-build` removes build cache. `make docker-prune-volumes` and `make docker-trim-full` can delete the database volume after the stack is stopped; use them only when local data loss is acceptable.
+If more space is required, `make docker-trim-full` also prunes unused volumes and can delete the database volume after the stack is stopped; use it only when local data loss is acceptable.
 
 ## Orphaned Compose resources
 

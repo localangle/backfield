@@ -107,10 +107,7 @@ jobs:
         env:
           SMOKE_EMAIL: smoke-ci@local.test
           SMOKE_PASSWORD: smoke-ci-pass-change-in-prod
-        run: |
-          make smoke-auth
-          make smoke-agate-basic
-          make smoke-stylebook-basic
+        run: make smoke-fast
       - name: Agate to Stylebook handoff smoke
         env:
           SMOKE_EMAIL: smoke-ci@local.test
