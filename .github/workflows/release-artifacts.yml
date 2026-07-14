@@ -1,0 +1,65 @@
+name: Release Artifact Alias
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  alias:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: artifact-release-${{ github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate release tag is on main
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] \
+            || { echo "::error::Tag must be SemVer vX.Y.Z"; exit 1; }
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::Release commit is not on main"; exit 1; }
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+      - name: Install workspace dependencies
+        run: uv sync --all-packages
+
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_ARTIFACT_PUBLISHER_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          role-session-name: backfield-release-${{ github.run_id }}
+
+      - name: Alias existing immutable artifacts
+        env:
+          BACKFIELD_ARTIFACT_BUCKET: ${{ vars.BACKFIELD_ARTIFACT_BUCKET }}
+        run: |
+          set -euo pipefail
+          SOURCE_VERSION=$(uv run python scripts/release_manifest.py version --sha "$GITHUB_SHA")
+          uv run python scripts/release_manifest.py alias \
+            --source-version "$SOURCE_VERSION" \
+            --release-version "$GITHUB_REF_NAME" \
+            --source-sha "$GITHUB_SHA" \
+            --bucket "$BACKFIELD_ARTIFACT_BUCKET" \
+            | tee release-summary.txt
+          {
+            echo "## Backfield release $GITHUB_REF_NAME"
+            echo
+            echo "No images or UIs were rebuilt. This tag aliases \`$SOURCE_VERSION\`."
+            echo '```text'
+            cat release-summary.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
