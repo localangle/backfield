@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.11-slim AS base
+FROM python:3.11-slim-bookworm AS base
 
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -28,7 +28,7 @@ RUN uv pip install --system /app/packages/backfield-db \
     && uv pip install --system /app/packages/backfield-agate \
     && uv pip install --system /app/apps/worker
 
-FROM python:3.11-slim AS prod
+FROM python:3.11-slim-bookworm AS prod
 
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \

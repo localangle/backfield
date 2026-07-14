@@ -13,6 +13,7 @@ import hashlib
 import json
 import re
 import tarfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -82,22 +83,51 @@ def _image_detail(ecr: Any, repository: str, tag: str) -> dict[str, Any]:
     return dict(details[0])
 
 
-def _wait_for_scan(ecr: Any, repository: str, tag: str) -> dict[str, int]:
-    waiter = ecr.get_waiter("image_scan_complete")
-    try:
-        waiter.wait(
-            repositoryName=repository,
-            imageId={"imageTag": tag},
-            WaiterConfig={"Delay": 10, "MaxAttempts": 60},
-        )
-    except Exception as exc:
-        raise RuntimeError(f"ECR scan did not complete for {repository}:{tag}: {exc}") from exc
-    response = ecr.describe_image_scan_findings(
+def _scan_image_id(ecr: Any, repository: str, tag: str) -> dict[str, str]:
+    """Resolve an OCI index tag to its scan-enabled Linux/AMD64 child."""
+    response = ecr.batch_get_image(
         repositoryName=repository,
-        imageId={"imageTag": tag},
+        imageIds=[{"imageTag": tag}],
     )
-    counts = response.get("imageScanFindings", {}).get("findingSeverityCounts", {})
-    return {str(key): int(value) for key, value in counts.items()}
+    images = response.get("images") or []
+    if not images:
+        raise RuntimeError(f"cannot resolve image manifest for {repository}:{tag}")
+    manifest = json.loads(images[0]["imageManifest"])
+    children = manifest.get("manifests")
+    if not children:
+        return {"imageTag": tag}
+    for child in children:
+        platform = child.get("platform") or {}
+        if platform.get("os") == "linux" and platform.get("architecture") == "amd64":
+            return {"imageDigest": str(child["digest"])}
+    raise RuntimeError(f"OCI index has no Linux/AMD64 image: {repository}:{tag}")
+
+
+def _wait_for_scan(ecr: Any, repository: str, tag: str) -> dict[str, int]:
+    image_id = _scan_image_id(ecr, repository, tag)
+    for _ in range(60):
+        try:
+            response = ecr.describe_image_scan_findings(
+                repositoryName=repository,
+                imageId=image_id,
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") != "ScanNotFoundException":
+                raise
+            time.sleep(10)
+            continue
+        status = response.get("imageScanStatus", {}).get("status")
+        if status == "COMPLETE":
+            counts = response.get("imageScanFindings", {}).get(
+                "findingSeverityCounts", {}
+            )
+            return {str(key): int(value) for key, value in counts.items()}
+        if status in {"FAILED", "UNSUPPORTED_IMAGE"}:
+            raise RuntimeError(
+                f"ECR scan {status} for {repository}:{tag} ({image_id})"
+            )
+        time.sleep(10)
+    raise RuntimeError(f"ECR scan timed out for {repository}:{tag} ({image_id})")
 
 
 def build_manifest(

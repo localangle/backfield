@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ canonical_version = release_manifest.canonical_version
 package_directory = release_manifest.package_directory
 sha256_file = release_manifest.sha256_file
 validate_release_version = release_manifest.validate_release_version
+scan_image_id = release_manifest._scan_image_id
 
 
 def test_canonical_version() -> None:
@@ -49,6 +51,36 @@ def test_ui_archive_is_deterministic(tmp_path: Path) -> None:
 
     assert sha256_file(first) == sha256_file(second)
     assert hashlib.sha256(first.read_bytes()).hexdigest() == sha256_file(first)
+
+
+class FakeIndexEcr:
+    def batch_get_image(self, **kwargs: Any) -> dict[str, Any]:
+        return {
+            "images": [
+                {
+                    "imageManifest": json.dumps(
+                        {
+                            "manifests": [
+                                {
+                                    "digest": "sha256:attestation",
+                                    "platform": {"os": "unknown", "architecture": "unknown"},
+                                },
+                                {
+                                    "digest": "sha256:amd64",
+                                    "platform": {"os": "linux", "architecture": "amd64"},
+                                },
+                            ]
+                        }
+                    )
+                }
+            ]
+        }
+
+
+def test_scan_resolves_linux_amd64_child_from_oci_index() -> None:
+    assert scan_image_id(FakeIndexEcr(), "backfield-worker", "main-abc-amd64") == {
+        "imageDigest": "sha256:amd64"
+    }
 
 
 class FakeEcr:
