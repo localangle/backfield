@@ -1,67 +1,83 @@
 # Backfield
 
-Backfield is a platform for turning unstructured news articles into structured, reusable editorial data.
+> **Turn the reporting you publish into knowledge you can use.**
 
-## Key applications
+Backfield helps newsrooms turn unstructured stories into organized, reusable editorial data. It finds the people, places, organizations, and other facts in an article; gives editors a clear place to review the results; and connects approved records across the organization’s coverage.
 
-Backfield is composed of three interconnected applications:
+It is built for the work that happens after publication: understanding who and what your newsroom has covered, correcting the record, and building a reliable foundation for future reporting.
 
-### Agate
+<p align="center">
+  <img src="https://docs.backfield.news/assets/platform/agate/processed-item-places.png" alt="Backfield's article review screen, with highlighted place mentions, a map, and editable results" width="100%">
+</p>
 
-Agate allows users to build workflows that extract arbitrary data from articles and enrich them with useful metadata. It also includes a robust human review interface, which editors can use to refine and correct the results.
+## What you can do with Backfield
 
-### Stylebook
+| | |
+| --- | --- |
+| **Build repeatable editorial workflows** | Use a visual flow builder to decide what to extract or enrich from one story or a whole batch. |
+| **Review results with source context** | See every result alongside the passage that produced it, then correct, remove, or add information before it becomes part of your record. |
+| **Maintain a shared Stylebook** | Bring mentions of the same person, place, or organization together in a canonical record that grows with your coverage. |
+| **Make your coverage usable** | Keep structured results available for editorial tools, analysis, and the public API. |
 
-Stylebook serves as a canonical store of people, places and organizations that appear across an organization's coverage. It helps standardize entities into trustworthy objects that can be further enriched with metadata and connected to each other.
+## How it fits together
 
-### Chronicle
+```text
+Stories  →  Agate flows  →  Editor review  →  Stylebook  →  Reusable data
+```
 
-Chronicle is an editorial intelligence tool that allows users to explore YYY.
+- **Agate** is the workspace for building flows, processing articles, and reviewing the results.
+- **Stylebook** is the shared record of the people, places, and organizations that matter to your coverage.
+- **The public API** makes approved, structured data available to products and reporting tools.
 
-## Quick start
+The goal is not to replace editorial judgment. Backfield makes automated extraction useful by keeping people in control of the results.
 
-You need [Docker and Docker Compose](https://docs.docker.com/compose/) and [uv](https://docs.astral.sh/uv/).
+## Start locally
+
+### What you need
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Docker Compose included)
+- [uv](https://docs.astral.sh/uv/) for Python dependencies
+- Git
+
+### Get running
 
 ```bash
 git clone git@github.com:localangle/backfield.git
 cd backfield
-make bootstrap               # uv sync + install project launcher into .venv/bin
-source .venv/bin/activate    # once per shell
-backfield init               # set up env, start the stack, migrate, and seed
+make bootstrap
+source .venv/bin/activate
+backfield init
 ```
 
-`backfield` is a **project launcher** (shell wrapper at `scripts/backfield`), not a Python package entry point. Bootstrap copies it to `.venv/bin/backfield` so it is available after you activate the venv. You can also run `./scripts/backfield` or `make up` without activating.
+`backfield init` guides you through local setup, creates the development environment, starts the services, runs database migrations, and seeds a local administrator. When it finishes, open:
 
-Optional — use `backfield` from any directory without activating the venv:
+| App | Local address | Use it for |
+| --- | --- | --- |
+| **Agate** | [localhost:5173](http://localhost:5173) | Building flows and reviewing article results |
+| **Stylebook** | [localhost:5175](http://localhost:5175) | Browsing and curating shared records |
+
+> **Already set up?** Run `backfield up` to start the stack, `backfield logs` to follow service logs, and `backfield down` when you are done. `make up`, `make logs`, and `make down` provide the same shortcuts.
+
+### Check your setup
 
 ```bash
-make install-user-cli        # symlinks ~/.local/bin/backfield -> scripts/backfield
-backfield up                 # requires ~/.local/bin on PATH
+backfield doctor
 ```
 
-Run `backfield doctor` to verify repo root, uv, Docker, `.venv`, and `.env`.
+This verifies that Docker, `uv`, the local environment, and configuration are ready. For the full local workflow and troubleshooting guidance, see [Operations](docs/OPERATIONS.md).
 
-`backfield init` walks you through first-run setup and, when it finishes, opens the app in your browser:
+## Learn more
 
-- Agate: [http://localhost:5173](http://localhost:5173)
-- Stylebook: [http://localhost:5175](http://localhost:5175)
+- [A five-step example: from a story to reusable data](https://docs.backfield.news/platform/simple-example/)
+- [Agate flows and processing](https://docs.backfield.news/platform/agate/)
+- [Stylebook and canonical records](https://docs.backfield.news/platform/stylebook/)
+- [Public API guide](docs/PUBLIC_API.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [All documentation](https://docs.backfield.news)
 
-To manage the stack afterward, use `backfield up`, `backfield down`, `backfield logs`, or `make up` / `make down` / `make logs`.
+## For contributors
 
-## Hosted release artifacts
-
-Every successful `main` CI run publishes one immutable Linux/AMD64 release unit:
-
-- four container images tagged `main-<12-char-sha>-amd64`
-- deterministic Agate and Stylebook UI archives
-- checksums, ECR digests, source SHA, scan results, and build metadata in one manifest
-
-Publishing does not deploy to a client. `backfield-cloud` explicitly promotes a manifest version.
-Creating a strict `vX.Y.Z` Git tag on a commit already on `main` adds ECR aliases and a release
-manifest without rebuilding any artifact. Neither `latest` nor mutable branch tags are published.
-
-Repository variables required by the workflows are `AWS_ARTIFACT_PUBLISHER_ROLE_ARN`,
-`BACKFIELD_ARTIFACT_BUCKET`, and `AWS_REGION`.
+This repository is a monorepo containing the Agate and Stylebook applications, their APIs, a background worker, and shared packages. Start with [AGENTS.md](AGENTS.md) for the repository map and development commands. Use `make lint` and `make test` before submitting changes.
 
 ## License
 
