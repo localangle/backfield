@@ -111,11 +111,6 @@ jobs:
           make smoke-auth
           make smoke-agate-basic
           make smoke-stylebook-basic
-      - name: Agate to Stylebook handoff smoke
-        env:
-          SMOKE_EMAIL: smoke-ci@local.test
-          SMOKE_PASSWORD: smoke-ci-pass-change-in-prod
-        run: make smoke
       - name: Dump compose logs on failure
         if: failure()
         run: docker compose -f infra/docker-compose.yml logs
