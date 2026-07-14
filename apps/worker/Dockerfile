@@ -42,6 +42,10 @@ ENV APP_VERSION=${APP_VERSION} \
     GIT_SHA=${GIT_SHA} \
     BUILD_TIME=${BUILD_TIME}
 
+# The final Python service does not invoke Perl. Remove the unpatched Debian
+# runtime package; no package management runs after this point.
+RUN dpkg --purge --force-depends --force-remove-essential perl-base
+
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY apps/worker/scripts/entrypoint.sh /usr/local/bin/backfield-worker-entrypoint.sh
