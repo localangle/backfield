@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from botocore.exceptions import ClientError
 
 _SCRIPT = Path(__file__).parents[1] / "scripts" / "release_manifest.py"
 _SPEC = importlib.util.spec_from_file_location("release_manifest", _SCRIPT)
@@ -20,6 +21,7 @@ package_directory = release_manifest.package_directory
 sha256_file = release_manifest.sha256_file
 validate_release_version = release_manifest.validate_release_version
 scan_image_id = release_manifest._scan_image_id
+publish_manifest = release_manifest.publish_manifest
 
 
 def test_canonical_version() -> None:
@@ -81,6 +83,54 @@ def test_scan_resolves_linux_amd64_child_from_oci_index() -> None:
     assert scan_image_id(FakeIndexEcr(), "backfield-worker", "main-abc-amd64") == {
         "imageDigest": "sha256:amd64"
     }
+
+
+class FakeBody:
+    def __init__(self, value: bytes) -> None:
+        self.value = value
+
+    def read(self) -> bytes:
+        return self.value
+
+
+class FakeManifestS3:
+    def __init__(self, existing: bytes | None) -> None:
+        self.existing = existing
+        self.put_calls: list[dict[str, Any]] = []
+
+    def get_object(self, **kwargs: Any) -> dict[str, Any]:
+        if self.existing is None:
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+        return {"Body": FakeBody(self.existing)}
+
+    def put_object(self, **kwargs: Any) -> None:
+        self.put_calls.append(kwargs)
+        self.existing = kwargs["Body"]
+
+
+def _minimal_manifest() -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "version": "main-0123456789ab-amd64",
+        "source_sha": "0123456789abcdef0123456789abcdef01234567",
+    }
+
+
+def test_manifest_publish_is_idempotent_and_conditional() -> None:
+    value = _minimal_manifest()
+    encoded = json.dumps(value, indent=2, sort_keys=True).encode()
+    existing = FakeManifestS3(encoded)
+    assert publish_manifest(existing, "artifacts", value).endswith(".json")
+    assert existing.put_calls == []
+
+    missing = FakeManifestS3(None)
+    publish_manifest(missing, "artifacts", value)
+    assert missing.put_calls[0]["IfNoneMatch"] == "*"
+
+
+def test_manifest_publish_rejects_immutable_conflict() -> None:
+    with pytest.raises(RuntimeError, match="immutable manifest conflict"):
+        publish_manifest(FakeManifestS3(b"{}"), "artifacts", _minimal_manifest())
 
 
 class FakeEcr:
