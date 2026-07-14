@@ -26,6 +26,7 @@ group "default" {
 target "_common" {
   context   = "."
   platforms = ["linux/amd64"]
+  pull      = true
   args = {
     APP_VERSION = APP_VERSION
     GIT_SHA      = GIT_SHA
