@@ -1,14 +1,28 @@
 # Backfield
 
-> **Turn news articles into durable, structured knowledge**
+> **Turn journalism into durable, structured knowledge**
 
-Backfield helps newsrooms turn unstructured news stories into organized, reusable data. It extracts, connects and enriches entities like people, places and organizations; applies article-level metadata and embeddings; and allows for custom extractions (think: structured data from recipes and obituaries; atomic facts; etc.) that can power new products and services.
+Backfield helps newsrooms turn unstructured news stories into structured data at scale. Among other things, it extracts and geocodes the locations of news events; organizes people and their quotes; and connect people, places and organizations into a knowledge graph based on your coverage.
 
-The logic for creating this data is heavily tailored toward the unique use cases of news, taking into account journalistic standards and traditions, as well as editorial importance. And of all of this takes place within an interface that allows for user-friendly editoral review.
+It applies journalistic metadata, including story formats and user needs, and embeds articles so they can be searched by meaning in addition to keywords. And it allows for the extraction of custom data (think: recipes, obituaries, restaurants and things-to-do lists) that can be used to create new products and display articles in new ways.
 
+It does all this with an awareness of the standards and traditions of journalism, taking into account the unique quirks of journalistic writing along with editorial importance signals. And of all of this takes place within an interface that allows users to customize the system for their newsroom's specific use cases — and exposes data for user-friendly editoral review. 
 
+Backfield was built from the conviction that structured journalism, at scale, can open new opportunities to build new products and services, understand how our coverage resonates with audiences, and transact in the burgeoning AI ecosystem.
 
-It is built for the work that happens after publication: understanding who and what your newsroom has covered, correcting the record, and building a reliable foundation for future reporting.
+It is a product of [Local Angle.](https://localangle.co)
+
+## The platform
+
+Backfield is currently three interconnected applications:
+
+**Agate**: Agate is a tool for creating composable extraction and enrichment workflows. 
+
+**Stylebook**: XXX
+
+**API**: XX
+
+The Backfield ecosystem is evolving
 
 ## Project status
 
