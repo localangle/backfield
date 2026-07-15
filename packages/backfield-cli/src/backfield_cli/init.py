@@ -16,6 +16,7 @@ from rich.status import Status
 
 from backfield_cli.console import (
     CONSOLE,
+    DEFAULT_ADMIN_EMAIL,
     INIT_STEP_COUNT,
     MODELS_URL,
     is_interactive,
@@ -39,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 _NO_BROWSER_ENV_VALUES = frozenset({"1", "true", "yes"})
 
-DEFAULT_SUPERUSER_EMAIL = "admin@backfield.news"
+DEFAULT_SUPERUSER_EMAIL = DEFAULT_ADMIN_EMAIL
 DEFAULT_SUPERUSER_USERNAME = "Admin"
 
 

@@ -121,8 +121,8 @@ The source of truth for stack orchestration is the repository launcher at `scrip
 targets are convenience wrappers:
 
 ```bash
-make up             # foreground, builds images
-make up-detached    # background, builds images
+make up             # background, builds images, waits for APIs, prints ready summary
+make up-detached    # same as make up (kept for compatibility)
 make logs
 make down           # stop this Compose project only
 ```
@@ -130,13 +130,18 @@ make down           # stop this Compose project only
 Equivalent direct commands include:
 
 ```bash
-backfield up --detached
+backfield up
+backfield up --foreground
 backfield up --no-build
 backfield logs agate-api worker
 backfield logs --no-follow
 backfield ps
 backfield restart worker
 ```
+
+`backfield up` starts Compose detached (`-d`), waits for API readiness, then prints the same
+apps/CLI summary as `backfield init` (without the first-run Next steps section). Use
+`--foreground` to attach to Compose logs instead.
 
 The launcher resolves `infra/docker-compose.yml` from the repository root. Override it with
 `--compose-file` or `BACKFIELD_COMPOSE_FILE`. If its Python import probe fails, it repairs the

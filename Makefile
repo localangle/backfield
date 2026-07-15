@@ -20,7 +20,7 @@ help:
 	@echo ""
 	@echo "Local stack"
 	@echo "  make bootstrap           - uv sync + install project launcher into .venv/bin"
-	@echo "  make up / up-detached    - Start stack (wraps backfield up)"
+	@echo "  make up / up-detached    - Start stack in the background (wraps backfield up)"
 	@echo "  make down                - Stop stack (project only; no global Docker prune)"
 	@echo "  make logs                - Follow stack logs"
 	@echo "  make migrate             - Run Alembic via compose migrate service"
