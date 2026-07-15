@@ -6,9 +6,9 @@ Backfield helps newsrooms turn unstructured news stories into structured data at
 
 It applies journalistically useful metadata, including story formats and user needs, and embeds articles so they can be searched by meaning in addition to keywords. And it allows for the extraction of custom data (think: recipes, obituaries, restaurants and things-to-do lists) that can be used to create new products and display articles in new ways.
 
-It does all this with an awareness of the standards and traditions of journalism, taking into account the unique quirks of journalistic writing along with editorial importance signals. And of all of this takes place within an interface that allows users to customize the system for their newsroom's specific use cases — and exposes data for user-friendly editoral review. 
+It does all this with an awareness of the standards and traditions of journalism, taking into account newswriting style as well as norms around editorial importance. And of all of this takes place within an interface that allows users to customize the system for their newsroom's specific use cases — and exposes data for user-friendly editorial review. 
 
-Backfield was built from the conviction that structured journalism, at scale, can open new opportunities to build new products and services, understand how our coverage resonates with audiences, and transact in the burgeoning AI ecosystem.
+Backfield was built from the premise that structured journalism, at scale, can open new opportunities to build new products and services, understand how our coverage resonates with audiences, and transact in the burgeoning AI ecosystem.
 
 It is a product of [Local Angle.](https://localangle.co)
 
@@ -31,19 +31,25 @@ Backfield is currently three interconnected applications:
 
 ### Agate
 
-Agate is a tool for creating composable data extraction and enrichment workflows. It takes articles and transforms them into structured data that can either be output as JSON or saved into the Backfield application ecosystem. Users construct workflows from a series of nodes that are designed to extract or enrich specific pieces of information. These nodes can be customized as needed, and new ones can be created by developers.
+Agate is a tool for creating composable data extraction and enrichment workflows. It takes articles and transforms them into structured data that can either be output as JSON or persisted into the Backfield application ecosystem. Users construct workflows from a series of nodes that are designed to extract or enrich specific pieces of information. These nodes can be customized as needed, and new ones can be created by developers.
+
+<img src="docs/screenshots/readme1.png" alt="Agate flow builder" />
 
 Agate also contains a review interface where users can make corrections — or manually extract and annotate data themselves.
+
+<img src="docs/screenshots/readme2.png" alt="Agate review interface" />
 
 ### Stylebook
 
 Stylebook is tool for cleaning, standardizing and enriching entities that are extracted by Agate — specifically people, places and organizations. 
 
-In coverage, a given entity might be referred to in multiple ways. For instance, Cardinal Robert Prevost and Pope Leo XIV refer to the same person. Stylebook allows us to connect those instances into a single canonical person. This allows us to do things like reliably retrieve all stories featuring a given person, place or organization. Cleaning data in this way also ensures future extractions are more useful and accurate.
+In coverage, a given entity might be referred to in multiple ways. For instance, Cardinal Robert Prevost and Pope Leo XIV refer to the same person. Stylebook allows us to unify those instances into a single canonical person. This allows us to do things like reliably retrieve all stories featuring a given person, place or organization. Cleaning data in this way also ensures future extractions are more useful and accurate.
 
 Most of this cleanup work happens automatically with help from large language models.
 
 Canonical Stylebook entities can also be enriched with metadata and connected to each other. A politician can be assigned a party; a neighborhood can be assigned demographic information. This allows us to query our articles in all kinds of interesting ways — for example, show all quotes by Democrats about an issue, or show how we have covered immigration in predominantly Hispanic neighborhoods.
+
+<img src="docs/screenshots/readme3.png" alt="Stylebook" />
 
 ### Public API
 
