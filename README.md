@@ -1,14 +1,14 @@
 # Backfield
 
-> **Turn the reporting you publish into knowledge you can use.**
+> **Turn news articles into durable, structured knowledge**
 
-Backfield helps newsrooms turn unstructured stories into organized, reusable editorial data. It finds the people, places, organizations, and other facts in an article; gives editors a clear place to review the results; and connects approved records across the organization’s coverage.
+Backfield helps newsrooms turn unstructured news stories into organized, reusable data. It extracts, connects and enriches entities like people, places and organizations; applies article-level metadata and embeddings; and allows for custom extractions (think: structured data from recipes and obituaries; atomic facts; etc.) that can power new products and services.
+
+The logic for creating this data is heavily tailored toward the unique use cases of news, taking into account journalistic standards and traditions, as well as editorial importance. And of all of this takes place within an interface that allows for user-friendly editoral review.
+
+
 
 It is built for the work that happens after publication: understanding who and what your newsroom has covered, correcting the record, and building a reliable foundation for future reporting.
-
-<p align="center">
-  <img src="docs/screenshots/agate-flow-builder.png" alt="An Agate flow that extracts and enriches editorial data from an article" width="100%">
-</p>
 
 ## Project status
 
@@ -20,12 +20,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute, and [SECURITY.md](
 
 ## What you can do with Backfield
 
-| | |
-| --- | --- |
-| **Build repeatable editorial workflows** | Use a visual flow builder to decide what to extract or enrich from one story or a whole batch. |
-| **Review results with source context** | See every result alongside the passage that produced it, then correct, remove, or add information before it becomes part of your record. |
-| **Maintain a shared Stylebook** | Bring mentions of the same person, place, or organization together in a canonical record that grows with your coverage. |
-| **Make your coverage usable** | Keep structured results available for editorial tools, analysis, and the public API. |
+
+|                                          |                                                                                                                                          |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **Build repeatable editorial workflows** | Use a visual flow builder to decide what to extract or enrich from one story or a whole batch.                                           |
+| **Review results with source context**   | See every result alongside the passage that produced it, then correct, remove, or add information before it becomes part of your record. |
+| **Maintain a shared Stylebook**          | Bring mentions of the same person, place, or organization together in a canonical record that grows with your coverage.                  |
+| **Make your coverage usable**            | Keep structured results available for editorial tools, analysis, and the public API.                                                     |
+
+
+
 
 ## How it fits together
 
@@ -39,11 +43,9 @@ Stories  →  Agate flows  →  Editor review  →  Stylebook  →  Reusable dat
 
 The goal is not to replace editorial judgment. Backfield makes automated extraction useful by keeping people in control of the results.
 
-<p align="center">
-  <img src="docs/screenshots/article-review-places.png" alt="Backfield's article review screen, with highlighted place mentions, a map, and editable results" width="100%">
-</p>
-
 ## Start locally
+
+
 
 ### What you need
 
@@ -52,6 +54,8 @@ The goal is not to replace editorial judgment. Backfield makes automated extract
 - [uv](https://docs.astral.sh/uv/) for Python dependencies
 - [Node.js 20](https://nodejs.org/) for UI builds and frontend checks outside Docker
 - Git
+
+
 
 ### Get running
 
@@ -70,14 +74,18 @@ backfield doctor
 2. Go to **Settings → AI models** and configure credentials for the models your flows will use.
 3. Follow [Local development setup](docs/development/local-setup.md) for stack commands, data lifecycle, and troubleshooting links.
 
-| App | Local address | Use it for |
-| --- | --- | --- |
-| **Agate** | [localhost:5173](http://localhost:5173) | Building flows and reviewing article results |
-| **Stylebook** | [localhost:5175](http://localhost:5175) | Browsing and curating shared records |
+
+| App           | Local address                           | Use it for                                   |
+| ------------- | --------------------------------------- | -------------------------------------------- |
+| **Agate**     | [localhost:5173](http://localhost:5173) | Building flows and reviewing article results |
+| **Stylebook** | [localhost:5175](http://localhost:5175) | Browsing and curating shared records         |
+
 
 Published ports bind to `127.0.0.1` only.
 
 > **Already set up?** Run `backfield up` to start the stack, `backfield logs` to follow service logs, and `backfield down` when you are done. `make up`, `make logs`, and `make down` provide the same shortcuts. `make down` stops this project’s Compose stack; it does **not** prune Docker globally. Use `make docker-trim` only when you opt into host-wide cleanup.
+
+
 
 ## Learn more
 
@@ -88,6 +96,8 @@ Published ports bind to `127.0.0.1` only.
 - [Architecture](docs/architecture/overview.md)
 - [Repository documentation](docs/README.md)
 - [All documentation](https://docs.backfield.news)
+
+
 
 ## For contributors
 
