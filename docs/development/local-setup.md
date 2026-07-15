@@ -196,6 +196,24 @@ If a schema change is explicitly documented as incompatible with existing local 
 the database before bringing the stack back up. Do not assume a destructive migration supports an
 in-place upgrade.
 
+## Troubleshooting
+
+### Apple Silicon: postgres healthcheck hangs
+
+Local Postgres should build as `linux/arm64`. If Compose prints
+`requested image's platform (linux/amd64) does not match ... (linux/arm64/v8)` for `postgres`, an
+old amd64 image is still tagged. Rebuild that service and restart:
+
+```bash
+docker compose -f infra/docker-compose.yml build --no-cache postgres
+make down
+make up
+```
+
+Also keep Buildx on the Desktop builder for day-to-day local work
+(`docker buildx use desktop-linux`). Leave cloud/canary builders such as `canarybuilder` for amd64
+release bakes only.
+
 ## Local workspace bootstrap (not admin seeding)
 
 Compose defaults `BACKFIELD_LOCAL_BOOTSTRAP=1` on Agate API. After migrations, it ensures the default
