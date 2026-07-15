@@ -16,48 +16,35 @@ It is a product of [Local Angle.](https://localangle.co)
 
 Backfield is currently three interconnected applications:
 
-**Agate**: Agate is a tool for creating composable extraction and enrichment workflows. 
+### Agate
 
-**Stylebook**: XXX
+Agate is a tool for creating composable data extraction and enrichment workflows. It takes articles and transforms them into structured data that can either be output as JSON or saved into the Backfield application ecosystem. Users construct workflows from a series of nodes that are designed to extract or enrich specific pieces of information. These nodes can be customized as needed, and new ones can be created by developers.
 
-**API**: XX
+IMAGES
 
-The Backfield ecosystem is evolving
+Agate also contains a review interface where users can make corrections — or manually extract and annotate data themselves.
 
-## Project status
+IMAGE
 
-This repository is open for **local development, source inspection, and external contributions**.
+### Stylebook
 
-**Production self-hosting is not supported** from this checkout. The Compose stack and CLI target a localhost development environment. Artifact builds (OCI images and UI archives) may be published by CI for a separate deployment system; that path is not an in-repo, supported self-hosting guide.
+Stylebook is tool for cleaning, standardizing and enriching entities that are extracted by Agate — specifically people, places and organizations. 
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute, and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
+In coverage, a given entity might be referred to in multiple ways. For instance, Cardinal Robert Prevost and Pope Leo XIV refer to the same person. Stylebook allows us to connect those instances into a single entity, so we can reliably connect stories to a given canonical entity. This allows us to do things like reliably retrieve all stories featuring a given person, place or organization. Cleaning data in this way also ensures future extractions are more useful and accurate.
 
-## What you can do with Backfield
+Most of this cleanup work happens automatically with help from large language models.
 
+Canonical Stylebook entities can also be enriched with metadata and connected to each other. A politician can be assigned a party; a neighborhood can be assigned demographic information. This allows us to query our articles in all kinds of interesting ways — for example, show me all quotes by Democrats about an issue, or show me how we have covered immigration in predominantly Hispanic neighborhoods.
 
-|                                          |                                                                                                                                          |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| **Build repeatable editorial workflows** | Use a visual flow builder to decide what to extract or enrich from one story or a whole batch.                                           |
-| **Review results with source context**   | See every result alongside the passage that produced it, then correct, remove, or add information before it becomes part of your record. |
-| **Maintain a shared Stylebook**          | Bring mentions of the same person, place, or organization together in a canonical record that grows with your coverage.                  |
-| **Make your coverage usable**            | Keep structured results available for editorial tools, analysis, and the public API.                                                     |
+IMAGE
 
+### Public API
 
+Backfield's public API allows users to query the extracted and enriched data in a variety of ways, including by location and entity, by keyword or semantically. This API can be used to power products, services, tools and story forms based on the structured information that Backfield curates.
 
+The Backfield ecosystem continues to evolve, and more applications will be made available as they are launched.
 
-## How it fits together
-
-```text
-Stories  →  Agate flows  →  Editor review  →  Stylebook  →  Reusable data
-```
-
-- **Agate** is the workspace for building flows, processing articles, and reviewing the results.
-- **Stylebook** is the shared record of the people, places, and organizations that matter to your coverage.
-- **The public API** makes approved, structured data available to products and reporting tools.
-
-The goal is not to replace editorial judgment. Backfield makes automated extraction useful by keeping people in control of the results.
-
-## Start locally
+## Quickstart
 
 
 
@@ -71,7 +58,7 @@ The goal is not to replace editorial judgment. Backfield makes automated extract
 
 
 
-### Get running
+### Launch Backfield locally
 
 ```bash
 git clone https://github.com/localangle/backfield.git
@@ -79,39 +66,44 @@ cd backfield
 make bootstrap
 source .venv/bin/activate
 backfield init
-backfield doctor
 ```
 
 `backfield init` guides you through local setup, creates the development environment, starts the services, runs database migrations, and seeds a local administrator. Run `backfield doctor` afterward to verify the host, virtualenv, and configuration. When setup finishes:
 
 1. Open [Agate](http://localhost:5173) and sign in with the administrator you just created.
 2. Go to **Settings → AI models** and configure credentials for the models your flows will use.
-3. Follow [Local development setup](docs/development/local-setup.md) for stack commands, data lifecycle, and troubleshooting links.
+3. Follow Local development setup for stack commands, data lifecycle, and troubleshooting links.
 
 
 | App           | Local address                           | Use it for                                   |
 | ------------- | --------------------------------------- | -------------------------------------------- |
 | **Agate**     | [localhost:5173](http://localhost:5173) | Building flows and reviewing article results |
-| **Stylebook** | [localhost:5175](http://localhost:5175) | Browsing and curating shared records         |
+| **Stylebook** | [localhost:5175](http://localhost:5175) | Browsing and curating canonical records      |
 
 
 Published ports bind to `127.0.0.1` only.
 
-> **Already set up?** Run `backfield up` to start the stack, `backfield logs` to follow service logs, and `backfield down` when you are done. `make up`, `make logs`, and `make down` provide the same shortcuts. `make down` stops this project’s Compose stack; it does **not** prune Docker globally. Use `make docker-trim` only when you opt into host-wide cleanup.
+## External services and dependencies
 
+To be most useful, Backfield relies on a number of external services and APIs to extract and enrich data. Technically these are optional — you can choose to use Backfield in an entirely manual mode, performing extraction and annotation by hand. But to get the most from the platform, you'll want the following API keys, which can be entered in the interface under Settings/Integrations.
 
+- **Your LLM of choice**: Backfield supports any model in the [LiteLLM ecosystem]([https://models.litellm.ai/](https://models.litellm.ai/)).
+- **[Geocode Earth]([https://geocode.earth/](https://geocode.earth/))**: A great geocoder, based on open source technology, with permissive data retention rules. Has a generous free tier.
+- **[Geocodio]([https://www.geocod.io/](https://www.geocod.io/))**: Another permissive geocoder that is used as a fallback and for some special geocoding cases. Also comes with a free tier.
+- **[Brave Search API]([https://brave.com/search/api/](https://brave.com/search/api/))**: Used to look up details that enhance the accuracy of geocoding. No free tier, but Duck Duck Go is used as a fallback and is free.
+- **[AWS S3]([https://aws.amazon.com/pm/serv-s3](https://aws.amazon.com/pm/serv-s3))**: Used for S3 Input and Output
 
-## Learn more
+None of these services are required, but they greatly enhance performance.
 
-- [A five-step example: from a story to reusable data](https://docs.backfield.news/platform/simple-example/)
-- [Agate flows and processing](https://docs.backfield.news/platform/agate/)
-- [Stylebook and canonical records](https://docs.backfield.news/platform/stylebook/)
-- [Public API guide](docs/api/public.md)
-- [Architecture](docs/architecture/overview.md)
-- [Repository documentation](docs/README.md)
-- [All documentation](https://docs.backfield.news)
+## Project status
 
+This repository is open for **local development, source inspection, and external contributions**.
 
+Production self-hosting is not directly supported from this checkout. You can deploy Backfield publicly, but infrastructure, image builds and other infrastructure are not supplied in this repo.
+
+Further guidance on this is forthcoming, and you can contact [Local Angle](https://localangle.co) for help getting things running.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute, and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
 
 ## For contributors
 
@@ -128,6 +120,4 @@ in [LICENSE.md](LICENSE.md) or at
 
 ## Support
 
-Questions about local development or contributions? See [CONTRIBUTING.md](CONTRIBUTING.md),
-[docs.backfield.news](https://docs.backfield.news), or open an issue in this repository.
-Report security issues privately per [SECURITY.md](SECURITY.md).
+Questions about local development or contributions? Reach out to [Local Angle.](https://localangle.co)
