@@ -48,10 +48,10 @@ database capacity requirements.
 - `MASTER_ENCRYPTION_KEY`: one Fernet key shared by Agate API, Core API, Stylebook API, and worker.
   It protects project and organization integration secrets.
 - `SESSION_SECRET`: **required** signing key shared by every service that verifies the session
-  cookie. There is no built-in application default; unset or empty values cause session auth to
-  fail at import/startup. Local Compose may inject a development default when the variable is
-  absent from the host environment; `backfield init` generates a value into `.env`. Never reuse
-  Compose development defaults outside local development.
+  cookie. There is no built-in application default; unset or empty values fail when creating or
+  verifying session tokens (not at package import). Local Compose may inject a development default
+  when the variable is absent from the host environment; `backfield init` generates a value into
+  `.env`. Never reuse Compose development defaults outside local development.
 - `SESSION_COOKIE_DOMAIN`: **optional**. When unset or blank, Core API omits the cookie `Domain`
   attribute (host-only cookies). Set it only when sibling hosts must share a session (for example
   a production cookie domain consumed by a separate deployment system).
