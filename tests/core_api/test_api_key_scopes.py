@@ -19,6 +19,8 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.core_api.auth_helpers import attach_test_engine, seed_first_admin
+
 
 @pytest.fixture
 def client(tmp_path) -> Generator[TestClient, None, None]:
@@ -62,7 +64,7 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
 
     app.dependency_overrides[get_session] = get_test_session
     try:
-        yield TestClient(app)
+        yield attach_test_engine(TestClient(app), engine)
     finally:
         app.dependency_overrides.clear()
 
@@ -82,10 +84,7 @@ def test_parse_scopes_filters_unknown() -> None:
 
 
 def test_create_api_key_defaults_to_read_scope(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "default@example.com", "password": "default-secret"},
-    )
+    seed_first_admin(client, "default@example.com", "default-secret")
     client.post(
         "/v1/auth/login",
         json={"email": "default@example.com", "password": "default-secret"},
@@ -102,10 +101,7 @@ def test_create_api_key_defaults_to_read_scope(client: TestClient) -> None:
 
 
 def test_create_service_key_with_runs_trigger(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "svc@example.com", "password": "svc-secret"},
-    )
+    seed_first_admin(client, "svc@example.com", "svc-secret")
     client.post(
         "/v1/auth/login",
         json={"email": "svc@example.com", "password": "svc-secret"},
@@ -123,10 +119,7 @@ def test_create_service_key_with_runs_trigger(client: TestClient) -> None:
 
 
 def test_create_user_key_with_runs_trigger_rejected(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "usertr@example.com", "password": "usertr-secret"},
-    )
+    seed_first_admin(client, "usertr@example.com", "usertr-secret")
     client.post(
         "/v1/auth/login",
         json={"email": "usertr@example.com", "password": "usertr-secret"},
@@ -144,10 +137,7 @@ def test_create_user_key_with_runs_trigger_rejected(client: TestClient) -> None:
 
 
 def test_create_api_key_unknown_scope_rejected(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "unk@example.com", "password": "unk-secret"},
-    )
+    seed_first_admin(client, "unk@example.com", "unk-secret")
     client.post(
         "/v1/auth/login",
         json={"email": "unk@example.com", "password": "unk-secret"},

@@ -1,13 +1,21 @@
 [project]
 name = "backfield-ai"
 version = "0.1.0"
-description = "Shared AI model configuration and usage helpers for Backfield"
+description = "Shared AI model configuration and usage helpers for Backfield (monorepo-internal)"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+classifiers = [
+    "Private :: Do Not Upload",
+]
 dependencies = [
     "pydantic>=2.0.0",
     "litellm>=1.55.0",
     "backfield-db",
 ]
+
+[project.urls]
+Homepage = "https://github.com/localangle/backfield"
+Repository = "https://github.com/localangle/backfield"
 
 [build-system]
 requires = ["hatchling"]

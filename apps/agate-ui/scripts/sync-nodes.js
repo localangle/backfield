@@ -48,6 +48,9 @@ const nodeMetadata = [];
 const nodeComponents = {};
 const panelComponents = {};
 const visualizationComponents = {};
+const syncedNodeFolders = new Set();
+/** @type {Map<string, Set<string>>} */
+const syncedFilesByFolder = new Map();
 
 // Process each node folder
 for (const nodeFolder of nodeFolders) {
@@ -230,6 +233,10 @@ const nodeMetadata = ${JSON.stringify(metadata, null, 2)};
   }
 
   // Copy additional UI helper modules (e.g. schemaExample.ts) from the node source ui/ folder.
+  const syncedFiles = new Set();
+  if (fs.existsSync(nodeComponentPath)) syncedFiles.add('NodeComponent.tsx');
+  if (fs.existsSync(panelComponentPath)) syncedFiles.add('PanelComponent.tsx');
+  if (fs.existsSync(visualizationComponentPath)) syncedFiles.add('VisualizationComponent.tsx');
   if (fs.existsSync(uiPath)) {
     const syncedComponentNames = new Set([
       'NodeComponent.tsx',
@@ -240,8 +247,29 @@ const nodeMetadata = ${JSON.stringify(metadata, null, 2)};
       if (!file.endsWith('.ts') && !file.endsWith('.tsx')) continue;
       if (syncedComponentNames.has(file)) continue;
       fs.copyFileSync(path.join(uiPath, file), path.join(targetNodeDir, file));
+      syncedFiles.add(file);
       console.log(`Copied ${file} for ${metadata.type}`);
     }
+  }
+  syncedNodeFolders.add(nodeFolder);
+  syncedFilesByFolder.set(nodeFolder, syncedFiles);
+}
+
+// Remove obsolete generated node directories/files so sync is deterministic.
+for (const entry of fs.readdirSync(NODES_TARGET_DIR, { withFileTypes: true })) {
+  if (!entry.isDirectory()) continue;
+  const targetDir = path.join(NODES_TARGET_DIR, entry.name);
+  if (!syncedNodeFolders.has(entry.name)) {
+    fs.rmSync(targetDir, { recursive: true, force: true });
+    console.log(`Removed obsolete node directory ${entry.name}`);
+    continue;
+  }
+  const keep = syncedFilesByFolder.get(entry.name) || new Set();
+  for (const file of fs.readdirSync(targetDir)) {
+    if (!file.endsWith('.ts') && !file.endsWith('.tsx')) continue;
+    if (keep.has(file)) continue;
+    fs.rmSync(path.join(targetDir, file), { force: true });
+    console.log(`Removed obsolete ${file} from ${entry.name}`);
   }
 }
 

@@ -1,4 +1,3 @@
-import { stylebookJsonFetch } from "@/lib/stylebook-api/client"
 import { listCanonicalOrganizations } from "@/lib/stylebook-api/organizations"
 import { listCanonicalPeople } from "@/lib/stylebook-api/people"
 
@@ -122,10 +121,11 @@ export async function listOrganizations(
   }
 }
 
+/** Works are not a shipped Stylebook domain yet; selectors receive an empty page. */
 export async function listWorks(
-  projectSlug: string,
-  q?: string,
-  status?: string,
+  _projectSlug: string,
+  _q?: string,
+  _status?: string,
   limit: number = 25,
   offset: number = 0,
 ): Promise<{
@@ -136,12 +136,13 @@ export async function listWorks(
   has_next: boolean
   has_prev: boolean
 }> {
-  const params = new URLSearchParams({
-    project_slug: projectSlug,
-    limit: String(limit),
-    offset: String(offset),
-  })
-  if (q) params.set("q", q)
-  if (status) params.set("status", status)
-  return stylebookJsonFetch(`/v1/works?${params}`)
+  const page = Math.floor(offset / limit) + 1
+  return {
+    works: [],
+    total: 0,
+    page,
+    per_page: limit,
+    has_next: false,
+    has_prev: page > 1,
+  }
 }

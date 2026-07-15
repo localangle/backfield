@@ -172,7 +172,7 @@ export default function S3InputPanel({
               </div>
               <div className="flex justify-between items-center p-2 bg-green-50 rounded">
                 <span className="text-muted-foreground">Valid text files</span>
-                <span className="font-medium text-green-700">{slice.processed_files}</span>
+                <span className="font-medium text-green-700">{String(slice.processed_files ?? '')}</span>
               </div>
               {typeof slice.skipped_files === 'number' && slice.skipped_files > 0 && (
                 <div className="flex justify-between items-center p-2 bg-yellow-50 rounded">
@@ -180,14 +180,14 @@ export default function S3InputPanel({
                   <span className="font-medium text-yellow-700">{slice.skipped_files}</span>
                 </div>
               )}
-              {slice.source_file && (
+              {typeof slice.source_file === 'string' && slice.source_file ? (
                 <div className="flex justify-between items-start gap-2 p-2 bg-muted rounded">
                   <span className="text-muted-foreground shrink-0">Source</span>
                   <span className="font-mono text-[10px] break-all text-right">
-                    {String(slice.source_file)}
+                    {slice.source_file}
                   </span>
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
         </div>

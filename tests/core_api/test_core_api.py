@@ -20,6 +20,7 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.core_api.auth_helpers import attach_test_engine, seed_first_admin
 from tests.integration_helpers import patch_test_engine
 
 
@@ -100,7 +101,7 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, N
 
     app.dependency_overrides[get_session] = get_test_session
     try:
-        yield TestClient(app)
+        yield attach_test_engine(TestClient(app), engine)
     finally:
         app.dependency_overrides.clear()
 
@@ -142,12 +143,8 @@ def test_public_ping(client: TestClient) -> None:
 
 
 def test_bootstrap_login_me_whoami(client: TestClient) -> None:
-    boot = client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "owner@example.com", "password": "correct-horse-battery-staple"},
-    )
-    assert boot.status_code == 200
-    assert boot.json().get("ok") is True
+    boot = seed_first_admin(client, "owner@example.com", "correct-horse-battery-staple")
+    assert boot.get("ok") is True
 
     login = client.post(
         "/v1/auth/login",
@@ -182,10 +179,7 @@ def test_me_workspaces_requires_auth(client: TestClient) -> None:
 
 
 def test_me_workspaces_groups_projects_for_org_admin(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "ws@example.com", "password": "ws-secret-12"},
-    )
+    seed_first_admin(client, "ws@example.com", "ws-secret-12")
     client.post(
         "/v1/auth/login",
         json={"email": "ws@example.com", "password": "ws-secret-12"},
@@ -214,10 +208,7 @@ def test_patch_workspace_requires_auth(client: TestClient) -> None:
 
 
 def test_patch_workspace_name_org_admin(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "wspatch@example.com", "password": "wspatch-secret-9"},
-    )
+    seed_first_admin(client, "wspatch@example.com", "wspatch-secret-9")
     client.post(
         "/v1/auth/login",
         json={"email": "wspatch@example.com", "password": "wspatch-secret-9"},
@@ -243,10 +234,7 @@ def test_list_org_stylebooks_requires_auth(client: TestClient) -> None:
 
 
 def test_list_org_stylebooks_org_admin(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "sblist@example.com", "password": "sblist-secret-12"},
-    )
+    seed_first_admin(client, "sblist@example.com", "sblist-secret-12")
     client.post(
         "/v1/auth/login",
         json={"email": "sblist@example.com", "password": "sblist-secret-12"},
@@ -264,10 +252,7 @@ def test_list_org_stylebooks_org_admin(client: TestClient) -> None:
 
 
 def test_patch_workspace_stylebook_only_org_admin(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "wsb@example.com", "password": "wsb-secret-12"},
-    )
+    seed_first_admin(client, "wsb@example.com", "wsb-secret-12")
     client.post(
         "/v1/auth/login",
         json={"email": "wsb@example.com", "password": "wsb-secret-12"},
@@ -288,10 +273,7 @@ def test_patch_workspace_stylebook_only_org_admin(client: TestClient) -> None:
 
 
 def test_patch_workspace_stylebook_rejects_foreign_id(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "wsbad@example.com", "password": "wsbad-secret-12"},
-    )
+    seed_first_admin(client, "wsbad@example.com", "wsbad-secret-12")
     client.post(
         "/v1/auth/login",
         json={"email": "wsbad@example.com", "password": "wsbad-secret-12"},
@@ -307,10 +289,7 @@ def test_patch_workspace_stylebook_rejects_foreign_id(client: TestClient) -> Non
 
 
 def test_patch_workspace_empty_body_org_admin(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "wsempty@example.com", "password": "wsempty-secret-12"},
-    )
+    seed_first_admin(client, "wsempty@example.com", "wsempty-secret-12")
     client.post(
         "/v1/auth/login",
         json={"email": "wsempty@example.com", "password": "wsempty-secret-12"},
@@ -323,10 +302,7 @@ def test_patch_workspace_empty_body_org_admin(client: TestClient) -> None:
 
 
 def test_create_workspace_org_admin_and_me_lists_empty(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "cws@example.com", "password": "cws-secret-12"},
-    )
+    seed_first_admin(client, "cws@example.com", "cws-secret-12")
     client.post(
         "/v1/auth/login",
         json={"email": "cws@example.com", "password": "cws-secret-12"},
@@ -354,10 +330,7 @@ def test_patch_organization_requires_auth(client: TestClient) -> None:
 
 
 def test_patch_organization_name_org_admin(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "orgpatch@example.com", "password": "orgpatch-secret-9"},
-    )
+    seed_first_admin(client, "orgpatch@example.com", "orgpatch-secret-9")
     client.post(
         "/v1/auth/login",
         json={"email": "orgpatch@example.com", "password": "orgpatch-secret-9"},
@@ -374,10 +347,7 @@ def test_patch_organization_name_org_admin(client: TestClient) -> None:
 
 
 def test_change_password(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "pw@example.com", "password": "original-secret"},
-    )
+    seed_first_admin(client, "pw@example.com", "original-secret")
     client.post(
         "/v1/auth/login",
         json={"email": "pw@example.com", "password": "original-secret"},
@@ -406,10 +376,7 @@ def test_change_password(client: TestClient) -> None:
 
 
 def test_org_admin_list_projects_and_users_detail(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "admin@example.com", "password": "admin-secret"},
-    )
+    seed_first_admin(client, "admin@example.com", "admin-secret")
     client.post(
         "/v1/auth/login",
         json={"email": "admin@example.com", "password": "admin-secret"},
@@ -444,10 +411,7 @@ def test_org_admin_list_projects_and_users_detail(client: TestClient) -> None:
 
 
 def test_member_workspace_memberships_grant_project_access(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "wsadmin@example.com", "password": "ws-admin-secret"},
-    )
+    seed_first_admin(client, "wsadmin@example.com", "ws-admin-secret")
     client.post(
         "/v1/auth/login",
         json={"email": "wsadmin@example.com", "password": "ws-admin-secret"},
@@ -502,10 +466,7 @@ def test_member_workspace_memberships_grant_project_access(client: TestClient) -
 
 
 def test_member_multiple_workspace_memberships(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "multiws@example.com", "password": "multiws-secret"},
-    )
+    seed_first_admin(client, "multiws@example.com", "multiws-secret")
     client.post(
         "/v1/auth/login",
         json={"email": "multiws@example.com", "password": "multiws-secret"},
@@ -550,10 +511,7 @@ def test_member_multiple_workspace_memberships(client: TestClient) -> None:
 
 
 def test_member_cannot_access_project_in_unassigned_workspace(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "iso@example.com", "password": "iso-admin-secret"},
-    )
+    seed_first_admin(client, "iso@example.com", "iso-admin-secret")
     client.post(
         "/v1/auth/login",
         json={"email": "iso@example.com", "password": "iso-admin-secret"},
@@ -595,13 +553,10 @@ def test_member_cannot_access_project_in_unassigned_workspace(client: TestClient
 
 
 def test_project_api_key_bearer(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "keyuser@example.com", "password": "shortpw"},
-    )
+    seed_first_admin(client, "keyuser@example.com", "shortpw1")
     client.post(
         "/v1/auth/login",
-        json={"email": "keyuser@example.com", "password": "shortpw"},
+        json={"email": "keyuser@example.com", "password": "shortpw1"},
     )
     create = client.post(
         "/v1/projects/1/api-keys",
@@ -644,10 +599,7 @@ def test_api_keys_invalid_bearer_returns_401(client: TestClient) -> None:
 
 
 def test_api_keys_wrong_project_bearer_returns_403(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "wp@example.com", "password": "wp-secret"},
-    )
+    seed_first_admin(client, "wp@example.com", "wp-secret")
     client.post(
         "/v1/auth/login",
         json={"email": "wp@example.com", "password": "wp-secret"},
@@ -668,10 +620,7 @@ def test_api_keys_wrong_project_bearer_returns_403(client: TestClient) -> None:
 
 
 def test_api_keys_revoked_bearer_returns_401(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "rv@example.com", "password": "rv-secret"},
-    )
+    seed_first_admin(client, "rv@example.com", "rv-secret")
     client.post(
         "/v1/auth/login",
         json={"email": "rv@example.com", "password": "rv-secret"},
@@ -702,10 +651,7 @@ def test_api_keys_revoked_bearer_returns_401(client: TestClient) -> None:
 
 
 def test_api_keys_post_user_key_requires_session_not_bearer(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "sess@example.com", "password": "sess-secret"},
-    )
+    seed_first_admin(client, "sess@example.com", "sess-secret")
     client.post(
         "/v1/auth/login",
         json={"email": "sess@example.com", "password": "sess-secret"},
@@ -726,10 +672,7 @@ def test_api_keys_post_user_key_requires_session_not_bearer(client: TestClient) 
 
 
 def test_api_keys_post_service_key_forbidden_for_member(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "oadmin@example.com", "password": "oa-secret"},
-    )
+    seed_first_admin(client, "oadmin@example.com", "oa-secret")
     client.post(
         "/v1/auth/login",
         json={"email": "oadmin@example.com", "password": "oa-secret"},
@@ -764,10 +707,7 @@ def test_api_keys_post_service_key_forbidden_for_member(client: TestClient) -> N
 
 
 def test_api_keys_member_cannot_revoke_another_users_key(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "adm2@example.com", "password": "adm2-secret"},
-    )
+    seed_first_admin(client, "adm2@example.com", "adm2-secret")
     client.post(
         "/v1/auth/login",
         json={"email": "adm2@example.com", "password": "adm2-secret"},
@@ -816,10 +756,7 @@ def test_api_keys_member_cannot_revoke_another_users_key(client: TestClient) -> 
 
 def test_api_keys_revoke_with_bearer_forbidden_even_for_own_row(client: TestClient) -> None:
     """Project API key must not be able to revoke credentials (no session identity)."""
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "br@example.com", "password": "br-secret"},
-    )
+    seed_first_admin(client, "br@example.com", "br-secret")
     client.post(
         "/v1/auth/login",
         json={"email": "br@example.com", "password": "br-secret"},
@@ -841,10 +778,7 @@ def test_api_keys_revoke_with_bearer_forbidden_even_for_own_row(client: TestClie
 
 
 def test_api_keys_org_admin_creates_revokes_service_key(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "svc@example.com", "password": "svc-secret"},
-    )
+    seed_first_admin(client, "svc@example.com", "svc-secret")
     client.post(
         "/v1/auth/login",
         json={"email": "svc@example.com", "password": "svc-secret"},
@@ -886,10 +820,7 @@ def test_api_keys_org_admin_creates_revokes_service_key(client: TestClient) -> N
 
 
 def test_api_keys_org_admin_revokes_other_users_user_key(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "adm3@example.com", "password": "adm3-secret"},
-    )
+    seed_first_admin(client, "adm3@example.com", "adm3-secret")
     client.post(
         "/v1/auth/login",
         json={"email": "adm3@example.com", "password": "adm3-secret"},
@@ -937,10 +868,7 @@ def test_ai_models_catalog_org_admin_flow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "aiadmin@example.com", "password": "aiadmin-secret-9"},
-    )
+    seed_first_admin(client, "aiadmin@example.com", "aiadmin-secret-9")
     client.post(
         "/v1/auth/login",
         json={"email": "aiadmin@example.com", "password": "aiadmin-secret-9"},
@@ -1031,10 +959,7 @@ def test_ai_models_org_admin_can_delete_catalog_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "delaimodel@example.com", "password": "delaimodel-secret-9"},
-    )
+    seed_first_admin(client, "delaimodel@example.com", "delaimodel-secret-9")
     client.post(
         "/v1/auth/login",
         json={"email": "delaimodel@example.com", "password": "delaimodel-secret-9"},
@@ -1062,10 +987,7 @@ def test_project_ai_models_workspace_toggle_and_project_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "projmodels@example.com", "password": "projmodels-secret-9"},
-    )
+    seed_first_admin(client, "projmodels@example.com", "projmodels-secret-9")
     client.post(
         "/v1/auth/login",
         json={"email": "projmodels@example.com", "password": "projmodels-secret-9"},
@@ -1118,10 +1040,7 @@ def test_project_ai_models_workspace_toggle_and_project_key(
 def test_project_effective_models_include_embedding_catalog_rows(
     client: TestClient,
 ) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "projembed@example.com", "password": "projembed-secret-9"},
-    )
+    seed_first_admin(client, "projembed@example.com", "projembed-secret-9")
     client.post(
         "/v1/auth/login",
         json={"email": "projembed@example.com", "password": "projembed-secret-9"},
@@ -1150,10 +1069,7 @@ def test_project_effective_models_include_embedding_catalog_rows(
 def test_project_semantic_indexing_configured_reflects_availability_toggle(
     client: TestClient,
 ) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "projsemb@example.com", "password": "projsemb-secret-9"},
-    )
+    seed_first_admin(client, "projsemb@example.com", "projsemb-secret-9")
     client.post(
         "/v1/auth/login",
         json={"email": "projsemb@example.com", "password": "projsemb-secret-9"},
@@ -1192,10 +1108,7 @@ def test_project_semantic_indexing_configured_reflects_availability_toggle(
 
 
 def test_ai_models_member_cannot_mutate_catalog(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "aimoa@example.com", "password": "aimoa-secret-9"},
-    )
+    seed_first_admin(client, "aimoa@example.com", "aimoa-secret-9")
     client.post(
         "/v1/auth/login",
         json={"email": "aimoa@example.com", "password": "aimoa-secret-9"},
@@ -1248,10 +1161,7 @@ def test_ai_models_member_cannot_mutate_catalog(client: TestClient) -> None:
 
 
 def test_ai_models_embedding_curated_create(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "embedadmin@example.com", "password": "embedadmin-secret-9"},
-    )
+    seed_first_admin(client, "embedadmin@example.com", "embedadmin-secret-9")
     client.post(
         "/v1/auth/login",
         json={"email": "embedadmin@example.com", "password": "embedadmin-secret-9"},
@@ -1315,10 +1225,7 @@ def test_integration_secrets_org_admin_encrypt_and_metadata_only(
     monkeypatch: pytest.MonkeyPatch, client: TestClient
 ) -> None:
     monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "secadm@example.com", "password": "secadm-secret-9"},
-    )
+    seed_first_admin(client, "secadm@example.com", "secadm-secret-9")
     client.post(
         "/v1/auth/login",
         json={"email": "secadm@example.com", "password": "secadm-secret-9"},
@@ -1398,10 +1305,7 @@ def test_platform_integration_secrets_put_round_trip_and_unknown_key_rejected(
     monkeypatch: pytest.MonkeyPatch, client: TestClient
 ) -> None:
     monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "platadm@example.com", "password": "platadm-secret-9"},
-    )
+    seed_first_admin(client, "platadm@example.com", "platadm-secret-9")
     client.post(
         "/v1/auth/login",
         json={"email": "platadm@example.com", "password": "platadm-secret-9"},
@@ -1436,10 +1340,7 @@ def test_integration_secrets_delete_credential_removes_linked_catalog_models(
     client: TestClient,
 ) -> None:
     monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "credcascade@example.com", "password": "credcascade-secret-9"},
-    )
+    seed_first_admin(client, "credcascade@example.com", "credcascade-secret-9")
     client.post(
         "/v1/auth/login",
         json={"email": "credcascade@example.com", "password": "credcascade-secret-9"},
@@ -1486,10 +1387,7 @@ def test_ai_models_org_admin_two_models_can_share_one_credential(
     client: TestClient,
 ) -> None:
     monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "sharecred@example.com", "password": "sharecred-secret-9"},
-    )
+    seed_first_admin(client, "sharecred@example.com", "sharecred-secret-9")
     client.post(
         "/v1/auth/login",
         json={"email": "sharecred@example.com", "password": "sharecred-secret-9"},
@@ -1537,10 +1435,7 @@ def test_integration_secrets_member_cannot_mutate(
     monkeypatch: pytest.MonkeyPatch, client: TestClient
 ) -> None:
     monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "secorga@example.com", "password": "secorga-secret-9"},
-    )
+    seed_first_admin(client, "secorga@example.com", "secorga-secret-9")
     client.post(
         "/v1/auth/login",
         json={"email": "secorga@example.com", "password": "secorga-secret-9"},
@@ -1578,10 +1473,7 @@ def test_integration_secrets_put_requires_master_key(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("MASTER_ENCRYPTION_KEY", raising=False)
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "nenc@example.com", "password": "nenc-secret-9"},
-    )
+    seed_first_admin(client, "nenc@example.com", "nenc-secret-9")
     client.post(
         "/v1/auth/login",
         json={"email": "nenc@example.com", "password": "nenc-secret-9"},

@@ -1,6 +1,6 @@
 /**
- * Processed-item verification: place geometry helpers (overlay v1, LeafletMap parity).
- * See ``docs/API.md`` → *Processed item location overlay (v1)* → *Geometry*.
+ * Processed-item verification: place geometry helpers with LeafletMap parity.
+ * See ``docs/api/processed-item-review.md`` → *Entity review domains*.
  */
 
 import {
@@ -514,7 +514,7 @@ export function markGeocodeAsManualEdit(geocode: Record<string, unknown>): void 
       : ({} as Record<string, unknown>)
   const conf = result.confidence
   if (conf && typeof conf === 'object' && !Array.isArray(conf)) {
-    const next = { ...(conf as Record<string, unknown>), source: 'manual' }
+    const next: Record<string, unknown> = { ...(conf as Record<string, unknown>), source: 'manual' }
     delete next.canonical_id
     result.confidence = next
   } else {

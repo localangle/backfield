@@ -1,14 +1,22 @@
 [project]
 name = "backfield-auth"
 version = "0.1.0"
-description = "Shared session and service-token authentication for Backfield APIs"
+description = "Shared session and service-token authentication for Backfield APIs (monorepo-internal)"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+classifiers = [
+    "Private :: Do Not Upload",
+]
 dependencies = [
     "fastapi>=0.109.0",
     "itsdangerous>=2.1.0",
     "backfield-db",
     "redis>=5.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/localangle/backfield"
+Repository = "https://github.com/localangle/backfield"
 
 [build-system]
 requires = ["hatchling"]

@@ -144,4 +144,4 @@ Any context, constraints, or decisions that do not fit the above sections.
 ## Out of scope for this skill
 
 - This skill produces **`prd/<slug>/prd.md`**, not production code or migrations.
-- It does **not** replace `docs/AGENTIC.md` → **Planning multi-step work** for large refactors unless the user explicitly wants the PRD to live there or to align with it.
+- It does **not** replace `AGENTS.md` → **Planning and reviews** for large refactors unless the user explicitly wants the PRD to align with that plan.

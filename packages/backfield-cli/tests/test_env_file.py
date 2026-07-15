@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from backfield_cli.env_file import ensure_repo_env_file, read_env_values, write_env_values
+import stat
+
+from backfield_cli.env_file import (
+    ensure_repo_env_file,
+    env_permissions_are_private,
+    read_env_values,
+    write_env_values,
+)
 
 
 def test_ensure_repo_env_file_generates_missing_secrets(tmp_path) -> None:
@@ -19,6 +26,9 @@ def test_ensure_repo_env_file_generates_missing_secrets(tmp_path) -> None:
     values = read_env_values(repo_root / ".env")
     assert values["MASTER_ENCRYPTION_KEY"]
     assert values["SESSION_SECRET"]
+    mode = stat.S_IMODE((repo_root / ".env").stat().st_mode)
+    assert mode & (stat.S_IRWXG | stat.S_IRWXO) == 0
+    assert env_permissions_are_private(repo_root / ".env") is True
 
 
 def test_ensure_repo_env_file_preserves_existing_secrets(tmp_path) -> None:

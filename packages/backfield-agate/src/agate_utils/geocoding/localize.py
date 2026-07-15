@@ -145,7 +145,7 @@ def localize_search(query: str, city: str, state: str, type: str, base_url: str,
         city (str): City name (e.g., "Columbia")
         state (str): State abbreviation (e.g., "MO")
         type (str): Geography type (e.g., "neighborhood")
-        base_url (str): Base URL for the Stylebook API (default: "https://stylebook-api.agate.localangle.co")
+        base_url (str): Base URL for the Stylebook API (required; for example ``http://127.0.0.1:8003``)
         project_slug (str): Project slug for project-scoped endpoints (required)
         endpoint (str): API endpoint path (default: "/geo/search")
         args (str): Additional URL arguments as a string (e.g., "limit=10&radius=5km")
@@ -199,7 +199,7 @@ def localize_reverse(lat: float, lon: float, type: str, base_url: str, project_s
         lat (float): Latitude
         lon (float): Longitude
         type (str): Geography type (e.g., "neighborhood")
-        base_url (str): Base URL for the Stylebook API (default: "https://stylebook-api.agate.localangle.co")
+        base_url (str): Base URL for the Stylebook API (required; for example ``http://127.0.0.1:8003``)
         project_slug (str): Project slug for project-scoped endpoints (required)
         endpoint (str): API endpoint path (default: "/geo/reverse")
         args (str): Additional URL arguments as a string (e.g., "limit=10&radius=5km")

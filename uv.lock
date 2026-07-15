@@ -377,6 +377,7 @@ name = "backfield-cli"
 version = "0.1.0"
 source = { editable = "packages/backfield-cli" }
 dependencies = [
+    { name = "backfield-auth" },
     { name = "backfield-db" },
     { name = "cryptography" },
     { name = "pydantic" },
@@ -385,6 +386,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "backfield-auth", editable = "packages/backfield-auth" },
     { name = "backfield-db", editable = "packages/backfield-db" },
     { name = "cryptography", specifier = ">=42.0.0" },
     { name = "pydantic", specifier = ">=2.0.0" },

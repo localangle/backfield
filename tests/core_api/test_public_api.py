@@ -39,6 +39,8 @@ from core_api.main import app
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from tests.core_api.auth_helpers import attach_test_engine, seed_first_admin
+
 
 @pytest.fixture
 def public_client(tmp_path) -> Generator[TestClient, None, None]:
@@ -289,16 +291,13 @@ def public_client(tmp_path) -> Generator[TestClient, None, None]:
 
     app.dependency_overrides[get_session] = get_test_session
     try:
-        yield TestClient(app)
+        yield attach_test_engine(TestClient(app), engine)
     finally:
         app.dependency_overrides.clear()
 
 
 def _create_project_api_key(client: TestClient, project_id: int = 1) -> str:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "pub@example.com", "password": "pub-secret-12"},
-    )
+    seed_first_admin(client, "pub@example.com", "pub-secret-12")
     client.post(
         "/v1/auth/login",
         json={"email": "pub@example.com", "password": "pub-secret-12"},
@@ -317,10 +316,7 @@ def test_public_project_requires_api_key(public_client: TestClient) -> None:
 
 
 def test_public_project_rejects_session_cookie(public_client: TestClient) -> None:
-    public_client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "sesspub@example.com", "password": "sesspub-secret-12"},
-    )
+    seed_first_admin(public_client, "sesspub@example.com", "sesspub-secret-12")
     public_client.post(
         "/v1/auth/login",
         json={"email": "sesspub@example.com", "password": "sesspub-secret-12"},

@@ -10,6 +10,7 @@ from typing import Any
 
 from backfield_db import (
     BackfieldApiCredential,
+    BackfieldOrganizationMembership,
     BackfieldProject,
     BackfieldProjectMembership,
     BackfieldUser,
@@ -162,35 +163,56 @@ def resolve_auth(
     if cookie:
         data = verify_session_token(cookie)
         if data:
-            uid = data.get("user_id")
-            if uid is None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid session",
-                )
-            user = session.get(BackfieldUser, int(uid))
-            if user is None or user.disabled_at is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid session",
-                )
-            org_id = data.get("organization_id")
-            org_role = data.get("org_role") or "member"
-            if org_id is None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid session",
-                )
-            return {
-                "type": "session",
-                "user": user,
-                "token_data": data,
-                "organization_id": int(org_id),
-                "org_role": str(org_role),
-                "is_admin": bool(data.get("is_admin")) or str(org_role) == "org_admin",
-            }
+            return _resolve_session_auth(session, data)
 
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+
+def _resolve_session_auth(session: Session, data: dict[str, Any]) -> dict[str, Any]:
+    """Load the current user and DB membership; do not trust cookie authorization claims."""
+    uid = data.get("user_id")
+    if uid is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid session",
+        )
+    user = session.get(BackfieldUser, int(uid))
+    if user is None or user.disabled_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid session",
+        )
+
+    claimed_org_id = data.get("organization_id")
+    membership: BackfieldOrganizationMembership | None = None
+    if claimed_org_id is not None:
+        membership = session.exec(
+            select(BackfieldOrganizationMembership).where(
+                BackfieldOrganizationMembership.user_id == int(uid),
+                BackfieldOrganizationMembership.organization_id == int(claimed_org_id),
+            )
+        ).first()
+    if membership is None:
+        membership = session.exec(
+            select(BackfieldOrganizationMembership).where(
+                BackfieldOrganizationMembership.user_id == int(uid)
+            )
+        ).first()
+    if membership is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid session",
+        )
+
+    org_role = str(membership.role)
+    return {
+        "type": "session",
+        "user": user,
+        "token_data": data,
+        "organization_id": int(membership.organization_id),
+        "org_role": org_role,
+        "is_admin": org_role == "org_admin",
+    }
 
 
 def require_session_may_assign_project_to_workspace(

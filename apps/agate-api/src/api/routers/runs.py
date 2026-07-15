@@ -261,23 +261,27 @@ class ProcessedItemDetailOut(BaseModel):
     overlay_version: int = 0
     #: Materialized model output + overlay for export; ``null`` when no review content saved.
     reviewed_output: dict[str, Any] | None = None
-    #: Single merged lane: model + user places with provenance (see ``docs/API.md``).
+    #: Single merged lane: model + user places with provenance.
+    #: See ``docs/api/processed-item-review.md``.
     merged_locations: list[dict[str, Any]] = Field(default_factory=list)
-    #: Single merged lane: model + user people with provenance (see ``docs/API.md``).
+    #: Single merged lane: model + user people with provenance.
+    #: See ``docs/api/processed-item-review.md``.
     merged_people: list[dict[str, Any]] = Field(default_factory=list)
-    #: Single merged lane: model + user organizations with provenance (see ``docs/API.md``).
+    #: Single merged lane: model + user organizations with provenance.
+    #: See ``docs/api/processed-item-review.md``.
     merged_organizations: list[dict[str, Any]] = Field(default_factory=list)
     #: Overlay patches whose anchor no longer exists in current model output.
     stale_overlay_entries: list[dict[str, Any]] = Field(default_factory=list)
     stale_people_overlay_entries: list[dict[str, Any]] = Field(default_factory=list)
     stale_organizations_overlay_entries: list[dict[str, Any]] = Field(default_factory=list)
-    #: Resolved article body/headline for the item (see ``docs/API.md``).
+    #: Resolved article body/headline for the item (see ``docs/api/processed-item-review.md``).
     article_context: ArticleContextOut
-    #: Semantic search indexing status from Backfield Output (see ``docs/API.md``).
+    #: Semantic search indexing status from Backfield Output.
+    #: See ``docs/api/processed-item-review.md``.
     semantic_indexing: ProcessedItemSemanticIndexingOut
-    #: Article-level text embedding from Embed Text (see ``docs/API.md``).
+    #: Article-level text embedding from Embed Text (see ``docs/api/processed-item-review.md``).
     article_embedding: ProcessedItemArticleEmbeddingOut
-    #: Persisted article metadata tags for Meta review (see ``docs/API.md``).
+    #: Persisted article metadata tags for Meta review (see ``docs/api/processed-item-review.md``).
     article_meta: list[ProcessedItemArticleMetaRowOut] = Field(default_factory=list)
     #: Automatic Stylebook connections status from Backfield Output.
     connections: ProcessedItemConnectionsOut

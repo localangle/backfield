@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import os
 
-from backfield_auth import create_session_token, verify_session_token
+from backfield_auth import create_session_token, resolve_auth
 from backfield_auth.deps import require_auth
+from backfield_auth.identity import LoginCredentials, NewPasswordBody
 from backfield_db import (
     BackfieldOrganization,
     BackfieldOrganizationMembership,
     BackfieldUser,
 )
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
-from pydantic import BaseModel
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response
+from pydantic import BaseModel, ValidationError
 from sqlmodel import Session, select
 
 from core_api.authz import session_project_ids_for_user
@@ -20,11 +21,6 @@ from core_api.deps import get_auth, get_session
 from core_api.security import hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-class LoginRequest(BaseModel):
-    email: str
-    password: str
 
 
 class UserResponse(BaseModel):
@@ -36,40 +32,55 @@ class UserResponse(BaseModel):
     org_role: str | None = None
 
 
-class ChangePasswordBody(BaseModel):
-    current_password: str
-    new_password: str
+class ChangePasswordBody(NewPasswordBody):
+    pass
+
+
+def _session_cookie_settings() -> dict[str, str | int | bool | None]:
+    is_production = os.getenv("ENVIRONMENT") == "production"
+    if is_production:
+        domain = (os.getenv("SESSION_COOKIE_DOMAIN") or "").strip() or None
+        return {
+            "httponly": True,
+            "secure": True,
+            "samesite": "none",
+            "path": "/",
+            "domain": domain,
+            "max_age": 7 * 24 * 60 * 60,
+        }
+    return {
+        "httponly": True,
+        "secure": False,
+        "samesite": "lax",
+        "path": "/",
+        "domain": None,
+        "max_age": 7 * 24 * 60 * 60,
+    }
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
-    is_production = os.getenv("ENVIRONMENT") == "production"
-    if is_production:
-        samesite_setting = "none"
-        cookie_domain = os.getenv("SESSION_COOKIE_DOMAIN", ".example.invalid")
-        secure_setting = True
-    else:
-        samesite_setting = "lax"
-        cookie_domain = None
-        secure_setting = False
-    response.set_cookie(
+    settings = _session_cookie_settings()
+    response.set_cookie(key="session", value=token, **settings)
+
+
+def _clear_session_cookie(response: Response) -> None:
+    settings = _session_cookie_settings()
+    response.delete_cookie(
         key="session",
-        value=token,
-        httponly=True,
-        secure=secure_setting,
-        samesite=samesite_setting,
-        path="/",
-        domain=cookie_domain,
-        max_age=7 * 24 * 60 * 60,
+        path=str(settings["path"]),
+        domain=settings["domain"],  # type: ignore[arg-type]
+        secure=bool(settings["secure"]),
+        samesite=str(settings["samesite"]),  # type: ignore[arg-type]
     )
 
 
 @router.post("/login")
 def login(
-    body: LoginRequest,
+    body: LoginCredentials,
     response: Response,
     session: Session = Depends(get_session),
 ) -> dict[str, bool | str]:
-    email_norm = body.email.strip().lower()
+    email_norm = body.email
     user = session.exec(select(BackfieldUser).where(BackfieldUser.email == email_norm)).first()
     if user is None or user.disabled_at is not None:
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -107,31 +118,29 @@ def login(
 
 
 @router.get("/me", response_model=UserResponse)
-def me(session: Session = Depends(get_session), cookie: str | None = Cookie(None, alias="session")):
-    if not cookie:
+def me(
+    session: Session = Depends(get_session),
+    cookie: str | None = Cookie(None, alias="session"),
+    authorization: str | None = Header(None, alias="Authorization"),
+) -> UserResponse:
+    if not cookie and not authorization:
         return UserResponse(email="", authenticated=False)
-    data = verify_session_token(cookie)
-    if not data:
+    try:
+        auth = resolve_auth(session, cookie=cookie, authorization=authorization)
+    except HTTPException:
         return UserResponse(email="", authenticated=False)
-    uid = data.get("user_id")
-    if uid is None:
+    if auth.get("type") != "session":
         return UserResponse(email="", authenticated=False)
-    user = session.get(BackfieldUser, int(uid))
-    if user is None or user.disabled_at is not None:
-        return UserResponse(email="", authenticated=False)
-    org_id = data.get("organization_id")
-    org_name: str | None = None
-    if org_id is not None:
-        org = session.get(BackfieldOrganization, int(org_id))
-        if org is not None:
-            org_name = str(org.name)
+    user = auth["user"]
+    org_id = int(auth["organization_id"])
+    org = session.get(BackfieldOrganization, org_id)
     return UserResponse(
         email=str(user.email),
         authenticated=True,
         user_id=int(user.id),
         organization_id=org_id,
-        organization_name=org_name,
-        org_role=data.get("org_role"),
+        organization_name=str(org.name) if org is not None else None,
+        org_role=str(auth.get("org_role")),
     )
 
 
@@ -146,9 +155,12 @@ def change_password(
     user = auth["user"]
     if not verify_password(body.current_password, user.password_hash):
         raise HTTPException(status_code=401, detail="Current password is incorrect")
-    if len(body.new_password) < 1:
-        raise HTTPException(status_code=400, detail="New password is required")
-    user.password_hash = hash_password(body.new_password)
+    try:
+        new_password = body.validated_new_password(email=str(user.email))
+    except (ValidationError, ValueError) as exc:
+        detail = exc.errors()[0]["msg"] if isinstance(exc, ValidationError) else str(exc)
+        raise HTTPException(status_code=400, detail=detail) from exc
+    user.password_hash = hash_password(new_password)
     session.add(user)
     session.commit()
     return {"ok": True}
@@ -156,16 +168,7 @@ def change_password(
 
 @router.post("/logout")
 def logout(response: Response) -> dict[str, bool | str]:
-    is_production = os.getenv("ENVIRONMENT") == "production"
-    cookie_domain = os.getenv("SESSION_COOKIE_DOMAIN") if is_production else None
-    secure_setting = bool(is_production)
-    response.delete_cookie(
-        key="session",
-        path="/",
-        domain=cookie_domain,
-        secure=secure_setting,
-        samesite="lax" if not is_production else "none",
-    )
+    _clear_session_cookie(response)
     return {"success": True, "message": "Logged out successfully"}
 
 

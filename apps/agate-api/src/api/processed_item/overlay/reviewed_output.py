@@ -1,6 +1,6 @@
 """Materialize reviewed run output (model ``result_json`` + review overlay).
 
-See ``docs/API.md`` → *Reviewed output*. Does not mutate cache or Stylebook.
+See ``docs/api/processed-item-review.md`` → *Reviewed output*. Does not mutate cache or Stylebook.
 """
 
 from __future__ import annotations

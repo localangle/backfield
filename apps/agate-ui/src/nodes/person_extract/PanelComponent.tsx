@@ -229,7 +229,7 @@ export default function PersonExtractPanel({
     node.id,
     nodeOutputLookupSpec ?? undefined,
   )
-  const latestData = nodeOutput || null
+  const latestData = (nodeOutput as { people?: unknown[] } | null | undefined) || null
 
   return (
     <>

@@ -1,14 +1,23 @@
 [project]
 name = "backfield-cli"
 version = "0.1.0"
-description = "Backfield operator CLI (migrate, init, and local stack helpers)"
+description = "Backfield operator CLI (migrate, init, and local stack helpers; monorepo-internal)"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+classifiers = [
+    "Private :: Do Not Upload",
+]
 dependencies = [
+    "backfield-auth",
     "backfield-db",
     "cryptography>=42.0.0",
     "pydantic>=2.0.0",
     "rich>=13.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/localangle/backfield"
+Repository = "https://github.com/localangle/backfield"
 
 [project.scripts]
 backfield-migrate = "backfield_cli.migrate:main"
@@ -22,4 +31,5 @@ build-backend = "hatchling.build"
 packages = ["src/backfield_cli"]
 
 [tool.uv.sources]
+backfield-auth = { workspace = true }
 backfield-db = { workspace = true }

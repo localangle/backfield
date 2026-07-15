@@ -27,6 +27,7 @@ STYLEBOOK_UI_URL = "http://localhost:5175"
 MODELS_URL = f"{AGATE_UI_URL}/settings/models"
 INTEGRATIONS_URL = f"{AGATE_UI_URL}/settings/integrations"
 DOCS_URL = "https://docs.backfield.news"
+DEFAULT_ADMIN_EMAIL = "admin@backfield.news"
 
 INIT_STEP_COUNT = 5
 
@@ -88,7 +89,8 @@ def print_step(step: int, total: int, label: str) -> None:
     CONSOLE.print(f"[bold cyan]Step {step}/{total}:[/bold cyan] {label}")
 
 
-def print_next_steps(admin_email: str) -> None:
+def print_ready(admin_email: str = DEFAULT_ADMIN_EMAIL) -> None:
+    """Print the post-start summary (apps + CLI commands)."""
     CONSOLE.print()
     CONSOLE.print("[bold green]Backfield is ready.[/bold green]")
     CONSOLE.print()
@@ -102,6 +104,11 @@ def print_next_steps(admin_email: str) -> None:
     for command, description in CLI_COMMANDS:
         CONSOLE.print(f"  {command.ljust(command_width + 2)}{description}")
     CONSOLE.print()
+
+
+def print_next_steps(admin_email: str = DEFAULT_ADMIN_EMAIL) -> None:
+    """Init completion: ready summary plus first-run Settings guidance."""
+    print_ready(admin_email)
     CONSOLE.print("[bold]Next steps[/bold]")
     CONSOLE.print(
         "  1. Open [bold]Settings → AI models[/bold] in the Agate UI\n"

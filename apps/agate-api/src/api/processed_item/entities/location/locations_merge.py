@@ -1,6 +1,6 @@
 """Merge immutable model ``locations`` with review overlay for processed items.
 
-See ``docs/API.md`` → *Processed item location overlay (v1)* for the JSON contract.
+See ``docs/api/processed-item-review.md`` → *Entity review domains* for the JSON contract.
 """
 
 from __future__ import annotations

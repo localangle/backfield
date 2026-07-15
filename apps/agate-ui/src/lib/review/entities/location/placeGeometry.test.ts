@@ -379,7 +379,7 @@ describe('buildVerificationLeafletCollections', () => {
       selectedAnchor: 'a2',
     })
     expect(collections.points.features).toHaveLength(1)
-    expect(collections.points.features[0]?.id).toBe('a2')
+    expect((collections.points.features[0] as { id?: string } | undefined)?.id).toBe('a2')
   })
 
   it('shows only draft geometry while editing a linked place', () => {
@@ -427,7 +427,7 @@ describe('buildVerificationLeafletCollections', () => {
       unsavedGeometryOverlay: false,
     })
     expect(viewSaved.polygons.features).toHaveLength(1)
-    expect(viewSaved.polygons.features[0]?.id).toBe(anchor)
+    expect((viewSaved.polygons.features[0] as { id?: string } | undefined)?.id).toBe(anchor)
 
     const editing = buildVerificationLeafletCollections({
       mergedRows: [merged],
@@ -436,7 +436,7 @@ describe('buildVerificationLeafletCollections', () => {
       geometryEditing: true,
     })
     expect(editing.polygons.features).toHaveLength(1)
-    expect(editing.polygons.features[0]?.id).toBe(anchor)
+    expect((editing.polygons.features[0] as { id?: string } | undefined)?.id).toBe(anchor)
   })
 })
 

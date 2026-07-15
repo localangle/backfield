@@ -14,7 +14,7 @@ def test_load_init_config_from_json(tmp_path) -> None:
         json.dumps(
             {
                 "admin_email": "admin@example.com",
-                "admin_password": "pw-test",
+                "admin_password": "pw-test-99",
                 "admin_display_name": "Admin",
                 "org_name": "Acme News",
                 "stylebook_name": "Acme Stylebook",

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import tarfile
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +54,11 @@ def test_ui_archive_is_deterministic(tmp_path: Path) -> None:
 
     assert sha256_file(first) == sha256_file(second)
     assert hashlib.sha256(first.read_bytes()).hexdigest() == sha256_file(first)
+
+    with tarfile.open(first, mode="r:gz") as archive:
+        names = set(archive.getnames())
+    assert "index.html" in names
+    assert "LICENSE.md" in names
 
 
 class FakeIndexEcr:
