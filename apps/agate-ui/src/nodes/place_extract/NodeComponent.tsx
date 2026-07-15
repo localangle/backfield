@@ -51,8 +51,12 @@ interface PlaceExtractData {
 }
 
 function PlaceExtractNode({ data, selected }: NodeProps<PlaceExtractData>) {
-  const requiredUpstreamNodes = nodeMetadata?.requiredUpstreamNodes || []
-  const dependencyHelperText = nodeMetadata?.dependencyHelperText || ''
+  const meta = nodeMetadata as {
+    requiredUpstreamNodes?: string[]
+    dependencyHelperText?: string
+  }
+  const requiredUpstreamNodes = meta.requiredUpstreamNodes || []
+  const dependencyHelperText = meta.dependencyHelperText || ''
   const icon = getNodeIcon('PlaceExtract', 'h-4 w-4')
   const bgColor = getNodeBgColor('PlaceExtract')
 

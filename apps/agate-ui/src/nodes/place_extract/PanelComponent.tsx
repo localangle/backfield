@@ -236,7 +236,7 @@ export default function PlaceExtractPanel({
     node.id,
     nodeOutputLookupSpec ?? undefined,
   )
-  const latestData = nodeOutput || null
+  const latestData = (nodeOutput as { locations?: unknown[] } | null | undefined) || null
 
   return (
     <>

@@ -51,8 +51,12 @@ interface PersonExtractData {
 }
 
 function PersonExtractNode({ data, selected }: NodeProps<PersonExtractData>) {
-  const requiredUpstreamNodes = nodeMetadata?.requiredUpstreamNodes || []
-  const dependencyHelperText = nodeMetadata?.dependencyHelperText || ''
+  const meta = nodeMetadata as {
+    requiredUpstreamNodes?: string[]
+    dependencyHelperText?: string
+  }
+  const requiredUpstreamNodes = meta.requiredUpstreamNodes || []
+  const dependencyHelperText = meta.dependencyHelperText || ''
   const icon = getNodeIcon('PersonExtract', 'h-4 w-4')
   const bgColor = getNodeBgColor('PersonExtract')
 

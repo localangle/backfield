@@ -133,12 +133,12 @@ smoke-fast:
 
 ui-typecheck:
 	cd packages/backfield-ui && npm ci
-	cd apps/agate-ui && npm ci && npx tsc --noEmit
+	cd apps/agate-ui && npm ci && npm run sync-nodes && npx tsc --noEmit
 	cd apps/stylebook-ui && npm ci && npx tsc --noEmit
 
 ui-test:
 	cd packages/backfield-ui && npm ci && npm test
-	cd apps/agate-ui && npm ci && npm test
+	cd apps/agate-ui && npm ci && npm run sync-nodes && npm test
 	cd apps/stylebook-ui && npm ci && npm test
 
 agate-ui-build:

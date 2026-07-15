@@ -224,6 +224,8 @@ export interface Run {
   running_items: number
   succeeded_items: number
   failed_items: number
+  /** Run-level failure message from the API (``error_message``), when present. */
+  error?: string | null
   items?: ProcessedItemSummary[] | null
   node_outputs?: Record<string, unknown> | null
   /** When there are no batch rows, LLM cost for the whole run (``processed_item_id`` null on call rows). */
@@ -589,6 +591,7 @@ function normalizeRun(raw: RawRun): Run {
     running_items: hasServerItemCounts ? (raw.running_items ?? 0) : running_items,
     succeeded_items: hasServerItemCounts ? (raw.succeeded_items ?? 0) : succeeded,
     failed_items: hasServerItemCounts ? (raw.failed_items ?? 0) : failed,
+    error: raw.error_message ?? null,
     items,
     node_outputs: outputs,
     whole_run_ai_cost_estimate: wrEst,
@@ -622,6 +625,7 @@ function normalizeRunStatus(raw: RawRunStatus): Run {
     running_items: raw.running_items,
     succeeded_items: raw.succeeded_items,
     failed_items: raw.failed_items,
+    error: raw.error_message ?? null,
     items: null,
     node_outputs: null,
     estimated_ai_cost_total: _parseCostAmount(raw.estimated_ai_cost_total),
@@ -675,6 +679,10 @@ export async function createGraph(data: GraphCreate): Promise<Graph> {
   return normalizeGraph(raw)
 }
 
+export async function listGraphs(
+  options: ListGraphsOptions & { includeSpec: false },
+): Promise<GraphSummary[]>
+export async function listGraphs(options?: ListGraphsOptions): Promise<Graph[]>
 export async function listGraphs(options: ListGraphsOptions = {}): Promise<Graph[] | GraphSummary[]> {
   const params = new URLSearchParams()
   if (options.projectId != null) {
@@ -692,7 +700,7 @@ export async function listGraphs(options: ListGraphsOptions = {}): Promise<Graph
 }
 
 export async function listGraphSummaries(projectId?: number): Promise<GraphSummary[]> {
-  return listGraphs({ projectId, includeSpec: false }) as Promise<GraphSummary[]>
+  return listGraphs({ projectId, includeSpec: false })
 }
 
 export async function getGraph(id: string | number): Promise<Graph> {

@@ -102,7 +102,7 @@ export function applyPersonEditFields(
   out.role_in_story = fields.roleInStory.trim()
   out.nature = fields.nature.trim()
   out.public_figure = fields.publicFigure
-  out.sort_key = derivePersonSortKey(fields.name, explicit=fields.sortKey || null)
+  out.sort_key = derivePersonSortKey(fields.name, fields.sortKey || null)
   const primary = primaryMentionText(fields.occurrences)
   if (primary) {
     out.original_text = primary
@@ -125,7 +125,7 @@ export function buildPersonEditOverlayPatch(fields: PersonEditFields): Record<st
     role_in_story: fields.roleInStory.trim(),
     nature: fields.nature.trim(),
     public_figure: fields.publicFigure,
-    sort_key: derivePersonSortKey(fields.name, explicit=fields.sortKey || null),
+    sort_key: derivePersonSortKey(fields.name, fields.sortKey || null),
     occurrences: buildOccurrencesOverlayPayload(fields.occurrences),
   }
 }

@@ -74,7 +74,8 @@ Do not hand-edit `apps/agate-ui/src/nodes/`. From `apps/agate-ui`, run:
 npm run sync-nodes
 ```
 
-`predev` and `prebuild` also run the sync. `scripts/sync-nodes.js`:
+`predev` and `prebuild` also run the sync. Makefile targets `ui-typecheck` and `ui-test` run it
+for `apps/agate-ui` before TypeScript check or tests. `scripts/sync-nodes.js`:
 
 - scans package node folders with `metadata.json`;
 - copies node, panel, visualization, and additional TypeScript UI modules;

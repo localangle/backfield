@@ -492,7 +492,7 @@ export default function ProcessedItemDetail() {
               _truncated: true,
               type: value.type || 'unknown',
               note: `Large geometry with extensive coordinate data - truncated for display`,
-              bbox: value.bbox || null
+              bbox: (value as { bbox?: unknown }).bbox || null,
             }
           } else {
             sanitized[key] = value

@@ -25,8 +25,9 @@ make ui-build
 ```
 
 `ui-typecheck` and `ui-test` install locked dependencies in `packages/backfield-ui` and each app,
-then run TypeScript checks and the package/app test suites. The UI build targets install locked
-dependencies before running the production build.
+then run TypeScript checks and the package/app test suites. For `apps/agate-ui`, both targets run
+`npm run sync-nodes` first so the gitignored node registry exists before `tsc` or tests.
+The UI build targets install locked dependencies before running the production build.
 
 ## Test layout
 

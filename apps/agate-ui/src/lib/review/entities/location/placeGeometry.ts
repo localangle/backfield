@@ -514,7 +514,7 @@ export function markGeocodeAsManualEdit(geocode: Record<string, unknown>): void 
       : ({} as Record<string, unknown>)
   const conf = result.confidence
   if (conf && typeof conf === 'object' && !Array.isArray(conf)) {
-    const next = { ...(conf as Record<string, unknown>), source: 'manual' }
+    const next: Record<string, unknown> = { ...(conf as Record<string, unknown>), source: 'manual' }
     delete next.canonical_id
     result.confidence = next
   } else {
