@@ -143,7 +143,7 @@ ui-test:
 
 agate-ui-build:
 	cd packages/backfield-ui && npm ci
-	cd apps/agate-ui && npm ci && npm run build:check
+	cd apps/agate-ui && npm ci && npm run sync-nodes && npm run build:check
 
 stylebook-ui-build:
 	cd packages/backfield-ui && npm ci
