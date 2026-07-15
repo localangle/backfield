@@ -67,6 +67,7 @@ def test_ensure_host_python_tooling_reinstalls_when_import_broken(
         calls.append(cmd)
         assert kwargs["cwd"] == tmp_path
         assert cmd[:3] == ["uv", "sync", "--all-packages"]
+        assert "VIRTUAL_ENV" not in kwargs.get("env", {})
         state["sync_calls"] += 1
         if state["sync_calls"] >= 2:
             state["imports"] = True
@@ -84,7 +85,36 @@ def test_ensure_host_python_tooling_reinstalls_when_import_broken(
 
     assert len(calls) == 2
     assert "--reinstall-package" in calls[1]
+    assert "backfield-auth" in calls[1]
     assert shim_calls == [tmp_path]
+
+
+def test_ensure_host_python_tooling_full_reinstall_fallback(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    state = {"imports": False, "sync_calls": 0}
+    calls: list[list[str]] = []
+
+    def _import_ok(_root: Path) -> bool:
+        return state["imports"]
+
+    def _run(cmd, **_kwargs):
+        calls.append(cmd)
+        state["sync_calls"] += 1
+        if "--reinstall" in cmd and "--reinstall-package" not in cmd:
+            state["imports"] = True
+        return None
+
+    monkeypatch.setattr(host_tooling, "cli_runtime_works", _import_ok)
+    monkeypatch.setattr(host_tooling, "install_cli_shim", lambda _root: None)
+    monkeypatch.setattr(host_tooling.shutil, "which", lambda _name: "/usr/bin/uv")
+    monkeypatch.setattr(host_tooling.subprocess, "run", _run)
+
+    host_tooling.ensure_host_python_tooling(tmp_path)
+
+    assert len(calls) == 3
+    assert calls[2][-1] == "--reinstall"
 
 
 def test_ensure_host_python_tooling_raises_when_uv_missing(

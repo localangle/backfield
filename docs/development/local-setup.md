@@ -214,6 +214,23 @@ Also keep Buildx on the Desktop builder for day-to-day local work
 (`docker buildx use desktop-linux`). Leave cloud/canary builders such as `canarybuilder` for amd64
 release bakes only.
 
+### CLI: “could not repair the Backfield CLI in .venv”
+
+Usually a stale editable install (or two checkouts fighting over one global launcher). Prefer **one**
+primary clone. Then from that checkout:
+
+```bash
+deactivate 2>/dev/null || true
+unset VIRTUAL_ENV
+uv sync --all-packages --reinstall
+source .venv/bin/activate
+make install-user-cli   # re-points ~/.local/bin/backfield at this checkout
+backfield doctor
+```
+
+If you keep multiple clones, do not activate checkout A’s `.venv` while running commands in
+checkout B — `VIRTUAL_ENV` can point `uv` at the wrong environment.
+
 ## Local workspace bootstrap (not admin seeding)
 
 Compose defaults `BACKFIELD_LOCAL_BOOTSTRAP=1` on Agate API. After migrations, it ensures the default
