@@ -94,7 +94,7 @@ Published ports bind to `127.0.0.1` only.
 
 ## External services and dependencies
 
-For optimal performance, Backfield relies on several external services and APIs to extract and enrich data. Technically these are optional — you can choose to use Backfield in an entirely manual mode, performing extraction and annotation by hand. But to get the most from the platform, you'll want to obtain the following API keys, which can be entered in the Backfield interface under Settings/Integrations.
+For optimal performance, Backfield relies on several external services and APIs to extract and enrich data. To get the most from the platform, you'll want to obtain the following API keys, which can be entered in the Backfield interface under Settings/Integrations.
 
 - **Your LLMs of choice**: Backfield supports any model in the [LiteLLM ecosystem](https://models.litellm.ai/).
 - **[Geocode Earth](https://geocode.earth/):** A great geocoder, based on open source technology, with permissive data retention rules. Has a generous free tier.
@@ -102,7 +102,7 @@ For optimal performance, Backfield relies on several external services and APIs 
 - **[Brave Search API](https://brave.com/search/api/)**: Used to look up details that enhance the accuracy of geocoding. No free tier, but Duck Duck Go is used as a fallback and is free.
 - **[AWS S3](https://aws.amazon.com/pm/serv-s3)**: Used for S3 Input and Output
 
-None of these services are required, but they greatly enhance performance.
+All of these services are optional, but they greatly enhance performance.
 
 ## Project status
 
