@@ -151,7 +151,7 @@ jobs:
         env:
           BACKFIELD_DATABASE_URL_DIRECT: postgresql+psycopg://postgres:postgres@127.0.0.1:5433/backfield
         run: |
-          uv run backfield seed \
+          uv run python -m backfield_cli seed \
             --admin-email smoke-ci@local.test \
             --admin-password smoke-ci-pass-change-in-prod
       - name: Fast smoke lanes
@@ -221,7 +221,7 @@ jobs:
         env:
           BACKFIELD_DATABASE_URL_DIRECT: postgresql+psycopg://postgres:postgres@127.0.0.1:5433/backfield
         run: |
-          uv run backfield seed \
+          uv run python -m backfield_cli seed \
             --admin-email smoke-ci@local.test \
             --admin-password smoke-ci-pass-change-in-prod
       - name: Agate to Stylebook handoff smoke
