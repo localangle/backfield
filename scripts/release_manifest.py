@@ -61,6 +61,49 @@ def _add_tar_file(archive: tarfile.TarFile, path: Path, arcname: str) -> None:
         archive.addfile(info, handle)
 
 
+def _not_found(exc: ClientError) -> bool:
+    return str(exc.response.get("Error", {}).get("Code", "")) in {
+        "404",
+        "NoSuchKey",
+        "NotFound",
+    }
+
+
+def _publish_ui_archive(
+    s3: Any,
+    *,
+    bucket: str,
+    key: str,
+    archive: Path,
+    checksum: str,
+    source_sha: str,
+) -> None:
+    try:
+        head = s3.head_object(Bucket=bucket, Key=key)
+    except ClientError as exc:
+        if not _not_found(exc):
+            raise
+        try:
+            s3.put_object(
+                Bucket=bucket,
+                Key=key,
+                Body=archive.read_bytes(),
+                ContentType="application/gzip",
+                Metadata={"sha256": checksum, "source-sha": source_sha},
+                IfNoneMatch="*",
+            )
+        except ClientError as put_exc:
+            if put_exc.response.get("Error", {}).get("Code") != "PreconditionFailed":
+                raise
+        head = s3.head_object(Bucket=bucket, Key=key)
+    if int(head["ContentLength"]) != archive.stat().st_size:
+        raise RuntimeError(f"immutable UI size conflict for s3://{bucket}/{key}")
+    if head.get("Metadata", {}).get("sha256") != checksum:
+        raise RuntimeError(f"immutable UI checksum conflict for s3://{bucket}/{key}")
+    if head.get("Metadata", {}).get("source-sha") != source_sha:
+        raise RuntimeError(f"immutable UI source conflict for s3://{bucket}/{key}")
+
+
 def package_directory(source: Path, output: Path) -> None:
     """Create a deterministic gzip-compressed tar archive (includes LICENSE.md)."""
     if not source.is_dir():
@@ -173,20 +216,14 @@ def build_manifest(
     for name, archive in ui_archives.items():
         checksum = sha256_file(archive)
         key = f"versions/{version}/ui/{name}.tar.gz"
-        s3.upload_file(
-            str(archive),
-            artifact_bucket,
-            key,
-            ExtraArgs={
-                "ContentType": "application/gzip",
-                "Metadata": {"sha256": checksum, "source-sha": source_sha},
-            },
+        _publish_ui_archive(
+            s3,
+            bucket=artifact_bucket,
+            key=key,
+            archive=archive,
+            checksum=checksum,
+            source_sha=source_sha,
         )
-        head = s3.head_object(Bucket=artifact_bucket, Key=key)
-        if int(head["ContentLength"]) != archive.stat().st_size:
-            raise RuntimeError(f"uploaded UI size mismatch for s3://{artifact_bucket}/{key}")
-        if head.get("Metadata", {}).get("sha256") != checksum:
-            raise RuntimeError(f"uploaded UI checksum metadata mismatch for {key}")
         ui[name] = {
             "object_key": key,
             "sha256": checksum,
@@ -208,16 +245,30 @@ def build_manifest(
 def publish_manifest(s3: Any, bucket: str, manifest: dict[str, Any]) -> str:
     key = f"manifests/{manifest['version']}.json"
     body = json.dumps(manifest, indent=2, sort_keys=True).encode()
-    s3.put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=body,
-        ContentType="application/json",
-        Metadata={
-            "source-sha": str(manifest["source_sha"]),
-            "schema-version": str(manifest["schema_version"]),
-        },
-    )
+    try:
+        existing = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
+    except ClientError as exc:
+        if not _not_found(exc):
+            raise
+        try:
+            s3.put_object(
+                Bucket=bucket,
+                Key=key,
+                Body=body,
+                ContentType="application/json",
+                Metadata={
+                    "source-sha": str(manifest["source_sha"]),
+                    "schema-version": str(manifest["schema_version"]),
+                },
+                IfNoneMatch="*",
+            )
+            return key
+        except ClientError as put_exc:
+            if put_exc.response.get("Error", {}).get("Code") != "PreconditionFailed":
+                raise
+            existing = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
+    if existing != body:
+        raise RuntimeError(f"immutable manifest conflict for s3://{bucket}/{key}")
     return key
 
 
