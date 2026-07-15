@@ -24,6 +24,8 @@ from core_api.routers.public.runs import create as public_runs_create
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from tests.core_api.auth_helpers import attach_test_engine, seed_and_login
+
 
 @pytest.fixture
 def public_runs_client(tmp_path) -> Generator[TestClient, None, None]:
@@ -67,20 +69,13 @@ def public_runs_client(tmp_path) -> Generator[TestClient, None, None]:
 
     app.dependency_overrides[get_session] = get_test_session
     try:
-        yield TestClient(app)
+        yield attach_test_engine(TestClient(app), engine)
     finally:
         app.dependency_overrides.clear()
 
 
 def _bootstrap_and_login(client: TestClient) -> None:
-    client.post(
-        "/v1/bootstrap/first-user",
-        json={"email": "runs@example.com", "password": "runs-secret-12"},
-    )
-    client.post(
-        "/v1/auth/login",
-        json={"email": "runs@example.com", "password": "runs-secret-12"},
-    )
+    seed_and_login(client, "runs@example.com", "runs-secret-12")
 
 
 def _service_key_with_trigger(client: TestClient) -> str:

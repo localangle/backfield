@@ -7,7 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-RUN pip install --no-cache-dir uv
+# Dependency pins come from package pyproject ranges for now; lock-based
+# `uv sync --frozen` install is a follow-up.
+RUN pip install --no-cache-dir uv==0.6.14
 
 FROM base AS builder
 
@@ -38,10 +40,15 @@ ENV APP_VERSION=${APP_VERSION} \
 
 # The final Python service does not invoke Perl. Remove the unpatched Debian
 # runtime package; no package management runs after this point.
-RUN dpkg --purge --force-depends --force-remove-essential perl-base
+RUN dpkg --purge --force-depends --force-remove-essential perl-base \
+    && useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser
 
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
+COPY LICENSE.md /app/LICENSE.md
+
+RUN chown -R appuser:appuser /app
+USER appuser
 
 EXPOSE 8003
 CMD ["uvicorn", "stylebook_api.main:app", "--host", "0.0.0.0", "--port", "8003"]

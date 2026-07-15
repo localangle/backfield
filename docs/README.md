@@ -1,65 +1,68 @@
 # Backfield documentation
 
-Use this index to find the source of truth for the part of Backfield you are changing. Start with
-[`AGENTS.md`](../AGENTS.md) for repository conventions, commands, validation defaults, and Git
-workflow.
+Repository documentation for people using, integrating with, or changing Backfield.
+Human contribution workflow: [`CONTRIBUTING.md`](../CONTRIBUTING.md). Engineering and agent
+conventions: [`AGENTS.md`](../AGENTS.md).
 
-## APIs
+**Support promise:** this checkout targets **local development and source inspection**.
+Production self-hosting is unsupported here; see [deployment](operations/deployment.md).
 
-- [`api/agate.md`](api/agate.md) — Agate routes, run lifecycle, processed items, node metadata,
-  and Backfield Output persistence.
-- [`api/core.md`](api/core.md) — sessions, tenancy, organization administration, project
-  credentials, AI configuration, and Core API boundaries.
-- [`api/stylebook.md`](api/stylebook.md) — catalogs, canonical entities, candidates, connections,
-  imports, cleanup, activity, search, and geocoding.
-- [`api/processed-item-review.md`](api/processed-item-review.md) — item detail, review overlays,
-  entity review domains, reviewed output, and S3 synchronization.
-- [`api/public.md`](api/public.md) — authenticated `/public/v1` routes, project scope,
-  conventions, and OpenAPI.
+## Users
+
+Product and platform guides for editors and operators of a running Backfield environment:
+
+- [docs.backfield.news](https://docs.backfield.news) — primary product documentation
+- [Simple example](https://docs.backfield.news/platform/simple-example/) — story → reusable data
+- [Agate](https://docs.backfield.news/platform/agate/) — flows and processing
+- [Stylebook](https://docs.backfield.news/platform/stylebook/) — canonical records
+
+## API consumers
+
+Authenticated HTTP surfaces and review contracts:
+
+- [`api/public.md`](api/public.md) — `/public/v1`, project scope, conventions, OpenAPI
+- [`api/core.md`](api/core.md) — sessions, tenancy, credentials, AI configuration
+- [`api/agate.md`](api/agate.md) — runs, processed items, node metadata, persistence
+- [`api/stylebook.md`](api/stylebook.md) — catalogs, entities, candidates, bundles
+- [`api/processed-item-review.md`](api/processed-item-review.md) — review overlays and domains
+
+## Contributors
+
+Getting a local stack running and validating changes:
+
+- [`../CONTRIBUTING.md`](../CONTRIBUTING.md) — contribution process and PR expectations
+- [`development/local-setup.md`](development/local-setup.md) — prerequisites, `init`/`seed`, stack lifecycle
+- [`development/testing.md`](development/testing.md) — lint, unit/integration tests, smoke, CI
+- [`development/nodes.md`](development/nodes.md) — Agate node contracts and checklist
+- [`development/entities/overview.md`](development/entities/overview.md) — entity model
+- [`development/entities/implementation.md`](development/entities/implementation.md) — cross-layer entity checklist
+- [`development/frontend/conventions.md`](development/frontend/conventions.md) — UI copy and patterns
+- [`development/frontend/agate.md`](development/frontend/agate.md) — Agate UI architecture
+- [`development/frontend/stylebook.md`](development/frontend/stylebook.md) — Stylebook UI architecture
+- [`../CODE_OF_CONDUCT.md`](../CODE_OF_CONDUCT.md) — community standards
+- [`../SECURITY.md`](../SECURITY.md) — private vulnerability reporting
+
+## Maintainers and operators
+
+Runtime knobs, migrations, artifacts, and failure recovery for local (and artifact-consuming) work:
+
+- [`operations/runtime-configuration.md`](operations/runtime-configuration.md) — env vars and service contracts
+- [`operations/migrations.md`](operations/migrations.md) — Alembic workflows
+- [`operations/deployment.md`](operations/deployment.md) — artifact builds (no in-repo deploy)
+- [`operations/troubleshooting.md`](operations/troubleshooting.md) — common local failures
 
 ## Architecture
 
-- [`architecture/overview.md`](architecture/overview.md) — applications, shared packages, and
-  dependency direction.
-- [`architecture/runtime.md`](architecture/runtime.md) — run dispatch, graph execution, outputs,
-  persistence, and active compatibility behavior.
-- [`architecture/database.md`](architecture/database.md) — schema ownership, current tables,
-  indexes, pooling, and encrypted secrets.
-- [`architecture/canonicalization.md`](architecture/canonicalization.md) — entity ingest,
-  per-type matching policy, reconciliation, provenance, and catalog selection.
+Boundaries and runtime behavior:
 
-## Development
-
-- [`development/local-setup.md`](development/local-setup.md) — prerequisites, first run, stack
-  commands, local data lifecycle, and bootstrap behavior.
-- [`development/testing.md`](development/testing.md) — validation commands, test layout,
-  live-stack smoke tests, and CI expectations.
-- [`development/nodes.md`](development/nodes.md) — Agate node profiles, runtime and UI contracts,
-  panel conventions, review integration, and implementation checklist.
-- [`development/entities/overview.md`](development/entities/overview.md) — entity registry,
-  substrate and canonical records, evidence scope, connections, and transfers.
-- [`development/entities/implementation.md`](development/entities/implementation.md) —
-  cross-layer checklist and directory map for implementing an entity type.
-- [`development/frontend/conventions.md`](development/frontend/conventions.md) — user-facing copy,
-  typed UI patterns, API boundaries, shared components, builds, and review checklist.
-- [`development/frontend/agate.md`](development/frontend/agate.md) — flow builder, run contracts,
-  processed-item links, review architecture, settings, and administration.
-- [`development/frontend/stylebook.md`](development/frontend/stylebook.md) — Stylebook routes,
-  entity shells, candidate queues, canonical views, review, and cross-app navigation.
-
-## Operations
-
-- [`operations/runtime-configuration.md`](operations/runtime-configuration.md) — service routing,
-  database, auth, queues, concurrency, provider, storage, and bootstrap settings.
-- [`operations/migrations.md`](operations/migrations.md) — local and deployed Alembic workflows
-  and active upgrade warnings.
-- [`operations/deployment.md`](operations/deployment.md) — production images, static UI builds,
-  artifact publication, release aliases, and deployment order.
-- [`operations/troubleshooting.md`](operations/troubleshooting.md) — setup, runtime, provider,
-  worker, bundle, UI, and Docker failure recovery.
+- [`architecture/overview.md`](architecture/overview.md) — apps, packages, dependency direction
+- [`architecture/runtime.md`](architecture/runtime.md) — run dispatch, graph execution, persistence
+- [`architecture/database.md`](architecture/database.md) — schema ownership, pooling, secrets
+- [`architecture/canonicalization.md`](architecture/canonicalization.md) — ingest and matching policy
 
 ## Agent workflows
 
-Repository rules live in [`.cursor/rules/`](../.cursor/rules/), and task playbooks live in
-[`.cursor/skills/`](../.cursor/skills/). Use the relevant skill for database changes, Agate
-nodes, entity types, documentation updates, smoke testing, and pre-PR reviews.
+Cursor rules live in [`.cursor/rules/`](../.cursor/rules/); task playbooks live in
+[`.cursor/skills/`](../.cursor/skills/). Prefer the matching skill for database changes, Agate
+nodes, entity types, documentation updates, smoke testing, and pre-PR reviews. Humans should
+still start from [`CONTRIBUTING.md`](../CONTRIBUTING.md).

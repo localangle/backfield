@@ -1,4 +1,4 @@
-"""Minimal HTTP responses for Stylebook UI routes not yet backed by substrate logic."""
+"""Stylebook UI dashboard stats."""
 
 from __future__ import annotations
 
@@ -15,15 +15,14 @@ from backfield_db import (
 )
 from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlmodel import Session, col, func, select
 
 from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
-from stylebook_api.helpers.pagination import empty_page_metadata
 from stylebook_api.helpers.project_scope import project_by_slug, require_stylebook_id
 
-router = APIRouter(prefix="/v1", tags=["stylebook-ui-stubs"])
+router = APIRouter(prefix="/v1", tags=["stats"])
 
 
 class StatsOut(BaseModel):
@@ -120,68 +119,3 @@ def get_stats(
         "candidate_count": org_cand_cnt,
     }
     return StatsOut(locations=loc, people=people_stats, organizations=org_stats, works=z)
-
-
-@router.get("/agents/types", response_model=list[dict[str, Any]])
-def agent_types(
-    project_slug: str = Query(...),
-    session: Session = Depends(get_session),
-    auth: dict[str, Any] = Depends(get_auth),
-) -> list[dict[str, Any]]:
-    proj = project_by_slug(session, project_slug)
-    require_project_access(session, auth, int(proj.id))
-    return []
-
-
-def _empty_page(*, limit: int, offset: int) -> tuple[int, int, bool, bool]:
-    return empty_page_metadata(limit=limit, offset=offset)
-
-
-class PaginatedOrganizationsStub(BaseModel):
-    organizations: list[Any] = Field(default_factory=list)
-    total: int = 0
-    page: int = 1
-    per_page: int = 25
-    has_next: bool = False
-    has_prev: bool = False
-
-
-class PaginatedWorksStub(BaseModel):
-    works: list[Any] = Field(default_factory=list)
-    total: int = 0
-    page: int = 1
-    per_page: int = 25
-    has_next: bool = False
-    has_prev: bool = False
-
-
-# GET /v1/people removed — use GET /v1/canonical-people (entityListStubs updated separately).
-
-@router.get("/organizations", response_model=PaginatedOrganizationsStub)
-def list_organizations_stub(
-    project_slug: str = Query(...),
-    limit: int = Query(25, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    session: Session = Depends(get_session),
-    auth: dict[str, Any] = Depends(get_auth),
-) -> PaginatedOrganizationsStub:
-    proj = project_by_slug(session, project_slug)
-    require_project_access(session, auth, int(proj.id))
-    page, _, has_next, has_prev = _empty_page(limit=limit, offset=offset)
-    return PaginatedOrganizationsStub(
-        page=page, per_page=limit, has_next=has_next, has_prev=has_prev
-    )
-
-
-@router.get("/works", response_model=PaginatedWorksStub)
-def list_works_stub(
-    project_slug: str = Query(...),
-    limit: int = Query(25, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    session: Session = Depends(get_session),
-    auth: dict[str, Any] = Depends(get_auth),
-) -> PaginatedWorksStub:
-    proj = project_by_slug(session, project_slug)
-    require_project_access(session, auth, int(proj.id))
-    page, _, has_next, has_prev = _empty_page(limit=limit, offset=offset)
-    return PaginatedWorksStub(page=page, per_page=limit, has_next=has_next, has_prev=has_prev)

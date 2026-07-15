@@ -237,22 +237,6 @@ def test_version(client: TestClient) -> None:
     assert {"version", "git_sha", "build_time"} <= set(body)
 
 
-def test_geocode_resolve_requires_auth(client: TestClient) -> None:
-    r = client.post("/v1/geocode/resolve", json={"query": "Chicago, IL"})
-    assert r.status_code == 401
-
-
-def test_geocode_resolve_with_service_bearer(client: TestClient) -> None:
-    r = client.post(
-        "/v1/geocode/resolve",
-        json={"query": "Chicago, IL"},
-        headers=_service_headers(),
-    )
-    assert r.status_code == 200
-    body = r.json()
-    assert body.get("lat") is not None
-
-
 def test_stylebook_permissions_endpoint_false_for_member(member_client: TestClient) -> None:
     r = member_client.get("/v1/stylebooks/default/permissions")
     assert r.status_code == 200

@@ -1,6 +1,6 @@
 # Stylebook API
 
-Stylebook API owns editorial catalogs, saved entity evidence, candidate review, catalog cleanup, catalog transfer, geocoding, and semantic mention search. It runs from `apps/stylebook-api`.
+Stylebook API owns editorial catalogs, saved entity evidence, candidate review, catalog cleanup, catalog transfer, and semantic mention search. It runs from `apps/stylebook-api`.
 
 The current canonical domains are locations, people, and organizations.
 
@@ -91,11 +91,11 @@ Bundles do not transfer project saved entities, candidate queues, caches, or act
 
 Cleanup mutations require catalog edit access and preserve catalog tenancy.
 
-## Activity, search, and geocoding
+## Activity, search, and dashboard stats
 
 - `/v1/stylebooks/{stylebook_slug}/activity` returns a filtered, paginated catalog activity stream.
 - Person and location semantic mention search ranks indexed article evidence within project scope and can filter by canonical, saved entity, mention, occurrence, and domain-specific fields.
-- `/v1/geocode/resolve` exposes authenticated geocoding.
+- `/v1/stats` returns project-scoped canonical and pending-candidate counts for the Stylebook UI dashboard.
 - `/v1/place-extract-location-types` exposes the shared location taxonomy used by extraction and catalog filters.
 
-The `/v1/organizations` list stub remains a UI compatibility path. Canonical organization clients should use the Stylebook-scoped canonical organization family. There is no Work API.
+There is no HTTP geocode resolve endpoint and no Work API. Pipeline geocoding runs in the Agate worker (`geocode_agent`), not through Stylebook API. Canonical organization clients should use the Stylebook-scoped canonical organization family.

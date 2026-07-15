@@ -1,4 +1,4 @@
-"""Create the first org admin when no users exist (HTTP bootstrap or env bootstrap)."""
+"""Create the first org admin when no users exist (tests and internal helpers)."""
 
 from __future__ import annotations
 

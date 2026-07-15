@@ -12,7 +12,7 @@ DOCKER_BAKE_ENV := APP_VERSION=$(APP_VERSION) GIT_SHA=$(GIT_SHA) BUILD_TIME=$(BU
 	up up-detached down logs migrate migrate-host reset-db clear-entity-data \
 	docker-trim docker-trim-full \
 	lint format test smoke smoke-fast \
-	ui-build agate-ui-build stylebook-ui-build \
+	ui-typecheck ui-test ui-build agate-ui-build stylebook-ui-build \
 	docker-build-prod-apis docker-build-prod-worker
 
 help:
@@ -21,24 +21,25 @@ help:
 	@echo "Local stack"
 	@echo "  make bootstrap           - uv sync + install project launcher into .venv/bin"
 	@echo "  make up / up-detached    - Start stack (wraps backfield up)"
-	@echo "  make down                - Stop stack, then docker-trim"
+	@echo "  make down                - Stop stack (project only; no global Docker prune)"
 	@echo "  make logs                - Follow stack logs"
 	@echo "  make migrate             - Run Alembic via compose migrate service"
 	@echo "  make migrate-host        - Run Alembic on the host (Postgres on :5433)"
 	@echo "  make reset-db            - Wipe compose volumes and database"
 	@echo "  make clear-entity-data   - Truncate entity + run data (BACKFIELD_CONFIRM_CLEAR=1)"
-	@echo "  make docker-trim         - Reclaim unused Docker data (keeps volumes)"
-	@echo "  make docker-trim-full    - docker-trim plus unused volume prune"
+	@echo "  make docker-trim         - Opt-in: reclaim unused Docker data host-wide (keeps volumes)"
+	@echo "  make docker-trim-full    - Opt-in: docker-trim plus unused volume prune"
 	@echo "  make install-user-cli    - Symlink ~/.local/bin/backfield"
 	@echo ""
 	@echo "Validation"
 	@echo "  make lint / format / test"
+	@echo "  make ui-typecheck / ui-test"
 	@echo "  make smoke               - Golden Agate-to-Stylebook handoff"
 	@echo "  make smoke-fast          - Auth + basic Agate + basic Stylebook"
 	@echo "  Specialized smoke scripts: uv run python -u tests/smoke/<script>.py"
 	@echo ""
 	@echo "Deploy builds"
-	@echo "  make ui-build            - Production-build both UIs"
+	@echo "  make ui-build            - Production-build both UIs (includes typecheck)"
 	@echo "  make docker-build-prod-apis / docker-build-prod-worker"
 
 # --- Local stack -------------------------------------------------------------
@@ -73,7 +74,6 @@ up-detached:
 
 down:
 	$(BACKFIELD) down
-	@$(MAKE) --no-print-directory docker-trim
 
 logs:
 	$(BACKFIELD) logs
@@ -129,11 +129,21 @@ smoke-fast:
 	uv run python -u tests/smoke/smoke_agate_basic.py
 	uv run python -u tests/smoke/smoke_stylebook_basic.py
 
-# --- Deploy builds -----------------------------------------------------------
+# --- Frontend validation / deploy builds ------------------------------------
+
+ui-typecheck:
+	cd packages/backfield-ui && npm ci
+	cd apps/agate-ui && npm ci && npx tsc --noEmit
+	cd apps/stylebook-ui && npm ci && npx tsc --noEmit
+
+ui-test:
+	cd packages/backfield-ui && npm ci && npm test
+	cd apps/agate-ui && npm ci && npm test
+	cd apps/stylebook-ui && npm ci && npm test
 
 agate-ui-build:
 	cd packages/backfield-ui && npm ci
-	cd apps/agate-ui && npm ci && npm run build
+	cd apps/agate-ui && npm ci && npm run build:check
 
 stylebook-ui-build:
 	cd packages/backfield-ui && npm ci

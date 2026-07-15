@@ -1,8 +1,12 @@
 [project]
 name = "agate-runtime"
 version = "0.1.0"
-description = "Agate graph types, executor, node definitions, and runtime"
+description = "Agate graph types, executor, node definitions, and runtime (monorepo-internal)"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+classifiers = [
+    "Private :: Do Not Upload",
+]
 dependencies = [
     "backfield-ai",
     "backfield-db",
@@ -22,6 +26,10 @@ dependencies = [
     "us>=3.1.1",
     "usaddress>=0.5.10",
 ]
+
+[project.urls]
+Homepage = "https://github.com/localangle/backfield"
+Repository = "https://github.com/localangle/backfield"
 
 [build-system]
 requires = ["hatchling"]

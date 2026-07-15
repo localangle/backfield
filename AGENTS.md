@@ -1,6 +1,9 @@
 # Backfield Agent Guide
 
-Use this file as the entry point for working in this repository. Keep it short, then follow the linked docs for details.
+Use this file for engineering and agent conventions in this repository. Keep it short, then follow
+the linked docs for details. **Human contributors** should start with
+[CONTRIBUTING.md](CONTRIBUTING.md) (setup, PR process, project status). This file remains the
+canonical agent/engineering checklist.
 
 ## Repo map
 
@@ -17,22 +20,23 @@ Use this file as the entry point for working in this repository. Keep it short, 
 - `packages/backfield-db`: SQLModel models, database sessions, encryption, seeding, and Alembic migrations.
 - `packages/backfield-entities`: Entity registry, catalog resolution, canonicalization, public queries, ingest, cleanup, connections, and semantic synchronization.
 - `packages/backfield-cli`: Stack lifecycle, migration, seeding, and data-maintenance commands.
-- `infra/docker-compose.yml`: Local multi-service stack.
+- `infra/docker-compose.yml`: Local multi-service stack (localhost-bound ports).
 
 ## Canonical commands
 
 - `make bootstrap`: install Python workspace dependencies with `uv`; see [local setup](docs/development/local-setup.md).
-- `make up` / `make down`: start and stop the local stack. These are thin wrappers around the **`backfield` CLI** (`backfield up` / `backfield down`), which is the source of truth for stack operations; `make down` also runs `docker-trim` only — no volume prune, so Postgres/compose volumes survive across `down`/`up`. Use `make docker-trim-full` when you explicitly want unused volumes removed.
+- `make up` / `make down`: start and stop the local stack. These are thin wrappers around the **`backfield` CLI** (`backfield up` / `backfield down`), which is the source of truth for stack operations. `make down` stops this Compose project only—it does **not** prune Docker globally. Use `make docker-trim` / `make docker-trim-full` when you explicitly want host-wide cleanup (full also prunes unused volumes).
 - `make logs`: follow stack logs (wraps `backfield logs`). `backfield ps` / `backfield restart` list and restart containers.
-- `make migrate`: run Alembic via the one-off compose **`migrate`** service (`backfield migrate`).
+- `make migrate`: run Alembic via the one-off Compose **`migrate`** service. Use `make migrate-host` (or `backfield migrate`) for the host CLI path against local Postgres.
 - `make lint`: run Ruff checks.
 - `make test`: run unit, integration, and structural tests.
-- `make smoke`: run the golden-path HTTP smoke against a live stack.
+- `make smoke-fast` / `make smoke`: live-stack smoke; see [testing](docs/development/testing.md).
 
 ## Docs map
 
-- `README.md`: quick start, ports, and top-level layout.
-- [`docs/README.md`](docs/README.md): complete documentation index and source-of-truth map.
+- `README.md`: product story, project status, and local quick start.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md): human contribution entry point.
+- [`docs/README.md`](docs/README.md): audience-based documentation index.
 - [`docs/architecture/overview.md`](docs/architecture/overview.md): application and package boundaries and dependency direction.
 - [`docs/development/entities/overview.md`](docs/development/entities/overview.md): entity model; use with `.cursor/skills/add-entity-type`.
 - [`docs/development/nodes.md`](docs/development/nodes.md): Agate node contracts and checklists; use with `.cursor/skills/add-agate-node`.

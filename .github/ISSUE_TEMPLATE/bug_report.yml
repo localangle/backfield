@@ -1,0 +1,83 @@
+name: Bug report
+description: Report unexpected behavior in local development or the public API
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. This project supports **local development and source inspection**;
+        production self-hosting is not a supported support path.
+
+        Security vulnerabilities: use [private vulnerability reporting](https://github.com/localangle/backfield/security/advisories/new)
+        — see [SECURITY.md](https://github.com/localangle/backfield/blob/main/SECURITY.md).
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong in one or two sentences?
+      placeholder: Example — backfield init seeds the admin, but login returns 401…
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps starting from a clean or known local state.
+      placeholder: |
+        1. git clone https://github.com/localangle/backfield.git
+        2. make bootstrap && source .venv/bin/activate
+        3. backfield init
+        4. …
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include error messages, stack traces, or relevant log snippets (redact secrets).
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Local setup / CLI
+        - Agate UI or API
+        - Stylebook UI or API
+        - Core API / auth
+        - Worker / runs
+        - Public API
+        - Docs
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Docker/Compose version, Python, Node (if UI), and commit SHA if known.
+      placeholder: "macOS 15, Docker 27, Python 3.11, uv, commit abc1234"
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Screenshots, related PRs, or workarounds.
+    validations:
+      required: false

@@ -10,6 +10,14 @@ It is built for the work that happens after publication: understanding who and w
   <img src="docs/screenshots/agate-flow-builder.png" alt="An Agate flow that extracts and enriches editorial data from an article" width="100%">
 </p>
 
+## Project status
+
+This repository is open for **local development, source inspection, and external contributions**.
+
+**Production self-hosting is not supported** from this checkout. The Compose stack and CLI target a localhost development environment. Artifact builds (OCI images and UI archives) may be published by CI for a separate deployment system; that path is not an in-repo, supported self-hosting guide.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute, and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
+
 ## What you can do with Backfield
 
 | | |
@@ -39,38 +47,37 @@ The goal is not to replace editorial judgment. Backfield makes automated extract
 
 ### What you need
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Docker Compose included)
+- Python 3.11
+- [Docker Engine](https://docs.docker.com/engine/) with [Compose v2](https://docs.docker.com/compose/) (Docker Desktop on macOS/Windows is fine)
 - [uv](https://docs.astral.sh/uv/) for Python dependencies
+- [Node.js 20](https://nodejs.org/) for UI builds and frontend checks outside Docker
 - Git
 
 ### Get running
 
 ```bash
-git clone git@github.com:localangle/backfield.git
+git clone https://github.com/localangle/backfield.git
 cd backfield
 make bootstrap
 source .venv/bin/activate
 backfield init
+backfield doctor
 ```
 
-`backfield init` guides you through local setup, creates the development environment, starts the services, runs database migrations, and seeds a local administrator. When it finishes, open:
+`backfield init` guides you through local setup, creates the development environment, starts the services, runs database migrations, and seeds a local administrator. Run `backfield doctor` afterward to verify the host, virtualenv, and configuration. When setup finishes:
+
+1. Open [Agate](http://localhost:5173) and sign in with the administrator you just created.
+2. Go to **Settings → AI models** and configure credentials for the models your flows will use.
+3. Follow [Local development setup](docs/development/local-setup.md) for stack commands, data lifecycle, and troubleshooting links.
 
 | App | Local address | Use it for |
 | --- | --- | --- |
 | **Agate** | [localhost:5173](http://localhost:5173) | Building flows and reviewing article results |
 | **Stylebook** | [localhost:5175](http://localhost:5175) | Browsing and curating shared records |
 
-> **Already set up?** Run `backfield up` to start the stack, `backfield logs` to follow service logs, and `backfield down` when you are done. `make up`, `make logs`, and `make down` provide the same shortcuts.
+Published ports bind to `127.0.0.1` only.
 
-### Check your setup
-
-```bash
-backfield doctor
-```
-
-This verifies that Docker, `uv`, the local environment, and configuration are ready. For the
-full workflow, see [Local development setup](docs/development/local-setup.md); for common
-failures, see [Troubleshooting](docs/operations/troubleshooting.md).
+> **Already set up?** Run `backfield up` to start the stack, `backfield logs` to follow service logs, and `backfield down` when you are done. `make up`, `make logs`, and `make down` provide the same shortcuts. `make down` stops this project’s Compose stack; it does **not** prune Docker globally. Use `make docker-trim` only when you opt into host-wide cleanup.
 
 ## Learn more
 
@@ -84,7 +91,7 @@ failures, see [Troubleshooting](docs/operations/troubleshooting.md).
 
 ## For contributors
 
-This repository is a monorepo containing the Agate and Stylebook applications, their APIs, a background worker, and shared packages. Start with [AGENTS.md](AGENTS.md) for the repository map and development commands. Use `make lint` and `make test` before submitting changes.
+External contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for setup, validation, and pull-request expectations. [AGENTS.md](AGENTS.md) is the engineering/agent conventions guide (repo map, commands, style, and validation defaults). Use `make lint` and `make test` before submitting changes.
 
 ## License
 
@@ -97,4 +104,6 @@ in [LICENSE.md](LICENSE.md) or at
 
 ## Support
 
-Questions or issues? See [docs.backfield.news](https://docs.backfield.news) or open an issue in this repository.
+Questions about local development or contributions? See [CONTRIBUTING.md](CONTRIBUTING.md),
+[docs.backfield.news](https://docs.backfield.news), or open an issue in this repository.
+Report security issues privately per [SECURITY.md](SECURITY.md).

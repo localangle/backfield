@@ -8,9 +8,22 @@ from typing import Any
 
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
-SESSION_SECRET = os.getenv("SESSION_SECRET", os.getenv("SECRET_KEY", "dev-secret-key"))
-serializer = URLSafeTimedSerializer(SESSION_SECRET)
 SESSION_MAX_AGE = 7 * 24 * 60 * 60
+
+
+def require_session_secret() -> str:
+    """Return the configured session signing secret or raise if unset."""
+    secret = (os.getenv("SESSION_SECRET") or os.getenv("SECRET_KEY") or "").strip()
+    if not secret:
+        raise RuntimeError(
+            "SESSION_SECRET must be set to a non-empty value. "
+            "Local Compose and tests provide an explicit secret; do not rely on a built-in default."
+        )
+    return secret
+
+
+SESSION_SECRET = require_session_secret()
+serializer = URLSafeTimedSerializer(SESSION_SECRET)
 
 
 def create_session_token(

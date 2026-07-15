@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from contextlib import asynccontextmanager
 
 from backfield_auth.health_router import create_health_router
 from backfield_auth.request_logging_middleware import RequestLoggingMiddleware
@@ -11,10 +10,8 @@ from backfield_auth.structured_logging import configure_structured_logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from core_api.env_bootstrap import run_env_bootstrap_if_configured
 from core_api.routers import admin_org as admin_org_router
 from core_api.routers import auth as auth_router
-from core_api.routers import bootstrap as bootstrap_router
 from core_api.routers import credentials as credentials_router
 from core_api.routers import legacy_public as legacy_public_router
 from core_api.routers import me as me_router
@@ -27,13 +24,7 @@ from core_api.routers.public import router as public_v1_router
 configure_structured_logging("core-api")
 
 
-@asynccontextmanager
-async def lifespan(_app: FastAPI):
-    run_env_bootstrap_if_configured()
-    yield
-
-
-app = FastAPI(title="Backfield Core API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Backfield Core API", version="0.1.0")
 
 UI_ORIGINS = os.getenv("UI_ORIGINS", "http://localhost:5173,http://localhost:5175").split(",")
 ALLOWED: list[str] = []
@@ -63,7 +54,6 @@ app.add_middleware(RequestLoggingMiddleware, service_name="core-api")
 app.include_router(legacy_public_router.router, prefix="/v1")
 app.include_router(public_v1_router, prefix="/public/v1")
 app.include_router(secure_router.router, prefix="/v1")
-app.include_router(bootstrap_router.router, prefix="/v1")
 app.include_router(admin_org_router.router, prefix="/v1")
 app.include_router(org_ai_models_router.router, prefix="/v1")
 app.include_router(org_integration_secrets_router.router, prefix="/v1")

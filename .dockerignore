@@ -3,7 +3,10 @@
 .git
 .venv
 .env
-.env.local
+.env.*
+!.env.example
+*.pem
+*.key
 **/__pycache__
 **/*.py[cod]
 **/.pytest_cache

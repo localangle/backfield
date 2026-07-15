@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from backfield_cli.console import CONSOLE
-from backfield_cli.env_file import find_repo_root
+from backfield_cli.env_file import env_permissions_are_private, find_repo_root
 from backfield_cli.host_tooling import (
     cli_entrypoint_works,
     cli_runtime_works,
@@ -87,9 +87,24 @@ def run_checks(start: Path | None = None) -> tuple[Path | None, list[CheckResult
     env_path = repo_root / ".env"
     if env_path.is_file():
         results.append(CheckResult(".env", True, str(env_path)))
+        perms_ok = env_permissions_are_private(env_path)
+        if perms_ok is False:
+            results.append(
+                CheckResult(
+                    ".env permissions",
+                    False,
+                    f"{env_path} is group/world readable; run chmod 600 .env",
+                )
+            )
+        elif perms_ok is True:
+            results.append(CheckResult(".env permissions", True, "owner-only (0600)"))
     else:
         example = repo_root / ".env.example"
-        hint = f"missing; copy from {example.name}" if example.is_file() else "missing"
+        hint = (
+            f"missing (expected after `backfield init`; copy from {example.name} only if needed)"
+            if example.is_file()
+            else "missing (run `backfield init`)"
+        )
         results.append(CheckResult(".env", False, hint))
 
     compose = repo_root / "infra" / "docker-compose.yml"

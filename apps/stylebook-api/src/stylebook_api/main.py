@@ -1,4 +1,4 @@
-"""Stylebook API — companion service for Agate (geocode, canonical entities)."""
+"""Stylebook API — companion service for Agate (canonical entities and catalogs)."""
 
 from __future__ import annotations
 
@@ -19,10 +19,10 @@ from stylebook_api.entities.person import meta as person_meta
 from stylebook_api.entities.person import people
 from stylebook_api.routers import (
     connections,
-    geocode,
     health,
     imports,
     semantic_mention_search,
+    stats,
     stylebook_activity,
     stylebook_bundle_jobs,
     stylebook_candidate_ai_review,
@@ -34,7 +34,6 @@ from stylebook_api.routers import (
     stylebook_person_canonicals,
     stylebooks,
     taxonomy,
-    ui_stubs,
 )
 
 configure_structured_logging("stylebook-api")
@@ -70,7 +69,6 @@ app.include_router(taxonomy.router)
 app.include_router(stylebooks.router)
 app.include_router(stylebook_bundle_jobs.router)
 app.include_router(stylebook_activity.router)
-app.include_router(geocode.router)
 app.include_router(locations.router)
 app.include_router(imports.router)
 app.include_router(imports.stylebook_router)
@@ -92,4 +90,4 @@ app.include_router(organization_candidates.router)
 app.include_router(organizations.router)
 app.include_router(organization_meta.router)
 app.include_router(semantic_mention_search.router)
-app.include_router(ui_stubs.router)
+app.include_router(stats.router)

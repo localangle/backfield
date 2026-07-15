@@ -1,6 +1,7 @@
 {
   "name": "agate-ui",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "scripts": {
     "sync-nodes": "node scripts/sync-nodes.js",

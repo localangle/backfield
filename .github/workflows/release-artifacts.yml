@@ -11,6 +11,10 @@ permissions:
 
 jobs:
   alias:
+    if: >
+      github.repository == 'localangle/backfield' &&
+      vars.AWS_ARTIFACT_PUBLISHER_ROLE_ARN != '' &&
+      vars.BACKFIELD_ARTIFACT_BUCKET != ''
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:

@@ -6,20 +6,46 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
+env:
+  CANONICAL_REPO: localangle/backfield
+
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
       - name: Install workspace dependencies
         run: uv sync --all-packages
       - name: Lint
         run: make lint
-      - uses: actions/setup-node@v4
+      - name: Workflow policy checks
+        run: uv run pytest tests/test_ci_workflow_policy.py -q
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+      - name: Install workspace dependencies
+        run: uv sync --all-packages
+      - name: Test
+        run: make test
+
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "20"
           cache: npm
@@ -27,10 +53,33 @@ jobs:
             apps/agate-ui/package-lock.json
             apps/stylebook-ui/package-lock.json
             packages/backfield-ui/package-lock.json
+      - name: Frontend typecheck and tests
+        run: make ui-typecheck ui-test
       - name: Production UI builds (same-origin)
         run: make ui-build
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+      - name: Install workspace dependencies
+        run: uv sync --all-packages
       - name: UI same-origin bundle checks
         run: uv run pytest tests/test_ui_same_origin_builds.py -q
+      - name: Agate sync-nodes cleanliness
+        run: |
+          set -euo pipefail
+          cd apps/agate-ui
+          npm ci
+          npm run sync-nodes
+          git diff --exit-code -- src/nodes || {
+            echo "::error::Agate synced node UI drifted; run npm run sync-nodes and commit or fix ownership."
+            exit 1
+          }
+
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Build production API images
         run: |
@@ -45,69 +94,136 @@ jobs:
             GIT_SHA=${{ github.sha }} \
             BUILD_TIME=1970-01-01T00:00:00Z
 
-  test:
+  secret-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          python-version: "3.11"
-      - uses: astral-sh/setup-uv@v4
-      - name: Install workspace dependencies
-        run: uv sync --all-packages
-      - name: Test
-        run: make test
+          fetch-depth: 0
+      - name: Gitleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.3 detect \
+            --source=/repo \
+            --verbose \
+            --redact
 
-  smoke:
+  smoke-fast:
     runs-on: ubuntu-latest
     needs:
       - lint
       - test
+      - ui
+      - images
+      - secret-scan
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
       - name: Install workspace dependencies
         run: uv sync --all-packages
-      - name: Start runtime services
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      - name: Prepare local env secrets
         run: |
           set -euo pipefail
-          if [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-            echo "::error::CI smoke needs at least one repository secret: OPENAI_API_KEY or ANTHROPIC_API_KEY (Compose loads repo-root .env into agate-api/worker)."
-            exit 1
-          fi
           : > .env
-          [ -n "${OPENAI_API_KEY:-}" ] && printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> .env
-          [ -n "${ANTHROPIC_API_KEY:-}" ] && printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" >> .env
-          docker compose -f infra/docker-compose.yml up -d --build postgres redis migrate stylebook-api core-api agate-api worker
+          printf 'SESSION_SECRET=%s\n' "ci-session-secret-$(openssl rand -hex 16)" >> .env
+          printf 'MASTER_ENCRYPTION_KEY=%s\n' "$(uv run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')" >> .env
+          printf 'SERVICE_API_TOKEN=backfield-dev\n' >> .env
+          chmod 600 .env
+      - name: Start runtime services
+        run: |
+          docker compose -f infra/docker-compose.yml up -d --build \
+            postgres redis migrate stylebook-api core-api agate-api worker
       - name: Wait for API health
         run: |
           for _ in $(seq 1 60); do
-            if curl -fsS http://localhost:8000/health >/dev/null \
-              && curl -fsS http://localhost:8003/health >/dev/null \
-              && curl -fsS http://localhost:8004/health >/dev/null; then
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null \
+              && curl -fsS http://127.0.0.1:8003/health >/dev/null \
+              && curl -fsS http://127.0.0.1:8004/health >/dev/null; then
               exit 0
             fi
             sleep 2
           done
           docker compose -f infra/docker-compose.yml logs
           exit 1
-      - name: Bootstrap smoke user (fresh DB)
+      - name: Seed smoke user (fresh DB)
+        env:
+          BACKFIELD_DATABASE_URL_DIRECT: postgresql+psycopg://postgres:postgres@127.0.0.1:5433/backfield
         run: |
-          curl -fsS -X POST http://localhost:8004/v1/bootstrap/first-user \
-            -H "Content-Type: application/json" \
-            -d '{"email":"smoke-ci@local.test","password":"smoke-ci-pass-change-in-prod"}' \
-            || true
+          uv run backfield seed \
+            --admin-email smoke-ci@local.test \
+            --admin-password smoke-ci-pass-change-in-prod
       - name: Fast smoke lanes
         env:
           SMOKE_EMAIL: smoke-ci@local.test
           SMOKE_PASSWORD: smoke-ci-pass-change-in-prod
         run: make smoke-fast
+      - name: Dump compose logs on failure
+        if: failure()
+        run: docker compose -f infra/docker-compose.yml logs
+      - name: Tear down stack
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down -v --remove-orphans
+
+  smoke-handoff:
+    if: >
+      github.repository == 'localangle/backfield' &&
+      (
+        github.event_name == 'push' ||
+        github.event.pull_request.head.repo.full_name == github.repository
+      )
+    runs-on: ubuntu-latest
+    needs:
+      - smoke-fast
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+      - name: Install workspace dependencies
+        run: uv sync --all-packages
+      - name: Require provider credentials
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "::error::Trusted golden-path smoke needs OPENAI_API_KEY or ANTHROPIC_API_KEY."
+            exit 1
+          fi
+          : > .env
+          [ -n "${OPENAI_API_KEY:-}" ] && printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> .env
+          [ -n "${ANTHROPIC_API_KEY:-}" ] && printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" >> .env
+          printf 'SESSION_SECRET=%s\n' "ci-session-secret-$(openssl rand -hex 16)" >> .env
+          printf 'MASTER_ENCRYPTION_KEY=%s\n' "$(uv run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')" >> .env
+          printf 'SERVICE_API_TOKEN=backfield-dev\n' >> .env
+          chmod 600 .env
+      - name: Start runtime services
+        run: |
+          docker compose -f infra/docker-compose.yml up -d --build \
+            postgres redis migrate stylebook-api core-api agate-api worker
+      - name: Wait for API health
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null \
+              && curl -fsS http://127.0.0.1:8003/health >/dev/null \
+              && curl -fsS http://127.0.0.1:8004/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose -f infra/docker-compose.yml logs
+          exit 1
+      - name: Seed smoke user (fresh DB)
+        env:
+          BACKFIELD_DATABASE_URL_DIRECT: postgresql+psycopg://postgres:postgres@127.0.0.1:5433/backfield
+        run: |
+          uv run backfield seed \
+            --admin-email smoke-ci@local.test \
+            --admin-password smoke-ci-pass-change-in-prod
       - name: Agate to Stylebook handoff smoke
         env:
           SMOKE_EMAIL: smoke-ci@local.test
@@ -121,11 +237,15 @@ jobs:
         run: docker compose -f infra/docker-compose.yml down -v --remove-orphans
 
   publish-artifacts:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'localangle/backfield' &&
+      vars.AWS_ARTIFACT_PUBLISHER_ROLE_ARN != '' &&
+      vars.BACKFIELD_ARTIFACT_BUCKET != ''
     needs:
-      - lint
-      - test
-      - smoke
+      - smoke-fast
+      - smoke-handoff
     runs-on: ubuntu-latest
     timeout-minutes: 90
     concurrency:
@@ -168,7 +288,6 @@ jobs:
         run: |
           set -euo pipefail
           VERSION=$(uv run python scripts/release_manifest.py version --sha "$GITHUB_SHA")
-          # Commit time is stable across retries, so build args and image digests are too.
           BUILD_TIME=$(git show -s --format=%cI "$GITHUB_SHA")
           {
             echo "VERSION=$VERSION"

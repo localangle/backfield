@@ -40,7 +40,6 @@ logger = logging.getLogger(__name__)
 _NO_BROWSER_ENV_VALUES = frozenset({"1", "true", "yes"})
 
 DEFAULT_SUPERUSER_EMAIL = "admin@backfield.news"
-DEFAULT_SUPERUSER_PASSWORD = "admin"
 DEFAULT_SUPERUSER_USERNAME = "Admin"
 
 
@@ -115,15 +114,18 @@ def _prompt(text: str, *, default: str | None = None) -> str:
         print("A value is required.")
 
 
-def _prompt_password(text: str, *, default: str | None = None) -> str:
-    suffix = f" (default: {default})" if default else ""
+def _prompt_password(text: str) -> str:
+    from backfield_auth.identity import validate_password
+
     while True:
-        value = getpass.getpass(f"{text}{suffix}: ")
-        if value:
-            return value
-        if default is not None:
-            return default
-        print("A value is required.")
+        value = getpass.getpass(f"{text}: ")
+        if not value:
+            print("A value is required.")
+            continue
+        try:
+            return validate_password(value)
+        except ValueError as exc:
+            print(str(exc))
 
 
 def _load_config(args: argparse.Namespace) -> InitConfig:
@@ -138,10 +140,7 @@ def _load_config(args: argparse.Namespace) -> InitConfig:
         "Superuser email (you will use this to log in)",
         default=DEFAULT_SUPERUSER_EMAIL,
     )
-    admin_password = _prompt_password(
-        "Superuser password",
-        default=DEFAULT_SUPERUSER_PASSWORD,
-    )
+    admin_password = _prompt_password("Superuser password")
     admin_display_name = _prompt("Superuser username", default=DEFAULT_SUPERUSER_USERNAME)
     from backfield_db.seed import DEFAULT_ORG_NAME, DEFAULT_STYLEBOOK_NAME
 

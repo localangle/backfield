@@ -10,6 +10,10 @@ import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _MARKDOWN_LINK = re.compile(r"!?\[[^\]]*]\(([^)]+)\)")
+_HTML_LOCAL_REF = re.compile(
+    r"""(?:src|href)=["'](?!https?://|mailto:|tel:|data:|#)([^"']+)["']""",
+    re.IGNORECASE,
+)
 _EXTERNAL_PREFIXES = ("http://", "https://", "mailto:", "tel:", "data:")
 
 
@@ -17,6 +21,9 @@ def _documentation_files() -> list[Path]:
     files = [
         _REPO_ROOT / "README.md",
         _REPO_ROOT / "AGENTS.md",
+        _REPO_ROOT / "CONTRIBUTING.md",
+        _REPO_ROOT / "SECURITY.md",
+        _REPO_ROOT / "CODE_OF_CONDUCT.md",
         *(_REPO_ROOT / "docs").rglob("*.md"),
         *(_REPO_ROOT / ".cursor" / "skills").glob("*/SKILL.md"),
         *(_REPO_ROOT / ".cursor" / "rules").glob("*.mdc"),
@@ -26,7 +33,9 @@ def _documentation_files() -> list[Path]:
 
 def _local_link_targets(path: Path) -> list[tuple[str, Path]]:
     targets: list[tuple[str, Path]] = []
-    for raw_target in _MARKDOWN_LINK.findall(path.read_text(encoding="utf-8")):
+    text = path.read_text(encoding="utf-8")
+    raw_targets = _MARKDOWN_LINK.findall(text) + _HTML_LOCAL_REF.findall(text)
+    for raw_target in raw_targets:
         target = raw_target.strip().strip("<>")
         if not target or target.startswith("#") or target.startswith(_EXTERNAL_PREFIXES):
             continue

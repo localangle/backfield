@@ -1,0 +1,64 @@
+name: Feature request
+description: Propose a change or improvement aligned with local-development scope
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem or opportunity first. Large features should be discussed before a PR.
+
+        Remember: this repository’s support promise is **local development and source inspection**.
+        Requests that assume in-repo production self-hosting are out of scope for now.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What limitation or need motivates this request?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed direction
+      description: How might Backfield address this? Link to existing docs/APIs if relevant.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds, other tools, or designs you evaluated.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: audience
+    attributes:
+      label: Primary audience
+      options:
+        - Local developers / contributors
+        - API consumers
+        - Newsroom end users (product UX)
+        - Maintainers / operators of local stacks
+        - Unsure
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope acknowledgement
+      options:
+        - label: I understand production self-hosting is unsupported in this checkout for now
+          required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+    validations:
+      required: false

@@ -50,10 +50,24 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _add_tar_file(archive: tarfile.TarFile, path: Path, arcname: str) -> None:
+    info = archive.gettarinfo(str(path), arcname=arcname)
+    info.uid = 0
+    info.gid = 0
+    info.uname = ""
+    info.gname = ""
+    info.mtime = 0
+    with path.open("rb") as handle:
+        archive.addfile(info, handle)
+
+
 def package_directory(source: Path, output: Path) -> None:
-    """Create a deterministic gzip-compressed tar archive."""
+    """Create a deterministic gzip-compressed tar archive (includes LICENSE.md)."""
     if not source.is_dir():
         raise ValueError(f"UI build directory not found: {source}")
+    license_path = Path(__file__).resolve().parents[1] / "LICENSE.md"
+    if not license_path.is_file():
+        raise ValueError(f"LICENSE.md not found: {license_path}")
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("wb") as raw:
         with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as zipped:
@@ -62,14 +76,8 @@ def package_directory(source: Path, output: Path) -> None:
                     if not path.is_file():
                         continue
                     relative = path.relative_to(source)
-                    info = archive.gettarinfo(str(path), arcname=relative.as_posix())
-                    info.uid = 0
-                    info.gid = 0
-                    info.uname = ""
-                    info.gname = ""
-                    info.mtime = 0
-                    with path.open("rb") as handle:
-                        archive.addfile(info, handle)
+                    _add_tar_file(archive, path, relative.as_posix())
+                _add_tar_file(archive, license_path, "LICENSE.md")
 
 
 def _image_detail(ecr: Any, repository: str, tag: str) -> dict[str, Any]:

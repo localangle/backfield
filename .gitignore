@@ -11,5 +11,11 @@ dist/
 *.egg-info/
 node_modules/
 .env
-.env.local
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+*.sqlite
+*.sqlite3
 apps/*/src/**/nodes/registry.ts

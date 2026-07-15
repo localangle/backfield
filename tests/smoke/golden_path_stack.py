@@ -376,7 +376,6 @@ def run_session_flow() -> int:
         password=SMOKE_PASSWORD,
         workspace_slug=SMOKE_WORKSPACE_SLUG,
         project_slug=SMOKE_PROJECT_SLUG,
-        bootstrap_first_user=os.environ.get("SMOKE_BOOTSTRAP", "").lower() in ("1", "true", "yes"),
     )
     project_id = ctx.project_id
     cookie_header = session_cookie_headers(ctx.session_token)

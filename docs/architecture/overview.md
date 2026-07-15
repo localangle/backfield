@@ -17,7 +17,7 @@ Redis and Celery.
   results, writes Backfield Output data, and performs background Stylebook and semantic-indexing
   jobs.
 - `apps/stylebook-api` owns editorial Stylebook HTTP behavior: catalogs, canonical entities,
-  candidates, cleanup, activity, relationships, geocode resolution, and bundle operations.
+  candidates, cleanup, activity, relationships, and bundle operations.
 - `apps/core-api` owns sessions, users, organization administration, project visibility and
   credentials, integration secrets, AI model configuration, and `/public/v1` read and
   run-trigger routes. Project creation and mutation remain in Agate API.
