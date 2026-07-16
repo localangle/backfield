@@ -37,7 +37,7 @@
       "description": "Bob Smith, a farmer who supports better agriculture policy, was visiting at Joe's Department Store in Chicago.",
       "nature": "person",
       "nature_secondary_tags": [],
-      "geocode_hints": "Named Chicago retail store visited during agriculture-policy discussion; no street given—likely need directory or chain locator context.",
+      "geocode_hints": "Chicago retail store; story gives city only—no street or neighborhood for this branch.",
       "components": {
         "place": {
           "name": "Joe's Department Store",
@@ -68,7 +68,7 @@
       "description": "8th Ave S. was the location of several robberies",
       "nature": "primary",
       "nature_secondary_tags": [],
-      "geocode_hints": "South Side corridor referenced as a pattern of robberies along the avenue in Chicago.",
+      "geocode_hints": "South Side corridor along 8th Ave S. in Chicago.",
       "components": {
         "place": {},
         "street_road": {
@@ -124,7 +124,7 @@
       "description": "A parade is happening along this stretch of Hennepin Ave. in Minneapolis.",
       "nature": "primary",
       "nature_secondary_tags": ["context"],
-      "geocode_hints": "Parade route segment on Hennepin between W. 26th and W. 28th St. in Minneapolis.",
+      "geocode_hints": "Hennepin Ave. between W. 26th and W. 28th St. in Minneapolis.",
       "components": {
         "place": {},
         "street_road": {},

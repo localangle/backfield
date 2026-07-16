@@ -95,7 +95,10 @@ class Place(BaseModel):
     description: str = Field(description="Brief description of the location and its relevance")
     geocode_hints: str = Field(
         default="",
-        description="Concise story context for downstream geocoding (disambiguation, vague areas, ties to other mentions)",
+        description=(
+            "Geographic disambiguation for downstream geocoding/search: street, neighborhood, "
+            "nearby landmark, or which branch—not story synopsis"
+        ),
     )
     location: LocationInfo = Field(description="Location information with components")
     model_config = ConfigDict(extra="allow")  # Allow additional fields like 'mural'

@@ -129,6 +129,10 @@ text. End `prompts/extract.md` with:
 
 This keeps the reusable prompt prefix stable while the article text varies.
 
+`PlaceExtract` **`geocode_hints`** must carry geographic disambiguators (street,
+neighborhood, nearby landmark, which branch)—not story synopsis—so
+`GeocodeAgent` web search and candidate picking can resolve multi-location names.
+
 ## `metadata.json`
 
 Metadata drives runtime lookup, chooser copy, compatibility, canvas chrome, panels,

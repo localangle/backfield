@@ -174,16 +174,45 @@ Example (braces doubled so they are literal in this template):
 
 ## Geocode hints (`geocode_hints`)
 
-Include a string field **`geocode_hints`** on every location: short, actionable prose from the story **not already obvious** from `location`, `components`, or `original_text` — material that disambiguates duplicate names, narrows vague geography, or relates this mention to other sites in the article.
+Include a string field **`geocode_hints`** on every location. Downstream geocoding
+and web search use this field to **pick the correct instance** of a place when the
+name alone is ambiguous (chains, duplicate venue names, vague corridors).
+
+**What belongs here (prefer in this order):**
+
+1. Street, block, corridor, or cross-street named in the story for *this* site
+2. Neighborhood, district, ward, or named area that pins which branch/site
+3. Nearby landmark, intersection, or “near/by/on …” anchor from the story
+4. Explicit contrast with another same-named site in the article
+   (“East Lake St. café, not the roasting warehouse”)
+
+**What does not belong:**
+
+- Why the place matters in the plot (rallies, crimes, proposed developments)
+- Lot size, unit counts, politics, or other non-geographic story color
+- Restating `location` or `description` without new geographic cues
+
+Even when a cue also appears in `original_text`, put the **best geographic
+disambiguators** in `geocode_hints` when `location` could match multiple real-world
+sites (especially addressable `place` / chain businesses without a street in
+`location`). Use `""` only when `location` plus type already uniquely pin the site.
 
 1. Be concise — one or two sentences, under ~400 characters.
-2. Add information; don't repeat the verbatim quote.
-3. Use `""` when nothing beyond the structured fields is needed.
+2. Prefer place-finding phrases a search engine can use; do not write a synopsis.
+3. Use `""` when nothing geographic beyond the structured fields is available.
 
-Examples:
+Good examples:
 
-- `"Story identifies this as the East Lake St. café location; mayor spoke outside after the rally, not the roasting warehouse mentioned earlier."`
-- `"Industrial pocket east of the river where overnight truck queues were described two paragraphs above."`
+- `"East Lake Street café location in Minneapolis; not the Dogwood roasting warehouse mentioned earlier."`
+- `"On Snelling Avenue near University Avenue in St. Paul."`
+- `"Parade route segment on Hennepin between W. 26th and W. 28th St. in Minneapolis."`
+
+Bad examples (do **not** write hints like these):
+
+- `"Specific Dogwood Coffee site described as having a large lot for a proposed 100-unit complex."`
+  (story about the site; no street, neighborhood, or which branch)
+- `"Mayor spoke outside after the rally about housing policy."`
+  (event narrative; no map cues)
 
 ## Street-level kind (`address_place_kind`)
 
