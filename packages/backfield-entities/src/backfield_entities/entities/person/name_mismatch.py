@@ -44,8 +44,13 @@ def person_link_is_obvious_mismatch(
         return False
     alias_keys = editorial_alias_keys or frozenset()
     substrate_key = person_match_key(substrate_name)
-    if substrate_key and substrate_key in alias_keys:
-        return False
+    if substrate_key:
+        for alias_key in alias_keys:
+            # Compare via person_match_key so dotted vs undotted aliases match.
+            if person_match_key(alias_key) == substrate_key:
+                return False
+            if person_names_match(substrate_name, alias_key):
+                return False
     if person_given_names_conflict(substrate_name, canonical_label):
         return True
     if score_person_name_overlap(substrate_name, canonical_label) > 0:

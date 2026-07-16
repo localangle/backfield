@@ -14,6 +14,31 @@ _WS_RE = re.compile(r"\s+")
 # Single letter or letter+period (middle initial).
 _MIDDLE_INITIAL_RE = re.compile(r"^[a-z]\.?$")
 
+# High-confidence English nickname groups where prefix checks fail (Tom/Thomas).
+_GIVEN_NAME_NICKNAME_GROUPS: tuple[frozenset[str], ...] = (
+    frozenset({"tom", "thomas", "tommy"}),
+    frozenset({"rob", "robert", "bob", "bobby"}),
+    frozenset({"bill", "william", "will", "billy", "liam"}),
+    frozenset({"dick", "richard", "rick", "ricky"}),
+    frozenset({"jim", "james", "jimmy", "jamie"}),
+    frozenset({"mike", "michael", "mick"}),
+    frozenset({"joe", "joseph", "joey"}),
+    frozenset({"dave", "david"}),
+    frozenset({"dan", "daniel", "danny"}),
+    frozenset({"chris", "christopher", "kit"}),
+    frozenset({"matt", "matthew"}),
+    frozenset({"steve", "stephen", "steven"}),
+    frozenset({"beth", "elizabeth", "liz", "betty", "eliza"}),
+    frozenset({"kate", "catherine", "katherine", "kathy", "cathy"}),
+    frozenset({"alex", "alexander", "alexandra"}),
+)
+
+_GIVEN_NAME_TO_NICKNAME_GROUP: dict[str, int] = {
+    name: idx
+    for idx, group in enumerate(_GIVEN_NAME_NICKNAME_GROUPS)
+    for name in group
+}
+
 
 def person_name_tokens(display_name: str) -> tuple[str | None, str | None, list[str]]:
     """Parse ``(given, family, significant_tokens)`` from a display name."""
@@ -39,10 +64,14 @@ def person_name_tokens(display_name: str) -> tuple[str | None, str | None, list[
 
 
 def given_names_compatible(a: str, b: str) -> bool:
-    """True when given names are equal or one is a prefix of the other (min 2 chars)."""
+    """True when given names are equal, nicknames, or one is a prefix of the other."""
     if not a or not b:
         return False
     if a == b:
+        return True
+    group_a = _GIVEN_NAME_TO_NICKNAME_GROUP.get(a)
+    group_b = _GIVEN_NAME_TO_NICKNAME_GROUP.get(b)
+    if group_a is not None and group_a == group_b:
         return True
     short, long = (a, b) if len(a) <= len(b) else (b, a)
     if len(short) < 2:

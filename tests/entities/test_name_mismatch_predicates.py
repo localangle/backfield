@@ -40,6 +40,22 @@ def test_person_mismatch_prefix_nickname_rescued() -> None:
     )
 
 
+def test_person_mismatch_dotted_initials_rescued() -> None:
+    """CJ vs C.J. must not veto — punctuation-only given-name difference."""
+    assert not person_link_is_obvious_mismatch(
+        substrate_name="CJ Stroud",
+        canonical_label="C.J. Stroud",
+    )
+
+
+def test_person_mismatch_non_prefix_nickname_rescued() -> None:
+    """Tom is not a prefix of Thomas; nickname map must still allow the link."""
+    assert not person_link_is_obvious_mismatch(
+        substrate_name="Tom Dart",
+        canonical_label="Thomas Dart",
+    )
+
+
 def test_person_mismatch_same_name_rescued() -> None:
     assert not person_link_is_obvious_mismatch(
         substrate_name="John Smith",

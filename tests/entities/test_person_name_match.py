@@ -19,10 +19,21 @@ def test_person_match_key_folds_accents() -> None:
     assert person_names_match("José García", "Jose Garcia")
 
 
+def test_person_match_key_strips_initial_punctuation() -> None:
+    assert person_match_key("CJ Stroud") == person_match_key("C.J. Stroud")
+    assert person_names_match("CJ Stroud", "C.J. Stroud")
+
+
 def test_person_alias_lookup_keys_include_folded_variant() -> None:
     keys = person_alias_lookup_keys("Gina Ramírez")
     assert "gina ramírez" in keys
     assert "gina ramirez" in keys
+
+
+def test_person_alias_lookup_keys_include_punctuation_stripped() -> None:
+    keys = person_alias_lookup_keys("C.J. Stroud")
+    assert "c.j. stroud" in keys
+    assert "cj stroud" in keys
 
 
 def test_person_name_tokens_strips_middle_initial() -> None:
@@ -34,6 +45,14 @@ def test_person_name_tokens_strips_middle_initial() -> None:
 
 def test_ronald_wyden_matches_ron_wyden() -> None:
     score = score_person_name_overlap("Ronald L. Wyden", "Ron Wyden")
+    assert score >= 90
+
+
+def test_tom_thomas_nickname_scores_compatible() -> None:
+    from backfield_entities.entities.person.name_match import given_names_compatible
+
+    assert given_names_compatible("tom", "thomas")
+    score = score_person_name_overlap("Tom Dart", "Thomas Dart")
     assert score >= 90
 
 

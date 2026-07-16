@@ -69,6 +69,11 @@ policy allows, otherwise `DEFER`, and records
 `sync_link_commit_veto` in `canonical_review_reasons_json`. Manual Stylebook UI
 accepts and links are not gated—editors remain the escape hatch.
 
+Person mismatch helpers treat dotted initials as equal (`CJ` / `C.J.`), allow a
+small nickname map where prefix checks fail (`Tom` / `Thomas`), and rescue links
+when the substrate name matches a trusted (non-`substrate_ingest`) alias on the
+target canonical.
+
 ### Alias provenance for exact match
 
 Exact-alias lookups used for tier-1 / exact-identity autolink ignore
