@@ -905,12 +905,12 @@ def test_persist_stylebook_canonical_id_prefixes_external_id() -> None:
         locs = session.exec(select(SubstrateLocation)).all()
         assert len(locs) == 1
         assert locs[0].external_source == "stylebook_location"
-        assert locs[0].external_id == f"stylebook:{sb_uuid}"
+        assert locs[0].external_id == f"stylebook:{sb_uuid}:example-city-il"
 
 
 def test_persist_stylebook_id_keeps_full_prefixed_external_id() -> None:
     sb_uuid = "660e8400-e29b-41d4-a716-446655440001"
-    prefixed = f"stylebook:{sb_uuid}"
+    prefixed = f"stylebook:{sb_uuid}:other-city-wi"
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
 
@@ -934,7 +934,7 @@ def test_persist_stylebook_id_keeps_full_prefixed_external_id() -> None:
                             "geocode": {
                                 "geocode_type": "canonical_db",
                                 "result": {
-                                    "id": prefixed,
+                                    "id": f"stylebook:{sb_uuid}",
                                     "formatted_address": "Other City, WI, USA",
                                     "geometry": CHICAGO_POINT,
                                 },
@@ -970,7 +970,7 @@ def test_persist_stylebook_id_keeps_full_prefixed_external_id() -> None:
 
 def test_persist_stylebook_canonical_id_no_double_prefix() -> None:
     sb_uuid = "770e8400-e29b-41d4-a716-446655440002"
-    already = f"stylebook:{sb_uuid}"
+    already = f"stylebook:{sb_uuid}:third-city-mn"
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
 
@@ -995,7 +995,7 @@ def test_persist_stylebook_canonical_id_no_double_prefix() -> None:
                                 "geocode_type": "canonical_db",
                                 "result": {
                                     "id": "pelias:x",
-                                    "canonical_id": already,
+                                    "canonical_id": f"stylebook:{sb_uuid}",
                                     "formatted_address": "Third City, MN, USA",
                                     "geometry": CHICAGO_POINT,
                                 },
@@ -1468,7 +1468,7 @@ def test_superseded_ingest_disposes_linked_substrate_with_no_remaining_mentions(
             )
         ).all()
         assert len(linked) == 1
-        assert linked[0].external_id == f"stylebook:{cid}"
+        assert linked[0].external_id == f"stylebook:{cid}:red-line-chicago-il"
 
 
 def test_superseded_ingest_keeps_substrate_when_other_stories_still_mention() -> None:
@@ -3006,3 +3006,252 @@ def test_upsert_mention_undeletes_existing_row() -> None:
         m = session.get(SubstrateLocationMention, mid)
         assert m is not None
         assert m.deleted is False
+
+
+def _neighborhood_entry(
+    *,
+    entry_id: str,
+    name: str,
+    canonical_id: str,
+    geometry: dict,
+    formatted_address: str | None = None,
+) -> dict:
+    return {
+        "id": entry_id,
+        "original_text": name.split(",")[0],
+        "location": name,
+        "type": "neighborhood",
+        "components": {
+            "neighborhood": name.split(",")[0].strip(),
+            "city": "Chicago",
+            "state": {"abbr": "IL"},
+        },
+        "geocode": {
+            "geocode_type": "canonical_db",
+            "result": {
+                "id": f"stylebook:{canonical_id}",
+                "canonical_id": canonical_id,
+                "formatted_address": formatted_address or name,
+                "geometry": geometry,
+            },
+        },
+    }
+
+
+def test_poisoned_neighborhood_candidate_id_does_not_collapse_bucktown_uptown() -> None:
+    """Distinct neighborhood names must not share one substrate row via a poisoned UUID."""
+    uptown_uuid = "b711d7fe-b5ce-4062-8b35-9a35114b2d48"
+    bucktown_pt = {"type": "Point", "coordinates": [-87.68, 41.92]}
+    uptown_pt = {"type": "Point", "coordinates": [-87.65, 41.97]}
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    def _places(entries: list[dict]) -> dict:
+        return {
+            "areas": {
+                "states": [],
+                "counties": [],
+                "cities": [],
+                "neighborhoods": entries,
+                "regions": [],
+                "other": [],
+            },
+            "points": [],
+            "needs_review": [],
+        }
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-buck", project_slug="proj-buck")
+        proj = session.get(BackfieldProject, project_id)
+        assert proj is not None
+        ws = session.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        for label, slug, geom in (
+            ("Bucktown, Chicago, IL", "bucktown-chicago-il", bucktown_pt),
+            ("Uptown, Chicago, IL", "uptown-chicago-il", uptown_pt),
+        ):
+            session.add(
+                StylebookLocationCanonical(
+                    stylebook_id=sb_id,
+                    label=label,
+                    slug=slug,
+                    location_type="neighborhood",
+                    status="active",
+                    geometry_json=geom,
+                    geometry_type="Point",
+                    formatted_address=label,
+                )
+            )
+        session.add(AgateRun(id="run-buck-a", graph_id="graph-buck", status="pending"))
+        session.add(AgateRun(id="run-buck-b", graph_id="graph-buck", status="pending"))
+        session.commit()
+
+        # Both payloads carry the Uptown candidate UUID (poisoned for Bucktown).
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-buck",
+            run_id="run-buck-a",
+            consolidated={
+                "text": "Nightlife in Bucktown.",
+                "url": "https://example.com/bucktown",
+                "places": _places(
+                    [
+                        _neighborhood_entry(
+                            entry_id="n:buck",
+                            name="Bucktown, Chicago, IL",
+                            canonical_id=uptown_uuid,
+                            geometry=bucktown_pt,
+                        )
+                    ]
+                ),
+            },
+            db_output_params={"auto_apply_canonicalization": True, "stylebook_id": sb_id},
+        )
+        session.commit()
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-buck",
+            run_id="run-buck-b",
+            consolidated={
+                "text": "A story from Uptown.",
+                "url": "https://example.com/uptown",
+                "places": _places(
+                    [
+                        _neighborhood_entry(
+                            entry_id="n:up",
+                            name="Uptown, Chicago, IL",
+                            canonical_id=uptown_uuid,
+                            geometry=uptown_pt,
+                        )
+                    ]
+                ),
+            },
+            db_output_params={"auto_apply_canonicalization": True, "stylebook_id": sb_id},
+        )
+        session.commit()
+
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 2
+        by_name = {str(loc.name): loc for loc in locs}
+        assert "Bucktown, Chicago, IL" in by_name
+        assert "Uptown, Chicago, IL" in by_name
+        assert by_name["Bucktown, Chicago, IL"].external_id == (
+            f"stylebook:{uptown_uuid}:bucktown-chicago-il"
+        )
+        assert by_name["Uptown, Chicago, IL"].external_id == (
+            f"stylebook:{uptown_uuid}:uptown-chicago-il"
+        )
+
+
+def test_linked_neighborhood_mismatch_skips_alias_refresh_and_replans() -> None:
+    """Already-linked rows that no longer match their FK must not refresh aliases."""
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    bucktown_pt = {"type": "Point", "coordinates": [-87.68, 41.92]}
+    uptown_pt = {"type": "Point", "coordinates": [-87.65, 41.97]}
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-relink", project_slug="proj-relink")
+        proj = session.get(BackfieldProject, project_id)
+        assert proj is not None
+        ws = session.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+
+        bucktown = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Bucktown, Chicago, IL",
+            slug="bucktown-chicago-il",
+            location_type="neighborhood",
+            status="active",
+            geometry_json=bucktown_pt,
+            geometry_type="Point",
+            formatted_address="Bucktown, Chicago, IL",
+        )
+        uptown = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Uptown, Chicago, IL",
+            slug="uptown-chicago-il",
+            location_type="neighborhood",
+            status="active",
+            geometry_json=uptown_pt,
+            geometry_type="Point",
+            formatted_address="Uptown, Chicago, IL",
+        )
+        session.add(bucktown)
+        session.add(uptown)
+        session.commit()
+        session.refresh(bucktown)
+        session.refresh(uptown)
+        bucktown_id = str(bucktown.id)
+        uptown_id = str(uptown.id)
+
+        # Corrupted linked row: Uptown name + Bucktown FK, shared poisoned external id.
+        loc = SubstrateLocation(
+            project_id=project_id,
+            name="Uptown, Chicago, IL",
+            normalized_name="uptown, chicago, il",
+            location_type="neighborhood",
+            status="active",
+            external_source="stylebook_location",
+            external_id=f"stylebook:{bucktown_id}:uptown-chicago-il",
+            identity_fingerprint="fp-uptown-corrupt",
+            formatted_address="Uptown, Chicago, IL",
+            geometry_json=uptown_pt,
+            geometry_type="Point",
+            stylebook_location_canonical_id=bucktown_id,
+            canonical_link_status=CANONICAL_LINK_LINKED,
+            source_kind="agate_geocode",
+        )
+        session.add(loc)
+        session.add(AgateRun(id="run-relink", graph_id="graph-relink", status="pending"))
+        session.commit()
+        session.refresh(loc)
+        loc_id = int(loc.id)  # type: ignore[arg-type]
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-relink",
+            run_id="run-relink",
+            consolidated={
+                "text": "A story from Uptown.",
+                "url": "https://example.com/uptown-relink",
+                "places": {
+                    "areas": {
+                        "states": [],
+                        "counties": [],
+                        "cities": [],
+                        "neighborhoods": [
+                            _neighborhood_entry(
+                                entry_id="n:up-relink",
+                                name="Uptown, Chicago, IL",
+                                canonical_id=bucktown_id,
+                                geometry=uptown_pt,
+                            )
+                        ],
+                        "regions": [],
+                        "other": [],
+                    },
+                    "points": [],
+                    "needs_review": [],
+                },
+            },
+            db_output_params={"auto_apply_canonicalization": True, "stylebook_id": sb_id},
+        )
+        session.commit()
+
+        refreshed = session.get(SubstrateLocation, loc_id)
+        assert refreshed is not None
+        # Must not keep the Bucktown FK or write Uptown aliases onto Bucktown.
+        assert refreshed.stylebook_location_canonical_id != bucktown_id
+        aliases = session.exec(
+            select(StylebookLocationAlias).where(
+                StylebookLocationAlias.location_canonical_id == bucktown_id,
+            )
+        ).all()
+        assert not any("uptown" in str(a.normalized_alias) for a in aliases)
+        if refreshed.stylebook_location_canonical_id is not None:
+            assert str(refreshed.stylebook_location_canonical_id) == uptown_id

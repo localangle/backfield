@@ -365,3 +365,34 @@ def test_place_token_fallback_uses_location_text_when_components_empty() -> None
         )
         is False
     )
+
+
+def test_neighborhood_blocks_different_proper_head() -> None:
+    """Bucktown must not resolve as Uptown even with a shared city/state tail."""
+    assert (
+        cache_hit_sane_for_substrate(
+            substrate_location_type="neighborhood",
+            location_text="Bucktown, Chicago, IL",
+            components={"neighborhood": "Bucktown", "city": "Chicago"},
+            match_label="Uptown, Chicago, IL",
+            match_formatted_address="Uptown, Chicago, IL",
+            match_location_type="neighborhood",
+            match_geometry_type="Polygon",
+        )
+        is False
+    )
+
+
+def test_neighborhood_allows_same_proper_head() -> None:
+    assert (
+        cache_hit_sane_for_substrate(
+            substrate_location_type="neighborhood",
+            location_text="Uptown, Chicago, IL",
+            components={"neighborhood": "Uptown", "city": "Chicago"},
+            match_label="Uptown, Chicago, IL",
+            match_formatted_address="Uptown, Chicago, IL",
+            match_location_type="neighborhood",
+            match_geometry_type="Polygon",
+        )
+        is True
+    )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from backfield_entities.entities.person.name_match import (
     given_names_compatible,
+    person_identity_name_parts,
     person_name_tokens,
     score_person_name_overlap,
 )
@@ -16,8 +17,8 @@ def person_given_names_conflict(substrate_name: str, canonical_label: str) -> bo
     Catches same-surname blunders (Kam Jones → Tre Jones) while allowing prefix
     nicknames (Rob/Robert). Single-token names are never treated as conflicts.
     """
-    s_given, s_family, s_tokens = person_name_tokens(substrate_name)
-    c_given, c_family, c_tokens = person_name_tokens(canonical_label)
+    s_given, s_family, s_tokens = person_identity_name_parts(substrate_name)
+    c_given, c_family, c_tokens = person_identity_name_parts(canonical_label)
     if len(s_tokens) < 2 or len(c_tokens) < 2:
         return False
     if not s_family or not c_family or s_family != c_family:
@@ -25,6 +26,27 @@ def person_given_names_conflict(substrate_name: str, canonical_label: str) -> bo
     if not s_given or not c_given:
         return False
     return not given_names_compatible(s_given, c_given)
+
+
+def person_family_names_conflict(substrate_name: str, canonical_label: str) -> bool:
+    """True when given names are compatible but suffix-aware family cores differ.
+
+    Catches same-given / different-surname blunders (Adam Fantilli → Adam Henrique)
+    while allowing Jr/Sr, multi-part surnames (``de la Cruz`` / ``Cruz``), and
+    nicknames with a shared family name.
+    """
+    s_given, s_family, s_tokens = person_identity_name_parts(substrate_name)
+    c_given, c_family, c_tokens = person_identity_name_parts(canonical_label)
+    if len(s_tokens) < 2 or len(c_tokens) < 2:
+        return False
+    if not s_given or not c_given or not s_family or not c_family:
+        return False
+    # Initial-only given names are too weak for a hard family conflict.
+    if len(s_given) < 2 or len(c_given) < 2:
+        return False
+    if not given_names_compatible(s_given, c_given):
+        return False
+    return s_family != c_family
 
 
 def person_link_is_obvious_mismatch(
@@ -52,6 +74,8 @@ def person_link_is_obvious_mismatch(
             if person_names_match(substrate_name, alias_key):
                 return False
     if person_given_names_conflict(substrate_name, canonical_label):
+        return True
+    if person_family_names_conflict(substrate_name, canonical_label):
         return True
     if score_person_name_overlap(substrate_name, canonical_label) > 0:
         return False

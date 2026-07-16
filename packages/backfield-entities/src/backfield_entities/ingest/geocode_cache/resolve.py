@@ -102,12 +102,14 @@ def _substrate_cache_row_to_cache_match_dict(row: SubstrateLocationCache) -> dic
 def _alias_map_for_canonicals(
     session: Session, canonical_ids: list[str]
 ) -> dict[str, tuple[str, ...]]:
+    """Alias norms used for tier-1 exact geocode hits (excludes ``substrate_ingest``)."""
     if not canonical_ids:
         return {}
     rows = session.exec(
         select(StylebookLocationAlias).where(
             col(StylebookLocationAlias.location_canonical_id).in_(canonical_ids),
             col(StylebookLocationAlias.suppressed).is_(False),
+            StylebookLocationAlias.provenance != "substrate_ingest",
         )
     ).all()
     acc: dict[str, list[str]] = {cid: [] for cid in canonical_ids}

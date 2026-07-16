@@ -38,6 +38,23 @@ _INTERSECTION_SUBSTRATE_TYPES: frozenset[str] = frozenset(
 )
 _STREET_SUBSTRATE_TYPES: frozenset[str] = frozenset({"street_road"})
 _POI_LIKE_CANONICAL_TYPES: frozenset[str] = frozenset({"place", "point", "neighborhood"})
+# Exclude political_district: number/kind identity is authoritative; ordinal vs
+# numeral heads (Eighth Ward vs Ward 8) are too brittle for a string head gate.
+_ADMIN_PROPER_HEAD_TYPES: frozenset[str] = frozenset(
+    {
+        "neighborhood",
+        "city",
+        "town",
+        "village",
+        "county",
+        "community_area",
+        "borough",
+        "suburb",
+        "district",
+        "ward",
+        "region_city",
+    }
+)
 
 _HOUSE_NUMBER_RE = re.compile(r"\d")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
@@ -326,6 +343,20 @@ def cache_hit_sane_for_substrate(
             if not _label_contains_token(label_blob, token):
                 return False
         return True
+
+    if (
+        substrate_lt in _ADMIN_PROPER_HEAD_TYPES
+        and (canon_lt is None or canon_lt in _ADMIN_PROPER_HEAD_TYPES)
+    ):
+        # Neighborhood/admin identity lives in the leading placename. Block
+        # Bucktown↔Uptown-style hits even when a poisoned alias or shared city/state
+        # tail would otherwise score as an exact match.
+        sub_head = _street_name_head_tokens(location_text)
+        if sub_head:
+            for raw in labels:
+                if _street_heads_compatible(sub_head, _street_name_head_tokens(raw)):
+                    return True
+            return False
 
     return True
 

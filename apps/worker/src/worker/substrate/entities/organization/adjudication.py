@@ -36,6 +36,13 @@ from backfield_entities.entities.organization.types import (
 )
 from sqlmodel import Session, select
 
+from worker.substrate.canonical.adjudication_result import (
+    ADJUDICATION_CORRECTIVE_SUFFIX,
+    ADJUDICATION_JSON_CONTRACT,
+    adjudication_allows_link,
+    adjudication_audit_fields,
+    parse_canonical_adjudication_result,
+)
 from worker.substrate.canonical.llm_call_policy import (
     ADJUDICATION_LLM_MAX_RETRIES,
     ADJUDICATION_LLM_TIMEOUT_S,
@@ -266,9 +273,9 @@ def prepare_organization_adjudication(
             "- Compatible pairs include company↔local_business, nonprofit↔community_group, "
             "financial_institution↔company, media↔company.\n"
             f"- Use confidence {floor} or higher when name/alias match and types are compatible.\n"
-            "- Set canonical_id to null only when types indicate genuinely different entities "
+            "- Choose decision=\"no_match\" only when types indicate genuinely different entities "
             "with a similar name (e.g. sports_team vs government, school_district vs "
-            "public_services), or when uncertain.\n"
+            "public_services), or decision=\"uncertain\" when unsure.\n"
         )
     else:
         type_rules = (
@@ -284,23 +291,22 @@ def prepare_organization_adjudication(
         "Candidates (at most one id may be chosen):\n"
         f"{lines}\n\n"
         "Rules:\n"
-        "- Set canonical_id only when the candidate is the SAME institution the substrate row "
-        "represents (same organization despite minor spelling variants).\n"
+        "- Choose decision=\"link_existing\" only when the candidate is the SAME institution "
+        "the substrate row represents (same organization despite minor spelling variants).\n"
         "- Well-known acronyms and their expanded forms may denote the same institution when "
         "organization_type aligns (e.g. NBA / National Basketball Association). "
         "The same acronym can denote different institutions by type "
         "(e.g. CPS as school_district vs public_services / child protective).\n"
         f"{type_rules}"
-        "- Set canonical_id to null when organization type, role, or context indicates a "
-        "different entity with a similar name, or when you are not certain.\n"
-        "- Prefer null (human review) over a stretched link between namesakes.\n"
+        "- Choose decision=\"no_match\" when organization type, role, or context indicates a "
+        "different entity with a similar name; use \"uncertain\" when you are not certain.\n"
+        "- Prefer no_match / uncertain over a stretched link between namesakes.\n"
         "- Different sports teams with similar shorthand (e.g. Colorado Rockies vs "
         "Cincinnati Reds) are never the same organization even when both are "
         "sports_team.\n"
         f"- Use confidence {floor} or higher only for definitive same-organization identity; "
         f"otherwise use confidence below {floor} (the system will not auto-link).\n\n"
-        "Return JSON only: canonical_id (UUID string matching one candidate id, or null), "
-        "confidence (0.0-1.0), rationale (short string)."
+        f"{ADJUDICATION_JSON_CONTRACT}"
     )
     return OrganizationAdjudicationPrepared(
         organization=organization,
@@ -314,12 +320,12 @@ def prepare_organization_adjudication(
     )
 
 
-def run_organization_adjudication_llm(
-    prepared: OrganizationAdjudicationPrepared,
+def _call_organization_adjudication_raw(
+    prepared: OrganizationAdjudicationPrepared, prompt: str
 ) -> dict[str, Any] | None:
     try:
         raw = call_llm(
-            prepared.prompt,
+            prompt,
             model=prepared.model,
             force_json=True,
             temperature=0.0,
@@ -331,9 +337,22 @@ def run_organization_adjudication_llm(
         data = json.loads(raw)
     except Exception:
         return None
-    if not isinstance(data, dict):
-        return None
-    return data
+    return data if isinstance(data, dict) else None
+
+
+def run_organization_adjudication_llm(
+    prepared: OrganizationAdjudicationPrepared,
+) -> dict[str, Any] | None:
+    candidate_ids = {str(c[0]) for c in prepared.candidates}
+    data = _call_organization_adjudication_raw(prepared, prepared.prompt)
+    if parse_canonical_adjudication_result(data, candidate_ids=candidate_ids) is not None:
+        return data
+    retried = _call_organization_adjudication_raw(
+        prepared, prepared.prompt + ADJUDICATION_CORRECTIVE_SUFFIX
+    )
+    if parse_canonical_adjudication_result(retried, candidate_ids=candidate_ids) is not None:
+        return retried
+    return None
 
 
 def _organization_type_matches_candidate(
@@ -361,28 +380,17 @@ def resolve_organization_adjudication_plan(
     candidates = prepared.candidates
     model = prepared.model
     candidates_by_id = {str(c[0]): c for c in candidates}
-
-    cid_raw = llm_data.get("canonical_id")
-    conf_raw = llm_data.get("confidence", 0.0)
-    rationale = str(llm_data.get("rationale") or "").strip()
-    chosen: str | None
-    if cid_raw is None or cid_raw == "":
-        chosen = None
-    else:
-        chosen = str(cid_raw).strip() or None
-    try:
-        confidence = float(conf_raw)
-    except (TypeError, ValueError):
-        confidence = 0.0
+    parsed = parse_canonical_adjudication_result(
+        llm_data, candidate_ids=set(candidates_by_id)
+    )
+    if parsed is None:
+        return plan
 
     def _reject_link() -> CanonicalPersistPlan:
         extra: dict[str, Any] = {
             "code": "canonical_adjudication",
             "model": model,
-            "canonical_id": chosen,
-            "confidence": confidence,
-            "rationale": rationale or None,
-            "outcome": "no_high_confidence_link",
+            **adjudication_audit_fields(parsed, linked=False),
             "min_confidence_for_link": ADJUDICATION_LINK_MIN_CONFIDENCE,
         }
         merged = tuple(list(plan.resolution_reasons) + [extra])
@@ -396,6 +404,7 @@ def resolve_organization_adjudication_plan(
             resolution_reasons=merged,
         )
 
+    chosen = parsed.canonical_id
     candidate_row = candidates_by_id.get(str(chosen)) if chosen is not None else None
 
     allow_cross_type = plan_has_organization_canonical_type_mismatch(plan)
@@ -410,7 +419,7 @@ def resolve_organization_adjudication_plan(
     ):
         min_confidence = ADJUDICATION_COMPATIBLE_TYPE_LINK_MIN_CONFIDENCE
 
-    if chosen is None or confidence < min_confidence:
+    if not adjudication_allows_link(parsed, min_confidence=min_confidence):
         return _reject_link()
 
     if candidate_row is None:
@@ -434,10 +443,7 @@ def resolve_organization_adjudication_plan(
     extra = {
         "code": "canonical_adjudication",
         "model": model,
-        "canonical_id": str(chosen),
-        "confidence": float(confidence),
-        "rationale": rationale or None,
-        "outcome": "link_existing",
+        **adjudication_audit_fields(parsed, linked=True),
         "min_confidence_for_link": ADJUDICATION_LINK_MIN_CONFIDENCE,
     }
     merged = tuple(list(plan.resolution_reasons) + [extra])

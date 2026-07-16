@@ -657,7 +657,9 @@ def rank_scored_canonical_recall_matches(
     if not recall:
         return []
     cids = [cid for cid, _ in recall]
-    bundles = load_canonical_match_features(session, canonical_ids=cids)
+    bundles = load_canonical_match_features(
+        session, canonical_ids=cids, trusted_alias_only=True
+    )
     comps = place_extract_components_from_entry(location, entry)
     substrate = SubstrateMatchInput(
         name=str(location.name),

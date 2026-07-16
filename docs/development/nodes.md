@@ -133,6 +133,14 @@ This keeps the reusable prompt prefix stable while the article text varies.
 neighborhood, nearby landmark, which branch)—not story synopsis—so
 `GeocodeAgent` web search and candidate picking can resolve multi-location names.
 
+Geocode cache tier-1 hits and auto-ingest exact identity ignore
+`substrate_ingest` aliases. Neighborhood/admin proper-name heads must agree
+before a cache hit commits. Worker location persistence name-suffixes Stylebook
+`external_id` values for admin and fine-grained types so distinct places cannot
+collapse onto one substrate row when a resolver reuses a candidate UUID.
+Canonical LLM adjudication uses a strict structured contract (not rationale
+prose) before the sync link commit gate.
+
 ## `metadata.json`
 
 Metadata drives runtime lookup, chooser copy, compatibility, canvas chrome, panels,

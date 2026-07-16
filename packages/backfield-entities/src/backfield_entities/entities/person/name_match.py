@@ -13,6 +13,29 @@ from backfield_entities.entities.person.types import (
 _WS_RE = re.compile(r"\s+")
 # Single letter or letter+period (middle initial).
 _MIDDLE_INITIAL_RE = re.compile(r"^[a-z]\.?$")
+_PERSON_GENERATIONAL_SUFFIX_TOKENS: frozenset[str] = frozenset(
+    {"jr", "sr", "ii", "iii", "iv", "junior", "senior"}
+)
+# Particles often preceding a core surname (compare terminal core after stripping these).
+_FAMILY_NAME_PARTICLES: frozenset[str] = frozenset(
+    {
+        "de",
+        "da",
+        "di",
+        "del",
+        "della",
+        "der",
+        "den",
+        "van",
+        "von",
+        "la",
+        "le",
+        "el",
+        "al",
+        "st",
+        "ste",
+    }
+)
 
 # High-confidence English nickname groups where prefix checks fail (Tom/Thomas).
 _GIVEN_NAME_NICKNAME_GROUPS: tuple[frozenset[str], ...] = (
@@ -77,6 +100,37 @@ def given_names_compatible(a: str, b: str) -> bool:
     if len(short) < 2:
         return False
     return long.startswith(short)
+
+
+def person_identity_name_parts(
+    display_name: str,
+) -> tuple[str | None, str | None, list[str]]:
+    """Parse ``(given, family_core, significant_tokens)`` with suffix/particle awareness.
+
+    Generational suffixes are stripped before selecting the family token. Leading
+    surname particles (``van``, ``de``, …) are dropped so ``Juan de la Cruz`` and
+    ``Juan Cruz`` share a core family token for conflict checks.
+    """
+    given, _family, tokens = person_name_tokens(display_name)
+    if not tokens:
+        return None, None, []
+    working = list(tokens)
+    while working and working[-1] in _PERSON_GENERATIONAL_SUFFIX_TOKENS:
+        working.pop()
+    if not working:
+        return None, None, tokens
+    if len(working) == 1:
+        return working[0], working[0], tokens
+    family_core = working[-1]
+    # Drop leading particles when there is still a non-particle core left.
+    head = working[1:-1]
+    while head and head[0] in _FAMILY_NAME_PARTICLES:
+        head = head[1:]
+    # If the terminal token itself is only a particle with no core, keep it.
+    if family_core in _FAMILY_NAME_PARTICLES and head:
+        family_core = head[-1]
+    id_given = working[0]
+    return id_given, family_core, tokens
 
 
 # Backward-compatible private alias.

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import copy
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from backfield_db import SubstrateLocation, SubstrateLocationMention
-from backfield_entities.canonical.link import CANONICAL_LINK_UNLINKED
+from backfield_entities.canonical.link import CANONICAL_LINK_PENDING, CANONICAL_LINK_UNLINKED
+from backfield_entities.canonical.link_commit_gate import sync_link_commit_blocked
 from backfield_entities.canonical.plan_types import CanonicalPersistPlan
 from backfield_entities.entities.location.persist import (
     apply_canonical_persist_plan,
@@ -47,13 +49,33 @@ from worker.substrate.entities.registry import (
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class _PendingLocationAdjudication:
-    location: SubstrateLocation
+    """Immutable snapshot so LLM apply cannot use a mutated substrate/entry."""
+
+    location_id: int
+    identity_fingerprint: str | None
+    name: str
+    normalized_name: str | None
+    location_type: str | None
+    external_id: str | None
     bucket: str
     entry: dict[str, Any]
     plan: CanonicalPersistPlan
     prepared: LocationAdjudicationPrepared
+
+
+def _location_identity_matches_snapshot(
+    location: SubstrateLocation,
+    pending: _PendingLocationAdjudication,
+) -> bool:
+    return (
+        str(location.identity_fingerprint or "") == str(pending.identity_fingerprint or "")
+        and str(location.name or "") == str(pending.name or "")
+        and str(location.normalized_name or "") == str(pending.normalized_name or "")
+        and str(location.location_type or "") == str(pending.location_type or "")
+        and str(location.external_id or "") == str(pending.external_id or "")
+    )
 
 
 def _active_mention_for_article_location(
@@ -170,24 +192,42 @@ class LocationPersistHandler:
             if loc.id is not None:
                 touched_location_ids.add(int(loc.id))
             if ctx.stylebook_id is not None and loc.stylebook_location_canonical_id is not None:
-                refresh_aliases_for_linked_location(
+                veto = sync_link_commit_blocked(
                     session,
-                    stylebook_id=ctx.stylebook_id,
-                    location=loc,
-                    provenance="substrate_ingest",
-                )
-                _upsert_mention_and_occurrence(
-                    session,
-                    article_id=int(ctx.article_id),
-                    location_id=int(loc.id),
-                    article_text=ctx.article_text,
+                    entity_type="location",
+                    substrate_row=loc,
+                    canonical_id=str(loc.stylebook_location_canonical_id),
+                    stylebook_id=int(ctx.stylebook_id),
                     entry=entry,
-                    run_id=ctx.run_id,
-                    graph_id=ctx.graph_id,
-                    bucket=bucket,
-                    preserve_editor_changes=policy == "smart_merge",
                 )
-            elif ctx.stylebook_id is not None:
+                if veto is None:
+                    refresh_aliases_for_linked_location(
+                        session,
+                        stylebook_id=ctx.stylebook_id,
+                        location=loc,
+                        provenance="substrate_ingest",
+                    )
+                    _upsert_mention_and_occurrence(
+                        session,
+                        article_id=int(ctx.article_id),
+                        location_id=int(loc.id),
+                        article_text=ctx.article_text,
+                        entry=entry,
+                        run_id=ctx.run_id,
+                        graph_id=ctx.graph_id,
+                        bucket=bucket,
+                        preserve_editor_changes=policy == "smart_merge",
+                    )
+                    continue
+                logger.warning(
+                    "Linked location id=%s fails commit gate (%s); clearing FK and re-planning",
+                    loc.id,
+                    veto,
+                )
+                loc.stylebook_location_canonical_id = None
+                loc.canonical_link_status = CANONICAL_LINK_PENDING
+                session.add(loc)
+            if ctx.stylebook_id is not None and loc.stylebook_location_canonical_id is None:
                 plan = decide_location_canonical_persist_plan(
                     session,
                     stylebook_id=ctx.stylebook_id,
@@ -205,12 +245,17 @@ class LocationPersistHandler:
                         model=adj_model,
                         model_config_id=ctx.settings.adjudication_ai_model_config_id,
                     )
-                    if prepared is not None:
+                    if prepared is not None and loc.id is not None:
                         pending_adjudication.append(
                             _PendingLocationAdjudication(
-                                location=loc,
+                                location_id=int(loc.id),
+                                identity_fingerprint=loc.identity_fingerprint,
+                                name=str(loc.name or ""),
+                                normalized_name=loc.normalized_name,
+                                location_type=loc.location_type,
+                                external_id=loc.external_id,
                                 bucket=bucket,
-                                entry=entry,
+                                entry=copy.deepcopy(entry),
                                 plan=plan,
                                 prepared=prepared,
                             )
@@ -262,21 +307,39 @@ class LocationPersistHandler:
                 max_workers=max_workers,
             )
             for item, llm_data in zip(pending_adjudication, llm_results, strict=True):
-                location_id = int(item.location.id)  # type: ignore[arg-type]
-                loc = session.get(SubstrateLocation, location_id)
+                loc = session.exec(
+                    select(SubstrateLocation)
+                    .where(SubstrateLocation.id == item.location_id)
+                    .with_for_update()
+                ).first()
                 if loc is None:
                     logger.warning(
                         "substrate_location id=%s missing after adjudication LLM; skipping apply",
-                        location_id,
+                        item.location_id,
                     )
                     continue
-                plan = resolve_location_adjudication_plan(
-                    item.plan,
-                    prepared=item.prepared,
-                    llm_data=llm_data,
-                    session=session,
-                    stylebook_id=int(ctx.stylebook_id),
-                )
+                if not _location_identity_matches_snapshot(loc, item):
+                    logger.warning(
+                        "substrate_location id=%s identity changed during adjudication; "
+                        "recomputing plan without stale LLM output",
+                        item.location_id,
+                    )
+                    plan = decide_location_canonical_persist_plan(
+                        session,
+                        stylebook_id=int(ctx.stylebook_id),
+                        places_bucket=item.bucket,
+                        location=loc,
+                        entry=item.entry,
+                    )
+                else:
+                    plan = resolve_location_adjudication_plan(
+                        item.plan,
+                        prepared=replace(item.prepared, location=loc),
+                        llm_data=llm_data,
+                        session=session,
+                        stylebook_id=int(ctx.stylebook_id),
+                        entry=item.entry,
+                    )
                 _apply_location_plan_and_mention(
                     session,
                     ctx,

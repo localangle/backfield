@@ -22,7 +22,7 @@ from worker.substrate.common import _normalize_name, _sha256_hex, _utcnow
 _AGATE_GEOCODE_ROUTER_AUDIT_KEY = "agate_geocode_router_audit"
 
 # Fine-grained POIs sharing one Stylebook canonical still get distinct substrate rows.
-_STYLEBOOK_LOCATION_TYPES_DISAMBIGUATE_BY_NAME = frozenset(
+_FINE_GRAINED_LOCATION_TYPES_DISAMBIGUATE_BY_NAME = frozenset(
     {
         "place",
         "point",
@@ -31,6 +31,28 @@ _STYLEBOOK_LOCATION_TYPES_DISAMBIGUATE_BY_NAME = frozenset(
         "intersection_highway",
         "street_road",
     }
+)
+# Admin types: Stylebook candidate IDs must not collapse distinct names
+# (Bucktown vs Uptown both carrying the same poisoned canonical UUID).
+_ADMIN_LOCATION_TYPES_DISAMBIGUATE_BY_NAME = frozenset(
+    {
+        "neighborhood",
+        "city",
+        "town",
+        "village",
+        "county",
+        "community_area",
+        "borough",
+        "suburb",
+        "district",
+        "ward",
+        "region_city",
+        "political_district",
+    }
+)
+_STYLEBOOK_LOCATION_TYPES_DISAMBIGUATE_BY_NAME = (
+    _FINE_GRAINED_LOCATION_TYPES_DISAMBIGUATE_BY_NAME
+    | _ADMIN_LOCATION_TYPES_DISAMBIGUATE_BY_NAME
 )
 
 
@@ -286,6 +308,13 @@ def _stylebook_identity_disambiguates_by_name(location_type: str | None) -> bool
     return location_type.lower() in _STYLEBOOK_LOCATION_TYPES_DISAMBIGUATE_BY_NAME
 
 
+def _geocoder_identity_disambiguates_by_name(location_type: str | None) -> bool:
+    """Geocoder provider ids only need POI-level disambiguation, not admin types."""
+    if not location_type:
+        return False
+    return location_type.lower() in _FINE_GRAINED_LOCATION_TYPES_DISAMBIGUATE_BY_NAME
+
+
 def _stylebook_place_name_identity_suffix(display_name: str) -> str:
     normalized = _normalize_name(display_name)
     if not normalized:
@@ -323,7 +352,7 @@ def _geocoder_location_external_id(
     base = str(raw_id).strip()
     if not base:
         return base
-    if not _stylebook_identity_disambiguates_by_name(location_type):
+    if not _geocoder_identity_disambiguates_by_name(location_type):
         return base
     suffix = _stylebook_place_name_identity_suffix(display_name)
     if suffix:

@@ -33,6 +33,33 @@ def test_person_mismatch_same_surname_different_given_audit_exemplars() -> None:
     )
 
 
+def test_person_mismatch_same_given_different_family_audit_exemplars() -> None:
+    """P0 audit: Fantilli→Henrique and Burns→Beach must not auto-link."""
+    assert person_link_is_obvious_mismatch(
+        substrate_name="Adam Fantilli",
+        canonical_label="Adam Henrique",
+    )
+    assert person_link_is_obvious_mismatch(
+        substrate_name="Charles P. Burns",
+        canonical_label="Charles S. Beach",
+    )
+    assert person_link_is_obvious_mismatch(
+        substrate_name="Bryan Rust",
+        canonical_label="Bryan Bickell",
+    )
+
+
+def test_person_mismatch_suffix_and_multipart_family_rescued() -> None:
+    assert not person_link_is_obvious_mismatch(
+        substrate_name="Ronald Acuña",
+        canonical_label="Ronald Acuña Jr.",
+    )
+    assert not person_link_is_obvious_mismatch(
+        substrate_name="Juan Cruz",
+        canonical_label="Juan de la Cruz",
+    )
+
+
 def test_person_mismatch_prefix_nickname_rescued() -> None:
     assert not person_link_is_obvious_mismatch(
         substrate_name="Rob Smith",

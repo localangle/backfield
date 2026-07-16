@@ -72,15 +72,32 @@ accepts and links are not gated—editors remain the escape hatch.
 Person mismatch helpers treat dotted initials as equal (`CJ` / `C.J.`), allow a
 small nickname map where prefix checks fail (`Tom` / `Thomas`), and rescue links
 when the substrate name matches a trusted (non-`substrate_ingest`) alias on the
-target canonical.
+target canonical. Same-given / different-family pairs (for example Adam Fantilli
+vs Adam Henrique) are vetoed before generic name-overlap rescue; generational
+suffixes and surname particles do not create false conflicts.
+
+AI-assisted adjudication returns a strict structured payload (`decision`,
+`canonical_id`, finite numeric `confidence`, `same_identity`,
+`conflicting_identity_evidence`). Rationale is audit-only. A `link_existing`
+decision requires `same_identity=true` and `conflicting_identity_evidence=false`;
+invalid or contradictory JSON is rejected (one corrective retry) and never
+commits from prose alone.
 
 ### Alias provenance for exact match
 
 Exact-alias lookups used for tier-1 / exact-identity autolink ignore
 `substrate_ingest` aliases (`trusted_alias_only=True`). Editorial provenances
 such as `stylebook_ui_accept` and `stylebook_ui_link` still count. Ingest aliases
-may still appear in fuzzy recall for LLM adjudication; the sync commit gate
-blocks committing an obvious mismatch after that recall.
+may still appear in fuzzy recall for LLM adjudication; autolink-tier fuzzy
+scores and the sync commit gate must not treat machine aliases as identity
+evidence alone.
+
+Neighborhood and other admin proper-name rows also require a compatible leading
+placename head (so Bucktown cannot cache-hit Uptown). Stylebook-derived
+substrate `external_id` values for fine-grained and admin location types include
+a normalized name suffix so a poisoned candidate UUID cannot collapse distinct
+places onto one substrate row. Already-linked ingest paths re-validate before
+alias refresh and clear/re-plan on mismatch.
 
 ## Evidence and editorial scope
 

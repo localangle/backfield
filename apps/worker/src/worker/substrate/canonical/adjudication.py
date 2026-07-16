@@ -33,6 +33,13 @@ from backfield_entities.ingest.geocode_cache.sanity import (
 )
 from sqlmodel import Session, select
 
+from worker.substrate.canonical.adjudication_result import (
+    ADJUDICATION_CORRECTIVE_SUFFIX,
+    ADJUDICATION_JSON_CONTRACT,
+    adjudication_allows_link,
+    adjudication_audit_fields,
+    parse_canonical_adjudication_result,
+)
 from worker.substrate.canonical.llm_call_policy import (
     ADJUDICATION_LLM_MAX_RETRIES,
     ADJUDICATION_LLM_TIMEOUT_S,
@@ -204,13 +211,12 @@ def prepare_location_adjudication(
         "venue, building, or landmark, do NOT link to a broader park or place canonical that "
         "only appears as geographic context in the suffix (e.g. a restaurant inside a park).\n"
         f"{district_rules}"
-        "- When any candidate is only a rough geographic association, return canonical_id null. "
-        "Prefer null (new canonical / human review) over a stretched link.\n"
+        "- When any candidate is only a rough geographic association, choose decision="
+        "\"no_match\" or \"uncertain\". Prefer that over a stretched link.\n"
         f"- Use confidence {floor} or higher only for definitive same-place identity you would "
         f"publish in a catalog; otherwise use confidence below {floor} "
         f"(the system will not link).\n\n"
-        "Return JSON only: canonical_id (UUID string matching one candidate id, or null), "
-        "confidence (0.0-1.0), rationale (short string)."
+        f"{ADJUDICATION_JSON_CONTRACT}"
     )
     return LocationAdjudicationPrepared(
         location=location,
@@ -221,10 +227,12 @@ def prepare_location_adjudication(
     )
 
 
-def run_location_adjudication_llm(prepared: LocationAdjudicationPrepared) -> dict[str, Any] | None:
+def _call_location_adjudication_raw(
+    prepared: LocationAdjudicationPrepared, prompt: str
+) -> dict[str, Any] | None:
     try:
         raw = call_llm(
-            prepared.prompt,
+            prompt,
             model=prepared.model,
             force_json=True,
             temperature=0.0,
@@ -236,9 +244,20 @@ def run_location_adjudication_llm(prepared: LocationAdjudicationPrepared) -> dic
         data = json.loads(raw)
     except Exception:
         return None
-    if not isinstance(data, dict):
-        return None
-    return data
+    return data if isinstance(data, dict) else None
+
+
+def run_location_adjudication_llm(prepared: LocationAdjudicationPrepared) -> dict[str, Any] | None:
+    candidate_ids = {str(c[0]) for c in prepared.candidates}
+    data = _call_location_adjudication_raw(prepared, prepared.prompt)
+    if parse_canonical_adjudication_result(data, candidate_ids=candidate_ids) is not None:
+        return data
+    retried = _call_location_adjudication_raw(
+        prepared, prepared.prompt + ADJUDICATION_CORRECTIVE_SUFFIX
+    )
+    if parse_canonical_adjudication_result(retried, candidate_ids=candidate_ids) is not None:
+        return retried
+    return None
 
 
 def resolve_location_adjudication_plan(
@@ -248,6 +267,7 @@ def resolve_location_adjudication_plan(
     llm_data: dict[str, Any] | None,
     session: Session | None = None,
     stylebook_id: int | None = None,
+    entry: dict[str, Any] | None = None,
 ) -> CanonicalPersistPlan:
     if llm_data is None:
         return plan
@@ -256,19 +276,11 @@ def resolve_location_adjudication_plan(
     candidates = prepared.candidates
     model = prepared.model
     candidates_by_id = {str(c[0]): c for c in candidates}
-
-    cid_raw = llm_data.get("canonical_id")
-    conf_raw = llm_data.get("confidence", 0.0)
-    rationale = str(llm_data.get("rationale") or "").strip()
-    chosen: str | None
-    if cid_raw is None or cid_raw == "":
-        chosen = None
-    else:
-        chosen = str(cid_raw).strip() or None
-    try:
-        confidence = float(conf_raw)
-    except (TypeError, ValueError):
-        confidence = 0.0
+    parsed = parse_canonical_adjudication_result(
+        llm_data, candidate_ids=set(candidates_by_id)
+    )
+    if parsed is None:
+        return plan
 
     def _reject_link_extra(
         *,
@@ -278,9 +290,7 @@ def resolve_location_adjudication_plan(
         extra: dict[str, Any] = {
             "code": "canonical_adjudication",
             "model": model,
-            "canonical_id": chosen,
-            "confidence": confidence,
-            "rationale": rationale or None,
+            **adjudication_audit_fields(parsed, linked=False),
             "outcome": outcome,
             "min_confidence_for_link": ADJUDICATION_LINK_MIN_CONFIDENCE,
         }
@@ -297,10 +307,13 @@ def resolve_location_adjudication_plan(
             resolution_reasons=merged,
         )
 
-    if chosen is None or confidence < ADJUDICATION_LINK_MIN_CONFIDENCE:
+    if not adjudication_allows_link(
+        parsed, min_confidence=ADJUDICATION_LINK_MIN_CONFIDENCE
+    ):
         return _reject_link_extra(outcome="no_high_confidence_link")
 
-    candidate_row = candidates_by_id.get(str(chosen))
+    chosen = str(parsed.canonical_id)
+    candidate_row = candidates_by_id.get(chosen)
     if candidate_row is None:
         return _reject_link_extra(outcome="no_high_confidence_link")
 
@@ -312,7 +325,7 @@ def resolve_location_adjudication_plan(
     if autolink_container_to_fine_denied(location.location_type, canon_location_type):
         return _reject_link_extra(outcome="no_high_confidence_link")
 
-    comps = place_extract_components_from_entry(location, None)
+    comps = place_extract_components_from_entry(location, entry)
     if substrate_canonical_link_blocked_by_content_sanity(
         substrate_location_type=location.location_type,
         location_text=str(location.name),
@@ -343,9 +356,7 @@ def resolve_location_adjudication_plan(
             },
         )
 
-    sub_key = district_identity_key(
-        district_identity_from_components(place_extract_components_from_entry(location, None))
-    )
+    sub_key = district_identity_key(district_identity_from_components(comps))
     if s_lt == "political_district" and sub_key:
         ck = (canon_district_key or "").strip()
         if ck != sub_key:
@@ -360,16 +371,13 @@ def resolve_location_adjudication_plan(
     extra = {
         "code": "canonical_adjudication",
         "model": model,
-        "canonical_id": str(chosen),
-        "confidence": float(confidence),
-        "rationale": rationale or None,
-        "outcome": "link_existing",
+        **adjudication_audit_fields(parsed, linked=True),
         "min_confidence_for_link": ADJUDICATION_LINK_MIN_CONFIDENCE,
     }
     merged = tuple(list(plan.resolution_reasons) + [extra])
     linked = CanonicalPersistPlan(
         decision=CanonicalPersistDecision.LINK_EXISTING,
-        existing_canonical_id=str(chosen),
+        existing_canonical_id=chosen,
         resolution_reasons=merged,
     )
     if session is not None and stylebook_id is not None:
@@ -379,6 +387,7 @@ def resolve_location_adjudication_plan(
             entity_type="location",
             substrate_row=location,
             stylebook_id=stylebook_id,
+            entry=entry,
         )
     return linked
 
