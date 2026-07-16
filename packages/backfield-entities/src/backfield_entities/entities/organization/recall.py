@@ -28,8 +28,13 @@ def canonical_ids_from_organization_name_keys(
     *,
     stylebook_id: int,
     name_or_norm: str,
+    trusted_alias_only: bool = False,
 ) -> list[str]:
-    """Canonical ids whose alias ``normalized_alias`` matches accent-insensitively."""
+    """Canonical ids whose alias ``normalized_alias`` matches accent-insensitively.
+
+    When ``trusted_alias_only`` is True, exclude ``substrate_ingest`` provenance so
+    machine-written aliases cannot exact-match without editorial confirmation.
+    """
     lookup_keys = set(organization_substrate_alias_lookup_keys(name_or_norm))
     match_key = organization_match_key(name_or_norm)
     if not lookup_keys and not match_key:
@@ -37,6 +42,13 @@ def canonical_ids_from_organization_name_keys(
     all_keys = set(lookup_keys)
     if match_key:
         all_keys.add(match_key)
+    filters = [
+        StylebookOrganizationCanonical.stylebook_id == stylebook_id,
+        col(StylebookOrganizationAlias.normalized_alias).in_(all_keys),
+        StylebookOrganizationAlias.suppressed.is_(False),
+    ]
+    if trusted_alias_only:
+        filters.append(StylebookOrganizationAlias.provenance != "substrate_ingest")
     stmt = (
         select(StylebookOrganizationCanonical.id, StylebookOrganizationAlias.normalized_alias)
         .join(
@@ -44,11 +56,7 @@ def canonical_ids_from_organization_name_keys(
             StylebookOrganizationAlias.organization_canonical_id
             == StylebookOrganizationCanonical.id,
         )
-        .where(
-            StylebookOrganizationCanonical.stylebook_id == stylebook_id,
-            col(StylebookOrganizationAlias.normalized_alias).in_(all_keys),
-            StylebookOrganizationAlias.suppressed.is_(False),
-        )
+        .where(*filters)
     )
     out: list[str] = []
     seen: set[str] = set()
@@ -72,6 +80,13 @@ def canonical_ids_from_organization_name_keys(
         return []
     esc = escape_ilike_metacharacters(search_tok)
     pat = f"%{esc}%"
+    scan_filters = [
+        StylebookOrganizationCanonical.stylebook_id == stylebook_id,
+        StylebookOrganizationAlias.suppressed.is_(False),
+        col(StylebookOrganizationAlias.normalized_alias).like(pat, escape="\\"),
+    ]
+    if trusted_alias_only:
+        scan_filters.append(StylebookOrganizationAlias.provenance != "substrate_ingest")
     scan_stmt = (
         select(StylebookOrganizationCanonical.id, StylebookOrganizationAlias.normalized_alias)
         .join(
@@ -79,11 +94,7 @@ def canonical_ids_from_organization_name_keys(
             StylebookOrganizationAlias.organization_canonical_id
             == StylebookOrganizationCanonical.id,
         )
-        .where(
-            StylebookOrganizationCanonical.stylebook_id == stylebook_id,
-            StylebookOrganizationAlias.suppressed.is_(False),
-            col(StylebookOrganizationAlias.normalized_alias).like(pat, escape="\\"),
-        )
+        .where(*scan_filters)
         .limit(120)
     )
     for cid, norm_alias in session.exec(scan_stmt).all():

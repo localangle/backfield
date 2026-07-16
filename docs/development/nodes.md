@@ -110,6 +110,12 @@ fine-grained places also require shared resolver identity, nearby point geometry
 or a matching resolved/review pair. Shared coordinates alone never collapse
 differently named places.
 
+Consolidate QA also routes state/country contradictions to `needs_review` with
+`geocode_qa_code: geocode_subnational_mismatch` when the extract names a US state
+(or asserts `components.state` / `components.country`) and the geocoder returns a
+different admin label (for example Oregon resolved as Maryland). Stylebook or
+canonical cache hits skip this check.
+
 ### Extract prompts
 
 Keep static instructions, field rules, and output-format guidance before the input

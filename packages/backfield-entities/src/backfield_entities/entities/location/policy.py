@@ -79,6 +79,7 @@ def find_existing_canonical_id_by_alias(
         session,
         stylebook_id=stylebook_id,
         name_or_norm=str(normalized_name),
+        trusted_alias_only=True,
     )
     if not ids:
         return None
@@ -881,18 +882,27 @@ def decide_location_canonical_persist_plan(
             if _jurisdiction_pair_demotes_recall_score(location, alias_canon, comps_alias):
                 alias_jurisdiction_ok = False
         if alias_pair_ok and alias_content_ok and alias_jurisdiction_ok:
-            return CanonicalPersistPlan(
-                decision=CanonicalPersistDecision.LINK_EXISTING,
-                existing_canonical_id=cid,
-                resolution_reasons=(
-                    {
-                        "code": exact_link_code,
-                        "canonical_id": str(cid),
-                        "normalized_name": str(location.normalized_name),
-                        "match_basis": exact_match_basis,
-                        "type_gate_applied": True,
-                    },
+            from backfield_entities.canonical.link_commit_gate import gate_or_coerce_link_plan
+
+            return gate_or_coerce_link_plan(
+                session,
+                CanonicalPersistPlan(
+                    decision=CanonicalPersistDecision.LINK_EXISTING,
+                    existing_canonical_id=cid,
+                    resolution_reasons=(
+                        {
+                            "code": exact_link_code,
+                            "canonical_id": str(cid),
+                            "normalized_name": str(location.normalized_name),
+                            "match_basis": exact_match_basis,
+                            "type_gate_applied": True,
+                        },
+                    ),
                 ),
+                entity_type="location",
+                substrate_row=location,
+                stylebook_id=stylebook_id,
+                entry=entry,
             )
         # Type incompatible: fall through to fuzzy recall so the location can
         # materialize its own canonical rather than inheriting the wrong one.
@@ -941,24 +951,33 @@ def decide_location_canonical_persist_plan(
                 tier = "ambiguous"
                 intra_ambiguous = True
         if tier == "autolink" and best_id is not None:
-            return CanonicalPersistPlan(
-                decision=CanonicalPersistDecision.LINK_EXISTING,
-                existing_canonical_id=str(best_id),
-                resolution_reasons=(
-                    {
-                        "code": "linked_fuzzy_autolink",
-                        "canonical_id": str(best_id),
-                        "best_score": float(best_score),
-                        "autolink_min_score": float(AUTOLINK_MIN_SCORE),
-                        "recall_min_score": float(RECALL_MIN_SCORE),
-                        "match_basis": _match_basis_for_audit(location.location_type),
-                        "head_anchor_gate_applied": _should_apply_head_anchor_gate(
-                            location.location_type
-                        ),
-                        "type_gate_applied": True,
-                        "recall_canonical_ids": list(recall_canonical_ids[:24]),
-                    },
+            from backfield_entities.canonical.link_commit_gate import gate_or_coerce_link_plan
+
+            return gate_or_coerce_link_plan(
+                session,
+                CanonicalPersistPlan(
+                    decision=CanonicalPersistDecision.LINK_EXISTING,
+                    existing_canonical_id=str(best_id),
+                    resolution_reasons=(
+                        {
+                            "code": "linked_fuzzy_autolink",
+                            "canonical_id": str(best_id),
+                            "best_score": float(best_score),
+                            "autolink_min_score": float(AUTOLINK_MIN_SCORE),
+                            "recall_min_score": float(RECALL_MIN_SCORE),
+                            "match_basis": _match_basis_for_audit(location.location_type),
+                            "head_anchor_gate_applied": _should_apply_head_anchor_gate(
+                                location.location_type
+                            ),
+                            "type_gate_applied": True,
+                            "recall_canonical_ids": list(recall_canonical_ids[:24]),
+                        },
+                    ),
                 ),
+                entity_type="location",
+                substrate_row=location,
+                stylebook_id=stylebook_id,
+                entry=entry,
             )
         if tier == "ambiguous" and best_id is not None:
             # If recall is only "ambiguous" because of cross-type candidates we would never

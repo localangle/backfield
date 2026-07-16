@@ -59,6 +59,24 @@ its own name and organization signals. Projects may use rules-only or AI-assiste
 canonical adjudication; model-assisted links must still satisfy the shared
 confidence threshold.
 
+### Sync link commit gate (auto-ingest only)
+
+Before auto-ingest commits a `LINK_EXISTING` plan, a deterministic sync gate
+(`backfield_entities.canonical.link_commit_gate`) vetoes obviously wrong pairs
+using the same high-precision mismatch helpers as Stylebook cleanup, plus
+location type/content sanity. A veto coerces the plan to `MATERIALIZE_NEW` when
+policy allows, otherwise `DEFER`, and records
+`sync_link_commit_veto` in `canonical_review_reasons_json`. Manual Stylebook UI
+accepts and links are not gated—editors remain the escape hatch.
+
+### Alias provenance for exact match
+
+Exact-alias lookups used for tier-1 / exact-identity autolink ignore
+`substrate_ingest` aliases (`trusted_alias_only=True`). Editorial provenances
+such as `stylebook_ui_accept` and `stylebook_ui_link` still count. Ingest aliases
+may still appear in fuzzy recall for LLM adjudication; the sync commit gate
+blocks committing an obvious mismatch after that recall.
+
 ## Evidence and editorial scope
 
 Mentions and linked substrate rows are project evidence. Canonical details,

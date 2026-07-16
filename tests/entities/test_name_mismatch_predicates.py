@@ -21,6 +21,25 @@ def test_person_mismatch_clear_positive() -> None:
     )
 
 
+def test_person_mismatch_same_surname_different_given_audit_exemplars() -> None:
+    """P0 audit: Kam→Tre and Tiffany→Adrienne must not auto-link."""
+    assert person_link_is_obvious_mismatch(
+        substrate_name="Kam Jones",
+        canonical_label="Tre Jones",
+    )
+    assert person_link_is_obvious_mismatch(
+        substrate_name="Tiffany Davis",
+        canonical_label="Adrienne E. Davis",
+    )
+
+
+def test_person_mismatch_prefix_nickname_rescued() -> None:
+    assert not person_link_is_obvious_mismatch(
+        substrate_name="Rob Smith",
+        canonical_label="Robert Smith",
+    )
+
+
 def test_person_mismatch_same_name_rescued() -> None:
     assert not person_link_is_obvious_mismatch(
         substrate_name="John Smith",
@@ -57,6 +76,14 @@ def test_organization_mismatch_clear_positive() -> None:
     )
 
 
+def test_organization_mismatch_university_of_x_audit_exemplar() -> None:
+    """P0 audit: University of Maryland must not link via shared 'university' token."""
+    assert organization_link_is_obvious_mismatch(
+        substrate_name="University of Maryland",
+        canonical_label="University of Minnesota Duluth",
+    )
+
+
 def test_organization_mismatch_acronym_rescued() -> None:
     assert not organization_link_is_obvious_mismatch(
         substrate_name="CPS",
@@ -87,6 +114,20 @@ def test_organization_mismatch_equal_normalized_rescued() -> None:
     assert not organization_link_is_obvious_mismatch(
         substrate_name="Chicago Police Department",
         canonical_label="Chicago Police Department",
+    )
+
+
+def test_location_mismatch_river_heads_audit_exemplar() -> None:
+    """P0 audit: DuPage River must not link to Illinois River."""
+    assert location_link_is_obvious_mismatch(
+        substrate_name="DuPage River, Illinois",
+        substrate_normalized_name="dupage river illinois",
+        substrate_location_type="natural",
+        components={"state": {"abbr": "IL"}, "country": {"abbr": "US"}},
+        formatted_address=None,
+        geometry_type=None,
+        canonical_label="Illinois River, Illinois",
+        canonical_location_type="natural",
     )
 
 

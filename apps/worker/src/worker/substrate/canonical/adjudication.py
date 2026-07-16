@@ -15,6 +15,7 @@ from backfield_entities.canonical.jurisdiction import (
     district_kind_keywords_conflict,
     place_extract_components_from_entry,
 )
+from backfield_entities.canonical.link_commit_gate import gate_or_coerce_link_plan
 from backfield_entities.canonical.link_matrix import (
     autolink_container_to_fine_denied,
     link_pair_allowed,
@@ -245,6 +246,8 @@ def resolve_location_adjudication_plan(
     *,
     prepared: LocationAdjudicationPrepared,
     llm_data: dict[str, Any] | None,
+    session: Session | None = None,
+    stylebook_id: int | None = None,
 ) -> CanonicalPersistPlan:
     if llm_data is None:
         return plan
@@ -364,11 +367,20 @@ def resolve_location_adjudication_plan(
         "min_confidence_for_link": ADJUDICATION_LINK_MIN_CONFIDENCE,
     }
     merged = tuple(list(plan.resolution_reasons) + [extra])
-    return CanonicalPersistPlan(
+    linked = CanonicalPersistPlan(
         decision=CanonicalPersistDecision.LINK_EXISTING,
         existing_canonical_id=str(chosen),
         resolution_reasons=merged,
     )
+    if session is not None and stylebook_id is not None:
+        return gate_or_coerce_link_plan(
+            session,
+            linked,
+            entity_type="location",
+            substrate_row=location,
+            stylebook_id=stylebook_id,
+        )
+    return linked
 
 
 def adjudicate_ambiguous_plan_with_llm(
@@ -392,4 +404,10 @@ def adjudicate_ambiguous_plan_with_llm(
     if prepared is None:
         return plan
     llm_data = run_location_adjudication_llm(prepared)
-    return resolve_location_adjudication_plan(plan, prepared=prepared, llm_data=llm_data)
+    return resolve_location_adjudication_plan(
+        plan,
+        prepared=prepared,
+        llm_data=llm_data,
+        session=session,
+        stylebook_id=stylebook_id,
+    )

@@ -52,6 +52,7 @@ def find_existing_person_canonical_id_by_alias(
         session,
         stylebook_id=stylebook_id,
         name_or_norm=normalized_name,
+        trusted_alias_only=True,
     )
     if not matches:
         return None
@@ -133,6 +134,7 @@ def _strong_identity_canonical_ids(
         session,
         stylebook_id=stylebook_id,
         name_or_norm=str(person.normalized_name or person.name),
+        trusted_alias_only=True,
     ):
         canon = session.get(StylebookPersonCanonical, cid)
         if canon is None or canon.id is None:
@@ -368,17 +370,25 @@ def decide_person_canonical_persist_plan(
         session, stylebook_id=stylebook_id, person=person
     )
     if len(strong_matches) == 1:
+        from backfield_entities.canonical.link_commit_gate import gate_or_coerce_link_plan
+
         cid = strong_matches[0]
-        return CanonicalPersistPlan(
-            decision=CanonicalPersistDecision.LINK_EXISTING,
-            existing_canonical_id=cid,
-            resolution_reasons=(
-                {
-                    "code": "linked_exact_identity",
-                    "canonical_id": cid,
-                    "match_basis": "name_and_affiliation",
-                },
+        return gate_or_coerce_link_plan(
+            session,
+            CanonicalPersistPlan(
+                decision=CanonicalPersistDecision.LINK_EXISTING,
+                existing_canonical_id=cid,
+                resolution_reasons=(
+                    {
+                        "code": "linked_exact_identity",
+                        "canonical_id": cid,
+                        "match_basis": "name_and_affiliation",
+                    },
+                ),
             ),
+            entity_type="person",
+            substrate_row=person,
+            stylebook_id=stylebook_id,
         )
     if len(strong_matches) > 1:
         recall = [(cid, "") for cid in strong_matches]

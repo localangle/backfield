@@ -289,6 +289,8 @@ class PersonPersistHandler:
                     item.plan,
                     prepared=item.prepared,
                     llm_data=llm_data,
+                    session=session,
+                    stylebook_id=int(ctx.stylebook_id),
                 )
                 _apply_person_plan_and_mention(
                     session,

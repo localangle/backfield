@@ -38,7 +38,7 @@ def person_name_tokens(display_name: str) -> tuple[str | None, str | None, list[
     return given, family, significant
 
 
-def _given_names_compatible(a: str, b: str) -> bool:
+def given_names_compatible(a: str, b: str) -> bool:
     """True when given names are equal or one is a prefix of the other (min 2 chars)."""
     if not a or not b:
         return False
@@ -48,6 +48,10 @@ def _given_names_compatible(a: str, b: str) -> bool:
     if len(short) < 2:
         return False
     return long.startswith(short)
+
+
+# Backward-compatible private alias.
+_given_names_compatible = given_names_compatible
 
 
 def score_person_name_overlap(

@@ -71,6 +71,7 @@ def find_existing_organization_canonical_id_by_alias(
         session,
         stylebook_id=stylebook_id,
         name_or_norm=normalized_name,
+        trusted_alias_only=True,
     )
     if not matches:
         return None
@@ -110,6 +111,7 @@ def _strong_identity_canonical_ids(
             session,
             stylebook_id=stylebook_id,
             name_or_norm=name_norm,
+            trusted_alias_only=True,
         ):
             canon = session.get(StylebookOrganizationCanonical, cid)
             if canon is None or canon.id is None:
@@ -171,6 +173,7 @@ def _alias_type_mismatch_adjudication_plan(
         session,
         stylebook_id=stylebook_id,
         name_or_norm=norm,
+        trusted_alias_only=True,
     ):
         canon = session.get(StylebookOrganizationCanonical, cid)
         if canon is None:
@@ -201,19 +204,29 @@ def _alias_type_mismatch_adjudication_plan(
         )
     ]
     if len(compatible_mismatches) == 1 and not incompatible_mismatches:
+        from backfield_entities.canonical.link_commit_gate import gate_or_coerce_link_plan
+
         cid, canon = compatible_mismatches[0]
-        return CanonicalPersistPlan(
-            decision=CanonicalPersistDecision.LINK_EXISTING,
-            existing_canonical_id=cid,
-            resolution_reasons=(
-                {
-                    "code": "linked_exact_identity",
-                    "canonical_id": cid,
-                    "match_basis": "name_and_compatible_organization_type",
-                    "substrate_type": normalize_organization_type(organization.organization_type),
-                    "canonical_type": normalize_organization_type(canon.organization_type),
-                },
+        return gate_or_coerce_link_plan(
+            session,
+            CanonicalPersistPlan(
+                decision=CanonicalPersistDecision.LINK_EXISTING,
+                existing_canonical_id=cid,
+                resolution_reasons=(
+                    {
+                        "code": "linked_exact_identity",
+                        "canonical_id": cid,
+                        "match_basis": "name_and_compatible_organization_type",
+                        "substrate_type": normalize_organization_type(
+                            organization.organization_type
+                        ),
+                        "canonical_type": normalize_organization_type(canon.organization_type),
+                    },
+                ),
             ),
+            entity_type="organization",
+            substrate_row=organization,
+            stylebook_id=stylebook_id,
         )
 
     recall_ids = [cid for cid, _ in type_mismatched]
@@ -388,17 +401,25 @@ def decide_organization_canonical_persist_plan(
         extra_lookup_names=extra_lookup_names,
     )
     if len(strong_matches) == 1:
+        from backfield_entities.canonical.link_commit_gate import gate_or_coerce_link_plan
+
         cid = strong_matches[0]
-        return CanonicalPersistPlan(
-            decision=CanonicalPersistDecision.LINK_EXISTING,
-            existing_canonical_id=cid,
-            resolution_reasons=(
-                {
-                    "code": "linked_exact_identity",
-                    "canonical_id": cid,
-                    "match_basis": "name_and_organization_type",
-                },
+        return gate_or_coerce_link_plan(
+            session,
+            CanonicalPersistPlan(
+                decision=CanonicalPersistDecision.LINK_EXISTING,
+                existing_canonical_id=cid,
+                resolution_reasons=(
+                    {
+                        "code": "linked_exact_identity",
+                        "canonical_id": cid,
+                        "match_basis": "name_and_organization_type",
+                    },
+                ),
             ),
+            entity_type="organization",
+            substrate_row=organization,
+            stylebook_id=stylebook_id,
         )
     if len(strong_matches) > 1:
         recall = [(cid, "") for cid in strong_matches]
