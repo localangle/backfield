@@ -60,6 +60,12 @@ and points from a substrate entity to a Stylebook canonical. `canonical_link_sta
 unlinked, pending, linked, and waived rows, while `canonical_review_reasons_json` records the
 decision trace and suggestions.
 
+Entity `source_details_json` describes the latest project-scoped ingest of the shared entity.
+Item-local extraction identity belongs on the article-scoped mention:
+`source_details_json.raw_entry_id` records the processed-item row anchor for that article. Review
+enrichment prefers this article anchor, then a unique domain identity match; positional anchors on
+shared entity rows are not trusted because sibling batch items may reuse the same list indexes.
+
 ### Stylebook
 
 - Catalog and access: `stylebook`, `stylebook_membership`, `stylebook_slug_redirect`.
