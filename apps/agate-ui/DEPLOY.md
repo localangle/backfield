@@ -33,7 +33,7 @@ make build-prd
 
 Optional: `VITE_TIMEZONE=America/Chicago` (default in app code).
 
-**Cross-app links (Agate → Stylebook on processed-item review, sidebar, etc.):** set `VITE_STYLEBOOK_UI_ORIGIN` at build time when Stylebook is not on the same browser origin as Agate. Same-origin deploys can omit it (links use `window.location.origin`). Local dev defaults live in `.env.development` and Compose — see [Frontend conventions](../../docs/development/frontend/conventions.md).
+**Cross-app links (Agate → Stylebook on processed-item review, sidebar, etc.):** Backfield Cloud split hosts (`agate.*` / `stylebook.*`) derive the sibling origin at runtime, so shared artifacts do not need per-client `VITE_*_UI_ORIGIN` bake-ins. Set `VITE_STYLEBOOK_UI_ORIGIN` only for custom host layouts. Local dev defaults live in `.env.development` and Compose — see [Frontend conventions](../../docs/development/frontend/conventions.md).
 
 ## Deploy
 

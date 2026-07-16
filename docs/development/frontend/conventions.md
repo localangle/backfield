@@ -59,8 +59,11 @@ Local development keeps one browser origin per UI and proxies:
 - `/api/stylebook` to Stylebook API
 
 The production bundles use the same relative paths. `VITE_AGATE_UI_ORIGIN` and
-`VITE_STYLEBOOK_UI_ORIGIN` are optional cross-app origin overrides; otherwise links
-use `window.location.origin`.
+`VITE_STYLEBOOK_UI_ORIGIN` are optional cross-app origin overrides. When unset,
+shared multi-client artifacts derive the sibling host from the current origin
+(`agate.{client}…` ↔ `stylebook.{client}…`) so one UI build works for every
+tenant. Non-split hosts (local same-origin, custom domains) keep
+`window.location.origin`.
 
 ## Shared UI package
 

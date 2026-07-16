@@ -167,7 +167,8 @@ flagged item links to its canonical detail page.
 Agate builds Stylebook links through `apps/agate-ui/src/lib/platformUrls.ts` and
 passes the selected workspace Stylebook slug plus optional project context.
 Stylebook workspace and project links return to Agate through its own platform URL
-helpers. Leave origins unset for same-origin deployment or set the paired
-`VITE_*_UI_ORIGIN` values for sibling hosts.
+helpers. Leave origins unset for Backfield Cloud split hosts (sibling origins are
+derived from the current hostname) or same-origin local deploys; set the paired
+`VITE_*_UI_ORIGIN` values only for custom host layouts.
 
 Apply [`conventions.md`](conventions.md) to all Stylebook copy and UI behavior.
