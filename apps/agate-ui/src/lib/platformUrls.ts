@@ -1,25 +1,28 @@
 /** Cross-app navigation (Agate ↔ Stylebook SPAs). */
 
-export function agateUiOrigin(): string {
-  const raw = import.meta.env.VITE_AGATE_UI_ORIGIN
-  if (typeof raw === 'string' && raw.trim() !== '') {
-    return raw.trim().replace(/\/$/, '')
-  }
+import { resolveUiOrigin } from '@backfield/ui/siblingUiOrigin'
+
+function browserOrigin(): string {
   if (typeof window !== 'undefined') {
     return window.location.origin
   }
   return ''
 }
 
+export function agateUiOrigin(): string {
+  return resolveUiOrigin({
+    envOverride: import.meta.env.VITE_AGATE_UI_ORIGIN,
+    currentOrigin: browserOrigin(),
+    targetApp: 'agate',
+  })
+}
+
 export function stylebookUiOrigin(): string {
-  const raw = import.meta.env.VITE_STYLEBOOK_UI_ORIGIN
-  if (typeof raw === 'string' && raw.trim() !== '') {
-    return raw.trim().replace(/\/$/, '')
-  }
-  if (typeof window !== 'undefined') {
-    return window.location.origin
-  }
-  return ''
+  return resolveUiOrigin({
+    envOverride: import.meta.env.VITE_STYLEBOOK_UI_ORIGIN,
+    currentOrigin: browserOrigin(),
+    targetApp: 'stylebook',
+  })
 }
 
 /** External docs or fallback to Agate `/help`. */
