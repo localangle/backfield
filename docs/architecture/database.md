@@ -78,6 +78,10 @@ Canonical ids are UUID strings. Canonical slugs are unique within a Stylebook, a
 unique by canonical plus normalized alias. A Stylebook belongs to one organization; projects use
 an explicit same-organization Stylebook or the organization's default.
 
+Deleting a Stylebook reassigns workspaces and graph Stylebook refs, resets linked substrate rows
+to pending, removes non-cascading dependents (activity, bundle jobs, cleanup and candidate AI
+review rows), and deletes canonical trees before the catalog row itself.
+
 ## Shared entity field contracts
 
 New entity domains follow the executable field-name contracts in

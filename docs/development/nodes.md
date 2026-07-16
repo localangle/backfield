@@ -104,6 +104,12 @@ Decide explicitly whether output is:
 Use Pydantic models for structured boundaries and test output shape and failures.
 LLM work must flow through the existing call and usage tracking paths.
 
+`GeocodeAgent` reconciles repeated rows before emitting its consolidated `places`
+payload. Administrative rows with the same normalized identity collapse directly;
+fine-grained places also require shared resolver identity, nearby point geometry,
+or a matching resolved/review pair. Shared coordinates alone never collapse
+differently named places.
+
 ### Extract prompts
 
 Keep static instructions, field rules, and output-format guidance before the input

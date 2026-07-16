@@ -12,6 +12,7 @@ from agate_runtime.upstream_input import flatten_upstream_inputs
 
 from .agent import run_advanced_geocoding_agent
 from .location_limits import location_needs_review_entry, split_locations_for_geocoding
+from .place_dedupe import deduplicate_consolidated_places
 
 logger = logging.getLogger(__name__)
 
@@ -520,6 +521,8 @@ async def run_geocode_agent_pipeline(
         f"{log_label} completed: {processed_count} processed, {timeout_count} timed out, "
         f"{skipped_count} skipped, total time: {total_time:.1f}s"
     )
+
+    all_consolidated_places = deduplicate_consolidated_places(all_consolidated_places)
 
     # Return flattened carry-through fields + ``places`` so DBOutput sees article metadata.
     output_data = {

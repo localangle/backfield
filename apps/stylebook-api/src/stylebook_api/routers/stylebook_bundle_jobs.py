@@ -12,6 +12,7 @@ import boto3
 from backfield_auth.gate import require_org_admin
 from backfield_db import BackfieldProject, Stylebook, StylebookBundleJob
 from backfield_entities.catalog.full_bundle import DEFAULT_MAX_ZIP_BYTES, read_manifest_from_zip
+from backfield_entities.catalog.stylebook_record_slug import slugify_stylebook_name
 from celery import Celery
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
@@ -52,6 +53,20 @@ def _bundle_key_prefix() -> str:
 def _bundle_object_key(org_id: int, job_id: str) -> str:
     prefix = _bundle_key_prefix()
     return f"{prefix}/{org_id}/{job_id}.zip" if prefix else f"{org_id}/{job_id}.zip"
+
+
+def _export_download_filename(
+    *,
+    stylebook_slug: str | None,
+    stylebook_name: str | None,
+    when: datetime,
+) -> str:
+    """Browser save-as name for an export ZIP (S3 object key stays job-id based)."""
+    raw = (stylebook_slug or "").strip() or slugify_stylebook_name(stylebook_name or "")
+    base = raw.removesuffix("-stylebook") or raw
+    aware = when if when.tzinfo is not None else when.replace(tzinfo=UTC)
+    day = aware.astimezone(UTC).date().isoformat()
+    return f"{base}-stylebook-export-{day}.zip"
 
 
 def _s3_client_bundles() -> Any:
@@ -131,11 +146,21 @@ class BundleJobOut(BaseModel):
         )
 
 
-def _presigned_get_url(*, bucket: str, key: str) -> str:
+def _presigned_get_url(
+    *,
+    bucket: str,
+    key: str,
+    download_filename: str | None = None,
+) -> str:
     client = _s3_client_bundles()
+    params: dict[str, str] = {"Bucket": bucket, "Key": key}
+    if download_filename:
+        # ASCII slug filenames only; keep quoted token simple for S3 signing.
+        safe = download_filename.replace('"', "").replace("\r", "").replace("\n", "")
+        params["ResponseContentDisposition"] = f'attachment; filename="{safe}"'
     return client.generate_presigned_url(
         "get_object",
-        Params={"Bucket": bucket, "Key": key},
+        Params=params,
         ExpiresIn=3600,
     )
 
@@ -327,7 +352,19 @@ def get_bundle_job(
     dl: str | None = None
     ul: str | None = None
     if job.kind == "export" and job.status == "succeeded" and job.s3_bucket and job.s3_key:
-        dl = _presigned_get_url(bucket=job.s3_bucket, key=job.s3_key)
+        sb: Stylebook | None = None
+        if job.source_stylebook_id is not None:
+            sb = session.get(Stylebook, int(job.source_stylebook_id))
+        filename = _export_download_filename(
+            stylebook_slug=sb.slug if sb is not None else None,
+            stylebook_name=sb.name if sb is not None else None,
+            when=job.updated_at or job.created_at,
+        )
+        dl = _presigned_get_url(
+            bucket=job.s3_bucket,
+            key=job.s3_key,
+            download_filename=filename,
+        )
     if job.kind == "import" and job.status == "awaiting_upload" and job.s3_bucket and job.s3_key:
         ul = _presigned_put_url(bucket=job.s3_bucket, key=job.s3_key)
     return BundleJobOut.from_row(job, download_url=dl, upload_url=ul)

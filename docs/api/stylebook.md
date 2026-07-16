@@ -75,6 +75,10 @@ Analysis returns detected input information before mutation. Imports allow parti
 
 Organization bundle-job routes export and import complete Stylebook catalog bundles asynchronously. Current bundles carry location, person, and organization canonicals and their catalog relationships, including aliases, metadata, and connections.
 
+Successful export downloads use a presigned GET whose `Content-Disposition` save-as name is
+`{stylebook-slug}-stylebook-export-{YYYY-MM-DD}.zip` (UTC date from the job). Object keys in the
+bundle bucket remain job-id based.
+
 Bundles do not transfer project saved entities, candidate queues, caches, or activity history. Import upload and finalize are separate operations, and project mappings control project-scoped content such as metadata and connections.
 
 ### Cleanup
