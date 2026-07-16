@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from agate_nodes.geocode_agent.nodes.consolidate import _geocode_city_level_fallback_qa
+from agate_nodes.geocode_agent.nodes.consolidate import (
+    _geocode_city_level_fallback_qa,
+    _point_entry_without_geometry,
+)
 from agate_utils.geocoding.geocoding_types import (
     GeocodingResult,
     GeocodingResultData,
@@ -182,3 +185,32 @@ def test_geocodio_city_accuracy_for_neighborhood() -> None:
         )
         is True
     )
+
+
+def test_rejected_geocode_identity_is_audit_only() -> None:
+    rejected = _point_entry_without_geometry(
+        {
+            "id": "provider:feature",
+            "type": "address",
+            "location": "1400 Example Avenue, Metro",
+            "original_text": "1400 Example Avenue",
+            "geocode": {
+                "geocode_type": "provider",
+                "result": {
+                    "id": "provider:feature",
+                    "formatted_address": "1400 Example Avenue, Elsewhere",
+                    "geometry": {"type": "Point", "coordinates": [-118.0, 34.0]},
+                },
+            },
+        }
+    )
+
+    assert rejected["id"].startswith("rejected:")
+    assert rejected["geocoded"] is False
+    assert rejected["geocode_disposition"] == "rejected"
+    assert "geocode" not in rejected
+    assert rejected["rejected_geocode_audit"] == {
+        "geocode_type": "provider",
+        "provider_id": "provider:feature",
+        "formatted_address": "1400 Example Avenue, Elsewhere",
+    }

@@ -60,7 +60,10 @@ def test_point_entry_without_geometry_strips_map_pin() -> None:
         },
     }
     out = _point_entry_without_geometry(entry)
-    assert "geometry" not in (out["geocode"]["result"] or {})
+    assert "geocode" not in out
+    assert out["geocoded"] is False
+    assert out["geocode_disposition"] == "rejected"
+    assert out["rejected_geocode_audit"]["formatted_address"] == "China"
 
 
 def _state_geocode_result(*, region_a: str, region: str) -> SimpleNamespace:

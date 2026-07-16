@@ -59,6 +59,12 @@ its own name and organization signals. Projects may use rules-only or AI-assiste
 canonical adjudication; model-assisted links must still satisfy the shared
 confidence threshold.
 
+PlaceExtract and GeocodeAgent preserve one terminal row for every extracted
+location. Explicit country, subdivision, postal, and address components constrain
+resolver acceptance. A rejected or review-required result retains its reason and
+audit context but not provider identity, geometry, H3, or cache eligibility, and it
+cannot create a canonical.
+
 ### Sync link commit gate (auto-ingest only)
 
 Before auto-ingest commits a `LINK_EXISTING` plan, a deterministic sync gate
@@ -92,8 +98,14 @@ may still appear in fuzzy recall for LLM adjudication; autolink-tier fuzzy
 scores and the sync commit gate must not treat machine aliases as identity
 evidence alone.
 
+An exact location alias is a candidate set, not a first-row winner. Linking
+requires one active, compatible, self-consistent survivor; multiple survivors
+defer. Organization acronyms generated from a long name use
+`generated_acronym` provenance and are recall-only evidence. Literal canonical
+acronym labels and editor-accepted aliases remain trusted.
+
 Neighborhood and other admin proper-name rows also require a compatible leading
-placename head (so Bucktown cannot cache-hit Uptown). Stylebook-derived
+placename head so distinct named areas cannot share identity. Stylebook-derived
 substrate `external_id` values for fine-grained and admin location types include
 a normalized name suffix so a poisoned candidate UUID cannot collapse distinct
 places onto one substrate row. Already-linked ingest paths re-validate before
@@ -109,6 +121,12 @@ reflected in API query parameters and UI filters:
 - editing canonical metadata or connections affects the Stylebook identity;
 - editing a story row from Agate review affects that story's substrate evidence and
   does not silently rewrite the canonical.
+
+Backfield Output's `replace` policy is authoritative for machine extraction,
+including an emitted empty list: omitted article associations and their
+`system_extraction` occurrences are retired. Editor-added, editor-modified, and
+non-extraction associations are preserved, as are substrate identities still
+used by other articles.
 
 ## Canonical connections
 

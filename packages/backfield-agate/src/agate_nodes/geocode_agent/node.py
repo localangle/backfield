@@ -18,6 +18,27 @@ logger = logging.getLogger(__name__)
 
 # Get Celery timeout limits from environment (defaults match worker/tasks.py)
 TASK_SOFT_TIME_LIMIT = int(os.getenv("TASK_SOFT_TIME_LIMIT", "3600"))  # 60 minutes default
+SUPPORTED_LOCATION_TYPES = frozenset(
+    {
+        "state",
+        "country",
+        "county",
+        "city",
+        "neighborhood",
+        "address",
+        "place",
+        "intersection_road",
+        "intersection_highway",
+        "street_road",
+        "span",
+        "region",
+        "region_city",
+        "region_state",
+        "region_national",
+        "natural",
+        "political_district",
+    }
+)
 
 
 def _flatten_executor_upstream_inputs(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -151,6 +172,20 @@ class GeocodeAgentOutput(BaseModel):
     places: Dict[str, Any] = Field(description="Consolidated places structure with areas, points, etc.")
 
 
+def _places_have_terminal_output(places: object) -> bool:
+    if not isinstance(places, dict):
+        return False
+    areas = places.get("areas")
+    if isinstance(areas, dict) and any(
+        isinstance(rows, list) and bool(rows) for rows in areas.values()
+    ):
+        return True
+    return any(
+        isinstance(places.get(key), list) and bool(places[key])
+        for key in ("points", "needs_review")
+    )
+
+
 async def run_geocode_agent_pipeline(
     inp: GeocodeAgentInput,
     params: GeocodeAgentParams,
@@ -230,35 +265,29 @@ async def run_geocode_agent_pipeline(
             output_data["text"] = text
         return GeocodeAgentOutput(**output_data)
         
-    # Filter for supported types
-    supported_types = [
-        "state",
-        "county",
-        "city",
-        "neighborhood",
-        "address",
-        "place",
-        "intersection_road",
-        "intersection_highway",
-        "street_road",
-        "span",
-        "region",
-        "region_city",
-        "region_state",
-        "region_national",
-        "natural",
-        # PlaceExtract ``political_district`` (wards, legislative districts, etc.):
-        # must pass through so Stylebook cache + Region geocode path can run.
-        "political_district",
-    ]
+    # Filter for supported types. Unsupported extractions receive an explicit terminal disposition.
     filtered_locations = [
-        loc for loc in locations_data 
-        if loc.get('location', {}).get('type', '').lower() in supported_types
+        loc
+        for loc in locations_data
+        if isinstance(loc, dict)
+        and isinstance(loc.get("location"), dict)
+        and str(loc["location"].get("type") or "").lower() in SUPPORTED_LOCATION_TYPES
+    ]
+    unsupported_locations = [
+        loc
+        for loc in locations_data
+        if not (
+            isinstance(loc, dict)
+            and isinstance(loc.get("location"), dict)
+            and str(loc["location"].get("type") or "").lower() in SUPPORTED_LOCATION_TYPES
+        )
     ]
 
-    skipped_count = len(locations_data) - len(filtered_locations)
-    if skipped_count > 0:
-        _pipe_log("Skipping %s location(s) with unsupported types", skipped_count)
+    if unsupported_locations:
+        _pipe_log(
+            "Moving %s location(s) with unsupported types to needs_review",
+            len(unsupported_locations),
+        )
 
     # Show what types we're processing
     types_being_processed = set(loc.get('location', {}).get('type', '').lower() for loc in filtered_locations)
@@ -327,11 +356,20 @@ async def run_geocode_agent_pipeline(
         "points": [],
         "needs_review": []
     }
+    for unsupported_loc in unsupported_locations:
+        normalized_loc = unsupported_loc if isinstance(unsupported_loc, dict) else {}
+        all_consolidated_places["needs_review"].append(
+            location_needs_review_entry(
+                normalized_loc,
+                "Unsupported or missing location type",
+                "unsupported_location_type",
+            )
+        )
         
     # Track processing stats
     start_time = time.time()
     processed_count = 0
-    skipped_count = 0
+    skipped_count = len(unsupported_locations)
     timeout_count = 0
         
     # Limit number of locations to process; overflow goes to needs_review.
@@ -346,12 +384,13 @@ async def run_geocode_agent_pipeline(
             len(filtered_locations),
             len(overflow_locations),
         )
-        skipped_count = len(overflow_locations)
+        skipped_count += len(overflow_locations)
         for overflow_loc in overflow_locations:
             all_consolidated_places["needs_review"].append(
                 location_needs_review_entry(
                     overflow_loc,
                     f"Skipped: exceeded maxLocations limit ({MAX_LOCATIONS})",
+                    "max_locations_exceeded",
                 )
             )
 
@@ -449,6 +488,7 @@ async def run_geocode_agent_pipeline(
                 location_needs_review_entry(
                     skipped_loc,
                     f"Skipped due to approaching Celery timeout (elapsed {elapsed_time:.1f}s)",
+                    "celery_timeout",
                 )
             )
     else:
@@ -471,9 +511,16 @@ async def run_geocode_agent_pipeline(
         results = await asyncio.gather(*tasks, return_exceptions=True)
             
         # Process results
-        for result in results:
+        for loc_for_result, result in zip(locations_to_process, results, strict=True):
             if isinstance(result, Exception):
                 logger.error(f"Unexpected error in parallel processing: {result}")
+                all_consolidated_places["needs_review"].append(
+                    location_needs_review_entry(
+                        loc_for_result,
+                        str(result),
+                        "geocoding_error",
+                    )
+                )
                 processed_count += 1
                 continue
                 
@@ -486,10 +533,19 @@ async def run_geocode_agent_pipeline(
                 if "timeout" in error_msg.lower():
                     timeout_count += 1
                 all_consolidated_places["needs_review"].append(
-                    location_needs_review_entry(loc, error_msg)
+                    location_needs_review_entry(
+                        loc,
+                        error_msg,
+                        "geocoding_timeout"
+                        if "timeout" in error_msg.lower()
+                        else "geocoding_error",
+                    )
                 )
                 processed_count += 1
-            elif consolidated_result and consolidated_result.get("places"):
+            elif (
+                consolidated_result
+                and _places_have_terminal_output(consolidated_result.get("places"))
+            ):
                 places = consolidated_result["places"]
                     
                 # Merge the consolidated results with deduplication
@@ -508,13 +564,27 @@ async def run_geocode_agent_pipeline(
                     all_consolidated_places["points"].extend(places["points"])
                     
                 if places.get("needs_review"):
-                    all_consolidated_places["needs_review"].extend(places["needs_review"])
+                    for review_entry in places["needs_review"]:
+                        if isinstance(review_entry, dict) and not review_entry.get("reason_code"):
+                            review_entry = {
+                                **review_entry,
+                                "reason_code": review_entry.get("geocode_qa_code")
+                                or "geocoding_needs_review",
+                            }
+                        all_consolidated_places["needs_review"].append(review_entry)
                     
                 _pipe_log("Success: %s", location_name)
                 processed_count += 1
             else:
                 logger.warning(f"No result for: {location_name}")
-                processed_count += 1  # Still count as processed even if no result
+                all_consolidated_places["needs_review"].append(
+                    location_needs_review_entry(
+                        loc,
+                        "Geocoding returned no terminal result",
+                        "empty_geocoding_result",
+                    )
+                )
+                processed_count += 1
         
     total_time = time.time() - start_time
     logger.info(

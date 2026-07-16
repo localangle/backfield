@@ -365,6 +365,210 @@ def test_organizations_reingest_retires_stale_system_mentions() -> None:
         assert len(active_mentions) == 1
 
 
+def test_organizations_replace_reconciles_omissions_and_preserves_editorial_associations() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    primary_url = "https://example.com/organizations-replace-primary"
+    shared_url = "https://example.com/organizations-replace-shared"
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session,
+            org_slug="org-organization-replace",
+            project_slug="proj-organization-replace",
+        )
+        for run_id in ("run-org-r1", "run-org-r2", "run-org-r3"):
+            session.add(AgateRun(id=run_id, graph_id="graph-org-replace", status="pending"))
+        session.commit()
+
+        initial_names = [
+            "Kept Organization",
+            "Orphan Organization",
+            "Shared Organization",
+            "Edited Organization",
+            "Added Organization",
+            "Manual Organization",
+        ]
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-org-replace",
+            run_id="run-org-r1",
+            consolidated={
+                "text": "Several organizations appeared in the first story.",
+                "url": primary_url,
+                "organizations": [_sample_organization_entry(name=name) for name in initial_names],
+            },
+            db_output_params={"reconciliation_policy": "smart_merge"},
+        )
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-org-replace",
+            run_id="run-org-r2",
+            consolidated={
+                "text": "Shared Organization appeared in another story.",
+                "url": shared_url,
+                "organizations": [_sample_organization_entry(name="Shared Organization")],
+            },
+            db_output_params={"reconciliation_policy": "smart_merge"},
+        )
+
+        organizations_by_name = {
+            organization.normalized_name: organization
+            for organization in session.exec(select(SubstrateOrganization)).all()
+        }
+        mentions_by_name = {}
+        for normalized_name in (
+            "edited organization",
+            "added organization",
+            "manual organization",
+        ):
+            organization = organizations_by_name[normalized_name]
+            mentions_by_name[normalized_name] = session.exec(
+                select(SubstrateOrganizationMention).where(
+                    SubstrateOrganizationMention.organization_id == int(organization.id),
+                )
+            ).one()
+        mentions_by_name["edited organization"].edited = True
+        mentions_by_name["added organization"].added = True
+        mentions_by_name["manual organization"].source_kind = "manual"
+        for mention in mentions_by_name.values():
+            session.add(mention)
+
+        shared_organization = organizations_by_name["shared organization"]
+        shared_mentions = session.exec(
+            select(SubstrateOrganizationMention).where(
+                SubstrateOrganizationMention.organization_id == int(shared_organization.id),
+            )
+        ).all()
+        primary_shared_mention = next(
+            mention
+            for mention in shared_mentions
+            if "run-org-r1" == (mention.source_details_json or {}).get("run_id")
+        )
+        session.add(
+            SubstrateOrganizationMentionOccurrence(
+                organization_mention_id=int(primary_shared_mention.id),
+                source_kind="editorial",
+                mention_text="Shared Organization editorial evidence",
+            )
+        )
+        session.commit()
+
+        result = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-org-replace",
+            run_id="run-org-r3",
+            consolidated={
+                "text": "Only Kept Organization remains.",
+                "url": primary_url,
+                "organizations": [_sample_organization_entry(name="Kept Organization")],
+            },
+            db_output_params={"reconciliation_policy": "replace"},
+        )
+        session.commit()
+
+        summary = next(item for item in result.domain_summaries if item.domain == "organizations")
+        assert summary.removed == 2
+        assert summary.preserved == 3
+        assert summary.disposed == 1
+        assert result.retired_mentions == 2
+        assert result.disposed_substrates == 1
+
+    with Session(engine) as session:
+        remaining_names = {
+            organization.normalized_name
+            for organization in session.exec(select(SubstrateOrganization)).all()
+        }
+        assert "orphan organization" not in remaining_names
+        assert {
+            "kept organization",
+            "shared organization",
+            "edited organization",
+            "added organization",
+            "manual organization",
+        }.issubset(remaining_names)
+
+        shared_organization = session.exec(
+            select(SubstrateOrganization).where(
+                SubstrateOrganization.normalized_name == "shared organization"
+            )
+        ).one()
+        retired_shared_mention = session.exec(
+            select(SubstrateOrganizationMention).where(
+                SubstrateOrganizationMention.organization_id == int(shared_organization.id),
+                SubstrateOrganizationMention.deleted == True,  # noqa: E712
+            )
+        ).one()
+        occurrences = session.exec(
+            select(SubstrateOrganizationMentionOccurrence).where(
+                SubstrateOrganizationMentionOccurrence.organization_mention_id
+                == int(retired_shared_mention.id),
+            )
+        ).all()
+        system_occurrences = [
+            occurrence
+            for occurrence in occurrences
+            if occurrence.source_kind == "system_extraction"
+        ]
+        editorial_occurrences = [
+            occurrence for occurrence in occurrences if occurrence.source_kind == "editorial"
+        ]
+        assert system_occurrences
+        assert all(occurrence.suppressed for occurrence in system_occurrences)
+        assert len(editorial_occurrences) == 1
+        assert editorial_occurrences[0].suppressed is False
+
+
+def test_organizations_replace_empty_array_retires_and_disposes_machine_association() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    url = "https://example.com/organizations-replace-empty"
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session,
+            org_slug="org-organization-empty",
+            project_slug="proj-organization-empty",
+        )
+        session.add(
+            AgateRun(id="run-org-e1", graph_id="graph-organization-empty", status="pending")
+        )
+        session.add(
+            AgateRun(id="run-org-e2", graph_id="graph-organization-empty", status="pending")
+        )
+        session.commit()
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-organization-empty",
+            run_id="run-org-e1",
+            consolidated={
+                "text": "Temporary Organization appeared.",
+                "url": url,
+                "organizations": [_sample_organization_entry(name="Temporary Organization")],
+            },
+        )
+        session.commit()
+
+        result = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-organization-empty",
+            run_id="run-org-e2",
+            consolidated={"text": "None appeared.", "url": url, "organizations": []},
+            db_output_params={"reconciliation_policy": "replace"},
+        )
+        session.commit()
+
+        summary = next(item for item in result.domain_summaries if item.domain == "organizations")
+        assert summary.removed == 1
+        assert summary.disposed == 1
+        assert session.exec(select(SubstrateOrganization)).all() == []
+
+
 def _mock_organizations_demo_json() -> str:
     return json.dumps(
         {

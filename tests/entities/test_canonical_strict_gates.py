@@ -258,6 +258,98 @@ def test_decide_links_imported_canonical_by_normalized_label_without_alias(
         )
 
 
+@pytest.mark.parametrize(
+    ("candidate_kinds", "expected_decision"),
+    [
+        (("valid", "valid"), "defer"),
+        (("valid", "inactive"), "link_existing"),
+        (("wrong_type", "valid"), "link_existing"),
+        (("wrong_jurisdiction", "valid"), "link_existing"),
+        (("valid", "wrong_jurisdiction"), "link_existing"),
+    ],
+)
+def test_exact_alias_candidate_set_selects_only_one_survivor(
+    candidate_kinds: tuple[str, str],
+    expected_decision: str,
+) -> None:
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(
+            session,
+            org_slug=f"exact-set-{'-'.join(candidate_kinds)}",
+        )
+        valid_ids: list[str] = []
+        for index, kind in enumerate(candidate_kinds):
+            canonical = StylebookLocationCanonical(
+                stylebook_id=sb_id,
+                label="Harbor Arts Center, Chicago, IL",
+                slug=f"harbor-arts-center-{index}",
+                location_type="city" if kind == "wrong_type" else "place",
+                country_code="US",
+                subdivision_code="IN" if kind == "wrong_jurisdiction" else "IL",
+                formatted_address=(
+                    "Harbor Arts Center, Chicago, IN, USA"
+                    if kind == "wrong_jurisdiction"
+                    else "Harbor Arts Center, Chicago, IL, USA"
+                ),
+                status="inactive" if kind == "inactive" else "active",
+                geometry_json={"type": "Point", "coordinates": [-87.6, 41.9]},
+                geometry_type="Point",
+            )
+            session.add(canonical)
+            session.flush()
+            canonical_id = str(canonical.id)
+            if kind == "valid":
+                valid_ids.append(canonical_id)
+            session.add(
+                StylebookLocationAlias(
+                    location_canonical_id=canonical_id,
+                    alias_text="Harbor Arts Center, Chicago, IL",
+                    normalized_alias="harbor arts center, chicago, il",
+                    provenance="stylebook_ui_accept",
+                    suppressed=False,
+                )
+            )
+        location = SubstrateLocation(
+            project_id=1,
+            name="Harbor Arts Center, Chicago, IL",
+            normalized_name="harbor arts center, chicago, il",
+            location_type="place",
+            status="resolved",
+            canonical_link_status="unlinked",
+            formatted_address="Harbor Arts Center, Chicago, IL, USA",
+            source_details_json={
+                "place_extract_components": {
+                    "place": {"name": "Harbor Arts Center"},
+                    "city": "Chicago",
+                    "state": {"abbr": "IL"},
+                    "country": {"abbr": "US"},
+                }
+            },
+            geometry_json={"type": "Point", "coordinates": [-87.6, 41.9]},
+            geometry_type="Point",
+            identity_fingerprint=f"fp-exact-set-{'-'.join(candidate_kinds)}",
+        )
+        session.add(location)
+        session.commit()
+
+        plan = decide_location_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="points",
+            location=location,
+            entry={"components": location.source_details_json["place_extract_components"]},
+        )
+
+        assert plan.decision.value == expected_decision
+        if expected_decision == "link_existing":
+            assert plan.existing_canonical_id == valid_ids[0]
+        else:
+            assert plan.existing_canonical_id is None
+            assert plan.resolution_reasons[0]["code"] == "ambiguous_exact_canonical_match"
+            assert plan.resolution_reasons[0]["recall_canonical_ids"] == sorted(valid_ids)
+
+
 def test_gate_demoted_high_raw_recall_defers_for_llm_not_materialize(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

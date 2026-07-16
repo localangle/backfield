@@ -1,28 +1,33 @@
 """LangGraph geocode node for intelligent geocoding with fallback strategies."""
 
-import os
 import asyncio
 import logging
+import os
 from typing import Any
 
-from ..models import (
-    Area,
-    State,
-    County,
-    City,
-    Neighborhood,
-    Address,
-    Place,
-    Intersection,
-    StreetRoad,
-    Span,
-    Region,
-    NaturalPlace,
+from agate_utils.geocoding.geocoding_types import (
+    cache_match_to_geocoding_result,
+    stylebook_match_to_geocoding_result,
 )
-from ..types import AgentState, normalized_geocode_hints
-from agate_utils.geocoding.localize import match_canonical_location, get_location_cache
-from agate_utils.geocoding.geocoding_types import stylebook_match_to_geocoding_result, cache_match_to_geocoding_result
+from agate_utils.geocoding.localize import get_location_cache, match_canonical_location
 from backfield_entities.ingest.geocode_cache.sanity import cache_hit_sane_for_substrate
+
+from ..models import (
+    Address,
+    Area,
+    City,
+    County,
+    Intersection,
+    NaturalPlace,
+    Neighborhood,
+    Place,
+    Region,
+    Span,
+    State,
+    StreetRoad,
+)
+from ..models.point.address import is_mail_only_address
+from ..types import AgentState, normalized_geocode_hints
 
 logger = logging.getLogger(__name__)
 
@@ -286,6 +291,18 @@ async def resolve_cache_or_miss(state: AgentState) -> AgentState:
     components = state.get("location_components", {})
 
     _adv_info(state, "Geocoding %s: %s", location_type, location_text)
+    component_address = (
+        str(components.get("address") or "") if isinstance(components, dict) else ""
+    )
+    if location_type == "address" and (
+        is_mail_only_address(location_text) or is_mail_only_address(component_address)
+    ):
+        state["geocoding_result"] = None
+        state["geocoding_model"] = None
+        state["geocoding_failure_reason"] = "mail_only_po_box"
+        state["skip_external_geocode"] = True
+        _adv_info(state, "[GEOCODE SKIP] Mail-only address '%s'", location_text)
+        return state
 
     use_cache = state.get("use_cache", False)
     stylebook_api_url = state.get("stylebook_api_url") or os.environ.get("STYLEBOOK_API_URL")
@@ -524,6 +541,8 @@ async def resolve_cache_or_miss(state: AgentState) -> AgentState:
 async def orchestrate_external_geocode(state: AgentState) -> AgentState:
     """External geocoding path after cache miss (and optional routing)."""
     if state.get("geocoding_result") is not None:
+        return state
+    if state.get("skip_external_geocode"):
         return state
 
     location_type = state["location_type"].lower()

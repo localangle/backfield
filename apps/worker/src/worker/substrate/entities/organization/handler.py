@@ -183,7 +183,7 @@ class OrganizationPersistHandler:
             )
 
         policy = ctx.policy
-        if not organizations:
+        if not organizations and policy != "replace":
             return HandlerPersistResult(
                 summary=DomainReconciliationSummary(policy=policy, domain="organizations"),
                 retired_mentions=0,
@@ -471,12 +471,18 @@ class OrganizationPersistHandler:
 
         retired_mentions = 0
         substrates_disposed = 0
-        if policy == "smart_merge" and touched_organization_ids:
-            retired_mentions, retired_organization_ids = retire_stale_article_mentions_for_rerun(
-                session,
-                article_id=int(ctx.article_id),
-                touched_organization_ids=touched_organization_ids,
+        should_retire_stale = policy == "replace" or (
+            policy == "smart_merge" and bool(touched_organization_ids)
+        )
+        if should_retire_stale:
+            retired_mentions, retired_organization_ids, retirement_preserved = (
+                retire_stale_article_mentions_for_rerun(
+                    session,
+                    article_id=int(ctx.article_id),
+                    touched_organization_ids=touched_organization_ids,
+                )
             )
+            preserved += retirement_preserved
             if retired_organization_ids:
                 substrates_disposed = dispose_orphan_substrates_after_retired_mentions(
                     session,

@@ -28,6 +28,8 @@ from backfield_entities.canonical.plan_types import (
     CanonicalPersistPlan,
 )
 from backfield_entities.ingest.geocode_cache.sanity import (
+    canonical_location_self_consistency_blocked,
+    substrate_canonical_jurisdiction_compatible,
     substrate_canonical_link_blocked_by_content_sanity,
 )
 
@@ -37,6 +39,9 @@ VETO_OBVIOUS_NAME_MISMATCH = "obvious_name_mismatch"
 VETO_CONTENT_SANITY_BLOCKED = "content_sanity_blocked"
 VETO_LINK_PAIR_DENIED = "link_pair_denied"
 VETO_CANONICAL_MISSING = "canonical_missing"
+VETO_CANONICAL_INACTIVE = "canonical_inactive"
+VETO_CANONICAL_SELF_INCONSISTENT = "canonical_self_inconsistent"
+VETO_JURISDICTION_MISMATCH = "jurisdiction_mismatch"
 
 
 def _person_link_blocked(
@@ -98,6 +103,7 @@ def _location_link_blocked(
     *,
     location: SubstrateLocation,
     canonical_id: str,
+    stylebook_id: int,
     entry: dict[str, Any] | None = None,
 ) -> str | None:
     from backfield_entities.entities.location.link_identity import location_link_is_obvious_mismatch
@@ -106,14 +112,34 @@ def _location_link_blocked(
     )
 
     canon = session.get(StylebookLocationCanonical, canonical_id)
-    if canon is None:
+    if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         return VETO_CANONICAL_MISSING
+    if (canon.status or "").strip().lower() != "active":
+        return VETO_CANONICAL_INACTIVE
+    geometry_json = canon.geometry_json if isinstance(canon.geometry_json, dict) else None
+    if canonical_location_self_consistency_blocked(
+        status=canon.status,
+        location_type=canon.location_type,
+        label=str(canon.label or ""),
+        formatted_address=canon.formatted_address,
+        country_code=canon.country_code,
+        subdivision_code=canon.subdivision_code,
+        geometry_type=canon.geometry_type,
+        geometry_json=geometry_json,
+    ):
+        return VETO_CANONICAL_SELF_INCONSISTENT
     if not link_pair_allowed(location.location_type, canon.location_type):
         return VETO_LINK_PAIR_DENIED
     if autolink_container_to_fine_denied(location.location_type, canon.location_type):
         return VETO_LINK_PAIR_DENIED
 
     comps = place_extract_components_from_entry(location, entry)
+    if not substrate_canonical_jurisdiction_compatible(
+        components=comps,
+        canonical_country_code=canon.country_code,
+        canonical_subdivision_code=canon.subdivision_code,
+    ):
+        return VETO_JURISDICTION_MISMATCH
     if substrate_canonical_link_blocked_by_content_sanity(
         substrate_location_type=location.location_type,
         location_text=str(location.name or ""),
@@ -155,7 +181,6 @@ def sync_link_commit_blocked(
 
     ``stylebook_id`` is accepted for call-site uniformity; lookups use the canonical id.
     """
-    _ = stylebook_id
     cid = str(canonical_id or "").strip()
     if not cid:
         return VETO_CANONICAL_MISSING
@@ -169,7 +194,11 @@ def sync_link_commit_blocked(
         )
     assert isinstance(substrate_row, SubstrateLocation)
     return _location_link_blocked(
-        session, location=substrate_row, canonical_id=cid, entry=entry
+        session,
+        location=substrate_row,
+        canonical_id=cid,
+        stylebook_id=stylebook_id,
+        entry=entry,
     )
 
 

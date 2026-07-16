@@ -34,11 +34,14 @@ the canonical's editorial fields with substrate values.
 
 ## Location policy
 
-Location policy checks exact active labels and non-suppressed aliases, then ranked fuzzy recall.
+Location policy treats exact active labels and non-suppressed aliases as candidate sets, then uses
+ranked fuzzy recall. An exact value links only when one active, type-compatible,
+jurisdiction-compatible, self-consistent candidate survives; multiple survivors defer.
 Automatic links pass the shared type matrix and content sanity checks. Strict gates are enabled by
 default and add jurisdiction, district identity, container-versus-fine-place, geometry, formatted
-address, and name-anchor checks. `BACKFIELD_STRICT_CANONICAL_GATES=0` disables those additional
-gates, but not the base matching policy.
+address, and name-anchor checks. The same final commit gate protects rules, cache, AI, and linked-row
+refresh paths. `BACKFIELD_STRICT_CANONICAL_GATES=0` disables the additional recall gates, but not
+base compatibility or final link validation.
 
 Resolved locations without a safe match generally materialize a canonical. These categories stay
 review-oriented:
@@ -53,6 +56,11 @@ Intersections and spans never auto-materialize, although they may link to an exi
 canonical. Exact and fuzzy candidates for addresses, intersections, and named places must preserve
 the street or venue identity rather than resolving only to a containing city or neighborhood.
 Political districts use structured district identity when available.
+
+Every extracted location has one terminal disposition: an accepted location or a reason-coded
+review row. Explicit structured country, subdivision, postal code, and address precision constrain
+resolver results. Rejected, imprecise, and mail-only results do not retain provider identity,
+geometry, H3, or cache eligibility and cannot materialize canonicals.
 
 ## Person policy
 
@@ -71,6 +79,9 @@ only when the extraction review policy permits it.
 Organization tier-one matching combines normalized name identity with `organization_type`.
 Compatible type variants may link; incompatible alias/type matches defer. When recall returns no
 candidates, policy creates a canonical; ambiguous recall is offered for review or AI adjudication.
+Generated acronyms are recall-only evidence and use separate provenance; they cannot independently
+drive exact linking, and collisions defer. Literal acronym labels and editor-accepted aliases remain
+trusted identity evidence.
 
 AI-assisted organization adjudication is closed-list. The normal link threshold is 0.9; the
 explicit compatible-type path uses its separate 0.75 threshold. Name-variant recall may run for
@@ -78,11 +89,13 @@ acronyms and multiword names before creating a new canonical.
 
 ## Reconciliation and provenance
 
-Canonicalization and article reconciliation are separate controls. Backfield Output's
-`add_only`, `smart_merge`, and `replace` policies decide how newly produced domains affect prior
-machine-generated mentions. Re-ingest replaces current system-extraction occurrences while
-preserving user review and edit evidence. Stale machine mentions can be retired, and substrate
-entities with no active mentions can be unlinked and removed.
+Canonicalization and article reconciliation are separate controls. Backfield Output's `add_only`,
+`smart_merge`, and `replace` policies decide how newly produced domains affect prior
+machine-generated mentions. `replace` is authoritative for every emitted domain, including an empty
+array: omitted machine associations and their system-extraction occurrences are retired while
+editor-added, editor-modified, and non-extraction associations remain. Shared substrate identities
+remain available to other articles; true orphans are unlinked and removed. `smart_merge` and
+`add_only` retain their non-authoritative behavior.
 
 Every automatic outcome records structured reasons, including exact identity, fuzzy recall,
 materialization, ambiguity, deferral, and AI adjudication. Semantic documents point to substrate

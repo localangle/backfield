@@ -129,7 +129,7 @@ class PersonPersistHandler:
             )
 
         policy = ctx.policy
-        if not people:
+        if not people and policy != "replace":
             return HandlerPersistResult(
                 summary=DomainReconciliationSummary(policy=policy, domain="people"),
                 retired_mentions=0,
@@ -303,12 +303,18 @@ class PersonPersistHandler:
 
         retired_mentions = 0
         substrates_disposed = 0
-        if policy == "smart_merge" and touched_person_ids:
-            retired_mentions, retired_person_ids = retire_stale_article_mentions_for_rerun(
-                session,
-                article_id=int(ctx.article_id),
-                touched_person_ids=touched_person_ids,
+        should_retire_stale = policy == "replace" or (
+            policy == "smart_merge" and bool(touched_person_ids)
+        )
+        if should_retire_stale:
+            retired_mentions, retired_person_ids, retirement_preserved = (
+                retire_stale_article_mentions_for_rerun(
+                    session,
+                    article_id=int(ctx.article_id),
+                    touched_person_ids=touched_person_ids,
+                )
             )
+            preserved += retirement_preserved
             if retired_person_ids:
                 substrates_disposed = dispose_orphan_substrates_after_retired_mentions(
                     session,

@@ -281,6 +281,33 @@ def _upsert_location_cache(
     session.flush()
 
 
+def _delete_location_cache(
+    session: Session,
+    *,
+    project_id: int,
+    query_text: str,
+    location_type: str | None,
+) -> None:
+    """Remove a previously accepted cache row after a review/rejection outcome."""
+    normalized_query = _normalize_name(query_text)
+    if not normalized_query:
+        return
+    fingerprint = substrate_location_cache_query_fingerprint(
+        project_id=project_id,
+        normalized_query=normalized_query,
+        location_type=location_type,
+    )
+    row = session.exec(
+        select(SubstrateLocationCache).where(
+            col(SubstrateLocationCache.project_id) == project_id,
+            col(SubstrateLocationCache.query_fingerprint) == fingerprint,
+        )
+    ).first()
+    if row is not None:
+        session.delete(row)
+        session.flush()
+
+
 def _stylebook_prefixed_external_id(value: str) -> str:
     """Return ``stylebook:{canonical_uuid}`` for substrate ``external_id`` (no name suffix)."""
     s = _stylebook_canonical_uuid_only(str(value).strip())
@@ -623,24 +650,36 @@ def _apply_substrate_location_merge(
     geocode_router_audit_json: dict[str, Any] | None,
     h3_cell: str | None,
     h3_resolution: int | None,
+    clear_geocode_identity: bool = False,
 ) -> None:
     now = _utcnow()
     loc.name = display_name
     loc.normalized_name = normalized
     loc.location_type = location_type_str or loc.location_type
     loc.status = status
-    loc.external_source = external_source or loc.external_source
-    loc.external_id = external_id or loc.external_id
     loc.identity_fingerprint = fingerprint
-    loc.geocode_type = geocode_type or loc.geocode_type
-    loc.formatted_address = formatted_address or loc.formatted_address
     loc.source_kind = "agate_geocode"
     prev_details = loc.source_details_json if isinstance(loc.source_details_json, dict) else {}
     loc.source_details_json = {**prev_details, **details}
-    loc.geometry = geometry_value or loc.geometry
-    loc.geometry_type = geometry_type_str or loc.geometry_type
-    loc.geometry_json = geometry_json or loc.geometry_json
-    if geometry_json is not None:
+    if clear_geocode_identity:
+        loc.external_source = None
+        loc.external_id = None
+        loc.geocode_type = None
+        loc.formatted_address = None
+        loc.geometry = None
+        loc.geometry_type = None
+        loc.geometry_json = None
+        loc.h3_cell = None
+        loc.h3_resolution = None
+    else:
+        loc.external_source = external_source or loc.external_source
+        loc.external_id = external_id or loc.external_id
+        loc.geocode_type = geocode_type or loc.geocode_type
+        loc.formatted_address = formatted_address or loc.formatted_address
+        loc.geometry = geometry_value or loc.geometry
+        loc.geometry_type = geometry_type_str or loc.geometry_type
+        loc.geometry_json = geometry_json or loc.geometry_json
+    if geometry_json is not None and not clear_geocode_identity:
         loc.h3_cell = h3_cell
         loc.h3_resolution = h3_resolution
     # Latest ingest wins when the payload carries an audit dict (Advanced path).
@@ -672,6 +711,22 @@ def _upsert_location(
     h3_cell, h3_resolution = _h3_parts_from_geometry(geometry_json)
     formatted_address = _formatted_address_from_entry(entry)
     geocode_type, geocode_result = _geocode_meta_from_entry(entry)
+    disposition = str(entry.get("geocode_disposition") or "").strip().lower()
+    authoritative_rejection = bucket == "needs_review" and (
+        geocoded is False
+        or bool(entry.get("geocode_qa_code"))
+        or bool(entry.get("reason"))
+        or disposition in {"deferred", "rejected"}
+    )
+    if authoritative_rejection:
+        geometry_json = None
+        geometry_value = None
+        geometry_type_str = None
+        h3_cell = None
+        h3_resolution = None
+        formatted_address = None
+        geocode_type = None
+        geocode_result = None
 
     external_source: str | None = None
     external_id: str | None = None
@@ -702,9 +757,9 @@ def _upsert_location(
     status = "provisional"
     if bucket == "needs_review":
         status = "needs_review"
-    if geocoded is False:
+    elif geocoded is False:
         status = "failed"
-    if geocode_result and geometry_json:
+    elif geocode_result and geometry_json:
         status = "resolved"
 
     loc = _select_existing_substrate_location(
@@ -780,26 +835,35 @@ def _upsert_location(
                 geocode_router_audit_json=router_audit,
                 h3_cell=h3_cell,
                 h3_resolution=h3_resolution,
+                clear_geocode_identity=authoritative_rejection,
             )
             session.add(loc)
             session.flush()
         else:
             loc = new_loc
-        _upsert_location_cache(
-            session,
-            project_id=project_id,
-            query_text=display_name,
-            location_type=location_type_str,
-            entry=entry,
-            geocode_type=geocode_type,
-            geocode_result=geocode_result if isinstance(geocode_result, dict) else None,
-            geometry_json=geometry_json,
-            geometry_value=geometry_value,
-            geometry_type_str=geometry_type_str,
-            formatted_address=formatted_address,
-            h3_cell=h3_cell,
-            h3_resolution=h3_resolution,
-        )
+        if bucket != "needs_review":
+            _upsert_location_cache(
+                session,
+                project_id=project_id,
+                query_text=display_name,
+                location_type=location_type_str,
+                entry=entry,
+                geocode_type=geocode_type,
+                geocode_result=geocode_result if isinstance(geocode_result, dict) else None,
+                geometry_json=geometry_json,
+                geometry_value=geometry_value,
+                geometry_type_str=geometry_type_str,
+                formatted_address=formatted_address,
+                h3_cell=h3_cell,
+                h3_resolution=h3_resolution,
+            )
+        else:
+            _delete_location_cache(
+                session,
+                project_id=project_id,
+                query_text=display_name,
+                location_type=location_type_str,
+            )
         return LocationUpsertResult(location=loc, created=True, updated=False)
 
     if not update_existing:
@@ -823,22 +887,31 @@ def _upsert_location(
         geocode_router_audit_json=router_audit,
         h3_cell=h3_cell,
         h3_resolution=h3_resolution,
+        clear_geocode_identity=authoritative_rejection,
     )
     session.add(loc)
     session.flush()
-    _upsert_location_cache(
-        session,
-        project_id=project_id,
-        query_text=display_name,
-        location_type=location_type_str,
-        entry=entry,
-        geocode_type=geocode_type,
-        geocode_result=geocode_result if isinstance(geocode_result, dict) else None,
-        geometry_json=geometry_json,
-        geometry_value=geometry_value,
-        geometry_type_str=geometry_type_str,
-        formatted_address=formatted_address,
-        h3_cell=h3_cell,
-        h3_resolution=h3_resolution,
-    )
+    if bucket != "needs_review":
+        _upsert_location_cache(
+            session,
+            project_id=project_id,
+            query_text=display_name,
+            location_type=location_type_str,
+            entry=entry,
+            geocode_type=geocode_type,
+            geocode_result=geocode_result if isinstance(geocode_result, dict) else None,
+            geometry_json=geometry_json,
+            geometry_value=geometry_value,
+            geometry_type_str=geometry_type_str,
+            formatted_address=formatted_address,
+            h3_cell=h3_cell,
+            h3_resolution=h3_resolution,
+        )
+    else:
+        _delete_location_cache(
+            session,
+            project_id=project_id,
+            query_text=display_name,
+            location_type=location_type_str,
+        )
     return LocationUpsertResult(location=loc, created=False, updated=True)

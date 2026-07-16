@@ -2,7 +2,62 @@
 
 from __future__ import annotations
 
-from backfield_entities.ingest.geocode_cache.sanity import cache_hit_sane_for_substrate
+import pytest
+from backfield_entities.ingest.geocode_cache.sanity import (
+    cache_hit_sane_for_substrate,
+    explicit_location_components_match_labels,
+)
+
+
+@pytest.mark.parametrize(
+    ("components", "location_text", "resolved_label", "expected"),
+    [
+        (
+            {"country": {"abbr": "FR"}},
+            "Example City, France",
+            "Example City, FR",
+            True,
+        ),
+        (
+            {"country": {"abbr": "FR"}},
+            "Example City, France",
+            "Example City, KS, US",
+            False,
+        ),
+        (
+            {"address": "1400 Example Avenue", "postal_code": "SW1A 1AA"},
+            "1400 Example Avenue, SW1A 1AA",
+            "1400 Example Avenue, Metro, SW1A 1AA",
+            True,
+        ),
+        (
+            {"address": "1400 Example Avenue", "postal_code": "SW1A 1AA"},
+            "1400 Example Avenue, SW1A 1AA",
+            "1400 Example Avenue, Metro, SW1A 2AA",
+            False,
+        ),
+        (
+            {"address": "1400 Example Avenue"},
+            "1400 Example Avenue",
+            "2400 Example Avenue, Metro",
+            False,
+        ),
+    ],
+)
+def test_explicit_components_must_agree_with_resolver_labels(
+    components: dict,
+    location_text: str,
+    resolved_label: str,
+    expected: bool,
+) -> None:
+    assert (
+        explicit_location_components_match_labels(
+            components=components,
+            location_text=location_text,
+            match_label=resolved_label,
+        )
+        is expected
+    )
 
 
 def test_address_blocks_city_canonical_without_street_in_label() -> None:

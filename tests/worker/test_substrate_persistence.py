@@ -10,6 +10,7 @@ from backfield_db import (
     StylebookLocationCanonical,
     SubstrateArticle,
     SubstrateLocation,
+    SubstrateLocationCache,
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
@@ -71,6 +72,73 @@ def test_find_mention_span_falls_back_when_paraphrase_differs() -> None:
     assert len(excerpt) >= 12
     assert excerpt in haystack
     assert "still processing" in excerpt or "Desmon Yancy" in excerpt
+
+
+def test_review_rejection_does_not_persist_geocode_identity_or_cache() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session,
+            org_slug="org-review-geocode",
+            project_slug="proj-review-geocode",
+        )
+        session.add(AgateRun(id="run-review-geocode", graph_id="graph-review", status="pending"))
+        session.commit()
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-review",
+            run_id="run-review-geocode",
+            consolidated={
+                "text": "The event used 1400 Example Avenue.",
+                "url": "https://example.com/review-geocode",
+                "places": {
+                    "areas": {
+                        "states": [],
+                        "counties": [],
+                        "cities": [],
+                        "neighborhoods": [],
+                        "regions": [],
+                        "other": [],
+                    },
+                    "points": [],
+                    "needs_review": [
+                        {
+                            "id": "provider:wrong",
+                            "location": "1400 Example Avenue, Metro, IL",
+                            "type": "address",
+                            "original_text": "1400 Example Avenue",
+                            "geocode_qa_code": "geocode_subnational_mismatch",
+                            "geocode": {
+                                "geocode_type": "test",
+                                "result": {
+                                    "id": "provider:wrong",
+                                    "formatted_address": "1400 Example Avenue, Elsewhere, CA",
+                                    "geometry": {
+                                        "type": "Point",
+                                        "coordinates": [-118.0, 34.0],
+                                    },
+                                },
+                            },
+                            "mentions": [{"text": "1400 Example Avenue"}],
+                        }
+                    ],
+                },
+            },
+            db_output_params={"auto_apply_canonicalization": False},
+        )
+        session.commit()
+
+        location = session.exec(select(SubstrateLocation)).one()
+        assert location.status == "needs_review"
+        assert location.external_source is None
+        assert location.external_id is None
+        assert location.formatted_address is None
+        assert location.geometry_json is None
+        assert location.h3_cell is None
+        assert session.exec(select(SubstrateLocationCache)).all() == []
 
 
 def _bootstrap_project(session: Session, *, org_slug: str, project_slug: str) -> int:

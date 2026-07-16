@@ -376,7 +376,7 @@ export default function DBOutputPanel({
               {data.reconciliation_policy === 'add_only'
                 ? 'Adds new data from this flow without changing existing saved data.'
                 : data.reconciliation_policy === 'replace'
-                  ? 'Replaces existing saved data from this flow’s categories with this run’s results.'
+                  ? 'Uses this run as the complete result for each included category, while preserving editor changes.'
                   : 'Updates data from this flow while preserving changes made by editors.'}
             </p>
           </div>

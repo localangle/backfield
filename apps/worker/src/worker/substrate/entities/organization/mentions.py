@@ -127,7 +127,7 @@ def retire_stale_article_mentions_for_rerun(
     *,
     article_id: int,
     touched_organization_ids: set[int],
-) -> tuple[int, set[int]]:
+) -> tuple[int, set[int], int]:
     mentions = session.exec(
         select(SubstrateOrganizationMention).where(
             col(SubstrateOrganizationMention.article_id) == article_id,
@@ -135,6 +135,7 @@ def retire_stale_article_mentions_for_rerun(
         )
     ).all()
     retired = 0
+    preserved = 0
     retired_organization_ids: set[int] = set()
     now = _utcnow()
     for mention in mentions:
@@ -142,10 +143,16 @@ def retire_stale_article_mentions_for_rerun(
         if oid in touched_organization_ids:
             continue
         if mention.edited or mention.added:
+            preserved += 1
             continue
         sk = str(mention.source_kind or "").strip()
         if sk and sk != _ORGANIZATION_EXTRACT_SOURCE_KIND:
+            preserved += 1
             continue
+        _suppress_prior_system_occurrences_for_mention(
+            session,
+            mention_id=int(mention.id),  # type: ignore[arg-type]
+        )
         mention.deleted = True
         mention.updated_at = now
         session.add(mention)
@@ -153,7 +160,7 @@ def retire_stale_article_mentions_for_rerun(
         retired_organization_ids.add(oid)
     if retired:
         session.flush()
-    return retired, retired_organization_ids
+    return retired, retired_organization_ids, preserved
 
 
 def dispose_orphan_substrates_after_retired_mentions(

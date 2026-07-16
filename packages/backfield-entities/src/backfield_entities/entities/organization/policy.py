@@ -19,6 +19,7 @@ from backfield_entities.entities.organization.recall import (
 from backfield_entities.entities.organization.types import (
     normalize_organization_text,
     normalize_organization_type,
+    organization_literal_label_identity_compatible,
     organization_looks_like_acronym,
     organization_match_key,
     organization_tier1_identity_compatible,
@@ -116,12 +117,17 @@ def _strong_identity_canonical_ids(
             canon = session.get(StylebookOrganizationCanonical, cid)
             if canon is None or canon.id is None:
                 continue
+            if (canon.status or "").strip().lower() != "active":
+                continue
             if not organization_type_matches_canonical(organization, canon):
                 continue
             canon_label_norm = normalize_organization_text(canon.label)
-            if not organization_tier1_identity_compatible(
-                substrate_norm=name_norm,
-                canonical_label_norm=canon_label_norm,
+            if not (
+                organization_tier1_identity_compatible(
+                    substrate_norm=name_norm,
+                    canonical_label_norm=canon_label_norm,
+                )
+                or organization_looks_like_acronym(name_norm)
             ):
                 continue
             if cid not in seen:
@@ -134,14 +140,24 @@ def _strong_identity_canonical_ids(
     for canon in session.exec(label_stmt).all():
         if canon.id is None:
             continue
+        if (canon.status or "").strip().lower() != "active":
+            continue
         label_norm = normalize_organization_text(canon.label)
-        label_hit = label_norm in name_norms or organization_strong_identity_matches_canonical(
-            organization, canon
+        label_hit = (
+            label_norm in name_norms
+            or organization_strong_identity_matches_canonical(organization, canon)
+            or any(
+                organization_literal_label_identity_compatible(
+                    substrate_norm=name_norm,
+                    canonical_label_norm=label_norm,
+                )
+                for name_norm in name_norms
+            )
         )
         if not label_hit:
             continue
         if not any(
-            organization_tier1_identity_compatible(
+            organization_literal_label_identity_compatible(
                 substrate_norm=name_norm,
                 canonical_label_norm=label_norm,
             )
@@ -154,7 +170,7 @@ def _strong_identity_canonical_ids(
         if cid not in seen:
             seen.add(cid)
             matches.append(cid)
-    return matches
+    return sorted(matches)
 
 
 def _alias_type_mismatch_adjudication_plan(
@@ -265,7 +281,7 @@ def _ambiguous_organization_defer_plan(
     recall: list[tuple[str, str]],
     best_canonical_id: str | None = None,
 ) -> CanonicalPersistPlan:
-    recall_ids = [cid for cid, _ in recall[:ORGANIZATION_RECALL_DEFAULT_LIMIT]]
+    recall_ids = sorted({cid for cid, _ in recall})[:ORGANIZATION_RECALL_DEFAULT_LIMIT]
     reason: dict[str, Any] = {
         "code": AMBIGUOUS_ORGANIZATION_CANONICAL_MATCH,
         "recall_canonical_ids": recall_ids,

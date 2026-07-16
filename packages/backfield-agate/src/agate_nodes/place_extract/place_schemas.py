@@ -66,6 +66,7 @@ class LocationComponents(BaseModel):
     neighborhood: Optional[str] = Field(default="", description="Neighborhood name if applicable")
     city: Optional[str] = Field(default="", description="City name if applicable")
     county: Optional[str] = Field(default="", description="County name if applicable")
+    postal_code: Optional[str] = Field(default="", description="Postal code if applicable")
     state: Optional[StateInfo] = Field(default=None, description="State information if applicable")
     country: Optional[CountryInfo] = Field(default=None, description="Country information if applicable")
 

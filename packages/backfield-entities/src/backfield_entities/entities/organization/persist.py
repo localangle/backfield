@@ -38,10 +38,22 @@ from backfield_entities.entities.organization.policy import (
     rank_organization_canonical_recall_matches,
 )
 from backfield_entities.entities.organization.types import (
+    GENERATED_ACRONYM_PROVENANCE,
     normalize_organization_type,
-    organization_alias_lookup_keys,
     organization_alias_surface_form,
+    organization_canonical_alias_entries,
 )
+
+
+def _organization_alias_provenance_strength(provenance: str) -> int:
+    value = str(provenance or "").strip()
+    if value == GENERATED_ACRONYM_PROVENANCE:
+        return 0
+    if value == "substrate_ingest":
+        return 1
+    if is_organization_catalog_editorial_provenance(value):
+        return 3
+    return 2
 
 
 def _slugify_organization_label(label: str) -> str:
@@ -103,13 +115,13 @@ def seed_aliases_for_canonical_label(
     clean = label.strip()
     if not clean:
         return
-    for norm in organization_alias_lookup_keys(clean):
+    for norm, generated_acronym in organization_canonical_alias_entries(clean):
         upsert_alias_for_canonical_text(
             session,
             canon_id=canon_id,
             alias_text=organization_alias_surface_form(clean, norm),
             normalized_alias=norm,
-            provenance=provenance,
+            provenance=GENERATED_ACRONYM_PROVENANCE if generated_acronym else provenance,
         )
 
 
@@ -139,6 +151,10 @@ def upsert_alias_for_canonical_text(
             )
         )
     else:
+        if _organization_alias_provenance_strength(
+            provenance
+        ) < _organization_alias_provenance_strength(str(existing.provenance)):
+            return
         existing.alias_text = str(alias_text)
         existing.provenance = provenance
         existing.suppressed = False
@@ -153,13 +169,13 @@ def _upsert_alias_for_substrate(
     provenance: str,
 ) -> None:
     alias_text = str(organization.name)
-    for norm in organization_alias_lookup_keys(alias_text):
+    for norm, generated_acronym in organization_canonical_alias_entries(alias_text):
         upsert_alias_for_canonical_text(
             session,
             canon_id=canon_id,
             alias_text=organization_alias_surface_form(alias_text, norm),
             normalized_alias=norm,
-            provenance=provenance,
+            provenance=GENERATED_ACRONYM_PROVENANCE if generated_acronym else provenance,
         )
 
 
@@ -251,13 +267,13 @@ def create_standalone_canonical(
         build_row=_build_row,
     )
     cid = str(canon.id)
-    for norm in organization_alias_lookup_keys(clean):
+    for norm, generated_acronym in organization_canonical_alias_entries(clean):
         upsert_alias_for_canonical_text(
             session,
             canon_id=cid,
             alias_text=organization_alias_surface_form(clean, norm),
             normalized_alias=norm,
-            provenance=provenance,
+            provenance=GENERATED_ACRONYM_PROVENANCE if generated_acronym else provenance,
         )
     session.flush()
     return canon

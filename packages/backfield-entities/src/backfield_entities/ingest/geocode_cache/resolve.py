@@ -21,7 +21,11 @@ from backfield_entities.ingest.geocode_cache.fingerprint import (
     normalize_substrate_cache_query,
     substrate_location_cache_query_fingerprint,
 )
-from backfield_entities.ingest.geocode_cache.sanity import cache_hit_sane_for_substrate
+from backfield_entities.ingest.geocode_cache.sanity import (
+    cache_hit_sane_for_substrate,
+    canonical_location_self_consistency_blocked,
+    substrate_canonical_jurisdiction_compatible,
+)
 from backfield_entities.text.match_normalize import match_fold_key
 
 _DEFAULT_ADJUDICATION_CANDIDATE_LIMIT: int = 18
@@ -194,6 +198,24 @@ def _canonical_winner_passes_content_sanity(
     location_text: str,
     components: dict[str, Any] | None,
 ) -> bool:
+    geometry_json = winner.geometry_json if isinstance(winner.geometry_json, dict) else None
+    if canonical_location_self_consistency_blocked(
+        status=winner.status,
+        location_type=winner.location_type,
+        label=str(winner.label),
+        formatted_address=winner.formatted_address,
+        country_code=winner.country_code,
+        subdivision_code=winner.subdivision_code,
+        geometry_type=winner.geometry_type,
+        geometry_json=geometry_json,
+    ):
+        return False
+    if not substrate_canonical_jurisdiction_compatible(
+        components=components,
+        canonical_country_code=winner.country_code,
+        canonical_subdivision_code=winner.subdivision_code,
+    ):
+        return False
     return cache_hit_sane_for_substrate(
         substrate_location_type=substrate_lt,
         location_text=location_text,
@@ -279,32 +301,32 @@ def resolve_geocode_cache_strict_with_outcome(
         else []
     )
 
-    if len(winners) > 1:
+    surviving_winners = [
+        winner
+        for winner in winners
+        if isinstance(winner.geometry_json, dict)
+        and _strict_type_pair_allowed(substrate_lt, winner.location_type)
+        and not _canonical_is_sub_municipal_slice_for_municipality_query(winner, substrate_lt)
+        and _canonical_winner_passes_content_sanity(
+            winner,
+            substrate_lt=substrate_lt,
+            location_text=location_text,
+            components=components,
+        )
+    ]
+
+    if len(surviving_winners) > 1:
         return GeocodeCacheStrictOutcome(None, True, False)
 
-    if len(winners) == 1:
-        winner = winners[0]
-        canon_lt = (winner.location_type or "").strip().lower() or None
-        geom_ok = isinstance(winner.geometry_json, dict)
-        slice_bad = _canonical_is_sub_municipal_slice_for_municipality_query(winner, substrate_lt)
-        if (
-            geom_ok
-            and _strict_type_pair_allowed(substrate_lt, canon_lt)
-            and not slice_bad
-            and _canonical_winner_passes_content_sanity(
-                winner,
-                substrate_lt=substrate_lt,
-                location_text=location_text,
-                components=components,
-            )
-        ):
-            return GeocodeCacheStrictOutcome(
-                _canonical_to_stylebook_match_dict(winner),
-                False,
-                False,
-            )
-        if geom_ok and _strict_type_pair_allowed(substrate_lt, canon_lt) and not slice_bad:
-            return GeocodeCacheStrictOutcome(None, False, True)
+    if len(surviving_winners) == 1:
+        return GeocodeCacheStrictOutcome(
+            _canonical_to_stylebook_match_dict(surviving_winners[0]),
+            False,
+            False,
+        )
+
+    if winners:
+        return GeocodeCacheStrictOutcome(None, False, True)
 
     fingerprint = substrate_location_cache_query_fingerprint(
         project_id=project_id,
@@ -401,6 +423,13 @@ def materialize_canonical_match_dict(
     if not _strict_type_pair_allowed(lt, canon_lt):
         return None
     query_text = (location_text or "").strip() or str(canon.label)
+    if not _canonical_winner_passes_content_sanity(
+        canon,
+        substrate_lt=lt,
+        location_text=query_text,
+        components=components,
+    ):
+        return None
     if not cache_hit_sane_for_substrate(
         substrate_location_type=lt,
         location_text=query_text,
@@ -480,14 +509,11 @@ def build_geocode_cache_adjudication_candidates(
         canon_lt = (canon.location_type or "").strip().lower() or None
         if not _strict_type_pair_allowed(substrate_lt, canon_lt):
             continue
-        if not cache_hit_sane_for_substrate(
-            substrate_location_type=substrate_lt,
+        if not _canonical_winner_passes_content_sanity(
+            canon,
+            substrate_lt=substrate_lt,
             location_text=location_text,
             components=comps,
-            match_label=str(canon.label),
-            match_formatted_address=canon.formatted_address,
-            match_location_type=canon.location_type,
-            match_geometry_type=canon.geometry_type,
         ):
             continue
         aliases = list(alias_tuple)[:8]

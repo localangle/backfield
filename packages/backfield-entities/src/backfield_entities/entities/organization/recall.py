@@ -10,6 +10,7 @@ from backfield_db import (
 from sqlmodel import Session, col, select
 
 from backfield_entities.entities.organization.types import (
+    GENERATED_ACRONYM_PROVENANCE,
     multiword_organization_names_share_ambiguous_acronym,
     normalize_organization_text,
     normalize_organization_type,
@@ -32,8 +33,8 @@ def canonical_ids_from_organization_name_keys(
 ) -> list[str]:
     """Canonical ids whose alias ``normalized_alias`` matches accent-insensitively.
 
-    When ``trusted_alias_only`` is True, exclude ``substrate_ingest`` provenance so
-    machine-written aliases cannot exact-match without editorial confirmation.
+    When ``trusted_alias_only`` is True, exclude machine-ingest and generated-acronym
+    provenance so neither can independently drive exact linking.
     """
     lookup_keys = set(organization_substrate_alias_lookup_keys(name_or_norm))
     match_key = organization_match_key(name_or_norm)
@@ -48,7 +49,12 @@ def canonical_ids_from_organization_name_keys(
         StylebookOrganizationAlias.suppressed.is_(False),
     ]
     if trusted_alias_only:
-        filters.append(StylebookOrganizationAlias.provenance != "substrate_ingest")
+        filters.extend(
+            (
+                StylebookOrganizationAlias.provenance != "substrate_ingest",
+                StylebookOrganizationAlias.provenance != GENERATED_ACRONYM_PROVENANCE,
+            )
+        )
     stmt = (
         select(StylebookOrganizationCanonical.id, StylebookOrganizationAlias.normalized_alias)
         .join(
@@ -86,7 +92,12 @@ def canonical_ids_from_organization_name_keys(
         col(StylebookOrganizationAlias.normalized_alias).like(pat, escape="\\"),
     ]
     if trusted_alias_only:
-        scan_filters.append(StylebookOrganizationAlias.provenance != "substrate_ingest")
+        scan_filters.extend(
+            (
+                StylebookOrganizationAlias.provenance != "substrate_ingest",
+                StylebookOrganizationAlias.provenance != GENERATED_ACRONYM_PROVENANCE,
+            )
+        )
     scan_stmt = (
         select(StylebookOrganizationCanonical.id, StylebookOrganizationAlias.normalized_alias)
         .join(

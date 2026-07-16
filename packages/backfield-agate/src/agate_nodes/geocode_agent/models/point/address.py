@@ -1,23 +1,71 @@
 import json
 import logging
+import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from agate_utils.geocoding.geocoding_types import GeocodingResult
-from agate_utils.geocoding.pelias import (
-    geocode_search as pelias_search,
-    geocode_search_candidates,
-    geocode_structured as pelias_structured,
-)
 from agate_utils.geocoding.geocodio import geocode_search as geocodio_search
 from agate_utils.geocoding.nominatim import geocode_address
+from agate_utils.geocoding.pelias import (
+    geocode_search as pelias_search,
+)
+from agate_utils.geocoding.pelias import (
+    geocode_search_candidates,
+)
+from agate_utils.geocoding.pelias import (
+    geocode_structured as pelias_structured,
+)
 from agate_utils.llm import call_llm
 
 from .point import Point
 
 logger = logging.getLogger(__name__)
 
-_ADDRESS_PICKER_PROMPT = Path(__file__).parent.parent.parent / "prompts" / "address_candidate_picker.md"
+_ADDRESS_PICKER_PROMPT = (
+    Path(__file__).parent.parent.parent / "prompts" / "address_candidate_picker.md"
+)
+_PO_BOX_RE = re.compile(
+    r"\b(?:p\.?\s*o\.?|post\s+office|usps)\s+box\b",
+    flags=re.IGNORECASE,
+)
+_ADDRESS_NUMBER_RE = re.compile(r"(?<![A-Za-z0-9])(\d+[A-Za-z]?)(?![A-Za-z0-9])")
+_ADDRESS_WORD_RE = re.compile(r"[A-Za-z0-9]+")
+_NON_IDENTITY_ADDRESS_TOKENS = frozenset(
+    {
+        "avenue",
+        "ave",
+        "boulevard",
+        "blvd",
+        "drive",
+        "dr",
+        "east",
+        "e",
+        "highway",
+        "hwy",
+        "lane",
+        "ln",
+        "north",
+        "n",
+        "parkway",
+        "pkwy",
+        "place",
+        "pl",
+        "road",
+        "rd",
+        "south",
+        "s",
+        "street",
+        "st",
+        "west",
+        "w",
+    }
+)
+
+
+def is_mail_only_address(value: object) -> bool:
+    """Return whether text describes a mail-only post-office box."""
+    return bool(_PO_BOX_RE.search(str(value or "")))
 
 ########## ADDRESS MODEL ##########
 
@@ -26,8 +74,8 @@ class Address(Point):
 
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
-        self._geocode_hints: Optional[str] = None
-        self._original_text: Optional[str] = None
+        self._geocode_hints: str | None = None
+        self._original_text: str | None = None
 
     ########## PRIVATE/HELPER METHODS ##########
 
@@ -62,11 +110,11 @@ class Address(Point):
                 return s
         return self._geographic_reasoning_model_config_id()
 
-    def _address_candidate_rows(self, candidates: List[GeocodingResult]) -> List[Dict[str, Any]]:
-        rows: List[Dict[str, Any]] = []
+    def _address_candidate_rows(self, candidates: list[GeocodingResult]) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
         for idx, cand in enumerate(candidates, start=1):
             label = ""
-            coords: Optional[List[float]] = None
+            coords: list[float] | None = None
             if cand.result:
                 label = cand.result.processed_str or ""
                 geom = cand.result.geometry
@@ -82,12 +130,45 @@ class Address(Point):
             )
         return rows
 
+    def _result_matches_requested_address(self, result: GeocodingResult) -> bool:
+        """Require exact house-number and street evidence for numbered addresses."""
+        requested = str(self.name or "").strip()
+        if not requested or is_mail_only_address(requested):
+            return False
+        number_match = _ADDRESS_NUMBER_RE.search(requested)
+        if number_match is None:
+            return True
+        if result.result is None:
+            return False
+        label = str(result.result.processed_str or "")
+        label_numbers = {match.lower() for match in _ADDRESS_NUMBER_RE.findall(label)}
+        if number_match.group(1).lower() not in label_numbers:
+            return False
+        requested_tokens = {
+            token.lower()
+            for token in _ADDRESS_WORD_RE.findall(requested)
+            if not token.isdigit()
+            and token.lower() not in _NON_IDENTITY_ADDRESS_TOKENS
+            and len(token) >= 2
+        }
+        if not requested_tokens:
+            return True
+        label_tokens = {token.lower() for token in _ADDRESS_WORD_RE.findall(label)}
+        return bool(requested_tokens & label_tokens)
+
+    def _acceptable_result(self, result: GeocodingResult | None) -> bool:
+        return bool(
+            result
+            and self._is_good_point_result(result)
+            and self._result_matches_requested_address(result)
+        )
+
     def _pick_pelias_candidate_with_llm(
         self,
-        candidates: List[GeocodingResult],
+        candidates: list[GeocodingResult],
         query: str,
         openai_api_key: str,
-    ) -> Optional[GeocodingResult]:
+    ) -> GeocodingResult | None:
         if not candidates:
             return None
         if len(candidates) == 1:
@@ -97,7 +178,7 @@ class Address(Point):
             template = _ADDRESS_PICKER_PROMPT.read_text(encoding="utf-8")
         except OSError as exc:
             logger.error("Address candidate picker prompt missing: %s", exc)
-            return candidates[0]
+            return None
 
         rows = self._address_candidate_rows(candidates)
         prompt = template.format(
@@ -117,31 +198,31 @@ class Address(Point):
             payload = json.loads(response_text)
         except Exception as exc:
             logger.warning("Address candidate selection LLM failed: %s", exc)
-            return candidates[0]
+            return None
 
         selected_index = payload.get("selected_index")
         confidence = payload.get("confidence", 0)
         if not isinstance(selected_index, int) or not (1 <= selected_index <= len(candidates)):
             logger.warning("Address candidate selection returned invalid index: %s", selected_index)
-            return candidates[0]
+            return None
 
         if isinstance(confidence, (int, float)) and confidence < 40:
             logger.info(
-                "Address candidate selection confidence too low (%s); using first candidate.",
+                "Address candidate selection confidence too low (%s); rejecting candidates.",
                 confidence,
             )
-            return candidates[0]
+            return None
 
         return candidates[selected_index - 1]
 
-    def _pelias_search_bias_kwargs(self) -> Dict[str, str]:
+    def _pelias_search_bias_kwargs(self) -> dict[str, str]:
         """Bias Pelias free-text search toward the extract's country (e.g. US metro stories)."""
         cc = (self.country or "").strip().upper()
         if len(cc) == 2:
             return {"boundary.country": cc.lower()}
         return {}
 
-    def _prep(self) -> Dict[str, Any]:
+    def _prep(self) -> dict[str, Any]:
         """Prepare address data for geocoding."""
         parts = [self.name]
         if self.city:
@@ -166,12 +247,15 @@ class Address(Point):
 
     async def geocode(
         self,
-        pelias_api_key: Optional[str] = None,
-        geocodio_api_key: Optional[str] = None,
-        openai_api_key: Optional[str] = None,
-    ) -> Optional[GeocodingResult]:
+        pelias_api_key: str | None = None,
+        geocodio_api_key: str | None = None,
+        openai_api_key: str | None = None,
+    ) -> GeocodingResult | None:
         """Geocode an address using Pelias → Geocodio → Nominatim."""
         logger.info("Geocoding address: %s", self.name)
+        if is_mail_only_address(self.name):
+            logger.info("Skipping physical geocoding for mail-only address: %s", self.name)
+            return None
 
         try:
             prep_data = self._prep()
@@ -187,7 +271,7 @@ class Address(Point):
             try:
                 structured_params = {k: v for k, v in prep_data["pelias_structured"].items() if v}
                 result = await pelias_structured(**structured_params, api_key=pelias_api_key)
-                if result and self._is_good_point_result(result):
+                if self._acceptable_result(result):
                     logger.info("Pelias structured success for %s", self.name)
                     self.geocoding_result = result
                     return result
@@ -195,6 +279,7 @@ class Address(Point):
                 logger.warning("Pelias structured failed for %s: %s", self.name, exc)
 
         # Pelias search: multi-candidate + LLM picker when OpenAI is available; else single search
+        pelias_candidates_considered = False
         if pelias_api_key and openai_api_key:
             try:
                 candidates = await geocode_search_candidates(
@@ -203,31 +288,32 @@ class Address(Point):
                     size=5,
                     **pelias_bias,
                 )
+                pelias_candidates_considered = bool(candidates)
                 if len(candidates) > 1:
                     picked = self._pick_pelias_candidate_with_llm(
                         candidates,
                         full_address,
                         openai_api_key,
                     )
-                    if picked and self._is_good_point_result(picked):
+                    if self._acceptable_result(picked):
                         logger.info("Pelias search + LLM picker success for %s", self.name)
                         self.geocoding_result = picked
                         return picked
-                elif len(candidates) == 1 and self._is_good_point_result(candidates[0]):
+                elif len(candidates) == 1 and self._acceptable_result(candidates[0]):
                     logger.info("Pelias search (single candidate) success for %s", self.name)
                     self.geocoding_result = candidates[0]
                     return candidates[0]
             except Exception as exc:
                 logger.warning("Pelias search candidates failed for %s: %s", self.name, exc)
 
-        if pelias_api_key:
+        if pelias_api_key and not pelias_candidates_considered:
             try:
                 result = await pelias_search(
                     text=full_address,
                     api_key=pelias_api_key,
                     **pelias_bias,
                 )
-                if result and self._is_good_point_result(result):
+                if self._acceptable_result(result):
                     logger.info("Pelias search success for %s", self.name)
                     self.geocoding_result = result
                     return result
@@ -238,7 +324,7 @@ class Address(Point):
         if geocodio_api_key:
             try:
                 result = geocodio_search(query=full_address, api_key=geocodio_api_key)
-                if result and self._is_good_point_result(result):
+                if self._acceptable_result(result):
                     logger.info("Geocodio success for %s", self.name)
                     self.geocoding_result = result
                     return result
@@ -248,7 +334,7 @@ class Address(Point):
         # Nominatim fallback
         try:
             result = geocode_address(address=full_address, user_agent="agate/1.0")
-            if result and self._is_good_point_result(result):
+            if self._acceptable_result(result):
                 logger.info("Nominatim success for %s", self.name)
                 self.geocoding_result = result
                 return result
