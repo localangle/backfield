@@ -135,4 +135,6 @@ in [LICENSE.md](LICENSE.md) or at [apache.org/licenses/LICENSE-2.0](http://www.a
 
 ## Support
 
-For documentation and support, visit [docs.backfield.news](https://docs.backfield.news). Questions about local development or contributions? Reach out to [Local Angle.](https://localangle.co)
+For documentation and support, visit [docs.backfield.news](https://docs.backfield.news).
+
+Questions about local development, contributions or deployment? Reach out to [Local Angle.](https://localangle.co)
