@@ -8,7 +8,7 @@ It applies journalistically useful metadata, including subjects, topics, story f
 
 It does all this with an awareness of the standards and traditions of journalism, taking into account newswriting style and structure, as well as norms around editorial importance and accuracy. All of this takes place within an interface that allows users to customize the system for their organization's specific use cases — and exposes data for user-friendly editorial review. 
 
-Backfield was built from the premise that structured journalism, at scale, can open new opportunities to build new products and services, understand how our coverage resonates with audiences, and transact in the burgeoning AI ecosystem.
+Backfield was built from the premise that [structured journalism](https://structureofnews.wordpress.com/structured-journalism/), at scale, can open new opportunities to build new products and services, understand how our coverage resonates with audiences, and transact in the burgeoning AI ecosystem.
 
 It is a product of [Local Angle.](https://localangle.co)
 
