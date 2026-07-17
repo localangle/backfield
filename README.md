@@ -33,7 +33,11 @@ Backfield is currently three interconnected applications:
 
 Agate is a tool for creating composable data extraction and enrichment workflows. It takes articles and transforms them into structured data that can either be output as JSON or persisted into the Backfield application ecosystem. Users construct workflows from a series of nodes that are designed to extract or enrich specific pieces of information. These nodes can be customized as needed, and new ones can be created by developers.
 
+<img src="docs/screenshots/readme1.png" alt="Agate flow builder" />
+
 Agate also contains a review interface where users can make corrections — or manually extract and annotate data themselves.
+
+<img src="docs/screenshots/readme2.png" alt="Agate review interface" />
 
 ### Stylebook
 
@@ -44,6 +48,8 @@ In coverage, a given entity might be referred to in multiple ways. For instance,
 Most of this cleanup work happens automatically with help from large language models.
 
 Canonical Stylebook entities can also be enriched with metadata and connected to each other. A politician can be assigned a party; a neighborhood can be assigned demographic information. This allows us to query our articles in all kinds of interesting ways — for example, show all quotes by Democrats about an issue, or show how we have covered immigration in predominantly Hispanic neighborhoods.
+
+<img src="docs/screenshots/readme3.png" alt="Stylebook" />
 
 ### Public API
 
