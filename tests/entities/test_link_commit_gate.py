@@ -144,6 +144,95 @@ def test_sync_gate_blocks_university_of_maryland_to_umn_duluth() -> None:
         assert veto == VETO_OBVIOUS_NAME_MISMATCH
 
 
+def test_inactive_people_and_organizations_are_not_recalled_or_linked() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, project_id = _seed_stylebook(session)
+        person_canonical = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="Jane Doe",
+            slug="inactive-jane-doe",
+            status="inactive",
+        )
+        organization_canonical = StylebookOrganizationCanonical(
+            stylebook_id=sb_id,
+            label="Example Foundation",
+            slug="inactive-example-foundation",
+            organization_type="nonprofit",
+            status="inactive",
+        )
+        session.add_all((person_canonical, organization_canonical))
+        session.flush()
+        session.add_all(
+            (
+                StylebookPersonAlias(
+                    person_canonical_id=str(person_canonical.id),
+                    alias_text="Jane Doe",
+                    normalized_alias=normalize_person_text("Jane Doe"),
+                    provenance="stylebook_ui_accept",
+                    suppressed=False,
+                ),
+                StylebookOrganizationAlias(
+                    organization_canonical_id=str(organization_canonical.id),
+                    alias_text="Example Foundation",
+                    normalized_alias="example foundation",
+                    provenance="stylebook_ui_accept",
+                    suppressed=False,
+                ),
+            )
+        )
+        person = SubstratePerson(
+            project_id=project_id,
+            name="Jane Doe",
+            normalized_name=normalize_person_text("Jane Doe"),
+        )
+        organization = SubstrateOrganization(
+            project_id=project_id,
+            name="Example Foundation",
+            normalized_name="example foundation",
+            organization_type="nonprofit",
+        )
+        session.add_all((person, organization))
+        session.commit()
+
+        assert (
+            canonical_ids_from_person_name_keys(
+                session,
+                stylebook_id=sb_id,
+                name_or_norm="Jane Doe",
+            )
+            == []
+        )
+        assert (
+            canonical_ids_from_organization_name_keys(
+                session,
+                stylebook_id=sb_id,
+                name_or_norm="Example Foundation",
+            )
+            == []
+        )
+        assert (
+            sync_link_commit_blocked(
+                session,
+                entity_type="person",
+                substrate_row=person,
+                canonical_id=str(person_canonical.id),
+                stylebook_id=sb_id,
+            )
+            == VETO_CANONICAL_INACTIVE
+        )
+        assert (
+            sync_link_commit_blocked(
+                session,
+                entity_type="organization",
+                substrate_row=organization,
+                canonical_id=str(organization_canonical.id),
+                stylebook_id=sb_id,
+            )
+            == VETO_CANONICAL_INACTIVE
+        )
+
+
 @pytest.mark.parametrize(
     ("case", "expected_veto"),
     [

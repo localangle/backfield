@@ -29,6 +29,8 @@ _ORGANIZATION_INSTITUTION_STOP_WORDS: frozenset[str] = frozenset(
         "department",
         "dept",
         "office",
+        "city",
+        "hall",
         "bureau",
         "agency",
         "commission",

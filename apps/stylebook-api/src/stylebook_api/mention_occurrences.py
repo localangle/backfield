@@ -79,6 +79,7 @@ def replace_mention_occurrences_for_article(
     existing = session.exec(
         select(SubstrateLocationMentionOccurrence).where(
             SubstrateLocationMentionOccurrence.location_mention_id == int(mention.id),
+            SubstrateLocationMentionOccurrence.source_kind == "user_review",
             SubstrateLocationMentionOccurrence.suppressed == False,  # noqa: E712
         )
     ).all()
@@ -170,6 +171,7 @@ def replace_person_mention_occurrences_for_article(
     existing = session.exec(
         select(SubstratePersonMentionOccurrence).where(
             SubstratePersonMentionOccurrence.person_mention_id == int(mention.id),
+            SubstratePersonMentionOccurrence.source_kind == "user_review",
             SubstratePersonMentionOccurrence.suppressed == False,  # noqa: E712
         )
     ).all()
@@ -268,6 +270,7 @@ def replace_organization_mention_occurrences_for_article(
     existing = session.exec(
         select(SubstrateOrganizationMentionOccurrence).where(
             SubstrateOrganizationMentionOccurrence.organization_mention_id == int(mention.id),
+            SubstrateOrganizationMentionOccurrence.source_kind == "user_review",
             SubstrateOrganizationMentionOccurrence.suppressed == False,  # noqa: E712
         )
     ).all()

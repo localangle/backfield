@@ -9,6 +9,10 @@ from agate_runtime import execute_graph
 from agate_runtime.starter_flow import starter_people_flow_graph_spec
 from backfield_db import (
     AgateRun,
+    BackfieldProject,
+    Stylebook,
+    StylebookPersonAlias,
+    StylebookPersonCanonical,
     SubstratePerson,
     SubstratePersonMention,
     SubstratePersonMentionOccurrence,
@@ -107,6 +111,84 @@ def test_persist_people_writes_substrate_mention_occurrence() -> None:
         assert occ[0].quote_text is None
         assert occ[1].quote_text == occ[1].mention_text
         assert "quote" in occ[1].labels_json
+
+
+def test_people_rerun_revalidates_existing_link_before_alias_refresh() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    url = "https://example.com/people-revalidate"
+    body = "Mayor Jane Smith announced a new policy today."
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session,
+            org_slug="org-people-revalidate",
+            project_slug="proj-people-revalidate",
+        )
+        project = session.get(BackfieldProject, project_id)
+        assert project is not None
+        stylebook = session.exec(
+            select(Stylebook).where(Stylebook.organization_id == project.organization_id)
+        ).one()
+        wrong_canonical = StylebookPersonCanonical(
+            stylebook_id=int(stylebook.id),
+            label="Tre Jones",
+            slug="tre-jones-rerun-gate",
+            status="active",
+        )
+        session.add(wrong_canonical)
+        session.add_all(
+            (
+                AgateRun(id="run-person-link-a", graph_id="graph-person-link", status="pending"),
+                AgateRun(id="run-person-link-b", graph_id="graph-person-link", status="pending"),
+            )
+        )
+        session.commit()
+
+        payload = {
+            "text": body,
+            "url": url,
+            "people": [_sample_person_entry(name="Jane Smith")],
+        }
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-person-link",
+            run_id="run-person-link-a",
+            consolidated=payload,
+            db_output_params={
+                "auto_apply_canonicalization": False,
+                "stylebook_id": int(stylebook.id),
+            },
+        )
+        person = session.exec(select(SubstratePerson)).one()
+        person.stylebook_person_canonical_id = str(wrong_canonical.id)
+        person.canonical_link_status = "linked"
+        session.add(person)
+        session.commit()
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-person-link",
+            run_id="run-person-link-b",
+            consolidated=payload,
+            db_output_params={
+                "auto_apply_canonicalization": True,
+                "stylebook_id": int(stylebook.id),
+            },
+        )
+        session.commit()
+
+        session.refresh(person)
+        assert person.stylebook_person_canonical_id != str(wrong_canonical.id)
+        poisoned_aliases = session.exec(
+            select(StylebookPersonAlias).where(
+                StylebookPersonAlias.person_canonical_id == str(wrong_canonical.id),
+                StylebookPersonAlias.normalized_alias == "jane smith",
+            )
+        ).all()
+        assert poisoned_aliases == []
 
 
 def test_persist_empty_people_array_is_noop() -> None:

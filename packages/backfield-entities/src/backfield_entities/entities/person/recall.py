@@ -40,6 +40,7 @@ def canonical_ids_from_person_name_keys(
         lookup_keys.add(match_key)
     filters = [
         StylebookPersonCanonical.stylebook_id == stylebook_id,
+        StylebookPersonCanonical.status == "active",
         StylebookPersonAlias.normalized_alias.in_(lookup_keys),
         StylebookPersonAlias.suppressed.is_(False),
     ]
@@ -78,6 +79,7 @@ def canonical_ids_from_person_name_keys(
     pat = f"%{esc}%"
     scan_filters = [
         StylebookPersonCanonical.stylebook_id == stylebook_id,
+        StylebookPersonCanonical.status == "active",
         StylebookPersonAlias.suppressed.is_(False),
         col(StylebookPersonAlias.normalized_alias).like(pat, escape="\\"),
     ]
@@ -213,6 +215,7 @@ def _canonical_ids_from_token_alias_search(
         )
         .where(
             StylebookPersonCanonical.stylebook_id == stylebook_id,
+            StylebookPersonCanonical.status == "active",
             StylebookPersonAlias.suppressed.is_(False),
             or_(*filters),
         )
@@ -262,7 +265,7 @@ def retrieve_person_canonical_candidates(
 
     for cid in candidate_ids:
         canon = session.get(StylebookPersonCanonical, cid)
-        if canon is None or canon.id is None:
+        if canon is None or canon.id is None or canon.status != "active":
             continue
         score = _score_canonical_for_person(
             session,
@@ -279,7 +282,10 @@ def retrieve_person_canonical_candidates(
 
     label_stmt = (
         select(StylebookPersonCanonical)
-        .where(StylebookPersonCanonical.stylebook_id == stylebook_id)
+        .where(
+            StylebookPersonCanonical.stylebook_id == stylebook_id,
+            StylebookPersonCanonical.status == "active",
+        )
         .order_by(col(StylebookPersonCanonical.label).asc())
         .limit(max(limit * 8, 96))
     )

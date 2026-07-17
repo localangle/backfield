@@ -45,6 +45,7 @@ def canonical_ids_from_organization_name_keys(
         all_keys.add(match_key)
     filters = [
         StylebookOrganizationCanonical.stylebook_id == stylebook_id,
+        StylebookOrganizationCanonical.status == "active",
         col(StylebookOrganizationAlias.normalized_alias).in_(all_keys),
         StylebookOrganizationAlias.suppressed.is_(False),
     ]
@@ -88,6 +89,7 @@ def canonical_ids_from_organization_name_keys(
     pat = f"%{esc}%"
     scan_filters = [
         StylebookOrganizationCanonical.stylebook_id == stylebook_id,
+        StylebookOrganizationCanonical.status == "active",
         StylebookOrganizationAlias.suppressed.is_(False),
         col(StylebookOrganizationAlias.normalized_alias).like(pat, escape="\\"),
     ]
@@ -200,7 +202,10 @@ def retrieve_organization_canonical_candidates(
 
     label_stmt = (
         select(StylebookOrganizationCanonical)
-        .where(StylebookOrganizationCanonical.stylebook_id == stylebook_id)
+        .where(
+            StylebookOrganizationCanonical.stylebook_id == stylebook_id,
+            StylebookOrganizationCanonical.status == "active",
+        )
         .order_by(col(StylebookOrganizationCanonical.label).asc())
         .limit(max(limit * 8, 96))
     )

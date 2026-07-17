@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from backfield_db import SubstratePerson, SubstratePersonMention
-from backfield_entities.canonical.link import CANONICAL_LINK_UNLINKED
+from backfield_entities.canonical.link import CANONICAL_LINK_PENDING, CANONICAL_LINK_UNLINKED
+from backfield_entities.canonical.link_commit_gate import sync_link_commit_blocked
 from backfield_entities.canonical.plan_types import CanonicalPersistPlan
 from backfield_entities.entities.person.persist import (
     apply_canonical_persist_plan,
@@ -182,24 +183,41 @@ class PersonPersistHandler:
             if person.id is not None:
                 touched_person_ids.add(int(person.id))
             if ctx.stylebook_id is not None and person.stylebook_person_canonical_id is not None:
-                refresh_aliases_for_linked_person(
+                veto = sync_link_commit_blocked(
                     session,
+                    entity_type="person",
+                    substrate_row=person,
+                    canonical_id=str(person.stylebook_person_canonical_id),
                     stylebook_id=ctx.stylebook_id,
-                    person=person,
-                    provenance="substrate_ingest",
                 )
-                _upsert_mention_and_occurrence(
-                    session,
-                    article_id=int(ctx.article_id),
-                    person_id=int(person.id),  # type: ignore[arg-type]
-                    article_text=ctx.article_text,
-                    entry=entry,
-                    run_id=ctx.run_id,
-                    graph_id=ctx.graph_id,
-                    bucket=bucket,
-                    preserve_editor_changes=policy == "smart_merge",
+                if veto is None:
+                    refresh_aliases_for_linked_person(
+                        session,
+                        stylebook_id=ctx.stylebook_id,
+                        person=person,
+                        provenance="substrate_ingest",
+                    )
+                    _upsert_mention_and_occurrence(
+                        session,
+                        article_id=int(ctx.article_id),
+                        person_id=int(person.id),  # type: ignore[arg-type]
+                        article_text=ctx.article_text,
+                        entry=entry,
+                        run_id=ctx.run_id,
+                        graph_id=ctx.graph_id,
+                        bucket=bucket,
+                        preserve_editor_changes=policy == "smart_merge",
+                    )
+                    continue
+                logger.warning(
+                    "Linked person id=%s fails commit gate (%s); clearing FK and re-planning",
+                    person.id,
+                    veto,
                 )
-            elif ctx.stylebook_id is not None:
+                person.stylebook_person_canonical_id = None
+                person.canonical_link_status = CANONICAL_LINK_PENDING
+                session.add(person)
+            if ctx.stylebook_id is not None and person.stylebook_person_canonical_id is None:
                 plan = decide_person_canonical_persist_plan(
                     session,
                     stylebook_id=ctx.stylebook_id,

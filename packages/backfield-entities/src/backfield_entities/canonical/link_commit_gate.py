@@ -18,6 +18,11 @@ from backfield_db import (
 )
 from sqlmodel import Session
 
+from backfield_entities.canonical.editorial_aliases import (
+    load_location_editorial_alias_keys,
+    load_organization_editorial_alias_keys,
+    load_person_editorial_alias_keys,
+)
 from backfield_entities.canonical.jurisdiction import place_extract_components_from_entry
 from backfield_entities.canonical.link_matrix import (
     autolink_container_to_fine_denied,
@@ -49,15 +54,15 @@ def _person_link_blocked(
     *,
     person: SubstratePerson,
     canonical_id: str,
+    stylebook_id: int,
 ) -> str | None:
     from backfield_entities.entities.person.name_mismatch import person_link_is_obvious_mismatch
-    from backfield_entities.quality.finders._name_mismatch_common import (
-        load_person_editorial_alias_keys,
-    )
 
     canon = session.get(StylebookPersonCanonical, canonical_id)
-    if canon is None:
+    if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         return VETO_CANONICAL_MISSING
+    if (canon.status or "").strip().lower() != "active":
+        return VETO_CANONICAL_INACTIVE
     editorial = load_person_editorial_alias_keys(session, canonical_ids=[canonical_id])
     alias_keys = editorial.get(canonical_id, frozenset())
     substrate_name = str(person.name or person.normalized_name or "")
@@ -75,17 +80,17 @@ def _organization_link_blocked(
     *,
     organization: SubstrateOrganization,
     canonical_id: str,
+    stylebook_id: int,
 ) -> str | None:
     from backfield_entities.entities.organization.name_mismatch import (
         organization_link_is_obvious_mismatch,
     )
-    from backfield_entities.quality.finders._name_mismatch_common import (
-        load_organization_editorial_alias_keys,
-    )
 
     canon = session.get(StylebookOrganizationCanonical, canonical_id)
-    if canon is None:
+    if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         return VETO_CANONICAL_MISSING
+    if (canon.status or "").strip().lower() != "active":
+        return VETO_CANONICAL_INACTIVE
     editorial = load_organization_editorial_alias_keys(session, canonical_ids=[canonical_id])
     alias_keys = editorial.get(canonical_id, frozenset())
     substrate_name = str(organization.name or organization.normalized_name or "")
@@ -107,9 +112,6 @@ def _location_link_blocked(
     entry: dict[str, Any] | None = None,
 ) -> str | None:
     from backfield_entities.entities.location.link_identity import location_link_is_obvious_mismatch
-    from backfield_entities.quality.finders._name_mismatch_common import (
-        load_location_editorial_alias_keys,
-    )
 
     canon = session.get(StylebookLocationCanonical, canonical_id)
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
@@ -186,11 +188,19 @@ def sync_link_commit_blocked(
         return VETO_CANONICAL_MISSING
     if entity_type == "person":
         assert isinstance(substrate_row, SubstratePerson)
-        return _person_link_blocked(session, person=substrate_row, canonical_id=cid)
+        return _person_link_blocked(
+            session,
+            person=substrate_row,
+            canonical_id=cid,
+            stylebook_id=stylebook_id,
+        )
     if entity_type == "organization":
         assert isinstance(substrate_row, SubstrateOrganization)
         return _organization_link_blocked(
-            session, organization=substrate_row, canonical_id=cid
+            session,
+            organization=substrate_row,
+            canonical_id=cid,
+            stylebook_id=stylebook_id,
         )
     assert isinstance(substrate_row, SubstrateLocation)
     return _location_link_blocked(

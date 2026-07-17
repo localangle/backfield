@@ -9,6 +9,9 @@ from backfield_db import (
 from sqlalchemy import text
 from sqlmodel import Session, col, select
 
+from backfield_entities.canonical.editorial_aliases import (
+    load_organization_editorial_alias_keys,
+)
 from backfield_entities.canonical.link import CANONICAL_LINK_LINKED
 from backfield_entities.entities.organization.name_mismatch import (
     organization_link_is_obvious_mismatch,
@@ -18,7 +21,6 @@ from backfield_entities.quality.finders._name_mismatch_common import (
     ORG_TRIGRAM_CANDIDATE_FLOOR,
     ORGANIZATION_NAME_MISMATCH_CHECK_ID,
     CanonicalMismatchAgg,
-    load_organization_editorial_alias_keys,
     organization_project_ids,
 )
 from backfield_entities.quality.types import CleanupNameMismatchIssueRow

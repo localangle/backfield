@@ -137,7 +137,7 @@ def _strong_identity_canonical_ids(
         trusted_alias_only=True,
     ):
         canon = session.get(StylebookPersonCanonical, cid)
-        if canon is None or canon.id is None:
+        if canon is None or canon.id is None or canon.status != "active":
             continue
         if person_strong_identity_matches_canonical(person, canon):
             if cid not in seen:
@@ -146,6 +146,7 @@ def _strong_identity_canonical_ids(
 
     label_stmt = select(StylebookPersonCanonical).where(
         StylebookPersonCanonical.stylebook_id == stylebook_id,
+        StylebookPersonCanonical.status == "active",
     )
     for canon in session.exec(label_stmt).all():
         if canon.id is None:

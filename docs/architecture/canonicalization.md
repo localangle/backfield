@@ -76,7 +76,8 @@ animals, and non-person extractions defer according to their review metadata.
 
 AI-assisted person adjudication can select only from recalled canonicals and must meet the shared
 0.9 link-confidence threshold. If it declines every recalled candidate, a new canonical is allowed
-only when the extraction review policy permits it.
+only when the extraction review policy permits it. Recall and final link validation exclude inactive
+canonicals. Reruns revalidate an existing person link before refreshing machine-written aliases.
 
 ## Organization policy
 
@@ -89,7 +90,9 @@ trusted identity evidence.
 
 AI-assisted organization adjudication is closed-list. The normal link threshold is 0.9; the
 explicit compatible-type path uses its separate 0.75 threshold. Name-variant recall may run for
-acronyms and multiword names before creating a new canonical.
+acronyms and multiword names before creating a new canonical. Recall and final link validation
+exclude inactive canonicals. Reruns revalidate an existing organization link before refreshing
+machine-written aliases.
 
 ## Reconciliation and provenance
 
@@ -103,7 +106,8 @@ remain available to other articles; true orphans are unlinked and removed. `smar
 
 Occurrence offsets are optional evidence, not best-effort guesses. Ingest stores `start_char` and
 `end_char` only when normalized source text can be mapped back to an equivalent exact article
-slice; otherwise the occurrence remains available with null offsets.
+slice; otherwise the occurrence remains available with null offsets. Review saves replace only
+active `user_review` occurrences and preserve evidence from extraction and other source kinds.
 
 Every automatic outcome records structured reasons, including exact identity, fuzzy recall,
 materialization, ambiguity, deferral, and AI adjudication. Semantic documents point to substrate
