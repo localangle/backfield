@@ -106,9 +106,16 @@ LLM work must flow through the existing call and usage tracking paths.
 
 `GeocodeAgent` reconciles repeated rows before emitting its consolidated `places`
 payload. Administrative rows with the same normalized identity collapse directly;
-fine-grained places also require shared resolver identity, nearby point geometry,
-or a matching resolved/review pair. Shared coordinates alone never collapse
-differently named places.
+fine-grained rows also require the same extraction type and name plus shared
+resolver identity, nearby point geometry, or a matching resolved/review pair.
+Addresses and named places remain separate even when they share a provider feature
+or coordinates. Shared coordinates alone never collapse differently named places.
+
+Address display formatting is identity-preserving: a numbered address must retain
+its house number and meaningful street tokens after any model-assisted polish.
+Recognized country rows use structured ISO identity and can be accepted without
+resolver geometry. Natural features use only jurisdiction explicitly present in
+their extracted location string.
 
 Consolidate QA also routes state/country contradictions to `needs_review` with
 `geocode_qa_code: geocode_subnational_mismatch` when the extract names a US state

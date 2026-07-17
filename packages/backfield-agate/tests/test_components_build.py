@@ -1,5 +1,6 @@
 """Tests for deterministic PlaceExtract components builder."""
 
+import pytest
 from agate_nodes.place_extract.article_context import extract_article_context
 from agate_nodes.place_extract.components_build import build_components
 
@@ -96,6 +97,55 @@ def test_country_type_prefers_iso_code_over_ambiguous_subdivision_code() -> None
     components = build_components("IN", "country", ctx)
     assert components["state"] == {"name": "", "abbr": ""}
     assert components["country"] == {"name": "India", "abbr": "IN"}
+
+
+@pytest.mark.parametrize(
+    ("location", "expected_country"),
+    [
+        ("Canada", {"name": "Canada", "abbr": "CA"}),
+        ("u.s.a.", {"name": "United States", "abbr": "US"}),
+        ("Atlantis", {"name": "Atlantis", "abbr": ""}),
+    ],
+)
+def test_country_type_preserves_authoritative_or_raw_identity(
+    location: str,
+    expected_country: dict[str, str],
+) -> None:
+    components = build_components(
+        location,
+        "country",
+        extract_article_context("News from Chicago, IL."),
+    )
+    assert components["country"] == expected_country
+    assert components["city"] == ""
+    assert components["state"] == {"name": "", "abbr": ""}
+
+
+@pytest.mark.parametrize(
+    ("location", "location_type", "expected_city", "expected_state", "expected_country"),
+    [
+        ("Lake Example", "natural", "", "", ""),
+        ("Lake Example, MI", "natural", "", "MI", "US"),
+        ("Lake Example, Ann Arbor, MI", "natural", "Ann Arbor", "MI", "US"),
+        ("Great Basin", "region_national", "", "", ""),
+        ("Great Basin, NV", "region_state", "", "NV", "US"),
+    ],
+)
+def test_natural_and_region_jurisdiction_comes_only_from_explicit_tail(
+    location: str,
+    location_type: str,
+    expected_city: str,
+    expected_state: str,
+    expected_country: str,
+) -> None:
+    components = build_components(
+        location,
+        location_type,
+        extract_article_context("Filed from Chicago, IL."),
+    )
+    assert components["city"] == expected_city
+    assert components["state"]["abbr"] == expected_state
+    assert components["country"]["abbr"] == expected_country
 
 
 def test_foreign_subdivision_and_postal_code_are_parsed_from_right() -> None:

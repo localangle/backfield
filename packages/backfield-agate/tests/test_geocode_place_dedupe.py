@@ -161,6 +161,33 @@ def test_keeps_different_colocated_places_with_shared_resolver_id() -> None:
     assert len(deduplicated["points"]) == 2
 
 
+def test_keeps_colocated_venue_and_address_with_shared_resolver_identity() -> None:
+    places = _empty_places()
+    places["points"] = [
+        _entry(
+            "Jay Pritzker Pavilion, Chicago, IL",
+            location_type="place",
+            result_id="pelias:address:201-east-randolph",
+            coordinates=[-87.6216, 41.8830],
+            formatted_address="201 E Randolph St, Chicago, IL 60601",
+            mention="The concert returns to Jay Pritzker Pavilion.",
+        ),
+        _entry(
+            "Jay Pritzker Pavilion, Chicago, IL",
+            location_type="address",
+            result_id="pelias:address:201-east-randolph",
+            coordinates=[-87.6216, 41.8830],
+            formatted_address="201 E Randolph St, Chicago, IL 60601",
+            mention="The filing lists 201 E Randolph St.",
+        ),
+    ]
+
+    deduplicated = deduplicate_consolidated_places(places)
+
+    assert len(deduplicated["points"]) == 2
+    assert {entry["type"] for entry in deduplicated["points"]} == {"address", "place"}
+
+
 def test_prefers_resolved_row_over_matching_review_row() -> None:
     places = _empty_places()
     places["points"] = [

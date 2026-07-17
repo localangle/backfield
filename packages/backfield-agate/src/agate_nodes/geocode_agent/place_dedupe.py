@@ -9,7 +9,6 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
-
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 _POINT_TYPES = frozenset({"address", "place", "point"})
 _AREA_BUCKETS = ("states", "counties", "cities", "neighborhoods", "regions", "other")
@@ -42,8 +41,6 @@ def _display_name(entry: dict[str, Any]) -> str:
 
 def _type_family(entry: dict[str, Any]) -> str:
     location_type = _fold_text(entry.get("type"))
-    if location_type in _POINT_TYPES:
-        return "named_point"
     if location_type == "town":
         return "city"
     return location_type
@@ -128,7 +125,7 @@ def _same_place(left: _RetainedPlace, right: _RetainedPlace) -> bool:
     if not _jurisdictions_compatible(left.entry, right.entry):
         return False
 
-    if _type_family(left.entry) != "named_point":
+    if _type_family(left.entry) not in _POINT_TYPES:
         return True
 
     shared_identity = _identity_tokens(left.entry) & _identity_tokens(right.entry)
@@ -257,9 +254,10 @@ def _iter_places(places: dict[str, Any]) -> list[_RetainedPlace]:
 def deduplicate_consolidated_places(places: dict[str, Any]) -> dict[str, Any]:
     """Return one consolidated row for each confidently identical article place.
 
-    Exact normalized names are required. Fine-grained places additionally require a
-    shared resolver identity, nearby point geometry, or a resolved/review pair. This
-    deliberately avoids treating a shared address or H3 cell as place identity.
+    Exact normalized names and compatible extraction types are required. Fine-grained
+    places require a shared resolver identity, nearby point geometry, or a resolved/review
+    pair. This deliberately avoids treating a shared address, provider identity, or H3 cell
+    as identity across address, place, and point extractions.
     """
     retained: list[_RetainedPlace] = []
     for candidate in _iter_places(places):

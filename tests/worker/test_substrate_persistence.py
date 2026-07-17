@@ -56,7 +56,7 @@ def test_find_mention_span_unifies_curly_and_straight_quotes() -> None:
     assert span == (0, len(haystack))
 
 
-def test_find_mention_span_falls_back_when_paraphrase_differs() -> None:
+def test_find_mention_span_rejects_paraphrase_overlap() -> None:
     haystack = (
         'Ald. Desmon Yancy (5th) said Thursday morning he was "still processing" '
         "the shooting in his ward."
@@ -65,13 +65,7 @@ def test_find_mention_span_falls_back_when_paraphrase_differs() -> None:
         "Fifth Ward Ald. Desmon Yancy said Thursday morning he was 'still processing' "
         "the shooting in his ward."
     )
-    span = _find_mention_span(haystack=haystack, needle=needle)
-    assert span is not None
-    start, end = span
-    excerpt = haystack[start:end]
-    assert len(excerpt) >= 12
-    assert excerpt in haystack
-    assert "still processing" in excerpt or "Desmon Yancy" in excerpt
+    assert _find_mention_span(haystack=haystack, needle=needle) is None
 
 
 def test_review_rejection_does_not_persist_geocode_identity_or_cache() -> None:

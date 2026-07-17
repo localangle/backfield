@@ -64,6 +64,10 @@ location. Explicit country, subdivision, postal, and address components constrai
 resolver acceptance. A rejected or review-required result retains its reason and
 audit context but not provider identity, geometry, H3, or cache eligibility, and it
 cannot create a canonical.
+Recognized countries use ISO identity without requiring geometry; unknown country
+labels never inherit a domestic default. Address displays must preserve the
+structured house number and street, and article-level reconciliation keeps
+co-located addresses and named places as distinct extraction identities.
 
 ### Sync link commit gate (auto-ingest only)
 
@@ -121,6 +125,10 @@ reflected in API query parameters and UI filters:
 - editing canonical metadata or connections affects the Stylebook identity;
 - editing a story row from Agate review affects that story's substrate evidence and
   does not silently rewrite the canonical.
+
+Occurrence offsets are written only for a normalization-equivalent article slice.
+When whitespace or encoding artifacts cannot be mapped back exactly, the evidence
+text remains but its offsets are null.
 
 Backfield Output's `replace` policy is authoritative for machine extraction,
 including an emitted empty list: omitted article associations and their

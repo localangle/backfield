@@ -501,6 +501,42 @@ async def consolidate_node(state: AgentState) -> AgentState:
     location_text = state.get("location_text") or ""
     original_text = state.get("original_text") or location_text
     extra_fields = state.get("extra_fields", {})
+
+    country_identity = state.get("country_terminal_identity")
+    if location_type == "country" and isinstance(country_identity, dict):
+        country_name = str(country_identity.get("name") or "").strip()
+        country_code = str(country_identity.get("abbr") or "").strip().upper()
+        country_entry = {
+            "id": f"iso-country:{country_code}",
+            "original_text": original_text,
+            "location": country_name,
+            "type": "country",
+            "description": extra_fields.get("description", "Recognized country"),
+            "country_code": country_code,
+            "geocode_disposition": "accepted_authoritative_identity",
+        }
+        canonical_id = country_identity.get("canonical_id")
+        if canonical_id:
+            country_entry["canonical_id"] = str(canonical_id)
+        for key, value in extra_fields.items():
+            if key != "description":
+                country_entry[key] = value
+        _attach_router_audit(country_entry, state)
+        state["final_output"] = {
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [country_entry],
+                },
+                "points": [],
+                "needs_review": [],
+            }
+        }
+        return state
     
     # Handle non-addressable places (None geocoding result)
     if not geocoding_result:
@@ -525,6 +561,9 @@ async def consolidate_node(state: AgentState) -> AgentState:
             "geocoded": False,
             "reason": failure_reason
         }
+        if location_type == "country" and failure_reason == "country_identity_unresolved":
+            non_geocoded_entry["reason_code"] = "country_identity_unresolved"
+            non_geocoded_entry["geocode_disposition"] = "needs_country_identity_review"
         
         # Preserve all extra fields (including 'mural' and any other custom fields)
         for key, value in extra_fields.items():
@@ -601,13 +640,11 @@ async def consolidate_node(state: AgentState) -> AgentState:
     )
     effective_type = location_type
     if location_type == "address":
-        emit_location, upgraded_to_place = await maybe_upgrade_address_to_named_place(
+        emit_location, _ = await maybe_upgrade_address_to_named_place(
             state,
             formatted_address=formatted_line,
             baseline_location_line=emit_location,
         )
-        if upgraded_to_place:
-            effective_type = "place"
     elif location_type in ("intersection_road", "intersection_highway"):
         emit_location, upgraded_to_place = await maybe_upgrade_intersection_to_named_place(
             state,

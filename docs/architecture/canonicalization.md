@@ -61,6 +61,10 @@ Every extracted location has one terminal disposition: an accepted location or a
 review row. Explicit structured country, subdivision, postal code, and address precision constrain
 resolver results. Rejected, imprecise, and mail-only results do not retain provider identity,
 geometry, H3, or cache eligibility and cannot materialize canonicals.
+Recognized country identity comes from its ISO code and does not require resolver geometry.
+Unknown country labels remain unclassified rather than inheriting a default country. Address
+display values retain their house number and street identity, and point reconciliation does not
+merge an address extraction with a named-place extraction.
 
 ## Person policy
 
@@ -96,6 +100,10 @@ array: omitted machine associations and their system-extraction occurrences are 
 editor-added, editor-modified, and non-extraction associations remain. Shared substrate identities
 remain available to other articles; true orphans are unlinked and removed. `smart_merge` and
 `add_only` retain their non-authoritative behavior.
+
+Occurrence offsets are optional evidence, not best-effort guesses. Ingest stores `start_char` and
+`end_char` only when normalized source text can be mapped back to an equivalent exact article
+slice; otherwise the occurrence remains available with null offsets.
 
 Every automatic outcome records structured reasons, including exact identity, fuzzy recall,
 materialization, ambiguity, deferral, and AI adjudication. Semantic documents point to substrate

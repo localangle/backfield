@@ -95,7 +95,7 @@ class _ParsedLocation:
     city: str
     county: str
     subdivision: _Subdivision | None
-    country: _Country
+    country: _Country | None
     postal_code: str
     country_was_explicit: bool
 
@@ -236,13 +236,21 @@ def _parse_location_parts(
     context: ArticleContext,
 ) -> _ParsedLocation:
     parts = split_location_parts(location)
+    jurisdiction_must_be_explicit = location_type == "natural" or location_type.startswith(
+        "region"
+    )
     explicit_country: _Country | None = None
     subdivision: _Subdivision | None = None
     postal_code = ""
     city = ""
     county = ""
 
-    if parts:
+    if location_type == "country":
+        explicit_country = _lookup_country(location)
+        if explicit_country is None:
+            explicit_country = _Country(name=location.strip(), abbr="")
+        parts = []
+    elif parts:
         country_candidate = _lookup_country(parts[-1])
         subdivision_candidate = _lookup_subdivision(parts[-1], None)
         prefer_subdivision = subdivision_candidate is not None and (
@@ -276,18 +284,18 @@ def _parse_location_parts(
         county = parts[-1]
         parts = parts[:-1]
 
-    if parts:
+    if parts and (not jurisdiction_must_be_explicit or len(parts) >= 2):
         city = parts[-1]
         parts = parts[:-1]
 
     if country is None:
         country = _country_for_subdivision(subdivision)
-    if country is None:
+    if country is None and not jurisdiction_must_be_explicit:
         country = _lookup_country("US")
-    if country is None:
+    if country is None and not jurisdiction_must_be_explicit:
         raise RuntimeError("ISO country data does not include the United States")
 
-    if subdivision is None and not explicit_country:
+    if subdivision is None and not explicit_country and not jurisdiction_must_be_explicit:
         inferred_abbr = context.state_for_city(city) if city else context.anchor_state_abbr
         subdivision = _lookup_subdivision(inferred_abbr, "US")
 
@@ -424,8 +432,8 @@ def build_components(
         "abbr": state_abbr,
     }
     components["country"] = {
-        "name": parsed.country.name,
-        "abbr": parsed.country.abbr,
+        "name": parsed.country.name if parsed.country else "",
+        "abbr": parsed.country.abbr if parsed.country else "",
     }
     components["postal_code"] = parsed.postal_code
     components["city"] = parsed.city

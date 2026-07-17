@@ -86,8 +86,22 @@ def _geocode_hints_for_context(state: AgentState) -> str | None:
     return None
 
 
+def _country_component_identity(components: object) -> tuple[str, str] | None:
+    """Return the normalized country name/code when PlaceExtract established ISO identity."""
+    if not isinstance(components, dict):
+        return None
+    country = components.get("country")
+    if not isinstance(country, dict):
+        return None
+    name = str(country.get("name") or "").strip()
+    code = str(country.get("abbr") or "").strip().upper()
+    if not name or len(code) != 2 or not code.isalpha():
+        return None
+    return name, code
+
+
 def _create_model(location_type: str, location_text: str, components: dict, state: AgentState):
-    country_code = "US"
+    country_code = "" if location_type == "natural" or location_type.startswith("region") else "US"
     country_info = components.get("country")
     if isinstance(country_info, dict):
         abbr = country_info.get("abbr")
@@ -496,6 +510,35 @@ async def resolve_cache_or_miss(state: AgentState) -> AgentState:
                     )
             except Exception as e:
                 logger.warning("Error looking up cache for '%s': %s", location_text, e)
+
+    if location_type == "country":
+        country_identity = _country_component_identity(components)
+        if country_identity is None:
+            state["geocoding_result"] = None
+            state["geocoding_model"] = None
+            state["geocoding_failure_reason"] = "country_identity_unresolved"
+            state["country_terminal_identity"] = None
+            state["skip_external_geocode"] = True
+            return state
+
+        country_name, country_code = country_identity
+        canonical_id = None
+        if geocoding_result is not None:
+            confidence = getattr(geocoding_result.result, "confidence", None)
+            if isinstance(confidence, dict):
+                raw_canonical_id = confidence.get("canonical_id")
+                if raw_canonical_id is not None:
+                    canonical_id = str(raw_canonical_id).strip() or None
+        state["geocoding_result"] = None
+        state["geocoding_model"] = None
+        state["geocoding_failure_reason"] = None
+        state["country_terminal_identity"] = {
+            "name": country_name,
+            "abbr": country_code,
+            "canonical_id": canonical_id,
+        }
+        state["skip_external_geocode"] = True
+        return state
 
     if geocoding_result:
         state["geocoding_result"] = geocoding_result
