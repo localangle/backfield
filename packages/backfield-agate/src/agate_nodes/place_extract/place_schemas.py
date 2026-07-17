@@ -66,6 +66,7 @@ class LocationComponents(BaseModel):
     neighborhood: Optional[str] = Field(default="", description="Neighborhood name if applicable")
     city: Optional[str] = Field(default="", description="City name if applicable")
     county: Optional[str] = Field(default="", description="County name if applicable")
+    postal_code: Optional[str] = Field(default="", description="Postal code if applicable")
     state: Optional[StateInfo] = Field(default=None, description="State information if applicable")
     country: Optional[CountryInfo] = Field(default=None, description="Country information if applicable")
 
@@ -95,7 +96,10 @@ class Place(BaseModel):
     description: str = Field(description="Brief description of the location and its relevance")
     geocode_hints: str = Field(
         default="",
-        description="Concise story context for downstream geocoding (disambiguation, vague areas, ties to other mentions)",
+        description=(
+            "Geographic disambiguation for downstream geocoding/search: street, neighborhood, "
+            "nearby landmark, or which branch—not story synopsis"
+        ),
     )
     location: LocationInfo = Field(description="Location information with components")
     model_config = ConfigDict(extra="allow")  # Allow additional fields like 'mural'

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 from agate_nodes.geocode_agent.nodes.consolidate import (
     _geocode_region_mismatch_qa,
+    _geocode_subnational_label_mismatch_qa,
     _point_entry_without_geometry,
 )
 
@@ -59,4 +60,63 @@ def test_point_entry_without_geometry_strips_map_pin() -> None:
         },
     }
     out = _point_entry_without_geometry(entry)
-    assert "geometry" not in (out["geocode"]["result"] or {})
+    assert "geocode" not in out
+    assert out["geocoded"] is False
+    assert out["geocode_disposition"] == "rejected"
+    assert out["rejected_geocode_audit"]["formatted_address"] == "China"
+
+
+def _state_geocode_result(*, region_a: str, region: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        geocoder="pelias_search",
+        result=SimpleNamespace(
+            id=f"geonames:region:{region_a}",
+            processed_str=region,
+            geometry=SimpleNamespace(type="Point", coordinates=[-89.0, 40.0]),
+            confidence={
+                "pelias_layer": "region",
+                "pelias_region_a": region_a,
+                "pelias_region": region,
+                "pelias_country_code": "US",
+            },
+        ),
+    )
+
+
+def test_subnational_mismatch_oregon_resolved_as_maryland() -> None:
+    assert (
+        _geocode_subnational_label_mismatch_qa(
+            "state",
+            {},
+            "Oregon",
+            "Maryland",
+            _state_geocode_result(region_a="MD", region="Maryland"),
+        )
+        is True
+    )
+
+
+def test_subnational_mismatch_michigan_resolved_as_illinois() -> None:
+    assert (
+        _geocode_subnational_label_mismatch_qa(
+            "state",
+            {},
+            "Michigan",
+            "Illinois",
+            _state_geocode_result(region_a="IL", region="Illinois"),
+        )
+        is True
+    )
+
+
+def test_subnational_mismatch_false_for_matching_oregon() -> None:
+    assert (
+        _geocode_subnational_label_mismatch_qa(
+            "state",
+            {},
+            "Oregon",
+            "Oregon",
+            _state_geocode_result(region_a="OR", region="Oregon"),
+        )
+        is False
+    )

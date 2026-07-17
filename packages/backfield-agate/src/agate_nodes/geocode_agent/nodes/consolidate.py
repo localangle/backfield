@@ -6,6 +6,9 @@ import logging
 from typing import Any
 
 from agate_utils.geocoding.h3 import h3_cell
+from backfield_entities.ingest.geocode_cache.sanity import (
+    explicit_location_components_match_labels,
+)
 
 from ..types import AgentState
 from .emit_location_line import (
@@ -156,7 +159,9 @@ def _geocode_city_level_fallback_qa(
             return True
         if geo == "nominatim":
             nt = str(conf.get("nominatim_type") or "").strip().lower()
-            if nt in ("city", "town", "administrative") and not _label_contains_token(label_cf, token):
+            if nt in ("city", "town", "administrative") and not _label_contains_token(
+                label_cf, token
+            ):
                 return True
         if geo.startswith("geocodio"):
             acc = str(conf.get("accuracy_type") or "").strip().lower()
@@ -306,16 +311,142 @@ def _geocode_region_mismatch_qa(
     return False
 
 
+def _normalize_us_state_abbr(value: str | None) -> str | None:
+    """Return a 2-letter US state/DC abbr when ``value`` is a known name or abbr."""
+    # Local import keeps consolidate free of place_extract cycles at module import.
+    from agate_nodes.place_extract.location_utils import US_STATE_ABBR_BY_NAME, US_STATES
+
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    upper = raw.upper()
+    if upper in US_STATES:
+        return upper
+    return US_STATE_ABBR_BY_NAME.get(raw.lower())
+
+
+def _expected_state_abbr_from_extract(
+    components: dict[str, Any],
+    *,
+    location_type: str,
+    location_text: str,
+) -> str | None:
+    state = components.get("state") if isinstance(components, dict) else None
+    if isinstance(state, dict):
+        abbr = _normalize_us_state_abbr(str(state.get("abbr") or ""))
+        if abbr:
+            return abbr
+        abbr = _normalize_us_state_abbr(str(state.get("name") or ""))
+        if abbr:
+            return abbr
+    elif isinstance(state, str):
+        abbr = _normalize_us_state_abbr(state)
+        if abbr:
+            return abbr
+    if (location_type or "").strip().lower() == "state":
+        return _normalize_us_state_abbr(location_text)
+    return None
+
+
+def _result_state_abbr_from_geocode(
+    geocoding_result: Any,
+    formatted_line: str,
+) -> str | None:
+    conf = _geocoding_confidence_dict(geocoding_result)
+    for key in ("pelias_region_a", "region_a", "state_abbr", "state_code"):
+        abbr = _normalize_us_state_abbr(str(conf.get(key) or ""))
+        if abbr:
+            return abbr
+    for key in ("pelias_region", "region", "state"):
+        abbr = _normalize_us_state_abbr(str(conf.get(key) or ""))
+        if abbr:
+            return abbr
+    # Trailing ", OR" / ", Oregon" in formatted geocoder label.
+    label = str(formatted_line or "").strip()
+    if "," in label:
+        tail = label.rsplit(",", 1)[-1].strip()
+        abbr = _normalize_us_state_abbr(tail)
+        if abbr:
+            return abbr
+    return _normalize_us_state_abbr(label)
+
+
+def _geocode_subnational_label_mismatch_qa(
+    location_type: str,
+    components: dict[str, Any],
+    location_text: str,
+    formatted_line: str,
+    geocoding_result: Any,
+) -> bool:
+    """True when expected state/country contradicts the geocoder's admin labels.
+
+    Narrow gate for bare state/country extracts and rows with explicit admin
+    components (Oregon→Maryland, Michigan→Illinois).
+    """
+    if _stylebook_or_canonical_hit(geocoding_result):
+        return False
+
+    comps = components if isinstance(components, dict) else {}
+    lt = (location_type or "").strip().lower()
+    expected_state = _expected_state_abbr_from_extract(
+        comps, location_type=lt, location_text=location_text
+    )
+    expected_country = _expected_country_abbr_from_components(comps)
+    if lt == "country" and not expected_country:
+        expected_country = _COUNTRY_LABEL_TO_ABBR.get(str(location_text or "").strip().lower())
+
+    state_comp = comps.get("state")
+    if isinstance(state_comp, dict):
+        state_label = str(state_comp.get("abbr") or state_comp.get("name") or "").strip()
+        has_explicit_state = bool(state_label)
+    elif isinstance(state_comp, str):
+        has_explicit_state = bool(state_comp.strip())
+    else:
+        has_explicit_state = False
+    country_comp = comps.get("country")
+    has_explicit_country = isinstance(country_comp, dict) and bool(
+        str(country_comp.get("abbr") or "").strip()
+    )
+    check_state = lt == "state" or has_explicit_state
+    check_country = lt == "country" or has_explicit_country
+    if not check_state and not check_country:
+        return False
+
+    if check_state and expected_state:
+        resolved_state = _result_state_abbr_from_geocode(geocoding_result, formatted_line)
+        if resolved_state and resolved_state != expected_state:
+            return True
+
+    if check_country and expected_country:
+        resolved_country = _result_country_abbr_from_geocode(geocoding_result, formatted_line)
+        if resolved_country and resolved_country != expected_country:
+            return True
+
+    return False
+
+
 def _point_entry_without_geometry(entry: dict[str, Any]) -> dict[str, Any]:
-    """Drop geocode geometry so review maps do not plot untrusted centroids."""
+    """Move rejected provider identity to audit-only metadata."""
     out = copy.deepcopy(entry)
-    geocode = out.get("geocode")
-    if not isinstance(geocode, dict):
-        return out
-    result = geocode.get("result")
-    if isinstance(result, dict):
-        geocode["result"] = {k: v for k, v in result.items() if k != "geometry"}
-        out["geocode"] = geocode
+    geocode = out.pop("geocode", None)
+    if isinstance(geocode, dict):
+        result = geocode.get("result")
+        rejected: dict[str, Any] = {
+            "geocode_type": geocode.get("geocode_type"),
+        }
+        if isinstance(result, dict):
+            rejected["provider_id"] = result.get("id")
+            rejected["formatted_address"] = result.get("formatted_address")
+        out["rejected_geocode_audit"] = rejected
+    identity_basis = "|".join(
+        (
+            str(out.get("type") or ""),
+            str(out.get("original_text") or out.get("location") or ""),
+        )
+    )
+    out["id"] = f"rejected:{hashlib.sha256(identity_basis.encode()).hexdigest()[:20]}"
+    out["geocoded"] = False
+    out["geocode_disposition"] = "rejected"
     return out
 
 
@@ -325,7 +456,7 @@ def _city_geocode_admin_level_mismatch(
     components: dict[str, Any],
     geocoding_result: Any,
 ) -> bool:
-    """True when we asked for a city (components.city set) but the resolver looks state/national-scale."""
+    """True when a city request resolves to a state- or national-scale result."""
     if location_type not in ("city", "town"):
         return False
     city = str((components or {}).get("city") or "").strip()
@@ -370,6 +501,42 @@ async def consolidate_node(state: AgentState) -> AgentState:
     location_text = state.get("location_text") or ""
     original_text = state.get("original_text") or location_text
     extra_fields = state.get("extra_fields", {})
+
+    country_identity = state.get("country_terminal_identity")
+    if location_type == "country" and isinstance(country_identity, dict):
+        country_name = str(country_identity.get("name") or "").strip()
+        country_code = str(country_identity.get("abbr") or "").strip().upper()
+        country_entry = {
+            "id": f"iso-country:{country_code}",
+            "original_text": original_text,
+            "location": country_name,
+            "type": "country",
+            "description": extra_fields.get("description", "Recognized country"),
+            "country_code": country_code,
+            "geocode_disposition": "accepted_authoritative_identity",
+        }
+        canonical_id = country_identity.get("canonical_id")
+        if canonical_id:
+            country_entry["canonical_id"] = str(canonical_id)
+        for key, value in extra_fields.items():
+            if key != "description":
+                country_entry[key] = value
+        _attach_router_audit(country_entry, state)
+        state["final_output"] = {
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [country_entry],
+                },
+                "points": [],
+                "needs_review": [],
+            }
+        }
+        return state
     
     # Handle non-addressable places (None geocoding result)
     if not geocoding_result:
@@ -394,6 +561,9 @@ async def consolidate_node(state: AgentState) -> AgentState:
             "geocoded": False,
             "reason": failure_reason
         }
+        if location_type == "country" and failure_reason == "country_identity_unresolved":
+            non_geocoded_entry["reason_code"] = "country_identity_unresolved"
+            non_geocoded_entry["geocode_disposition"] = "needs_country_identity_review"
         
         # Preserve all extra fields (including 'mural' and any other custom fields)
         for key, value in extra_fields.items():
@@ -454,7 +624,7 @@ async def consolidate_node(state: AgentState) -> AgentState:
         type(geometry_coords).__name__,
     )
 
-    # Stylebook canonical id when this result came from a Stylebook canonical match (for core-api to create link)
+    # Preserve canonical identity from a Stylebook match for downstream linking.
     confidence = getattr(geocoding_result.result, "confidence", None) or {}
     canonical_id = confidence.get("canonical_id")
     if canonical_id is None and geocoding_result.result.id and str(
@@ -470,13 +640,11 @@ async def consolidate_node(state: AgentState) -> AgentState:
     )
     effective_type = location_type
     if location_type == "address":
-        emit_location, upgraded_to_place = await maybe_upgrade_address_to_named_place(
+        emit_location, _ = await maybe_upgrade_address_to_named_place(
             state,
             formatted_address=formatted_line,
             baseline_location_line=emit_location,
         )
-        if upgraded_to_place:
-            effective_type = "place"
     elif location_type in ("intersection_road", "intersection_highway"):
         emit_location, upgraded_to_place = await maybe_upgrade_intersection_to_named_place(
             state,
@@ -517,20 +685,65 @@ async def consolidate_node(state: AgentState) -> AgentState:
     _attach_router_audit(location_entry, state)
 
     # Organize by location type
-    if location_type in ["state"]:
+    components_for_qa = state.get("location_components") or {}
+    comps_dict = components_for_qa if isinstance(components_for_qa, dict) else {}
+    if not explicit_location_components_match_labels(
+        components=comps_dict,
+        location_text=location_text,
+        match_label=formatted_line,
+        match_formatted_address=formatted_line,
+    ):
+        qa_entry = _point_entry_without_geometry(
+            {
+                **location_entry,
+                "geocode_component_mismatch": True,
+                "geocode_qa_code": "geocode_component_mismatch",
+            }
+        )
+        _attach_router_audit(qa_entry, state)
+        consolidated["places"]["needs_review"].append(qa_entry)
+        state["final_output"] = consolidated
+        return state
+    subnational_mismatch = _geocode_subnational_label_mismatch_qa(
+        location_type,
+        comps_dict,
+        location_text,
+        formatted_line,
+        geocoding_result,
+    )
+    if subnational_mismatch and location_type in ("state", "country"):
+        qa_entry = _point_entry_without_geometry(
+            {
+                **location_entry,
+                "geocode_subnational_mismatch": True,
+                "geocode_qa_code": "geocode_subnational_mismatch",
+            }
+        )
+        _attach_router_audit(qa_entry, state)
+        consolidated["places"]["needs_review"].append(qa_entry)
+    elif location_type in ["state"]:
         consolidated["places"]["areas"]["states"].append(location_entry)
     elif location_type in ["county"]:
         consolidated["places"]["areas"]["counties"].append(location_entry)
     elif location_type in ["city", "town"]:
-        components_for_qa = state.get("location_components") or {}
-        if _city_geocode_admin_level_mismatch(
+        if subnational_mismatch or _city_geocode_admin_level_mismatch(
             location_type, formatted_line, components_for_qa, geocoding_result
         ):
-            qa_entry = {
-                **location_entry,
-                "geocode_admin_level_mismatch": True,
-                "geocode_qa_code": "geocode_admin_level_mismatch",
-            }
+            qa_code = (
+                "geocode_subnational_mismatch"
+                if subnational_mismatch
+                else "geocode_admin_level_mismatch"
+            )
+            qa_entry = _point_entry_without_geometry(
+                {
+                    **location_entry,
+                    "geocode_admin_level_mismatch": qa_code
+                    == "geocode_admin_level_mismatch",
+                    "geocode_subnational_mismatch": qa_code
+                    == "geocode_subnational_mismatch",
+                    "geocode_qa_code": qa_code,
+                }
+            )
             _attach_router_audit(qa_entry, state)
             consolidated["places"]["needs_review"].append(qa_entry)
         else:
@@ -546,11 +759,13 @@ async def consolidate_node(state: AgentState) -> AgentState:
             geocoding_result,
             location_text=location_text,
         ):
-            qa_entry = {
-                **location_entry,
-                "geocode_city_level_fallback": True,
-                "geocode_qa_code": "geocode_city_level_fallback",
-            }
+            qa_entry = _point_entry_without_geometry(
+                {
+                    **location_entry,
+                    "geocode_city_level_fallback": True,
+                    "geocode_qa_code": "geocode_city_level_fallback",
+                }
+            )
             _attach_router_audit(qa_entry, state)
             consolidated["places"]["needs_review"].append(qa_entry)
         else:
@@ -559,7 +774,13 @@ async def consolidate_node(state: AgentState) -> AgentState:
         consolidated["places"]["areas"]["regions"].append(location_entry)
     elif location_type in ["natural", "street_road"]:
         consolidated["places"]["areas"]["other"].append(location_entry)
-    elif location_type in ["address", "point", "place", "intersection_road", "intersection_highway"]:
+    elif location_type in [
+        "address",
+        "point",
+        "place",
+        "intersection_road",
+        "intersection_highway",
+    ]:
         # Use H3 cell ID as the point ID
         coordinates = geocoding_result.result.geometry.coordinates
         try:
@@ -590,17 +811,23 @@ async def consolidate_node(state: AgentState) -> AgentState:
 
         components_qa = state.get("location_components") or {}
         comps_dict = components_qa if isinstance(components_qa, dict) else {}
-        region_mismatch = location_type in ("address", "place", "point") and _geocode_region_mismatch_qa(
-            comps_dict,
-            formatted_line,
-            geocoding_result,
+        region_mismatch = (
+            location_type in ("address", "place", "point")
+            and _geocode_region_mismatch_qa(
+                comps_dict,
+                formatted_line,
+                geocoding_result,
+            )
         )
-        city_fallback = location_type in ("address", "place", "point") and _geocode_city_level_fallback_qa(
-            location_type,
-            formatted_line,
-            comps_dict,
-            geocoding_result,
-            location_text=location_text,
+        city_fallback = (
+            location_type in ("address", "place", "point")
+            and _geocode_city_level_fallback_qa(
+                location_type,
+                formatted_line,
+                comps_dict,
+                geocoding_result,
+                location_text=location_text,
+            )
         )
         llm_intersection_estimate = (
             location_type in ("intersection_road", "intersection_highway")
@@ -617,19 +844,23 @@ async def consolidate_node(state: AgentState) -> AgentState:
             _attach_router_audit(qa_point, state)
             consolidated["places"]["needs_review"].append(qa_point)
         elif city_fallback:
-            qa_point = {
-                **point_entry,
-                "geocode_city_level_fallback": True,
-                "geocode_qa_code": "geocode_city_level_fallback",
-            }
+            qa_point = _point_entry_without_geometry(
+                {
+                    **point_entry,
+                    "geocode_city_level_fallback": True,
+                    "geocode_qa_code": "geocode_city_level_fallback",
+                }
+            )
             _attach_router_audit(qa_point, state)
             consolidated["places"]["needs_review"].append(qa_point)
         elif llm_intersection_estimate:
-            qa_point = {
-                **point_entry,
-                "geocode_llm_intersection_estimate": True,
-                "geocode_qa_code": "llm_intersection_estimate",
-            }
+            qa_point = _point_entry_without_geometry(
+                {
+                    **point_entry,
+                    "geocode_llm_intersection_estimate": True,
+                    "geocode_qa_code": "llm_intersection_estimate",
+                }
+            )
             _attach_router_audit(qa_point, state)
             consolidated["places"]["needs_review"].append(qa_point)
         else:

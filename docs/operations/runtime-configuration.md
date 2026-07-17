@@ -154,7 +154,8 @@ Stylebook bundle storage is operator infrastructure:
 
 Set bundle configuration on both Stylebook API and worker. The browser uploads import bundles through
 Stylebook API, so the bucket does not need browser upload CORS. Export downloads use presigned GET
-URLs.
+URLs with a human-readable `Content-Disposition` filename
+(`{slug}-stylebook-export-{YYYY-MM-DD}.zip`).
 
 In local Compose, put bundle variables in the root `.env`. Do not add an empty
 `${STYLEBOOK_BUNDLE_S3_BUCKET}` service override: Compose environment entries take precedence over

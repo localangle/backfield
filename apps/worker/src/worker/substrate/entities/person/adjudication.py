@@ -9,6 +9,7 @@ from typing import Any
 
 from agate_utils.llm import call_llm
 from backfield_db import StylebookPersonCanonical, SubstratePerson
+from backfield_entities.canonical.link_commit_gate import gate_or_coerce_link_plan
 from backfield_entities.canonical.plan_types import (
     ADJUDICATION_LINK_MIN_CONFIDENCE,
     CanonicalPersistDecision,
@@ -21,6 +22,13 @@ from backfield_entities.entities.person.policy import (
 from backfield_entities.entities.person.recall import alias_texts_for_canonical
 from sqlmodel import Session, select
 
+from worker.substrate.canonical.adjudication_result import (
+    ADJUDICATION_CORRECTIVE_SUFFIX,
+    ADJUDICATION_JSON_CONTRACT,
+    adjudication_allows_link,
+    adjudication_audit_fields,
+    parse_canonical_adjudication_result,
+)
 from worker.substrate.canonical.llm_call_policy import (
     ADJUDICATION_LLM_MAX_RETRIES,
     ADJUDICATION_LLM_TIMEOUT_S,
@@ -182,18 +190,18 @@ def prepare_person_adjudication(
         "Candidates (at most one id may be chosen):\n"
         f"{lines}\n\n"
         "Rules:\n"
-        "- Set canonical_id only when the candidate is the SAME individual the substrate row "
-        "represents (same person despite minor spelling or accent variants).\n"
+        "- Choose decision=\"link_existing\" only when the candidate is the SAME individual "
+        "the substrate row represents (same person despite minor spelling or accent variants).\n"
         "- For recurring public figures and athletes, team (affiliation) and position (title) "
         "change over time — a different team or role does NOT by itself mean a different person. "
         "Use article context (e.g. former, traded, ex-) plus name/alias overlap to decide.\n"
-        "- Set canonical_id to null only when you believe the candidate is a true namesake "
-        "(a different individual with a similar name), not merely a team/role change.\n"
-        "- Prefer null (human review) over a stretched link between genuine namesakes.\n"
+        "- When the candidate is a true namesake (different individual with a similar name), "
+        "or given names match but family names differ, set decision=\"no_match\", "
+        "canonical_id=null, same_identity=false, conflicting_identity_evidence=true.\n"
+        "- Prefer no_match / uncertain over a stretched link between genuine namesakes.\n"
         f"- Use confidence {floor} or higher only for definitive same-person identity; "
         f"otherwise use confidence below {floor} (the system will not auto-link).\n\n"
-        "Return JSON only: canonical_id (UUID string matching one candidate id, or null), "
-        "confidence (0.0-1.0), rationale (short string)."
+        f"{ADJUDICATION_JSON_CONTRACT}"
     )
     return PersonAdjudicationPrepared(
         person=person,
@@ -204,10 +212,12 @@ def prepare_person_adjudication(
     )
 
 
-def run_person_adjudication_llm(prepared: PersonAdjudicationPrepared) -> dict[str, Any] | None:
+def _call_person_adjudication_raw(
+    prepared: PersonAdjudicationPrepared, prompt: str
+) -> dict[str, Any] | None:
     try:
         raw = call_llm(
-            prepared.prompt,
+            prompt,
             model=prepared.model,
             force_json=True,
             temperature=0.0,
@@ -219,9 +229,19 @@ def run_person_adjudication_llm(prepared: PersonAdjudicationPrepared) -> dict[st
         data = json.loads(raw)
     except Exception:
         return None
-    if not isinstance(data, dict):
-        return None
-    return data
+    return data if isinstance(data, dict) else None
+
+
+def run_person_adjudication_llm(prepared: PersonAdjudicationPrepared) -> dict[str, Any] | None:
+    candidate_ids = {str(c[0]) for c in prepared.candidates}
+    data = _call_person_adjudication_raw(prepared, prepared.prompt)
+    if parse_canonical_adjudication_result(data, candidate_ids=candidate_ids) is not None:
+        return data
+    retry_prompt = prepared.prompt + ADJUDICATION_CORRECTIVE_SUFFIX
+    retried = _call_person_adjudication_raw(prepared, retry_prompt)
+    if parse_canonical_adjudication_result(retried, candidate_ids=candidate_ids) is not None:
+        return retried
+    return None
 
 
 def resolve_person_adjudication_plan(
@@ -229,6 +249,8 @@ def resolve_person_adjudication_plan(
     *,
     prepared: PersonAdjudicationPrepared,
     llm_data: dict[str, Any] | None,
+    session: Session | None = None,
+    stylebook_id: int | None = None,
 ) -> CanonicalPersistPlan:
     if llm_data is None:
         return plan
@@ -236,30 +258,16 @@ def resolve_person_adjudication_plan(
     person = prepared.person
     candidates = prepared.candidates
     model = prepared.model
-
-    cid_raw = llm_data.get("canonical_id")
-    conf_raw = llm_data.get("confidence", 0.0)
-    rationale = str(llm_data.get("rationale") or "").strip()
-    chosen: str | None
-    if cid_raw is None or cid_raw == "":
-        chosen = None
-    else:
-        chosen = str(cid_raw).strip() or None
-    try:
-        confidence = float(conf_raw)
-    except (TypeError, ValueError):
-        confidence = 0.0
-
     candidate_ids = {str(c[0]) for c in candidates}
+    parsed = parse_canonical_adjudication_result(llm_data, candidate_ids=candidate_ids)
+    if parsed is None:
+        return plan
 
     def _reject_link() -> CanonicalPersistPlan:
         extra: dict[str, Any] = {
             "code": "canonical_adjudication",
             "model": model,
-            "canonical_id": chosen,
-            "confidence": confidence,
-            "rationale": rationale or None,
-            "outcome": "no_high_confidence_link",
+            **adjudication_audit_fields(parsed, linked=False),
             "min_confidence_for_link": ADJUDICATION_LINK_MIN_CONFIDENCE,
         }
         merged = tuple(list(plan.resolution_reasons) + [extra])
@@ -273,28 +281,33 @@ def resolve_person_adjudication_plan(
             resolution_reasons=merged,
         )
 
-    if (
-        chosen is None
-        or chosen not in candidate_ids
-        or confidence < ADJUDICATION_LINK_MIN_CONFIDENCE
+    if not adjudication_allows_link(
+        parsed, min_confidence=ADJUDICATION_LINK_MIN_CONFIDENCE
     ):
         return _reject_link()
 
+    chosen = str(parsed.canonical_id)
     extra = {
         "code": "canonical_adjudication",
         "model": model,
-        "canonical_id": str(chosen),
-        "confidence": float(confidence),
-        "rationale": rationale or None,
-        "outcome": "link_existing",
+        **adjudication_audit_fields(parsed, linked=True),
         "min_confidence_for_link": ADJUDICATION_LINK_MIN_CONFIDENCE,
     }
     merged = tuple(list(plan.resolution_reasons) + [extra])
-    return CanonicalPersistPlan(
+    linked = CanonicalPersistPlan(
         decision=CanonicalPersistDecision.LINK_EXISTING,
-        existing_canonical_id=str(chosen),
+        existing_canonical_id=chosen,
         resolution_reasons=merged,
     )
+    if session is not None and stylebook_id is not None:
+        return gate_or_coerce_link_plan(
+            session,
+            linked,
+            entity_type="person",
+            substrate_row=person,
+            stylebook_id=stylebook_id,
+        )
+    return linked
 
 
 def adjudicate_ambiguous_person_plan_with_llm(
@@ -322,4 +335,10 @@ def adjudicate_ambiguous_person_plan_with_llm(
     if prepared is None:
         return plan
     llm_data = run_person_adjudication_llm(prepared)
-    return resolve_person_adjudication_plan(plan, prepared=prepared, llm_data=llm_data)
+    return resolve_person_adjudication_plan(
+        plan,
+        prepared=prepared,
+        llm_data=llm_data,
+        session=session,
+        stylebook_id=stylebook_id,
+    )

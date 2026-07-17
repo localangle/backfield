@@ -10,6 +10,7 @@ from backfield_db import (
 from sqlmodel import Session, col, select
 
 from backfield_entities.entities.organization.types import (
+    GENERATED_ACRONYM_PROVENANCE,
     multiword_organization_names_share_ambiguous_acronym,
     normalize_organization_text,
     normalize_organization_type,
@@ -28,8 +29,13 @@ def canonical_ids_from_organization_name_keys(
     *,
     stylebook_id: int,
     name_or_norm: str,
+    trusted_alias_only: bool = False,
 ) -> list[str]:
-    """Canonical ids whose alias ``normalized_alias`` matches accent-insensitively."""
+    """Canonical ids whose alias ``normalized_alias`` matches accent-insensitively.
+
+    When ``trusted_alias_only`` is True, exclude machine-ingest and generated-acronym
+    provenance so neither can independently drive exact linking.
+    """
     lookup_keys = set(organization_substrate_alias_lookup_keys(name_or_norm))
     match_key = organization_match_key(name_or_norm)
     if not lookup_keys and not match_key:
@@ -37,6 +43,19 @@ def canonical_ids_from_organization_name_keys(
     all_keys = set(lookup_keys)
     if match_key:
         all_keys.add(match_key)
+    filters = [
+        StylebookOrganizationCanonical.stylebook_id == stylebook_id,
+        StylebookOrganizationCanonical.status == "active",
+        col(StylebookOrganizationAlias.normalized_alias).in_(all_keys),
+        StylebookOrganizationAlias.suppressed.is_(False),
+    ]
+    if trusted_alias_only:
+        filters.extend(
+            (
+                StylebookOrganizationAlias.provenance != "substrate_ingest",
+                StylebookOrganizationAlias.provenance != GENERATED_ACRONYM_PROVENANCE,
+            )
+        )
     stmt = (
         select(StylebookOrganizationCanonical.id, StylebookOrganizationAlias.normalized_alias)
         .join(
@@ -44,11 +63,7 @@ def canonical_ids_from_organization_name_keys(
             StylebookOrganizationAlias.organization_canonical_id
             == StylebookOrganizationCanonical.id,
         )
-        .where(
-            StylebookOrganizationCanonical.stylebook_id == stylebook_id,
-            col(StylebookOrganizationAlias.normalized_alias).in_(all_keys),
-            StylebookOrganizationAlias.suppressed.is_(False),
-        )
+        .where(*filters)
     )
     out: list[str] = []
     seen: set[str] = set()
@@ -72,6 +87,19 @@ def canonical_ids_from_organization_name_keys(
         return []
     esc = escape_ilike_metacharacters(search_tok)
     pat = f"%{esc}%"
+    scan_filters = [
+        StylebookOrganizationCanonical.stylebook_id == stylebook_id,
+        StylebookOrganizationCanonical.status == "active",
+        StylebookOrganizationAlias.suppressed.is_(False),
+        col(StylebookOrganizationAlias.normalized_alias).like(pat, escape="\\"),
+    ]
+    if trusted_alias_only:
+        scan_filters.extend(
+            (
+                StylebookOrganizationAlias.provenance != "substrate_ingest",
+                StylebookOrganizationAlias.provenance != GENERATED_ACRONYM_PROVENANCE,
+            )
+        )
     scan_stmt = (
         select(StylebookOrganizationCanonical.id, StylebookOrganizationAlias.normalized_alias)
         .join(
@@ -79,11 +107,7 @@ def canonical_ids_from_organization_name_keys(
             StylebookOrganizationAlias.organization_canonical_id
             == StylebookOrganizationCanonical.id,
         )
-        .where(
-            StylebookOrganizationCanonical.stylebook_id == stylebook_id,
-            StylebookOrganizationAlias.suppressed.is_(False),
-            col(StylebookOrganizationAlias.normalized_alias).like(pat, escape="\\"),
-        )
+        .where(*scan_filters)
         .limit(120)
     )
     for cid, norm_alias in session.exec(scan_stmt).all():
@@ -178,7 +202,10 @@ def retrieve_organization_canonical_candidates(
 
     label_stmt = (
         select(StylebookOrganizationCanonical)
-        .where(StylebookOrganizationCanonical.stylebook_id == stylebook_id)
+        .where(
+            StylebookOrganizationCanonical.stylebook_id == stylebook_id,
+            StylebookOrganizationCanonical.status == "active",
+        )
         .order_by(col(StylebookOrganizationCanonical.label).asc())
         .limit(max(limit * 8, 96))
     )

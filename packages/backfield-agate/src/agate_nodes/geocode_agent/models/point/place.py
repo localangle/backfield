@@ -145,6 +145,13 @@ class Place(Address):
 
         if brave_search_api_key:
             try:
+                logger.info(
+                    "Geocode place search engine=brave_place_search "
+                    "place=%r query=%r location_hint=%r",
+                    self.name,
+                    query,
+                    location_hint,
+                )
                 response = brave_place_search(
                     brave_search_api_key,
                     q=query,
@@ -152,18 +159,54 @@ class Place(Address):
                     count=10,
                 )
                 if response.success and response.results:
+                    logger.info(
+                        "Geocode place search engine=brave_place_search "
+                        "place=%r result_count=%d",
+                        self.name,
+                        len(response.results),
+                    )
                     return response
-                logger.info("Brave place search returned no results for %s; trying DuckDuckGo", query[:50])
+                logger.info(
+                    "Geocode place search engine=brave_place_search "
+                    "place=%r returned no results; falling back to duckduckgo query=%r",
+                    self.name,
+                    query,
+                )
             except Exception as exc:
-                logger.warning("Brave place search failed for %s: %s; trying DuckDuckGo", self.name, exc)
+                logger.warning(
+                    "Geocode place search engine=brave_place_search "
+                    "place=%r failed: %s; falling back to duckduckgo",
+                    self.name,
+                    exc,
+                )
 
         try:
+            logger.info(
+                "Geocode place search engine=duckduckgo place=%r query=%r",
+                self.name,
+                query,
+            )
             response = search_web_duckduckgo(query, max_results=10, timeout=15.0)
             if response.success and response.results:
+                logger.info(
+                    "Geocode place search engine=duckduckgo "
+                    "place=%r result_count=%d",
+                    self.name,
+                    len(response.results),
+                )
                 return response
-            logger.warning("DuckDuckGo returned no results for query: %s", query)
+            logger.warning(
+                "Geocode place search engine=duckduckgo "
+                "place=%r returned no results query=%r",
+                self.name,
+                query,
+            )
         except Exception as exc:
-            logger.error("DuckDuckGo search failed for %s: %s", self.name, exc)
+            logger.error(
+                "Geocode place search engine=duckduckgo place=%r failed: %s",
+                self.name,
+                exc,
+            )
         return None
 
     def _extract_and_parse_address(

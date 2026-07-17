@@ -104,6 +104,25 @@ Decide explicitly whether output is:
 Use Pydantic models for structured boundaries and test output shape and failures.
 LLM work must flow through the existing call and usage tracking paths.
 
+`GeocodeAgent` reconciles repeated rows before emitting its consolidated `places`
+payload. Administrative rows with the same normalized identity collapse directly;
+fine-grained rows also require the same extraction type and name plus shared
+resolver identity, nearby point geometry, or a matching resolved/review pair.
+Addresses and named places remain separate even when they share a provider feature
+or coordinates. Shared coordinates alone never collapse differently named places.
+
+Address display formatting is identity-preserving: a numbered address must retain
+its house number and meaningful street tokens after any model-assisted polish.
+Recognized country rows use structured ISO identity and can be accepted without
+resolver geometry. Natural features use only jurisdiction explicitly present in
+their extracted location string.
+
+Consolidate QA also routes state/country contradictions to `needs_review` with
+`geocode_qa_code: geocode_subnational_mismatch` when the extract names a US state
+(or asserts `components.state` / `components.country`) and the geocoder returns a
+different admin label (for example Oregon resolved as Maryland). Stylebook or
+canonical cache hits skip this check.
+
 ### Extract prompts
 
 Keep static instructions, field rules, and output-format guidance before the input
@@ -116,6 +135,18 @@ text. End `prompts/extract.md` with:
 ```
 
 This keeps the reusable prompt prefix stable while the article text varies.
+
+`PlaceExtract` **`geocode_hints`** must carry geographic disambiguators (street,
+neighborhood, nearby landmark, which branch)—not story synopsis—so
+`GeocodeAgent` web search and candidate picking can resolve multi-location names.
+
+Geocode cache tier-1 hits and auto-ingest exact identity ignore
+`substrate_ingest` aliases. Neighborhood/admin proper-name heads must agree
+before a cache hit commits. Worker location persistence name-suffixes Stylebook
+`external_id` values for admin and fine-grained types so distinct places cannot
+collapse onto one substrate row when a resolver reuses a candidate UUID.
+Canonical LLM adjudication uses a strict structured contract (not rationale
+prose) before the sync link commit gate.
 
 ## `metadata.json`
 

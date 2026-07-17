@@ -2,7 +2,62 @@
 
 from __future__ import annotations
 
-from backfield_entities.ingest.geocode_cache.sanity import cache_hit_sane_for_substrate
+import pytest
+from backfield_entities.ingest.geocode_cache.sanity import (
+    cache_hit_sane_for_substrate,
+    explicit_location_components_match_labels,
+)
+
+
+@pytest.mark.parametrize(
+    ("components", "location_text", "resolved_label", "expected"),
+    [
+        (
+            {"country": {"abbr": "FR"}},
+            "Example City, France",
+            "Example City, FR",
+            True,
+        ),
+        (
+            {"country": {"abbr": "FR"}},
+            "Example City, France",
+            "Example City, KS, US",
+            False,
+        ),
+        (
+            {"address": "1400 Example Avenue", "postal_code": "SW1A 1AA"},
+            "1400 Example Avenue, SW1A 1AA",
+            "1400 Example Avenue, Metro, SW1A 1AA",
+            True,
+        ),
+        (
+            {"address": "1400 Example Avenue", "postal_code": "SW1A 1AA"},
+            "1400 Example Avenue, SW1A 1AA",
+            "1400 Example Avenue, Metro, SW1A 2AA",
+            False,
+        ),
+        (
+            {"address": "1400 Example Avenue"},
+            "1400 Example Avenue",
+            "2400 Example Avenue, Metro",
+            False,
+        ),
+    ],
+)
+def test_explicit_components_must_agree_with_resolver_labels(
+    components: dict,
+    location_text: str,
+    resolved_label: str,
+    expected: bool,
+) -> None:
+    assert (
+        explicit_location_components_match_labels(
+            components=components,
+            location_text=location_text,
+            match_label=resolved_label,
+        )
+        is expected
+    )
 
 
 def test_address_blocks_city_canonical_without_street_in_label() -> None:
@@ -364,4 +419,35 @@ def test_place_token_fallback_uses_location_text_when_components_empty() -> None
             match_geometry_type="Polygon",
         )
         is False
+    )
+
+
+def test_neighborhood_blocks_different_proper_head() -> None:
+    """Bucktown must not resolve as Uptown even with a shared city/state tail."""
+    assert (
+        cache_hit_sane_for_substrate(
+            substrate_location_type="neighborhood",
+            location_text="Bucktown, Chicago, IL",
+            components={"neighborhood": "Bucktown", "city": "Chicago"},
+            match_label="Uptown, Chicago, IL",
+            match_formatted_address="Uptown, Chicago, IL",
+            match_location_type="neighborhood",
+            match_geometry_type="Polygon",
+        )
+        is False
+    )
+
+
+def test_neighborhood_allows_same_proper_head() -> None:
+    assert (
+        cache_hit_sane_for_substrate(
+            substrate_location_type="neighborhood",
+            location_text="Uptown, Chicago, IL",
+            components={"neighborhood": "Uptown", "city": "Chicago"},
+            match_label="Uptown, Chicago, IL",
+            match_formatted_address="Uptown, Chicago, IL",
+            match_location_type="neighborhood",
+            match_geometry_type="Polygon",
+        )
+        is True
     )

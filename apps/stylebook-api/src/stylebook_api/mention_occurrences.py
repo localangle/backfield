@@ -15,6 +15,7 @@ from backfield_db import (
     SubstratePersonMentionOccurrence,
 )
 from backfield_db.text_sanitize import strip_nul_bytes, strip_nul_bytes_optional
+from backfield_entities.occurrence_spans import find_proven_occurrence_span
 from sqlmodel import Session, col, select
 
 EntityKind = Literal["location", "person"]
@@ -24,19 +25,26 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _simple_find_span(
-    haystack: str,
-    needle: str,
+def _proven_span_for_occurrence(
     *,
+    article_text: str,
+    mention_text: str,
+    quote_text: str | None,
+    start_raw: object,
+    end_raw: object,
     search_from: int = 0,
 ) -> tuple[int, int] | None:
-    text = needle.strip()
-    if not text or search_from < 0:
-        return None
-    idx = haystack.find(text, search_from)
-    if idx < 0:
-        return None
-    return idx, idx + len(text)
+    proposed_span = (
+        (start_raw, end_raw)
+        if type(start_raw) is int and type(end_raw) is int
+        else None
+    )
+    return find_proven_occurrence_span(
+        article_text=article_text,
+        evidence_texts=(quote_text, mention_text),
+        search_from=search_from,
+        proposed_span=proposed_span,
+    )
 
 
 def replace_mention_occurrences_for_article(
@@ -71,6 +79,7 @@ def replace_mention_occurrences_for_article(
     existing = session.exec(
         select(SubstrateLocationMentionOccurrence).where(
             SubstrateLocationMentionOccurrence.location_mention_id == int(mention.id),
+            SubstrateLocationMentionOccurrence.source_kind == "user_review",
             SubstrateLocationMentionOccurrence.suppressed == False,  # noqa: E712
         )
     ).all()
@@ -91,24 +100,29 @@ def replace_mention_occurrences_for_article(
         if not isinstance(text, str) or not text.strip():
             continue
         mention_text = strip_nul_bytes(text.strip())
+        quote_text = strip_nul_bytes_optional(
+            raw.get("quote_text") if isinstance(raw.get("quote_text"), str) else None
+        )
         start_raw = raw.get("start_char")
         end_raw = raw.get("end_char")
-        start: int | None = int(start_raw) if isinstance(start_raw, int) else None
-        end: int | None = int(end_raw) if isinstance(end_raw, int) else None
-        if start is None or end is None:
-            span = _simple_find_span(article_text, mention_text, search_from=search_from)
-            if span is not None:
-                start, end = span
-                search_from = max(search_from, end)
+        span = _proven_span_for_occurrence(
+            article_text=article_text,
+            mention_text=mention_text,
+            quote_text=quote_text,
+            start_raw=start_raw,
+            end_raw=end_raw,
+            search_from=search_from,
+        )
+        start, end = span if span is not None else (None, None)
+        if span is not None:
+            search_from = max(search_from, span[1])
 
         row = SubstrateLocationMentionOccurrence(
             location_mention_id=int(mention.id),
             source_kind="user_review",
             source_details_json={"source": "agate_review"},
             mention_text=mention_text,
-            quote_text=strip_nul_bytes_optional(
-                raw.get("quote_text") if isinstance(raw.get("quote_text"), str) else None
-            ),
+            quote_text=quote_text,
             start_char=start,
             end_char=end,
             occurrence_order=order,
@@ -157,6 +171,7 @@ def replace_person_mention_occurrences_for_article(
     existing = session.exec(
         select(SubstratePersonMentionOccurrence).where(
             SubstratePersonMentionOccurrence.person_mention_id == int(mention.id),
+            SubstratePersonMentionOccurrence.source_kind == "user_review",
             SubstratePersonMentionOccurrence.suppressed == False,  # noqa: E712
         )
     ).all()
@@ -188,13 +203,17 @@ def replace_person_mention_occurrences_for_article(
             quote_text = mention_text
         start_raw = raw.get("start_char")
         end_raw = raw.get("end_char")
-        start: int | None = int(start_raw) if isinstance(start_raw, int) else None
-        end: int | None = int(end_raw) if isinstance(end_raw, int) else None
-        if start is None or end is None:
-            span = _simple_find_span(article_text, mention_text, search_from=search_from)
-            if span is not None:
-                start, end = span
-                search_from = max(search_from, end)
+        span = _proven_span_for_occurrence(
+            article_text=article_text,
+            mention_text=mention_text,
+            quote_text=quote_text,
+            start_raw=start_raw,
+            end_raw=end_raw,
+            search_from=search_from,
+        )
+        start, end = span if span is not None else (None, None)
+        if span is not None:
+            search_from = max(search_from, span[1])
 
         labels: list[str] = ["quote"] if is_quote else []
         row = SubstratePersonMentionOccurrence(
@@ -251,6 +270,7 @@ def replace_organization_mention_occurrences_for_article(
     existing = session.exec(
         select(SubstrateOrganizationMentionOccurrence).where(
             SubstrateOrganizationMentionOccurrence.organization_mention_id == int(mention.id),
+            SubstrateOrganizationMentionOccurrence.source_kind == "user_review",
             SubstrateOrganizationMentionOccurrence.suppressed == False,  # noqa: E712
         )
     ).all()
@@ -282,13 +302,17 @@ def replace_organization_mention_occurrences_for_article(
             quote_text = mention_text
         start_raw = raw.get("start_char")
         end_raw = raw.get("end_char")
-        start: int | None = int(start_raw) if isinstance(start_raw, int) else None
-        end: int | None = int(end_raw) if isinstance(end_raw, int) else None
-        if start is None or end is None:
-            span = _simple_find_span(article_text, mention_text, search_from=search_from)
-            if span is not None:
-                start, end = span
-                search_from = max(search_from, end)
+        span = _proven_span_for_occurrence(
+            article_text=article_text,
+            mention_text=mention_text,
+            quote_text=quote_text,
+            start_raw=start_raw,
+            end_raw=end_raw,
+            search_from=search_from,
+        )
+        start, end = span if span is not None else (None, None)
+        if span is not None:
+            search_from = max(search_from, span[1])
 
         labels: list[str] = ["quote"] if is_quote else []
         row = SubstrateOrganizationMentionOccurrence(

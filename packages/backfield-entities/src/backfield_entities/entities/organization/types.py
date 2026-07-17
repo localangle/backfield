@@ -19,6 +19,8 @@ ORGANIZATION_NATURE_VALUES: tuple[str, ...] = (
     "other",
 )
 
+GENERATED_ACRONYM_PROVENANCE = "generated_acronym"
+
 # OrganizationExtract ``type`` → substrate / canonical ``organization_type``.
 ORGANIZATION_TYPE_VALUES: tuple[str, ...] = (
     "government",
@@ -134,6 +136,24 @@ def organization_tier1_identity_compatible(
     return organization_names_match_via_acronym(substrate_norm, canonical_label_norm)
 
 
+def organization_literal_label_identity_compatible(
+    *,
+    substrate_norm: str,
+    canonical_label_norm: str,
+) -> bool:
+    """Tier-1 identity where only a literal canonical acronym is trusted."""
+    if not organization_tier1_identity_compatible(
+        substrate_norm=substrate_norm,
+        canonical_label_norm=canonical_label_norm,
+    ):
+        return False
+    if substrate_norm == canonical_label_norm:
+        return True
+    if organization_looks_like_acronym(substrate_norm) and " " in canonical_label_norm:
+        return False
+    return True
+
+
 def organization_alias_surface_form(label: str, normalized_key: str) -> str:
     """Display text stored on alias rows for a lookup key."""
     clean = label.strip()
@@ -150,9 +170,7 @@ def organization_canonical_alias_keys(value: str | None) -> tuple[str, ...]:
         return ()
     keys: list[str] = list(alias_lookup_keys(value))
     acr = organization_acronym_from_name(value)
-    # Skip collision-prone two-letter derived acronyms (e.g. Colorado Rockies and
-    # Cincinnati Reds both → ``cr``). Longer acronyms (CPS, NBA) remain useful.
-    if acr and acr != norm and len(acr) > 2 and acr not in keys:
+    if acr and acr != norm and acr not in keys:
         keys.append(acr)
     out: list[str] = []
     seen: set[str] = set()
@@ -161,6 +179,16 @@ def organization_canonical_alias_keys(value: str | None) -> tuple[str, ...]:
             seen.add(key)
             out.append(key)
     return tuple(out)
+
+
+def organization_canonical_alias_entries(value: str | None) -> tuple[tuple[str, bool], ...]:
+    """Canonical alias keys paired with whether each key is a derived acronym."""
+    norm = normalize_organization_text(value)
+    acronym = organization_acronym_from_name(value)
+    return tuple(
+        (key, bool(acronym and acronym != norm and key == acronym))
+        for key in organization_canonical_alias_keys(value)
+    )
 
 
 def organization_substrate_alias_lookup_keys(value: str | None) -> tuple[str, ...]:

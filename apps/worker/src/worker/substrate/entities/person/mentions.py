@@ -122,7 +122,7 @@ def retire_stale_article_mentions_for_rerun(
     *,
     article_id: int,
     touched_person_ids: set[int],
-) -> tuple[int, set[int]]:
+) -> tuple[int, set[int], int]:
     mentions = session.exec(
         select(SubstratePersonMention).where(
             col(SubstratePersonMention.article_id) == article_id,
@@ -130,6 +130,7 @@ def retire_stale_article_mentions_for_rerun(
         )
     ).all()
     retired = 0
+    preserved = 0
     retired_person_ids: set[int] = set()
     now = _utcnow()
     for mention in mentions:
@@ -137,10 +138,16 @@ def retire_stale_article_mentions_for_rerun(
         if pid in touched_person_ids:
             continue
         if mention.edited or mention.added:
+            preserved += 1
             continue
         sk = str(mention.source_kind or "").strip()
         if sk and sk != _PERSON_EXTRACT_SOURCE_KIND:
+            preserved += 1
             continue
+        _suppress_prior_system_occurrences_for_mention(
+            session,
+            mention_id=int(mention.id),  # type: ignore[arg-type]
+        )
         mention.deleted = True
         mention.updated_at = now
         session.add(mention)
@@ -148,7 +155,7 @@ def retire_stale_article_mentions_for_rerun(
         retired_person_ids.add(pid)
     if retired:
         session.flush()
-    return retired, retired_person_ids
+    return retired, retired_person_ids, preserved
 
 
 def dispose_orphan_substrates_after_retired_mentions(
@@ -269,6 +276,10 @@ def _upsert_mention_and_occurrence(
 ) -> None:
     raw_role = entry.get("role_in_story")
     role_str = normalize_editorial_prose(raw_role if isinstance(raw_role, str) else None)
+    raw_entry_id = entry.get("id") or entry.get("mention_id")
+    mention_source_details: dict[str, Any] = {"run_id": run_id, "graph_id": graph_id}
+    if raw_entry_id is not None and str(raw_entry_id).strip():
+        mention_source_details["raw_entry_id"] = str(raw_entry_id).strip()
 
     nature_str = _normalize_person_nature(entry)
     secondary_tags = _parse_nature_secondary_tags(entry)
@@ -296,7 +307,7 @@ def _upsert_mention_and_occurrence(
             needs_review=bool(needs_review),
             review_data_json=review_data,
             source_kind=_PERSON_EXTRACT_SOURCE_KIND,
-            source_details_json={"run_id": run_id, "graph_id": graph_id},
+            source_details_json=mention_source_details,
             edited=False,
         )
         session.add(mention)
@@ -305,6 +316,10 @@ def _upsert_mention_and_occurrence(
         if preserve_editor_changes and not bool(mention.deleted) and (
             bool(mention.edited) or bool(mention.added)
         ):
+            mention.source_details_json = mention_source_details
+            mention.updated_at = now
+            session.add(mention)
+            session.flush()
             return
         mention.deleted = False
         mention.role_in_story = role_str or mention.role_in_story
@@ -313,7 +328,7 @@ def _upsert_mention_and_occurrence(
         mention.needs_review = bool(needs_review)
         mention.review_data_json = review_data or mention.review_data_json
         mention.source_kind = _PERSON_EXTRACT_SOURCE_KIND
-        mention.source_details_json = {"run_id": run_id, "graph_id": graph_id}
+        mention.source_details_json = mention_source_details
         mention.updated_at = now
         session.add(mention)
         session.flush()

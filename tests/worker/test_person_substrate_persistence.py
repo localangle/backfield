@@ -9,6 +9,10 @@ from agate_runtime import execute_graph
 from agate_runtime.starter_flow import starter_people_flow_graph_spec
 from backfield_db import (
     AgateRun,
+    BackfieldProject,
+    Stylebook,
+    StylebookPersonAlias,
+    StylebookPersonCanonical,
     SubstratePerson,
     SubstratePersonMention,
     SubstratePersonMentionOccurrence,
@@ -107,6 +111,84 @@ def test_persist_people_writes_substrate_mention_occurrence() -> None:
         assert occ[0].quote_text is None
         assert occ[1].quote_text == occ[1].mention_text
         assert "quote" in occ[1].labels_json
+
+
+def test_people_rerun_revalidates_existing_link_before_alias_refresh() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    url = "https://example.com/people-revalidate"
+    body = "Mayor Jane Smith announced a new policy today."
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session,
+            org_slug="org-people-revalidate",
+            project_slug="proj-people-revalidate",
+        )
+        project = session.get(BackfieldProject, project_id)
+        assert project is not None
+        stylebook = session.exec(
+            select(Stylebook).where(Stylebook.organization_id == project.organization_id)
+        ).one()
+        wrong_canonical = StylebookPersonCanonical(
+            stylebook_id=int(stylebook.id),
+            label="Tre Jones",
+            slug="tre-jones-rerun-gate",
+            status="active",
+        )
+        session.add(wrong_canonical)
+        session.add_all(
+            (
+                AgateRun(id="run-person-link-a", graph_id="graph-person-link", status="pending"),
+                AgateRun(id="run-person-link-b", graph_id="graph-person-link", status="pending"),
+            )
+        )
+        session.commit()
+
+        payload = {
+            "text": body,
+            "url": url,
+            "people": [_sample_person_entry(name="Jane Smith")],
+        }
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-person-link",
+            run_id="run-person-link-a",
+            consolidated=payload,
+            db_output_params={
+                "auto_apply_canonicalization": False,
+                "stylebook_id": int(stylebook.id),
+            },
+        )
+        person = session.exec(select(SubstratePerson)).one()
+        person.stylebook_person_canonical_id = str(wrong_canonical.id)
+        person.canonical_link_status = "linked"
+        session.add(person)
+        session.commit()
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-person-link",
+            run_id="run-person-link-b",
+            consolidated=payload,
+            db_output_params={
+                "auto_apply_canonicalization": True,
+                "stylebook_id": int(stylebook.id),
+            },
+        )
+        session.commit()
+
+        session.refresh(person)
+        assert person.stylebook_person_canonical_id != str(wrong_canonical.id)
+        poisoned_aliases = session.exec(
+            select(StylebookPersonAlias).where(
+                StylebookPersonAlias.person_canonical_id == str(wrong_canonical.id),
+                StylebookPersonAlias.normalized_alias == "jane smith",
+            )
+        ).all()
+        assert poisoned_aliases == []
 
 
 def test_persist_empty_people_array_is_noop() -> None:
@@ -253,6 +335,198 @@ def test_people_reingest_retires_stale_system_mentions() -> None:
             )
         ).all()
         assert len(active_mentions) == 1
+
+
+def test_people_replace_reconciles_omissions_and_preserves_editorial_associations() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    primary_url = "https://example.com/people-replace-primary"
+    shared_url = "https://example.com/people-replace-shared"
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session,
+            org_slug="org-person-replace",
+            project_slug="proj-person-replace",
+        )
+        for run_id in ("run-person-r1", "run-person-r2", "run-person-r3"):
+            session.add(AgateRun(id=run_id, graph_id="graph-person-replace", status="pending"))
+        session.commit()
+
+        initial_names = [
+            "Kept Person",
+            "Orphan Person",
+            "Shared Person",
+            "Edited Person",
+            "Added Person",
+            "Manual Person",
+        ]
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-person-replace",
+            run_id="run-person-r1",
+            consolidated={
+                "text": "Several people appeared in the first story.",
+                "url": primary_url,
+                "people": [_sample_person_entry(name=name) for name in initial_names],
+            },
+            db_output_params={"reconciliation_policy": "smart_merge"},
+        )
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-person-replace",
+            run_id="run-person-r2",
+            consolidated={
+                "text": "Shared Person appeared in another story.",
+                "url": shared_url,
+                "people": [_sample_person_entry(name="Shared Person")],
+            },
+            db_output_params={"reconciliation_policy": "smart_merge"},
+        )
+
+        people_by_name = {
+            person.normalized_name: person for person in session.exec(select(SubstratePerson)).all()
+        }
+        mentions_by_name = {}
+        for normalized_name in ("edited person", "added person", "manual person"):
+            person = people_by_name[normalized_name]
+            mentions_by_name[normalized_name] = session.exec(
+                select(SubstratePersonMention).where(
+                    SubstratePersonMention.person_id == int(person.id),
+                )
+            ).one()
+        mentions_by_name["edited person"].edited = True
+        mentions_by_name["added person"].added = True
+        mentions_by_name["manual person"].source_kind = "manual"
+        for mention in mentions_by_name.values():
+            session.add(mention)
+
+        shared_person = people_by_name["shared person"]
+        shared_mentions = session.exec(
+            select(SubstratePersonMention).where(
+                SubstratePersonMention.person_id == int(shared_person.id),
+            )
+        ).all()
+        primary_shared_mention = next(
+            mention
+            for mention in shared_mentions
+            if "run-person-r1" == (mention.source_details_json or {}).get("run_id")
+        )
+        session.add(
+            SubstratePersonMentionOccurrence(
+                person_mention_id=int(primary_shared_mention.id),
+                source_kind="editorial",
+                mention_text="Shared Person editorial evidence",
+            )
+        )
+        session.commit()
+
+        result = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-person-replace",
+            run_id="run-person-r3",
+            consolidated={
+                "text": "Only Kept Person remains.",
+                "url": primary_url,
+                "people": [_sample_person_entry(name="Kept Person")],
+            },
+            db_output_params={"reconciliation_policy": "replace"},
+        )
+        session.commit()
+
+        summary = next(item for item in result.domain_summaries if item.domain == "people")
+        assert summary.removed == 2
+        assert summary.preserved == 3
+        assert summary.disposed == 1
+        assert result.retired_mentions == 2
+        assert result.disposed_substrates == 1
+
+    with Session(engine) as session:
+        remaining_names = {
+            person.normalized_name for person in session.exec(select(SubstratePerson)).all()
+        }
+        assert "orphan person" not in remaining_names
+        assert {
+            "kept person",
+            "shared person",
+            "edited person",
+            "added person",
+            "manual person",
+        }.issubset(remaining_names)
+
+        shared_person = session.exec(
+            select(SubstratePerson).where(SubstratePerson.normalized_name == "shared person")
+        ).one()
+        retired_shared_mention = session.exec(
+            select(SubstratePersonMention).where(
+                SubstratePersonMention.person_id == int(shared_person.id),
+                SubstratePersonMention.deleted == True,  # noqa: E712
+            )
+        ).one()
+        occurrences = session.exec(
+            select(SubstratePersonMentionOccurrence).where(
+                SubstratePersonMentionOccurrence.person_mention_id
+                == int(retired_shared_mention.id),
+            )
+        ).all()
+        system_occurrences = [
+            occurrence
+            for occurrence in occurrences
+            if occurrence.source_kind == "system_extraction"
+        ]
+        editorial_occurrences = [
+            occurrence for occurrence in occurrences if occurrence.source_kind == "editorial"
+        ]
+        assert system_occurrences
+        assert all(occurrence.suppressed for occurrence in system_occurrences)
+        assert len(editorial_occurrences) == 1
+        assert editorial_occurrences[0].suppressed is False
+
+
+def test_people_replace_empty_array_retires_and_disposes_machine_association() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    url = "https://example.com/people-replace-empty"
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session,
+            org_slug="org-person-empty",
+            project_slug="proj-person-empty",
+        )
+        session.add(AgateRun(id="run-person-e1", graph_id="graph-person-empty", status="pending"))
+        session.add(AgateRun(id="run-person-e2", graph_id="graph-person-empty", status="pending"))
+        session.commit()
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-person-empty",
+            run_id="run-person-e1",
+            consolidated={
+                "text": "Temporary Person appeared.",
+                "url": url,
+                "people": [_sample_person_entry(name="Temporary Person")],
+            },
+        )
+        session.commit()
+
+        result = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-person-empty",
+            run_id="run-person-e2",
+            consolidated={"text": "Nobody appeared.", "url": url, "people": []},
+            db_output_params={"reconciliation_policy": "replace"},
+        )
+        session.commit()
+
+        summary = next(item for item in result.domain_summaries if item.domain == "people")
+        assert summary.removed == 1
+        assert summary.disposed == 1
+        assert session.exec(select(SubstratePerson)).all() == []
 
 
 def _mock_people_demo_json() -> str:

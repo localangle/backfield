@@ -59,6 +59,62 @@ its own name and organization signals. Projects may use rules-only or AI-assiste
 canonical adjudication; model-assisted links must still satisfy the shared
 confidence threshold.
 
+PlaceExtract and GeocodeAgent preserve one terminal row for every extracted
+location. Explicit country, subdivision, postal, and address components constrain
+resolver acceptance. A rejected or review-required result retains its reason and
+audit context but not provider identity, geometry, H3, or cache eligibility, and it
+cannot create a canonical.
+Recognized countries use ISO identity without requiring geometry; unknown country
+labels never inherit a domestic default. Address displays must preserve the
+structured house number and street, and article-level reconciliation keeps
+co-located addresses and named places as distinct extraction identities.
+
+### Sync link commit gate (auto-ingest only)
+
+Before auto-ingest commits a `LINK_EXISTING` plan, a deterministic sync gate
+(`backfield_entities.canonical.link_commit_gate`) vetoes obviously wrong pairs
+using the same high-precision mismatch helpers as Stylebook cleanup, plus
+location type/content sanity. A veto coerces the plan to `MATERIALIZE_NEW` when
+policy allows, otherwise `DEFER`, and records
+`sync_link_commit_veto` in `canonical_review_reasons_json`. Manual Stylebook UI
+accepts and links are not gated—editors remain the escape hatch.
+
+Person mismatch helpers treat dotted initials as equal (`CJ` / `C.J.`), allow a
+small nickname map where prefix checks fail (`Tom` / `Thomas`), and rescue links
+when the substrate name matches a trusted (non-`substrate_ingest`) alias on the
+target canonical. Same-given / different-family pairs (for example Adam Fantilli
+vs Adam Henrique) are vetoed before generic name-overlap rescue; generational
+suffixes and surname particles do not create false conflicts.
+
+AI-assisted adjudication returns a strict structured payload (`decision`,
+`canonical_id`, finite numeric `confidence`, `same_identity`,
+`conflicting_identity_evidence`). Rationale is audit-only. A `link_existing`
+decision requires `same_identity=true` and `conflicting_identity_evidence=false`;
+invalid or contradictory JSON is rejected (one corrective retry) and never
+commits from prose alone.
+
+### Alias provenance for exact match
+
+Exact-alias lookups used for tier-1 / exact-identity autolink ignore
+`substrate_ingest` aliases (`trusted_alias_only=True`). Editorial provenances
+such as `stylebook_ui_accept` and `stylebook_ui_link` still count. Ingest aliases
+may still appear in fuzzy recall for LLM adjudication; autolink-tier fuzzy
+scores and the sync commit gate must not treat machine aliases as identity
+evidence alone.
+
+An exact location alias is a candidate set, not a first-row winner. Linking
+requires one active, compatible, self-consistent survivor; multiple survivors
+defer. Organization acronyms generated from a long name use
+`generated_acronym` provenance and are recall-only evidence. Literal canonical
+acronym labels and editor-accepted aliases remain trusted.
+
+Neighborhood and other admin proper-name rows also require a compatible leading
+placename head so distinct named areas cannot share identity. Stylebook-derived
+substrate `external_id` values for fine-grained and admin location types include
+a normalized name suffix so a poisoned candidate UUID cannot collapse distinct
+places onto one substrate row. Already-linked ingest paths re-validate before
+alias refresh and clear/re-plan on mismatch.
+
 ## Evidence and editorial scope
 
 Mentions and linked substrate rows are project evidence. Canonical details,
@@ -69,6 +125,16 @@ reflected in API query parameters and UI filters:
 - editing canonical metadata or connections affects the Stylebook identity;
 - editing a story row from Agate review affects that story's substrate evidence and
   does not silently rewrite the canonical.
+
+Occurrence offsets are written only for a normalization-equivalent article slice.
+When whitespace or encoding artifacts cannot be mapped back exactly, the evidence
+text remains but its offsets are null.
+
+Backfield Output's `replace` policy is authoritative for machine extraction,
+including an emitted empty list: omitted article associations and their
+`system_extraction` occurrences are retired. Editor-added, editor-modified, and
+non-extraction associations are preserved, as are substrate identities still
+used by other articles.
 
 ## Canonical connections
 

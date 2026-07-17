@@ -22,6 +22,22 @@ from worker.substrate.entities.organization.adjudication import (
 )
 
 
+def _adj_json_link(canonical_id: str, confidence: float, rationale: str) -> str:
+    return (
+        f'{{"decision": "link_existing", "canonical_id": "{canonical_id}", '
+        f'"confidence": {confidence}, "same_identity": true, '
+        f'"conflicting_identity_evidence": false, "rationale": "{rationale}"}}'
+    )
+
+
+def _adj_json_reject(confidence: float, rationale: str, *, decision: str = "no_match") -> str:
+    return (
+        f'{{"decision": "{decision}", "canonical_id": null, '
+        f'"confidence": {confidence}, "same_identity": false, '
+        f'"conflicting_identity_evidence": true, "rationale": "{rationale}"}}'
+    )
+
+
 def _engine():
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
@@ -92,9 +108,8 @@ def test_adjudicate_ambiguous_organization_upgrades_when_llm_confident(monkeypat
         )
 
         def _fake_llm(*_a, **_k) -> str:
-            return (
-                f'{{"canonical_id": "{id1}", "confidence": {ADJUDICATION_LINK_MIN_CONFIDENCE}, '
-                f'"rationale": "Same police department."}}'
+            return _adj_json_link(
+                id1, ADJUDICATION_LINK_MIN_CONFIDENCE, "Same police department."
             )
 
         monkeypatch.setattr(
@@ -152,7 +167,7 @@ def test_adjudicate_ambiguous_organization_materializes_when_llm_rejects_link(
         )
 
         def _fake_llm(*_a, **_k) -> str:
-            return '{"canonical_id": null, "confidence": 0.2, "rationale": "Uncertain."}'
+            return _adj_json_reject(0.2, "Uncertain.", decision="uncertain")
 
         monkeypatch.setattr(
             "worker.substrate.entities.organization.adjudication.call_llm",
@@ -209,10 +224,10 @@ def test_adjudicate_type_mismatch_links_cross_type_when_llm_confident(monkeypatc
         )
 
         def _fake_llm(*_a, **_k) -> str:
-            conf = ADJUDICATION_LINK_MIN_CONFIDENCE
-            return (
-                f'{{"canonical_id": "{canon_id}", "confidence": {conf}, '
-                f'"rationale": "Same city government despite sports_team label."}}'
+            return _adj_json_link(
+                canon_id,
+                ADJUDICATION_LINK_MIN_CONFIDENCE,
+                "Same city government despite sports_team label.",
             )
 
         monkeypatch.setattr(
@@ -271,10 +286,10 @@ def test_adjudicate_compatible_type_mismatch_links_at_lower_confidence(monkeypat
         )
 
         def _fake_llm(*_a, **_k) -> str:
-            rationale = "Same brewery; local_business vs company is a labeling difference."
-            return (
-                f'{{"canonical_id": "{canon_id}", "confidence": 0.82, '
-                f'"rationale": "{rationale}"}}'
+            return _adj_json_link(
+                canon_id,
+                0.82,
+                "Same brewery; local_business vs company is a labeling difference.",
             )
 
         monkeypatch.setattr(

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 from agate_nodes.geocode_agent.models.area.city import City
 from agate_nodes.geocode_agent.models.area.span import Span
-from agate_nodes.geocode_agent.models.point.address import Address
+from agate_nodes.geocode_agent.models.point.address import Address, is_mail_only_address
 from agate_nodes.geocode_agent.models.point.intersection import Intersection
 from agate_nodes.geocode_agent.nodes.geocode import _create_model
 from agate_utils.geocoding.geocoding_types import (
@@ -194,7 +194,11 @@ def test_address_geocode_uses_candidates_when_structured_fails() -> None:
                 ),
             )
 
-        cands = [_mk("one", -89.4, 43.1), _mk("two", -89.41, 43.11), _mk("three", -89.42, 43.12)]
+        cands = [
+            _mk("100 Main Street, Westfield, WI", -89.4, 43.1),
+            _mk("100 Main Street, Madison, WI", -89.41, 43.11),
+            _mk("100 Main Street, Lakeside, WI", -89.42, 43.12),
+        ]
 
         async def _no_structured(**_k: object) -> None:
             return None
@@ -223,6 +227,88 @@ def test_address_geocode_uses_candidates_when_structured_fails() -> None:
             )
 
         assert result is not None
-        assert result.result and result.result.processed_str == "two"
+        assert result.result and result.result.processed_str == "100 Main Street, Madison, WI"
 
     asyncio.run(_run())
+
+
+def test_address_picker_rejects_low_confidence_selection() -> None:
+    candidate = GeocodingResult(
+        geocoder="pelias_search",
+        input_str="q",
+        result=GeocodingResultData(
+            id="candidate",
+            processed_str="100 Main Street, Westfield, WI",
+            geometry=GeometryPoint(type="Point", coordinates=[-89.4, 43.1]),
+            confidence={},
+        ),
+    )
+    other = GeocodingResult(
+        geocoder="pelias_search",
+        input_str="q",
+        result=GeocodingResultData(
+            id="other",
+            processed_str="100 Main Street, Lakeside, WI",
+            geometry=GeometryPoint(type="Point", coordinates=[-89.5, 43.2]),
+            confidence={},
+        ),
+    )
+    address = Address(name="100 Main", city="Madison", state_abbr="WI", country="US")
+
+    with patch(
+        "agate_nodes.geocode_agent.models.point.address.call_llm",
+        return_value=json.dumps({"selected_index": 1, "confidence": 20}),
+    ):
+        picked = address._pick_pelias_candidate_with_llm(
+            [candidate, other],
+            "100 Main, Madison, WI",
+            "sk-test",
+        )
+
+    assert picked is None
+
+
+def test_address_result_requires_matching_house_number_and_street() -> None:
+    address = Address(name="1400 South Example Avenue", city="Metro", state_abbr="IL")
+
+    wrong_number = GeocodingResult(
+        geocoder="pelias_search",
+        input_str="q",
+        result=GeocodingResultData(
+            id="wrong-number",
+            processed_str="2400 South Example Avenue, Metro, IL",
+            geometry=GeometryPoint(type="Point", coordinates=[-87.0, 41.0]),
+            confidence={},
+        ),
+    )
+    locality_only = GeocodingResult(
+        geocoder="pelias_search",
+        input_str="q",
+        result=GeocodingResultData(
+            id="locality",
+            processed_str="Metro, IL",
+            geometry=GeometryPoint(type="Point", coordinates=[-87.0, 41.0]),
+            confidence={},
+        ),
+    )
+    matching = GeocodingResult(
+        geocoder="pelias_search",
+        input_str="q",
+        result=GeocodingResultData(
+            id="matching",
+            processed_str="1400 S Example Ave, Metro, IL",
+            geometry=GeometryPoint(type="Point", coordinates=[-87.0, 41.0]),
+            confidence={},
+        ),
+    )
+
+    assert address._result_matches_requested_address(wrong_number) is False
+    assert address._result_matches_requested_address(locality_only) is False
+    assert address._result_matches_requested_address(matching) is True
+
+
+def test_mail_only_address_detection_is_format_tolerant() -> None:
+    assert is_mail_only_address("P.O. Box 123")
+    assert is_mail_only_address("Post Office Box 456")
+    assert is_mail_only_address("USPS Box 789")
+    assert not is_mail_only_address("123 Post Office Road")

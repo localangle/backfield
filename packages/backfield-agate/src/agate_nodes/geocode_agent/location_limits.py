@@ -2,18 +2,33 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
+
+NeedsReviewReason = Literal[
+    "unsupported_location_type",
+    "max_locations_exceeded",
+    "celery_timeout",
+    "geocoding_timeout",
+    "geocoding_error",
+    "empty_geocoding_result",
+]
 
 
-def location_needs_review_entry(loc: dict[str, Any], error: str) -> dict[str, Any]:
+def location_needs_review_entry(
+    loc: dict[str, Any],
+    error: str,
+    reason_code: NeedsReviewReason,
+) -> dict[str, Any]:
     """Build a ``needs_review`` row for a location that was not geocoded."""
     location_info = loc.get("location", {})
     if not isinstance(location_info, dict):
         location_info = {}
     return {
+        **loc,
         "original_text": loc.get("original_text", ""),
         "location": location_info,
         "error": error,
+        "reason_code": reason_code,
     }
 
 

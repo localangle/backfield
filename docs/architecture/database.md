@@ -60,6 +60,12 @@ and points from a substrate entity to a Stylebook canonical. `canonical_link_sta
 unlinked, pending, linked, and waived rows, while `canonical_review_reasons_json` records the
 decision trace and suggestions.
 
+Entity `source_details_json` describes the latest project-scoped ingest of the shared entity.
+Item-local extraction identity belongs on the article-scoped mention:
+`source_details_json.raw_entry_id` records the processed-item row anchor for that article. Review
+enrichment prefers this article anchor, then a unique domain identity match; positional anchors on
+shared entity rows are not trusted because sibling batch items may reuse the same list indexes.
+
 ### Stylebook
 
 - Catalog and access: `stylebook`, `stylebook_membership`, `stylebook_slug_redirect`.
@@ -77,6 +83,10 @@ decision trace and suggestions.
 Canonical ids are UUID strings. Canonical slugs are unique within a Stylebook, and aliases are
 unique by canonical plus normalized alias. A Stylebook belongs to one organization; projects use
 an explicit same-organization Stylebook or the organization's default.
+
+Deleting a Stylebook reassigns workspaces and graph Stylebook refs, resets linked substrate rows
+to pending, removes non-cascading dependents (activity, bundle jobs, cleanup and candidate AI
+review rows), and deletes canonical trees before the catalog row itself.
 
 ## Shared entity field contracts
 

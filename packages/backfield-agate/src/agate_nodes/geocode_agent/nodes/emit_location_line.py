@@ -1,4 +1,4 @@
-"""LLM-backed ``location`` display line for consolidated geocode output (with heuristic fallback)."""
+"""LLM-backed display line for consolidated geocode output, with heuristic fallback."""
 
 from __future__ import annotations
 
@@ -38,7 +38,9 @@ _CONTEXT_SNIPPET_MAX = 1200
 _HINTS_SNIPPET_MAX = 800
 
 _PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "location_display_format.md"
-_POLISH_PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "polish_location_display.md"
+_POLISH_PROMPT_PATH = (
+    Path(__file__).resolve().parent.parent / "prompts" / "polish_location_display.md"
+)
 _ADDRESS_VENUE_UPGRADE_PATH = (
     Path(__file__).resolve().parent.parent / "prompts" / "address_venue_upgrade.md"
 )
@@ -48,13 +50,73 @@ _INTERSECTION_VENUE_UPGRADE_PATH = (
 
 _VENUE_UPGRADE_LOCATION_MAX_LEN = 220
 
+_HOUSE_NUMBER_RE = re.compile(
+    r"(?<![A-Za-z0-9])(\d+[A-Za-z]?(?:[-\u2013\u2014]\d+[A-Za-z]?)?)(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+_ADDRESS_UNIT_RE = re.compile(
+    r"\b(?:apartment|apt|building|bldg|floor|fl|room|rm|suite|ste|unit)\b",
+    re.IGNORECASE,
+)
+_STREET_IDENTITY_NOISE: frozenset[str] = frozenset(
+    {
+        "alley",
+        "aly",
+        "avenue",
+        "ave",
+        "boulevard",
+        "blvd",
+        "circle",
+        "cir",
+        "court",
+        "ct",
+        "drive",
+        "dr",
+        "east",
+        "e",
+        "expressway",
+        "expy",
+        "highway",
+        "hwy",
+        "lane",
+        "ln",
+        "north",
+        "n",
+        "northeast",
+        "ne",
+        "northwest",
+        "nw",
+        "parkway",
+        "pkwy",
+        "place",
+        "pl",
+        "road",
+        "rd",
+        "south",
+        "s",
+        "southeast",
+        "se",
+        "southwest",
+        "sw",
+        "street",
+        "st",
+        "terrace",
+        "ter",
+        "trail",
+        "trl",
+        "way",
+        "west",
+        "w",
+    }
+)
+
 _TRAIL_US = re.compile(
     r",\s*(US|USA|United States)\s*$",
     re.IGNORECASE,
 )
 
-# ISO 3166-2-style alpha-2 codes for US subdivisions (50 + DC) and Canadian provinces/territories.
-# Used only to normalize a lone trailing comma segment that is exactly two letters (root fix for casing).
+# ISO 3166-2-style alpha-2 codes for US subdivisions (50 + DC) and Canadian
+# provinces/territories. Used only to normalize a lone trailing two-letter comma segment.
 _SUBNATIONAL_2: frozenset[str] = frozenset(
     {
         "AL",
@@ -152,7 +214,7 @@ _SMALL_WORDS: frozenset[str] = frozenset(
 # Skip Irish/French-style apostrophe “fix” when this looks like an English contraction.
 _CONTRACTION_SUFFIX = re.compile(r"(n't|'t|'s|'re|'ve|'ll|'m)$", re.IGNORECASE)
 
-# Dotted initialisms: ``U.S.``, ``D.C.``, ``N.Y.``, ``U.S.A.`` (``string.capwords`` yields ``U.s.``).
+# Dotted initialisms such as ``U.S.`` and ``D.C.`` (``string.capwords`` yields ``U.s.``).
 _DOTTED_INITIALISM = re.compile(r"^(?:[A-Za-z]\.)+[A-Za-z]?\.?$")
 # ``Ph.d.`` / ``Sc.d.``-style: multi-letter stem + dot + single letter (+ optional dot).
 _LETTER_DOT_SINGLE_LETTER = re.compile(r"^([A-Za-z]{2,})\.([A-Za-z])(\.?)$")
@@ -169,7 +231,8 @@ def _letters_to_upper_for_acronym(token: str) -> str:
 
 def _promote_token_acronym_casing(token: str) -> str:
     """
-    Restore acronym casing after ``string.capwords`` (e.g. ``U.s.`` → ``U.S.``, ``Ph.d.`` → ``Ph.D.``).
+    Restore acronym casing after ``string.capwords``
+    (e.g. ``U.s.`` → ``U.S.``, ``Ph.d.`` → ``Ph.D.``).
     """
     if not token:
         return token
@@ -253,7 +316,7 @@ def apply_title_case_location_line(line: str) -> str:
 # Standalone comma segments that are geographic *types*, not toponyms (geocoder/LLM noise).
 _STANDALONE_TYPE_SEGMENTS: frozenset[str] = frozenset({"neighborhood", "district"})
 
-# Supranational / macro-regions: trailing ``, US`` is never appropriate (e.g. not ``Middle East, US``).
+# Supranational/macro-regions where trailing ``, US`` is never appropriate.
 _WORLD_MACRO_REGION_HEADS_CF: frozenset[str] = frozenset(
     {
         "middle east",
@@ -425,6 +488,111 @@ def refine_location_display_line(line: str) -> str:
 def _first_comma_segment(line: str) -> str:
     parts = [p.strip() for p in line.split(",") if p.strip()]
     return parts[0] if parts else (line or "").strip()
+
+
+def _address_house_number(line: str) -> str:
+    match = _HOUSE_NUMBER_RE.search(_first_comma_segment(line))
+    if not match:
+        return ""
+    return match.group(1).casefold().replace("\u2013", "-").replace("\u2014", "-")
+
+
+def _street_identity_tokens(address_line: str) -> frozenset[str]:
+    street = _ADDRESS_UNIT_RE.split(_first_comma_segment(address_line), maxsplit=1)[0]
+    house_number = _address_house_number(street)
+    tokens = {
+        token
+        for token in re.findall(r"[A-Za-z0-9]+", street.casefold())
+        if token not in _STREET_IDENTITY_NOISE and token != house_number
+    }
+    return frozenset(tokens)
+
+
+def address_display_preserves_identity(candidate: str, requested_address: str) -> bool:
+    """Require an address display to retain its exact house number and street identity."""
+    requested = (requested_address or "").strip()
+    display = (candidate or "").strip()
+    if not requested or not display:
+        return False
+
+    requested_number = _address_house_number(requested)
+    if requested_number and requested_number != _address_house_number(display):
+        return False
+
+    requested_street_tokens = _street_identity_tokens(requested)
+    if not requested_street_tokens:
+        return bool(requested_number)
+    display_tokens = frozenset(re.findall(r"[A-Za-z0-9]+", display.casefold()))
+    return requested_street_tokens.issubset(display_tokens)
+
+
+def _component_label(components: dict[str, Any], key: str) -> str:
+    value = components.get(key)
+    if isinstance(value, dict):
+        value = value.get("abbr") or value.get("name") or value.get("label")
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _requested_address_line(
+    location_text: str,
+    components: dict[str, Any],
+) -> str:
+    address = components.get("address")
+    if isinstance(address, str) and address.strip():
+        return address.strip()
+    return (location_text or "").strip()
+
+
+def _structured_address_display(
+    requested_address: str,
+    components: dict[str, Any],
+) -> str:
+    """Combine the requested street line with only explicit jurisdiction components."""
+    parts = [part.strip() for part in requested_address.split(",") if part.strip()]
+    folded_parts = {_placename_match_key(part) for part in parts}
+    country = _component_label(components, "country")
+    country_key = country.casefold()
+    jurisdictions = [
+        _component_label(components, "city"),
+        _component_label(components, "state"),
+    ]
+    if country and (not any(jurisdictions) or country_key not in {"us", "usa", "united states"}):
+        jurisdictions.append(country)
+    for jurisdiction in jurisdictions:
+        key = _placename_match_key(jurisdiction)
+        if jurisdiction and key not in folded_parts:
+            parts.append(jurisdiction)
+            folded_parts.add(key)
+    return refine_location_display_line(", ".join(parts))
+
+
+def clamp_address_location_display_line(
+    location_type: str,
+    location_text: str,
+    formatted_address: str,
+    components: dict[str, Any] | None,
+    line: str,
+) -> str:
+    """Reject address displays that collapse to a venue or broader geography."""
+    got = refine_location_display_line((line or "").strip())
+    if (location_type or "").strip().lower() != "address":
+        return got
+
+    comps = components if isinstance(components, dict) else {}
+    requested = _requested_address_line(location_text, comps)
+    if not requested:
+        return got
+    if address_display_preserves_identity(got, requested):
+        return got
+
+    structured = _structured_address_display(requested, comps)
+    if address_display_preserves_identity(structured, requested):
+        return structured
+
+    validated_formatted = refine_location_display_line(formatted_address)
+    if address_display_preserves_identity(validated_formatted, requested):
+        return validated_formatted
+    return refine_location_display_line(requested)
 
 
 def _placename_match_key(text: str) -> str:
@@ -750,12 +918,19 @@ async def compute_emit_location_line(
     preferred_head = _preferred_place_head_from_state(state)
 
     def _finalize(line: str) -> str:
-        clamped = clamp_admin_location_display_line(
+        address_clamped = clamp_address_location_display_line(
             location_type,
             location_text,
             formatted_address,
             components,
             line,
+        )
+        clamped = clamp_admin_location_display_line(
+            location_type,
+            location_text,
+            formatted_address,
+            components,
+            address_clamped,
         )
         return restore_preferred_place_head_casing(clamped, preferred_head)
 
@@ -931,13 +1106,19 @@ async def maybe_upgrade_address_to_named_place(
     """
     if (state.get("location_type") or "").strip().lower() != "address":
         return baseline_location_line, False
-    return await _maybe_upgrade_to_named_place(
+    upgraded_location, upgraded = await _maybe_upgrade_to_named_place(
         state,
         formatted_address=formatted_address,
         baseline_location_line=baseline_location_line,
         rules_path=_ADDRESS_VENUE_UPGRADE_PATH,
         log_label="Address",
     )
+    components = state.get("location_components") or {}
+    comps = components if isinstance(components, dict) else {}
+    requested = _requested_address_line((state.get("location_text") or "").strip(), comps)
+    if upgraded and not address_display_preserves_identity(upgraded_location, requested):
+        return baseline_location_line, False
+    return upgraded_location, upgraded
 
 
 async def maybe_upgrade_intersection_to_named_place(

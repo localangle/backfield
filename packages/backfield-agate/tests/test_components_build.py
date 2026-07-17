@@ -1,5 +1,6 @@
 """Tests for deterministic PlaceExtract components builder."""
 
+import pytest
 from agate_nodes.place_extract.article_context import extract_article_context
 from agate_nodes.place_extract.components_build import build_components
 
@@ -81,4 +82,109 @@ def test_block_address_normalizes_journalistic_phrasing() -> None:
     assert components["address"] == "6500 S Hermitage Ave"
     assert components["city"] == "Chicago"
     assert components["state"] == {"name": "Illinois", "abbr": "IL"}
+
+
+def test_foreign_country_prevents_domestic_context_inference() -> None:
+    ctx = extract_article_context("The report was filed in Chicago, IL.")
+    components = build_components("Paris, France", "city", ctx)
+    assert components["city"] == "Paris"
+    assert components["state"] == {"name": "", "abbr": ""}
+    assert components["country"] == {"name": "France", "abbr": "FR"}
+
+
+def test_country_type_prefers_iso_code_over_ambiguous_subdivision_code() -> None:
+    ctx = extract_article_context("The report was filed in Chicago, IL.")
+    components = build_components("IN", "country", ctx)
+    assert components["state"] == {"name": "", "abbr": ""}
+    assert components["country"] == {"name": "India", "abbr": "IN"}
+
+
+@pytest.mark.parametrize(
+    ("location", "expected_country"),
+    [
+        ("Canada", {"name": "Canada", "abbr": "CA"}),
+        ("u.s.a.", {"name": "United States", "abbr": "US"}),
+        ("Atlantis", {"name": "Atlantis", "abbr": ""}),
+    ],
+)
+def test_country_type_preserves_authoritative_or_raw_identity(
+    location: str,
+    expected_country: dict[str, str],
+) -> None:
+    components = build_components(
+        location,
+        "country",
+        extract_article_context("News from Chicago, IL."),
+    )
+    assert components["country"] == expected_country
+    assert components["city"] == ""
+    assert components["state"] == {"name": "", "abbr": ""}
+
+
+@pytest.mark.parametrize(
+    ("location", "location_type", "expected_city", "expected_state", "expected_country"),
+    [
+        ("Lake Example", "natural", "", "", ""),
+        ("Lake Example, MI", "natural", "", "MI", "US"),
+        ("Lake Example, Ann Arbor, MI", "natural", "Ann Arbor", "MI", "US"),
+        ("Great Basin", "region_national", "", "", ""),
+        ("Great Basin, NV", "region_state", "", "NV", "US"),
+    ],
+)
+def test_natural_and_region_jurisdiction_comes_only_from_explicit_tail(
+    location: str,
+    location_type: str,
+    expected_city: str,
+    expected_state: str,
+    expected_country: str,
+) -> None:
+    components = build_components(
+        location,
+        location_type,
+        extract_article_context("Filed from Chicago, IL."),
+    )
+    assert components["city"] == expected_city
+    assert components["state"]["abbr"] == expected_state
+    assert components["country"]["abbr"] == expected_country
+
+
+def test_foreign_subdivision_and_postal_code_are_parsed_from_right() -> None:
+    ctx = extract_article_context("The report was filed in Chicago, IL.")
+    components = build_components("Toronto, ON M5V 3A8, Canada", "city", ctx)
+    assert components["city"] == "Toronto"
+    assert components["state"] == {"name": "Ontario", "abbr": "ON"}
+    assert components["country"] == {"name": "Canada", "abbr": "CA"}
+    assert components["postal_code"] == "M5V 3A8"
+
+
+def test_domestic_zip_tail_is_removed_before_subdivision_parsing() -> None:
+    ctx = extract_article_context("")
+    components = build_components("123 Main St, Springfield, IL 62701", "address", ctx)
+    assert components["address"] == "123 Main St"
+    assert components["city"] == "Springfield"
+    assert components["state"] == {"name": "Illinois", "abbr": "IL"}
+    assert components["country"] == {"name": "United States", "abbr": "US"}
+    assert components["postal_code"] == "62701"
+
+
+def test_bare_subdivision_and_territory_use_normalized_iso_data() -> None:
+    ctx = extract_article_context("")
+    subdivision = build_components("Ontario", "state", ctx)
+    territory = build_components("San Juan, PR 00901", "city", ctx)
+    assert subdivision["state"] == {"name": "Ontario", "abbr": "ON"}
+    assert subdivision["country"] == {"name": "Canada", "abbr": "CA"}
+    assert territory["city"] == "San Juan"
+    assert territory["state"] == {"name": "Puerto Rico", "abbr": "PR"}
+    assert territory["country"] == {"name": "United States", "abbr": "US"}
+    assert territory["postal_code"] == "00901"
+
+
+def test_foreign_postal_tail_without_subdivision() -> None:
+    ctx = extract_article_context("News from Boston, MA.")
+    components = build_components("10 Downing St, London SW1A 2AA, United Kingdom", "address", ctx)
+    assert components["address"] == "10 Downing St"
+    assert components["city"] == "London"
+    assert components["state"] == {"name": "", "abbr": ""}
+    assert components["country"] == {"name": "United Kingdom", "abbr": "GB"}
+    assert components["postal_code"] == "SW1A 2AA"
 

@@ -155,6 +155,20 @@ def refresh_aliases_for_linked_location(
     canon = session.get(StylebookLocationCanonical, canon_id)
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         return
+    if provenance == "substrate_ingest":
+        # Linked rows can outlive the decision that set their FK; revalidate before
+        # refreshing machine aliases so stale links cannot poison future exact recall.
+        from backfield_entities.canonical.link_commit_gate import sync_link_commit_blocked
+
+        veto = sync_link_commit_blocked(
+            session,
+            entity_type="location",
+            substrate_row=location,
+            canonical_id=canon_id,
+            stylebook_id=stylebook_id,
+        )
+        if veto is not None:
+            return
     _upsert_alias_for_canonical(
         session,
         canon_id=canon_id,
@@ -178,6 +192,19 @@ def link_to_existing_canonical(
     canon = session.get(StylebookLocationCanonical, canonical_id)
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         return
+    if provenance == "substrate_ingest":
+        # This is the final write boundary; callers may arrive from rules, cache, or LLM.
+        from backfield_entities.canonical.link_commit_gate import sync_link_commit_blocked
+
+        veto = sync_link_commit_blocked(
+            session,
+            entity_type="location",
+            substrate_row=location,
+            canonical_id=str(canonical_id),
+            stylebook_id=stylebook_id,
+        )
+        if veto is not None:
+            return
     location.stylebook_location_canonical_id = str(canon.id)
     location.canonical_link_status = CANONICAL_LINK_LINKED
     location.canonical_review_reasons_json = (
@@ -256,6 +283,13 @@ def materialize_new_canonical_and_link(
     """Create a new canonical, set FK + ``linked``, upsert alias."""
     if location.id is None:
         return
+    source_details = (
+        location.source_details_json if isinstance(location.source_details_json, dict) else {}
+    )
+    if str(location.status or "").strip().lower() in {"failed", "needs_review"} or str(
+        source_details.get("places_bucket") or ""
+    ).strip().lower() == "needs_review":
+        raise ValueError("rejected or review-required geocode cannot materialize a canonical")
     gj = location.geometry_json
     lt = (location.location_type or "").strip().lower() or None
     fa = (location.formatted_address or "").strip() or None
@@ -478,6 +512,27 @@ def apply_canonical_persist_plan(
     if plan.decision == CanonicalPersistDecision.LINK_EXISTING:
         if plan.existing_canonical_id is None:
             return
+        if provenance == "substrate_ingest":
+            from backfield_entities.canonical.link_commit_gate import gate_or_coerce_link_plan
+
+            gated = gate_or_coerce_link_plan(
+                session,
+                plan,
+                entity_type="location",
+                substrate_row=location,
+                stylebook_id=stylebook_id,
+            )
+            if gated.decision != CanonicalPersistDecision.LINK_EXISTING:
+                apply_canonical_persist_plan(
+                    session,
+                    stylebook_id=stylebook_id,
+                    location=location,
+                    plan=gated,
+                    places_bucket=places_bucket,
+                    provenance=provenance,
+                    auto_apply_canonicalization=auto_apply_canonicalization,
+                )
+                return
         link_to_existing_canonical(
             session,
             stylebook_id=stylebook_id,

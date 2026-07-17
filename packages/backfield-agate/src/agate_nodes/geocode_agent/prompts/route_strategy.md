@@ -20,7 +20,8 @@ Meanings:
 - **place** with a full numeric street address already present in **components.address** (or equivalent) so web search adds little.
 - Non-addressable natural POIs where search would not resolve a street address.
 
-Use **geocode_hints** as disambiguation for the story; they complement **components_json** but do not override the rules above.
+Use **geocode_hints** for geographic disambiguation (street, neighborhood, nearby
+anchor); they complement **components_json** but do not override the rules above.
 
 ## Fields
 

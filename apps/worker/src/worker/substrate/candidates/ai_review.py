@@ -259,6 +259,7 @@ def _prepare_person_candidate_review(
 def _apply_person_candidate_review(
     engine: Any,
     *,
+    stylebook_id: int,
     project_id: int,
     person_id: int,
     prepared: _PersonReviewPlan,
@@ -278,6 +279,8 @@ def _apply_person_candidate_review(
                 plan,
                 prepared=replace(prepared.adjudication_prep, person=person),
                 llm_data=llm_data,
+                session=session,
+                stylebook_id=stylebook_id,
             )
         has_rec = apply_candidate_ai_review_recommendation(session, person=person, plan=plan)
         session.commit()
@@ -305,6 +308,7 @@ def _process_person_candidate_review(
         return False
     return _apply_person_candidate_review(
         engine,
+        stylebook_id=stylebook_id,
         project_id=project_id,
         person_id=person_id,
         prepared=prepared,
@@ -357,6 +361,7 @@ def _prepare_organization_candidate_review(
 def _apply_organization_candidate_review(
     engine: Any,
     *,
+    stylebook_id: int,
     project_id: int,
     organization_id: int,
     prepared: _OrganizationReviewPlan,
@@ -380,6 +385,8 @@ def _apply_organization_candidate_review(
                 plan,
                 prepared=replace(prepared.adjudication_prep, organization=organization),
                 llm_data=llm_data,
+                session=session,
+                stylebook_id=stylebook_id,
             )
         has_rec = apply_organization_candidate_ai_review(
             session, organization=organization, plan=plan
@@ -409,6 +416,7 @@ def _process_organization_candidate_review(
         return False
     return _apply_organization_candidate_review(
         engine,
+        stylebook_id=stylebook_id,
         project_id=project_id,
         organization_id=organization_id,
         prepared=prepared,
@@ -465,6 +473,7 @@ def _prepare_location_candidate_review(
 def _apply_location_candidate_review(
     engine: Any,
     *,
+    stylebook_id: int,
     project_id: int,
     location_id: int,
     prepared: _LocationReviewPlan,
@@ -484,6 +493,8 @@ def _apply_location_candidate_review(
                 plan,
                 prepared=replace(prepared.adjudication_prep, location=location),
                 llm_data=llm_data,
+                session=session,
+                stylebook_id=stylebook_id,
             )
         has_rec = apply_location_candidate_ai_review(session, location=location, plan=plan)
         session.commit()
@@ -511,6 +522,7 @@ def _process_location_candidate_review(
         return False
     return _apply_location_candidate_review(
         engine,
+        stylebook_id=stylebook_id,
         project_id=project_id,
         location_id=location_id,
         prepared=prepared,

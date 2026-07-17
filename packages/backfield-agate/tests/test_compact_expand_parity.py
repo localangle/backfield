@@ -33,6 +33,7 @@ FULL_STYLE_ENTRY = {
         "neighborhood": "River North",
         "city": "Chicago",
         "county": "Cook County",
+        "postal_code": "",
         "state": {"name": "Illinois", "abbr": "IL"},
         "country": {"name": "United States", "abbr": "US"},
     },
@@ -57,6 +58,33 @@ def test_compact_expand_matches_full_shape() -> None:
         expand_compact_entry(ARTICLE, COMPACT_ROW),
     )
     assert _shape(full_place.model_dump()) == _shape(compact_place.model_dump())
+
+
+def test_compact_expand_preserves_foreign_full_type_and_postal_components() -> None:
+    place = place_from_llm_location_entry(
+        expand_compact_entry(
+            "The event occurred at 10 Downing St.",
+            {
+                "location": "10 Downing St, London SW1A 2AA, United Kingdom",
+                "type": "address",
+                "nature": "primary",
+                "address_place_kind": "unknown",
+                "description": "Event address.",
+                "geocode_hints": "",
+                "evidence_anchor": "10 Downing St",
+            },
+        )
+    )
+    dumped = place.model_dump()
+    assert dumped["location"]["full"] == "10 Downing St, London SW1A 2AA, United Kingdom"
+    assert dumped["location"]["type"] == "address"
+    assert dumped["location"]["components"]["city"] == "London"
+    assert dumped["location"]["components"]["state"] is None
+    assert dumped["location"]["components"]["country"] == {
+        "name": "United Kingdom",
+        "abbr": "GB",
+    }
+    assert dumped["location"]["components"]["postal_code"] == "SW1A 2AA"
 
 
 def test_compact_street_level_includes_address_place_kind() -> None:
