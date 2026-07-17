@@ -55,6 +55,8 @@ Canonical Stylebook entities can also be enriched with metadata and connected to
 
 Backfield's public API allows users to query the extracted and enriched data in a variety of ways, including by location and entity, by keyword or semantically. This API can be used to power products, services, tools and story forms based on the structured information that Backfield curates.
 
+See [docs.backfield.news](https://docs.backfield.news) for Public API documentation.
+
 The Backfield ecosystem continues to evolve, and more applications will be made available as they are launched.
 
 ## Quickstart
@@ -133,4 +135,4 @@ in [LICENSE.md](LICENSE.md) or at [apache.org/licenses/LICENSE-2.0](http://www.a
 
 ## Support
 
-Questions about local development or contributions? Reach out to [Local Angle.](https://localangle.co)
+For documentation and support, visit [docs.backfield.news](https://docs.backfield.news). Questions about local development or contributions? Reach out to [Local Angle.](https://localangle.co)
