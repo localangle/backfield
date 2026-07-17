@@ -87,13 +87,14 @@ Once that is done:
 
 1. Open [Agate](http://localhost:5173) and sign in with the administrator you just created.
 2. Go to **Settings → AI models** and configure credentials for the models and integrations your flows will use.
-3. Follow Local development setup for stack commands, data lifecycle, and troubleshooting links.
+3. Follow [Local development setup](docs/development/local-setup.md) for stack commands, data lifecycle, and troubleshooting links.
 
 
-| App           | Local address                           | Use it for                                   |
-| ------------- | --------------------------------------- | -------------------------------------------- |
-| **Agate**     | [localhost:5173](http://localhost:5173) | Building flows and reviewing article results |
-| **Stylebook** | [localhost:5175](http://localhost:5175) | Browsing and curating canonical records      |
+| App            | Local address                                           | Use it for                                      |
+| -------------- | ------------------------------------------------------- | ----------------------------------------------- |
+| **Agate**      | [localhost:5173](http://localhost:5173)                 | Building flows and reviewing article results    |
+| **Stylebook**  | [localhost:5175](http://localhost:5175)                 | Browsing and curating canonical records         |
+| **Public API** | [localhost:8004/public/v1](http://localhost:8004/public/v1) | Querying extracted and enriched project data |
 
 
 Published ports bind to `127.0.0.1` only.
