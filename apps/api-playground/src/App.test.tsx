@@ -157,6 +157,20 @@ describe("API key handling", () => {
           }),
         )
       }
+      if (String(input).endsWith("/articles/facets")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              authors: ["Jane Doe"],
+              external_sources: ["Daily News"],
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+        )
+      }
       if (init?.method === "GET") {
         return Promise.resolve(
         new Response(JSON.stringify({ items: [] }), {
@@ -185,8 +199,10 @@ describe("API key handling", () => {
     fireEvent.click(screen.getByRole("button", { name: "Execute request" }))
     expect(await screen.findByText("request-123")).toBeInTheDocument()
 
-    const apiRequest = fetchMock.mock.calls.find(([, init]) =>
-      new Headers(init?.headers).has("Authorization"),
+    const apiRequest = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        String(input).includes("/articles/search") &&
+        new Headers(init?.headers).has("Authorization"),
     )
     expect(apiRequest).toBeDefined()
     expect(String(apiRequest?.[0])).toContain("/projects/daily-news/articles/search")

@@ -1,11 +1,14 @@
-import { cleanup, render, screen } from "@testing-library/react"
-import { afterEach, describe, expect, it } from "vitest"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { listOperations, parseOpenApiDocument, resolveInputSchema } from "../lib/openapi"
 import EndpointExplorer from "./EndpointExplorer"
 
 describe("OpenAPI parsing and endpoint rendering", () => {
-  afterEach(cleanup)
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
 
   it("resolves component parameters and renders schema-driven inputs", () => {
     const document = parseOpenApiDocument({
@@ -62,7 +65,7 @@ describe("OpenAPI parsing and endpoint rendering", () => {
     expect(bodyInput.value).toContain("City council meets")
   })
 
-  it("renders article search as an aligned, constrained form", () => {
+  it("renders article search as an aligned, constrained form", async () => {
     const document = parseOpenApiDocument({
       openapi: "3.1.0",
       info: { title: "Public API", version: "1.2.0" },
@@ -86,6 +89,18 @@ describe("OpenAPI parsing and endpoint rendering", () => {
               {
                 name: "q",
                 in: "query",
+                schema: { anyOf: [{ type: "string" }, { type: "null" }] },
+              },
+              {
+                name: "author",
+                in: "query",
+                description: "Filter by byline",
+                schema: { anyOf: [{ type: "string" }, { type: "null" }] },
+              },
+              {
+                name: "external_source",
+                in: "query",
+                description: "Filter by publication or outlet",
                 schema: { anyOf: [{ type: "string" }, { type: "null" }] },
               },
               {
@@ -136,12 +151,24 @@ describe("OpenAPI parsing and endpoint rendering", () => {
       minimum: 1,
       maximum: 100,
     })
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            authors: ["Jane Doe", "Sam Rivera"],
+            external_sources: ["Springfield Daily", "Wire Service"],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    )
     render(
       <EndpointExplorer
         document={document}
         operation={operation}
         origin="https://api.news.backfield.news"
-        apiKey=""
+        apiKey="project-key"
         projectOptions={[
           {
             value: "daily-news",
@@ -162,12 +189,26 @@ describe("OpenAPI parsing and endpoint rendering", () => {
 
     const project = screen.getByLabelText(/project_slug/) as HTMLSelectElement
     expect(project.tagName).toBe("SELECT")
+    expect(
+      project.closest(".parameter-field")?.querySelector(".required-badge"),
+    ).toHaveTextContent("Required")
     expect(project.querySelector("optgroup")).toHaveAttribute("label", "Editorial")
     expect(Array.from(project.options).map((option) => option.value)).toEqual([
       "",
       "daily-news",
       "weekend-edition",
     ])
+    fireEvent.change(project, { target: { value: "daily-news" } })
+
+    const author = screen.getByLabelText(/author/) as HTMLSelectElement
+    expect(author.tagName).toBe("SELECT")
+    expect(await screen.findByRole("option", { name: "Jane Doe" })).toBeInTheDocument()
+    expect(Array.from(author.options).map((option) => option.value)).toEqual([
+      "",
+      "Jane Doe",
+      "Sam Rivera",
+    ])
+    expect(screen.getByLabelText(/external_source/)).toHaveTextContent("Springfield Daily")
 
     const mentionType = screen.getByLabelText(/has_mentions/) as HTMLSelectElement
     expect(mentionType.tagName).toBe("SELECT")

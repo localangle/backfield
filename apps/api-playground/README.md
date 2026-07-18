@@ -29,6 +29,8 @@ controls, exposes schema types and numeric limits, and uses date, number, textar
 controls when the accepted values are known. Empty optional controls are omitted from requests.
 Every `project_slug` path parameter is a workspace-grouped dropdown populated from the signed-in
 user's available projects.
+On `/articles/search`, selecting a project loads its article facets with the in-memory project API
+key and uses them to populate the `author` and `external_source` dropdowns.
 
 ## Security boundary
 

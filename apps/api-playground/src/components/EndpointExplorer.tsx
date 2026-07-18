@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
+import { fetchArticleFacets, type ArticleFacets } from "../lib/api"
 import {
   exampleForSchema,
   jsonBodySchema,
@@ -34,6 +35,7 @@ interface SelectOption {
 interface ParameterPresentation {
   control: "date" | "number" | "select" | "text" | "textarea"
   description?: string
+  disabled?: boolean
   emptyLabel?: string
   options?: SelectOption[]
   placeholder?: string
@@ -45,6 +47,12 @@ interface ParameterSection {
   description: string
   names: string[]
   wide: Set<string>
+}
+
+interface ArticleFacetLoad {
+  projectSlug: string
+  status: "error" | "idle" | "loading" | "ready"
+  values?: ArticleFacets
 }
 
 const articleSearchSections: ParameterSection[] = [
@@ -99,6 +107,9 @@ function parameterPresentation(
   parameter: OpenApiParameter,
   schema: OpenApiSchema | undefined,
   projectOptions: SelectOption[],
+  articleFacetLoad: ArticleFacetLoad,
+  hasApiKey: boolean,
+  selectedProjectSlug: string,
 ): ParameterPresentation {
   if (parameter.in === "path" && parameter.name === "project_slug") {
     return {
@@ -129,6 +140,34 @@ function parameterPresentation(
           { value: "person", label: "Person" },
           { value: "organization", label: "Organization" },
         ],
+        typeLabel: "String",
+      }
+    }
+    if (parameter.name === "author" || parameter.name === "external_source") {
+      const noun = parameter.name === "author" ? "author" : "source"
+      const values =
+        parameter.name === "author"
+          ? articleFacetLoad.values?.authors
+          : articleFacetLoad.values?.externalSources
+      const facetsAreCurrent =
+        articleFacetLoad.status === "ready" &&
+        articleFacetLoad.projectSlug === selectedProjectSlug
+      let emptyLabel = `Any ${noun}`
+      if (!selectedProjectSlug) emptyLabel = "Select a project first"
+      else if (!hasApiKey) emptyLabel = "Enter an API key to load choices"
+      else if (!facetsAreCurrent && articleFacetLoad.status === "loading") {
+        emptyLabel = "Loading choices…"
+      } else if (!facetsAreCurrent || articleFacetLoad.status === "error") {
+        emptyLabel = "Choices unavailable"
+      } else if (!values?.length) {
+        emptyLabel = `No ${noun} values available`
+      }
+      return {
+        control: "select",
+        description: parameter.description,
+        disabled: !facetsAreCurrent || !values?.length,
+        emptyLabel,
+        options: values?.map((value) => ({ value, label: value })) ?? [],
         typeLabel: "String",
       }
     }
@@ -231,6 +270,9 @@ function ParameterInput({
   operation,
   parameter,
   projectOptions,
+  articleFacetLoad,
+  hasApiKey,
+  selectedProjectSlug,
   value,
   wide,
   onChange,
@@ -239,12 +281,23 @@ function ParameterInput({
   operation: PlaygroundOperation
   parameter: OpenApiParameter
   projectOptions: SelectOption[]
+  articleFacetLoad: ArticleFacetLoad
+  hasApiKey: boolean
+  selectedProjectSlug: string
   value: string
   wide?: boolean
   onChange: (value: string) => void
 }) {
   const schema = resolveInputSchema(document, parameter.schema)
-  const presentation = parameterPresentation(operation, parameter, schema, projectOptions)
+  const presentation = parameterPresentation(
+    operation,
+    parameter,
+    schema,
+    projectOptions,
+    articleFacetLoad,
+    hasApiKey,
+    selectedProjectSlug,
+  )
   const id = `parameter-${parameter.in}-${parameter.name}`
   const descriptionId = `${id}-description`
   const defaultLabel =
@@ -258,10 +311,17 @@ function ParameterInput({
   return (
     <div className={`field parameter-field ${wide ? "parameter-field-wide" : ""}`}>
       <label htmlFor={id}>
-        <span className="field-name">{parameter.name}</span>
+        <span className="field-name">
+          {parameter.name}
+          {parameter.required && (
+            <span className="required-mark" aria-hidden>
+              *
+            </span>
+          )}
+        </span>
         <span className="field-meta">
           {presentation.typeLabel}
-          {parameter.required ? " · required" : ""}
+          {parameter.required && <span className="required-badge">Required</span>}
         </span>
       </label>
       <div className="parameter-description-slot">
@@ -276,6 +336,7 @@ function ParameterInput({
           id={id}
           value={value}
           required={parameter.required}
+          disabled={presentation.disabled}
           aria-describedby={describedBy}
           onChange={(event) => onChange(event.target.value)}
         >
@@ -388,11 +449,44 @@ export default function EndpointExplorer({
     return JSON.stringify(exampleForSchema(document, bodySchema) ?? {}, null, 2)
   }, [bodySchema, document])
   const [values, setValues] = useState<ParameterValues>({})
+  const selectedProjectSlug = values["path:project_slug"] ?? ""
+  const [articleFacetLoad, setArticleFacetLoad] = useState<ArticleFacetLoad>({
+    projectSlug: "",
+    status: "idle",
+  })
   const [bodyText, setBodyText] = useState(initialBody)
   const [response, setResponse] = useState<PlaygroundResponse>()
   const [curl, setCurl] = useState("")
   const [error, setError] = useState("")
   const [executing, setExecuting] = useState(false)
+
+  useEffect(() => {
+    if (operation.displayPath !== "/articles/search" || !selectedProjectSlug || !apiKey) {
+      setArticleFacetLoad({ projectSlug: selectedProjectSlug, status: "idle" })
+      return
+    }
+
+    const controller = new AbortController()
+    setArticleFacetLoad({ projectSlug: selectedProjectSlug, status: "loading" })
+    void fetchArticleFacets(
+      origin,
+      selectedProjectSlug,
+      apiKey,
+      controller.signal,
+    )
+      .then((facets) => {
+        setArticleFacetLoad({
+          projectSlug: selectedProjectSlug,
+          status: "ready",
+          values: facets,
+        })
+      })
+      .catch((caught: unknown) => {
+        if (caught instanceof DOMException && caught.name === "AbortError") return
+        setArticleFacetLoad({ projectSlug: selectedProjectSlug, status: "error" })
+      })
+    return () => controller.abort()
+  }, [apiKey, operation.displayPath, origin, selectedProjectSlug])
 
   async function execute() {
     setError("")
@@ -464,11 +558,24 @@ export default function EndpointExplorer({
                           operation={operation}
                           parameter={parameter}
                           projectOptions={projectOptions}
+                          articleFacetLoad={articleFacetLoad}
+                          hasApiKey={Boolean(apiKey)}
+                          selectedProjectSlug={selectedProjectSlug}
                           value={values[key] ?? ""}
                           wide={section.wide.has(parameter.name)}
-                          onChange={(value) =>
-                            setValues((current) => ({ ...current, [key]: value }))
-                          }
+                          onChange={(value) => {
+                            setValues((current) => {
+                              const next = { ...current, [key]: value }
+                              if (
+                                parameter.in === "path" &&
+                                parameter.name === "project_slug"
+                              ) {
+                                delete next["query:author"]
+                                delete next["query:external_source"]
+                              }
+                              return next
+                            })
+                          }}
                         />
                       )
                     })}
@@ -483,9 +590,19 @@ export default function EndpointExplorer({
       {bodySchema && (
         <div className="field body-field">
           <label htmlFor="request-body">
-            <span className="field-name">JSON request body</span>
+            <span className="field-name">
+              JSON request body
+              {operation.requestBody?.required && (
+                <span className="required-mark" aria-hidden>
+                  *
+                </span>
+              )}
+            </span>
             <span className="field-meta">
-              application/json{operation.requestBody?.required ? " · required" : ""}
+              application/json
+              {operation.requestBody?.required && (
+                <span className="required-badge">Required</span>
+              )}
             </span>
           </label>
           {operation.requestBody?.description && (
