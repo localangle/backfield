@@ -64,6 +64,7 @@ function sessionResponse(input: RequestInfo | URL): Response | undefined {
 
 describe("API key handling", () => {
   beforeEach(() => {
+    sessionStorage.clear()
     vi.stubGlobal(
       "fetch",
       vi.fn<typeof fetch>().mockImplementation(async (input) => {
@@ -134,18 +135,18 @@ describe("API key handling", () => {
     expect(connectionRegion).toHaveAttribute("aria-busy", "false")
 
     const groupToggle = screen.getByRole("button", { name: "Articles, 1 endpoint" })
+    expect(groupToggle).toHaveAttribute("aria-expanded", "false")
+    expect(document.querySelector(".endpoint-link")).not.toBeInTheDocument()
+
+    fireEvent.click(groupToggle)
     expect(groupToggle).toHaveAttribute("aria-expanded", "true")
     const endpointLink = document.querySelector(".endpoint-link")
     expect(endpointLink?.querySelector(".endpoint-summary")).toHaveTextContent("List and search")
     expect(endpointLink?.querySelector("code")).toHaveTextContent("/articles/search")
-
-    fireEvent.click(groupToggle)
-    expect(groupToggle).toHaveAttribute("aria-expanded", "false")
-    expect(document.querySelector(".endpoint-link")).not.toBeInTheDocument()
   })
 
-  it("uses the key for requests without persisting or displaying it", async () => {
-    const storageWrite = vi.spyOn(Storage.prototype, "setItem")
+  it("keeps the key for tab reloads without displaying or locally persisting it", async () => {
+    const localStorageWrite = vi.spyOn(window.localStorage, "setItem")
     const fetchMock = vi.fn<typeof fetch>().mockImplementation((input, init) => {
       const session = sessionResponse(input)
       if (session) return Promise.resolve(session)
@@ -186,13 +187,26 @@ describe("API key handling", () => {
     })
     vi.stubGlobal("fetch", fetchMock)
 
-    render(<App />)
+    const firstRender = render(<App />)
     fireEvent.change(screen.getByLabelText(/Project API key/), {
       target: { value: "top-secret-key" },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Load API schema" }))
+    await waitFor(() =>
+      expect(
+        sessionStorage.getItem("backfield-playground-project-api-key"),
+      ).toBe("top-secret-key"),
+    )
+
+    // A fresh mount models a reload in the same browser tab.
+    firstRender.unmount()
+    render(<App />)
+    expect(screen.getByLabelText(/Project API key/)).toHaveValue("top-secret-key")
 
     expect(await screen.findByRole("heading", { name: "List and search" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "API schema loaded" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Reload schema" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Clear key" })).toBeInTheDocument()
+    expect(screen.queryByLabelText(/Project API key/)).not.toBeInTheDocument()
     fireEvent.change(screen.getByLabelText(/project_slug/), {
       target: { value: "daily-news" },
     })
@@ -208,8 +222,8 @@ describe("API key handling", () => {
     expect(String(apiRequest?.[0])).toContain("/projects/daily-news/articles/search")
     const requestInit = apiRequest?.[1]
     expect(new Headers(requestInit?.headers).get("Authorization")).toBe("Bearer top-secret-key")
-    // The sidebar persists layout state; the key itself must never reach storage.
-    for (const [storageKey, storedValue] of storageWrite.mock.calls) {
+    // The sidebar persists layout state in localStorage; the API key must not.
+    for (const [storageKey, storedValue] of localStorageWrite.mock.calls) {
       expect(storageKey).not.toContain("top-secret-key")
       expect(storedValue).not.toContain("top-secret-key")
     }

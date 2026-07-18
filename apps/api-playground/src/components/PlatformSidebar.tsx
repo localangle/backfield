@@ -95,9 +95,10 @@ export default function PlatformSidebar({
     "text-muted-foreground hover:text-foreground",
   )
 
+  // Matches Agate's AppSidebar workspace row (gap-1 px-2 py-2).
   const workspaceRowClass = cn(
     "rounded-md text-sm transition-colors",
-    "flex w-full min-w-0 items-center px-0 py-0 text-left font-medium",
+    "flex w-full min-w-0 items-center gap-1 px-2 py-2 text-left font-medium",
     "text-foreground",
   )
 
@@ -172,7 +173,9 @@ export default function PlatformSidebar({
                       aria-controls={projectsPanelId}
                       onClick={() => toggleWorkspaceExpanded(workspace.slug)}
                       className={cn(
-                        "inline-flex h-9 w-8 shrink-0 items-center justify-center rounded-md",
+                        // Padding offset by negative margin keeps Agate's row
+                        // geometry while giving the chevron a usable hit area.
+                        "inline-flex shrink-0 items-center justify-center rounded-md p-1 -m-1",
                         "hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       )}
                     >
@@ -193,7 +196,7 @@ export default function PlatformSidebar({
                       title={workspace.name}
                       aria-label={`Open workspace ${workspace.name} in Agate`}
                       className={cn(
-                        "min-w-0 flex-1 truncate py-2 pr-2",
+                        "min-w-0 flex-1 truncate",
                         "hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md",
                       )}
                     >
@@ -278,7 +281,7 @@ export default function PlatformSidebar({
             ) : null}
           </div>
 
-          <div className="border-t border-border/50 pt-2 shrink-0 flex flex-col gap-0">
+          <div className="border-t border-border/50 pt-2 shrink-0 space-y-1">
             {context.user.orgRole === "org_admin" ? (
               <a
                 href={`${agateOrigin}/settings`}

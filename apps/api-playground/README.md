@@ -29,7 +29,7 @@ controls, exposes schema types and numeric limits, and uses date, number, textar
 controls when the accepted values are known. Empty optional controls are omitted from requests.
 Every `project_slug` path parameter is a workspace-grouped dropdown populated from the signed-in
 user's available projects.
-On `/articles/search`, selecting a project loads its article facets with the in-memory project API
+On `/articles/search`, selecting a project loads its article facets with the tab-scoped project API
 key and uses them to populate the `author` and `external_source` dropdowns. The `meta` parameter is
 a visual condition builder: each row combines a metadata type (from the project's metadata
 discovery endpoints), an is / is not operator, and a searchable category multi-select; rows encode
@@ -40,12 +40,17 @@ to the documented repeatable `meta` clause grammar shown in a live preview.
 - The Playground uses the existing Backfield session cookie only to load the signed-in
   organization, workspaces, and stylebooks for its shell. Opening the app requires an active
   Backfield session.
-- The project API key is React state only. It is never put in local storage, session storage,
-  cookies, URL state, analytics, request history, or third-party scripts. Public API requests omit
-  browser credentials.
+- The project API key is held in React state and this tab's `sessionStorage`, so it survives a
+  reload but is discarded when the tab closes. It is never put in local storage, cookies, URL
+  state, analytics, request history, or third-party scripts. Public API requests omit browser
+  credentials.
+- When a tab-scoped key is present after a reload, the Playground automatically reloads the public
+  schema and restores the selected endpoint, endpoint filter, and expanded endpoint groups. Endpoint
+  groups start collapsed, and searching temporarily reveals matching endpoints. Once loaded, the
+  connection form collapses to a compact schema status and reload/clear controls.
 - The organization slug comes only from the Playground hostname. No organization selector, project
   slug, API key, request values, or response data is put in the URL.
-- Refreshing or closing the tab clears the key. **Clear key** removes it immediately.
+- Closing the tab clears the key. **Clear key** removes it immediately.
 - Generated curl uses `$BACKFIELD_PROJECT_API_KEY` instead of printing the entered key.
 - The production build injects a restrictive Content Security Policy. `index.html` also sets
   `Referrer-Policy: no-referrer` through a meta policy, which works on any static host.

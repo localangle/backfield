@@ -100,43 +100,46 @@ pre,
   height: 100dvh;
 }
 
+/* Mirrors the Agate shell header: px-4 py-4, content-sized height. */
 .site-header {
   display: flex;
-  min-height: 81px;
   flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
   border-bottom: 1px solid hsl(var(--border));
-  padding: 16px 24px;
+  padding: 16px;
 }
 
+/* Mirrors the Agate/Stylebook ShellProductBrand: icon inline with the
+   title (28px mark, gap-2) and the tagline on its own line below. */
 .product-brand {
-  display: flex;
   min-width: 0;
-  align-items: center;
-  gap: 12px;
 }
 
 .product-mark {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   flex: 0 0 auto;
 }
 
 .site-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   color: hsl(var(--foreground));
   font-size: 1.875rem;
   font-weight: 700;
   letter-spacing: -0.025em;
-  line-height: 1.1;
+  line-height: 1.2;
 }
 
 .site-subtitle {
   margin: 4px 0 0;
   color: hsl(var(--muted-foreground));
   font-size: 0.875rem;
+  line-height: 1.25rem;
 }
 
 .developer-label {
@@ -196,6 +199,59 @@ pre,
 
 .connection-card {
   padding: 24px;
+}
+
+.connection-card-compact {
+  padding: 12px 16px;
+}
+
+.connection-compact-row,
+.connection-compact-status,
+.connection-compact-actions {
+  display: flex;
+  align-items: center;
+}
+
+.connection-compact-row {
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.connection-compact-status {
+  min-width: 0;
+  gap: 10px;
+}
+
+.connection-status-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: hsl(142 71% 35%);
+  box-shadow: 0 0 0 3px hsl(142 71% 35% / 0.12);
+}
+
+.connection-compact-status h2 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.connection-compact-status p {
+  margin: 2px 0 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+}
+
+.connection-compact-actions {
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.connection-compact-actions .secondary-button {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 0.8125rem;
 }
 
 .section-heading {
@@ -934,7 +990,6 @@ pre {
 
 @media (max-width: 650px) {
   .site-header {
-    min-height: auto;
     align-items: flex-start;
     padding: 14px 16px;
   }
@@ -964,6 +1019,16 @@ pre {
   .connection-card,
   .operation-panel {
     padding: 18px;
+  }
+
+  .connection-card-compact {
+    padding: 12px;
+  }
+
+  .connection-compact-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
   }
 
   .meta-condition-row {

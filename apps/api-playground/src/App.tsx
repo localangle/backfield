@@ -27,6 +27,34 @@ interface OperationGroup {
   operations: PlaygroundOperation[]
 }
 
+const API_KEY_SESSION_STORAGE = "backfield-playground-project-api-key"
+const SELECTED_OPERATION_SESSION_STORAGE = "backfield-playground-selected-operation"
+const ENDPOINT_FILTER_SESSION_STORAGE = "backfield-playground-endpoint-filter"
+const EXPANDED_GROUPS_SESSION_STORAGE = "backfield-playground-expanded-groups"
+
+function readSessionValue(key: string): string {
+  try {
+    return sessionStorage.getItem(key) ?? ""
+  } catch {
+    return ""
+  }
+}
+
+function readExpandedGroups(): Set<string> {
+  try {
+    const parsed = JSON.parse(
+      sessionStorage.getItem(EXPANDED_GROUPS_SESSION_STORAGE) ?? "[]",
+    ) as unknown
+    return new Set(
+      Array.isArray(parsed)
+        ? parsed.filter((group): group is string => typeof group === "string")
+        : [],
+    )
+  } catch {
+    return new Set()
+  }
+}
+
 function groupOperations(operations: PlaygroundOperation[]): OperationGroup[] {
   const groups = new Map<string, PlaygroundOperation[]>()
   for (const operation of operations) {
@@ -56,17 +84,53 @@ export default function App() {
     : organizationSlug
       ? deriveProductOrigin("agate", organizationSlug)
       : ""
-  const [apiKey, setApiKey] = useState("")
+  const [apiKey, setApiKey] = useState(() => readSessionValue(API_KEY_SESSION_STORAGE))
   const [document, setDocument] = useState<OpenApiDocument>()
   const [platformContext, setPlatformContext] = useState<PlatformContext>()
   const [sessionError, setSessionError] = useState("")
   const [sessionLoading, setSessionLoading] = useState(false)
   const [origin, setOrigin] = useState("")
-  const [selectedOperationId, setSelectedOperationId] = useState("")
-  const [filter, setFilter] = useState("")
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  const [selectedOperationId, setSelectedOperationId] = useState(() =>
+    readSessionValue(SELECTED_OPERATION_SESSION_STORAGE),
+  )
+  const [filter, setFilter] = useState(() =>
+    readSessionValue(ENDPOINT_FILTER_SESSION_STORAGE),
+  )
+  // Endpoint groups start collapsed; users expand only what they need.
+  const [expandedGroups, setExpandedGroups] =
+    useState<Set<string>>(readExpandedGroups)
   const [loading, setLoading] = useState(false)
   const [connectionError, setConnectionError] = useState("")
+
+  useEffect(() => {
+    try {
+      if (apiKey) {
+        sessionStorage.setItem(API_KEY_SESSION_STORAGE, apiKey)
+      } else {
+        sessionStorage.removeItem(API_KEY_SESSION_STORAGE)
+      }
+    } catch {
+      // Storage may be unavailable; the key remains usable in memory for this page.
+    }
+  }, [apiKey])
+
+  useEffect(() => {
+    try {
+      if (selectedOperationId) {
+        sessionStorage.setItem(
+          SELECTED_OPERATION_SESSION_STORAGE,
+          selectedOperationId,
+        )
+      }
+      sessionStorage.setItem(ENDPOINT_FILTER_SESSION_STORAGE, filter)
+      sessionStorage.setItem(
+        EXPANDED_GROUPS_SESSION_STORAGE,
+        JSON.stringify([...expandedGroups]),
+      )
+    } catch {
+      // Navigation state persistence is an optional convenience.
+    }
+  }, [expandedGroups, filter, selectedOperationId])
 
   const operations = useMemo(() => (document ? listOperations(document) : []), [document])
   const visibleGroups = useMemo(() => {
@@ -108,7 +172,7 @@ export default function App() {
   )
 
   function toggleGroup(groupName: string) {
-    setCollapsedGroups((current) => {
+    setExpandedGroups((current) => {
       const next = new Set(current)
       if (next.has(groupName)) {
         next.delete(groupName)
@@ -149,7 +213,11 @@ export default function App() {
       )
       return
     }
-    void loadSessionContext(apiOrigin, stylebookApiOrigin).catch(() => undefined)
+    if (apiKey) {
+      void connect()
+    } else {
+      void loadSessionContext(apiOrigin, stylebookApiOrigin).catch(() => undefined)
+    }
     // Tenant origins are intentionally inferred once from the current hostname.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -173,8 +241,11 @@ export default function App() {
       }
       setOrigin(apiOrigin)
       setDocument(schema)
-      setSelectedOperationId(nextOperations[0].id)
-      setCollapsedGroups(new Set())
+      setSelectedOperationId((current) =>
+        nextOperations.some((operation) => operation.id === current)
+          ? current
+          : nextOperations[0].id,
+      )
     } catch (caught) {
       setDocument(undefined)
       setOrigin("")
@@ -197,11 +268,11 @@ export default function App() {
     <div className="app-frame">
       <header className="site-header">
         <div className="product-brand">
-          <TerminalSquare className="product-mark" strokeWidth={1.75} aria-hidden />
-          <div>
-            <h1>API Playground</h1>
-            <p className="site-subtitle">Explore and test the Backfield public API</p>
-          </div>
+          <h1>
+            <TerminalSquare className="product-mark" strokeWidth={1.75} aria-hidden />
+            API Playground
+          </h1>
+          <p className="site-subtitle">Explore and test the Backfield public API</p>
         </div>
         {platformContext ? (
           <UserAccountMenu
@@ -236,49 +307,88 @@ export default function App() {
           </p>
         )}
         <section
-          className="connection-card"
+          className={`connection-card ${
+            document && apiKey ? "connection-card-compact" : ""
+          }`}
           aria-labelledby="connection-title"
           aria-busy={loading}
         >
-          <div className="section-heading">
-            <div>
-              <h2 id="connection-title">Connect to the API</h2>
-              <p>Enter a project API key, then load this organization’s API contract.</p>
-            </div>
-          </div>
-          <div className="connection-grid connection-grid-key-only">
-            <div className="field">
-              <label htmlFor="project-api-key">
-                <span className="field-name">Project API key</span>
-              </label>
-              <div className="secret-row">
-                <input
-                  id="project-api-key"
-                  type="password"
-                  autoComplete="off"
-                  value={apiKey}
-                  onChange={(event) => setApiKey(event.target.value)}
-                  placeholder="Paste a project API key"
-                />
-                <button type="button" className="secondary-button" onClick={() => setApiKey("")}>
-                  Clear
+          {document && apiKey ? (
+            <div className="connection-compact-row">
+              <div className="connection-compact-status">
+                <span className="connection-status-dot" aria-hidden />
+                <div>
+                  <h2 id="connection-title">API schema loaded</h2>
+                  <p>
+                    {document.info.title} · Version {document.info.version}
+                  </p>
+                </div>
+              </div>
+              <div className="connection-compact-actions">
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={loading}
+                  onClick={connect}
+                >
+                  {loading ? "Reloading…" : "Reload schema"}
+                </button>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => setApiKey("")}
+                >
+                  Clear key
                 </button>
               </div>
             </div>
-          </div>
-          <div className="connection-actions">
-            <button
-              className="connect-button"
-              type="button"
-              disabled={loading || !apiOrigin}
-              onClick={connect}
-            >
-              {loading ? "Loading schema…" : "Load API schema"}
-            </button>
-            <div className="origin-preview">
-              API origin <code>{apiOrigin || "Unavailable for this hostname"}</code>
-            </div>
-          </div>
+          ) : (
+            <>
+              <div className="section-heading">
+                <div>
+                  <h2 id="connection-title">Connect to the API</h2>
+                  <p>Enter a project API key, then load this organization’s API contract.</p>
+                </div>
+              </div>
+              <div className="connection-grid connection-grid-key-only">
+                <div className="field">
+                  <label htmlFor="project-api-key">
+                    <span className="field-name">Project API key</span>
+                  </label>
+                  <div className="secret-row">
+                    <input
+                      id="project-api-key"
+                      type="password"
+                      autoComplete="off"
+                      value={apiKey}
+                      onChange={(event) => setApiKey(event.target.value)}
+                      placeholder="Paste a project API key"
+                    />
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setApiKey("")}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="connection-actions">
+                <button
+                  className="connect-button"
+                  type="button"
+                  disabled={loading || !apiOrigin}
+                  onClick={connect}
+                >
+                  {loading ? "Loading schema…" : "Load API schema"}
+                </button>
+                <div className="origin-preview">
+                  API origin <code>{apiOrigin || "Unavailable for this hostname"}</code>
+                </div>
+              </div>
+            </>
+          )}
           {connectionError && (
             <p id="connection-error" className="error-message" role="alert">
               {connectionError}
@@ -307,7 +417,8 @@ export default function App() {
               />
               <div className="endpoint-groups">
                 {visibleGroups.map((group) => {
-                  const expanded = !collapsedGroups.has(group.name)
+                  // Filtering reveals matches even in groups the user has not expanded.
+                  const expanded = filter.trim() !== "" || expandedGroups.has(group.name)
                   const endpointLabel =
                     group.operations.length === 1 ? "1 endpoint" : `${group.operations.length} endpoints`
                   return (
