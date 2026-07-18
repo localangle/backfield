@@ -112,7 +112,11 @@ export default function EndpointExplorer({
   )
 
   return (
-    <section className="operation-panel" aria-labelledby="operation-title">
+    <section
+      className="operation-panel"
+      aria-labelledby="operation-title"
+      aria-busy={executing}
+    >
       <header className="operation-header">
         <span className={`method method-${operation.method}`}>{operation.method.toUpperCase()}</span>
         <div>
@@ -164,11 +168,17 @@ export default function EndpointExplorer({
         </div>
       )}
 
-      <button className="execute-button" type="button" disabled={executing} onClick={execute}>
+      <button
+        className="execute-button"
+        type="button"
+        disabled={executing}
+        aria-describedby={error ? "request-error" : undefined}
+        onClick={execute}
+      >
         {executing ? "Sending request…" : "Execute request"}
       </button>
       {error && (
-        <p className="error-message" role="alert">
+        <p id="request-error" className="error-message" role="alert">
           {error}
         </p>
       )}
@@ -185,7 +195,11 @@ export default function EndpointExplorer({
       )}
 
       {response && (
-        <section className="response-section" aria-labelledby="response-title">
+        <section
+          className="response-section"
+          aria-labelledby="response-title"
+          aria-live="polite"
+        >
           <div className="response-heading">
             <h3 id="response-title">Response</h3>
             <span className={`status ${response.status < 400 ? "status-ok" : "status-error"}`}>

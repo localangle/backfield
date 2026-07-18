@@ -5,6 +5,7 @@ import {
   ChevronRight,
   HelpCircle,
   Settings,
+  TerminalSquare,
 } from 'lucide-react'
 import { AgateProductMark, ShellSidebar, StylebookProductMark } from '@backfield/ui'
 import { Button } from '@/components/ui/button'
@@ -13,7 +14,7 @@ import { listProjects, type Project } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
 import { hasWorkspaceAccess } from '@/lib/workspace-access'
-import { helpHref, stylebookShellHref } from '@/lib/platformUrls'
+import { helpHref, playgroundHref, stylebookShellHref } from '@/lib/platformUrls'
 import {
   listStylebookCatalogs,
   type StylebookCatalogRow,
@@ -397,6 +398,14 @@ export default function AppSidebar() {
                   {expanded ? <span>Settings</span> : null}
                 </NavLink>
               ) : null}
+              <a
+                href={playgroundHref()}
+                className={hubLinkClass}
+                title={!expanded ? 'API Playground' : undefined}
+              >
+                <TerminalSquare className="h-5 w-5 shrink-0" aria-hidden />
+                {expanded ? <span>API Playground</span> : null}
+              </a>
               <a
                 href={helpHref()}
                 className={hubLinkClass}

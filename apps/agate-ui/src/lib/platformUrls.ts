@@ -34,6 +34,22 @@ export function helpHref(): string {
   return `${agateUiOrigin()}/help`
 }
 
+/** Standalone API Playground, with an explicit local-development target. */
+export function playgroundHref(): string {
+  const override = import.meta.env.VITE_PLAYGROUND_URL
+  if (typeof override === 'string' && override.trim() !== '') {
+    return override.trim()
+  }
+  const origin = browserOrigin()
+  if (origin) {
+    const url = new URL(origin)
+    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+      return `${url.protocol}//${url.hostname}:5176`
+    }
+  }
+  return 'https://playground.backfield.news'
+}
+
 /**
  * Stylebook UI URL: `/stylebook/<slug>/`. Optionally adds Agate project context as
  * `?project=<slug>` (same query key Stylebook uses for workflow scope when

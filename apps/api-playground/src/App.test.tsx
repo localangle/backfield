@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import App from "./App"
@@ -18,8 +18,52 @@ const schema = {
 
 describe("API key handling", () => {
   afterEach(() => {
+    cleanup()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+  })
+
+  it("renders the Backfield product shell and connection landmarks", () => {
+    render(<App />)
+
+    expect(screen.getByRole("banner")).toBeInTheDocument()
+    expect(screen.getByRole("main")).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "API Playground", level: 1 })).toBeInTheDocument()
+    expect(
+      screen.getByRole("heading", { name: "Connect to an organization" }),
+    ).toBeInTheDocument()
+    expect(screen.getByText("Backfield developer tools")).toBeInTheDocument()
+  })
+
+  it("announces schema loading through the connection region", async () => {
+    let resolveSchemaRequest!: (response: Response) => void
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveSchemaRequest = resolve
+        }),
+    )
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(<App />)
+    fireEvent.change(screen.getByLabelText(/Organization slug/), {
+      target: { value: "newsroom" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Load API schema" }))
+
+    const connectionRegion = screen.getByRole("region", {
+      name: "Connect to an organization",
+    })
+    await waitFor(() => expect(connectionRegion).toHaveAttribute("aria-busy", "true"))
+
+    resolveSchemaRequest(
+      new Response(JSON.stringify(schema), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    )
+    expect(await screen.findByRole("heading", { name: "List articles" })).toBeInTheDocument()
+    expect(connectionRegion).toHaveAttribute("aria-busy", "false")
   })
 
   it("uses the key for requests without persisting or displaying it", async () => {

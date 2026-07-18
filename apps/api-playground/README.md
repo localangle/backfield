@@ -7,6 +7,17 @@ The app asks for an organization slug and derives exactly
 `https://api.{organization-slug}.backfield.news`. When the playground itself runs on localhost, a
 separate checkbox explicitly enables `http://localhost:8004`; there is no free-form API origin.
 
+Agate and Stylebook link to the Playground from their sidebar footer. Their
+`VITE_PLAYGROUND_URL` build-time setting may override the destination for a custom deployment;
+localhost builds use `http://localhost:5176`, and production defaults to the hosted URL above.
+
+## Visual language
+
+The Playground keeps its standalone CSS and dependency-light runtime, but mirrors the semantic
+color tokens, control dimensions, card treatment, product header, and focus states used by Agate
+and Stylebook. HTTP method badges, monospace paths, and response code blocks remain
+developer-tool-specific accents.
+
 ## Security boundary
 
 - The project API key is React state only. The app does not use local storage, session storage,
