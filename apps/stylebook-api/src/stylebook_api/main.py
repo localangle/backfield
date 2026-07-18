@@ -41,8 +41,12 @@ configure_structured_logging("stylebook-api")
 UI_ORIGIN = os.getenv("UI_ORIGIN", "http://localhost:5175")
 PLAYGROUND_ORIGIN = os.getenv(
     "PLAYGROUND_ORIGIN",
-    "https://playground.backfield.news",
+    "",
 )
+PLAYGROUND_ORIGIN_REGEX = os.getenv(
+    "PLAYGROUND_ORIGIN_REGEX",
+    r"https://playground\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.backfield\.news",
+).strip()
 if UI_ORIGIN.startswith("http://localhost"):
     ALLOWED = [
         "http://localhost:5175",
@@ -63,6 +67,7 @@ app = FastAPI(title="Stylebook API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED,
+    allow_origin_regex=PLAYGROUND_ORIGIN_REGEX or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

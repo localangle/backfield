@@ -78,9 +78,9 @@ describe("API key handling", () => {
     expect(screen.getByRole("banner")).toBeInTheDocument()
     expect(screen.getByRole("main")).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "API Playground", level: 1 })).toBeInTheDocument()
-    expect(
-      screen.getByRole("heading", { name: "Connect to an organization" }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Connect to the API" })).toBeInTheDocument()
+    expect(screen.queryByLabelText(/Organization slug/)).not.toBeInTheDocument()
+    expect(screen.getByText("http://localhost:8004")).toBeInTheDocument()
     expect(
       await screen.findByRole("navigation", { name: "Backfield products" }),
     ).toBeInTheDocument()
@@ -102,13 +102,10 @@ describe("API key handling", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     render(<App />)
-    fireEvent.change(screen.getByLabelText(/Organization slug/), {
-      target: { value: "newsroom" },
-    })
     fireEvent.click(screen.getByRole("button", { name: "Load API schema" }))
 
     const connectionRegion = screen.getByRole("region", {
-      name: "Connect to an organization",
+      name: "Connect to the API",
     })
     await waitFor(() => expect(connectionRegion).toHaveAttribute("aria-busy", "true"))
 
@@ -161,9 +158,6 @@ describe("API key handling", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     render(<App />)
-    fireEvent.change(screen.getByLabelText(/Organization slug/), {
-      target: { value: "newsroom" },
-    })
     fireEvent.change(screen.getByLabelText(/Project API key/), {
       target: { value: "top-secret-key" },
     })
@@ -179,7 +173,11 @@ describe("API key handling", () => {
     expect(apiRequest).toBeDefined()
     const requestInit = apiRequest?.[1]
     expect(new Headers(requestInit?.headers).get("Authorization")).toBe("Bearer top-secret-key")
-    expect(storageWrite).not.toHaveBeenCalled()
+    // The sidebar persists layout state; the key itself must never reach storage.
+    for (const [storageKey, storedValue] of storageWrite.mock.calls) {
+      expect(storageKey).not.toContain("top-secret-key")
+      expect(storedValue).not.toContain("top-secret-key")
+    }
     expect(screen.getByText(/BACKFIELD_PROJECT_API_KEY/)).toBeInTheDocument()
     expect(document.body.textContent).not.toContain("top-secret-key")
   })

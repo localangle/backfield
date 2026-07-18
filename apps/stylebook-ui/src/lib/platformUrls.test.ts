@@ -13,9 +13,7 @@ describe("Playground navigation", () => {
       location: { origin: "https://stylebook.cpm.backfield.news" },
     })
 
-    expect(playgroundHref()).toBe(
-      "https://playground.backfield.news/?organization=cpm",
-    )
+    expect(playgroundHref()).toBe("https://playground.cpm.backfield.news")
   })
 
   it("uses the local Playground while developing locally", () => {

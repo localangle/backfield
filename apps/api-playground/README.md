@@ -1,25 +1,28 @@
 # Backfield Public API Playground
 
-`apps/api-playground` is the signed-in, schema-driven developer client served in production at
-`https://playground.backfield.news`.
+`apps/api-playground` is the signed-in, schema-driven developer client served on tenant-specific
+production domains such as `https://playground.example-newsroom.backfield.news`.
 
-The app asks for an organization slug and derives exactly
-`https://api.{organization-slug}.backfield.news`. When the playground itself runs on localhost, a
-separate checkbox explicitly enables `http://localhost:8004`; there is no free-form API origin.
+The app infers the organization slug from its own hostname and calls exactly
+`https://api.{organization-slug}.backfield.news`. On localhost it automatically uses
+`http://localhost:8004`. There is no organization or API-origin selector.
 
-Agate and Stylebook link to the Playground from their sidebar footer and include the non-secret
-organization slug so the Playground can restore the signed-in platform sidebar. Their
-`VITE_PLAYGROUND_URL` build-time setting may override the destination for a custom deployment;
-localhost builds use `http://localhost:5176`, and production defaults to the hosted URL above.
+Agate and Stylebook link to the matching tenant Playground from their sidebar footer. Their
+`VITE_PLAYGROUND_URL` build-time setting may override the destination for a fixed custom deployment
+or use `{organization_slug}` as a host placeholder. Localhost builds use
+`http://localhost:5176`.
 
 ## Visual language
 
-The Playground keeps its standalone CSS and dependency-light runtime, but mirrors the semantic
-color tokens, control dimensions, card treatment, product header, and focus states used by Agate
-and Stylebook. HTTP method badges, monospace paths, and response code blocks remain
-developer-tool-specific accents. The endpoint navigator groups operations by resource and displays
-paths relative to `/public/v1/projects/{project_slug}`; request construction still uses the exact
-OpenAPI path.
+The platform sidebar reuses the shared `@backfield/ui` components (`ShellSidebar`,
+`AgateProductMark`, `StylebookProductMark`) and `lucide-react` icons, so it is the same sidebar
+users see in Agate and Stylebook. Those shared components are styled with Tailwind, which the
+Playground compiles with preflight disabled; the rest of the app keeps its standalone plain CSS
+that mirrors the semantic color tokens, control dimensions, card treatment, product header, and
+focus states used by Agate and Stylebook. HTTP method badges, monospace paths, and response code
+blocks remain developer-tool-specific accents. The endpoint navigator groups operations by
+resource and displays paths relative to `/public/v1/projects/{project_slug}`; request construction
+still uses the exact OpenAPI path.
 
 ## Security boundary
 
@@ -29,8 +32,8 @@ OpenAPI path.
 - The project API key is React state only. It is never put in local storage, session storage,
   cookies, URL state, analytics, request history, or third-party scripts. Public API requests omit
   browser credentials.
-- The organization slug may be carried in the URL as non-secret routing context. No project slug,
-  API key, request values, or response data is put in the URL.
+- The organization slug comes only from the Playground hostname. No organization selector, project
+  slug, API key, request values, or response data is put in the URL.
 - Refreshing or closing the tab clears the key. **Clear key** removes it immediately.
 - Generated curl uses `$BACKFIELD_PROJECT_API_KEY` instead of printing the entered key.
 - The production build injects a restrictive Content Security Policy. `index.html` also sets
@@ -49,11 +52,12 @@ From the repository root, start the normal local stack:
 make up
 ```
 
-Open `http://localhost:5176`, select the explicit local API option, and load the schema. To run the
-app directly:
+Open `http://localhost:5176` and load the schema. To run the app directly (the shared
+`@backfield/ui` package needs its own install first):
 
 ```bash
-cd apps/api-playground
+cd packages/backfield-ui && npm ci
+cd ../../apps/api-playground
 npm ci
 npm run dev
 ```
@@ -68,6 +72,6 @@ make api-playground-test
 make api-playground-build
 ```
 
-The production bundle is written to `apps/api-playground/dist/`. Deploy it only at
-`playground.backfield.news`; the bundle does not accept a configured or user-entered production API
-origin.
+The production bundle is written to `apps/api-playground/dist/`. Serve it on
+`playground.{organization-slug}.backfield.news`; the bundle does not accept a configured or
+user-entered API origin.

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
+import { TerminalSquare } from "lucide-react"
 
 import EndpointExplorer from "./components/EndpointExplorer"
 import PlatformSidebar from "./components/PlatformSidebar"
-import PlaygroundMark from "./components/PlaygroundMark"
 import { fetchPublicSchema } from "./lib/api"
 import { listOperations, type OpenApiDocument, type PlaygroundOperation } from "./lib/openapi"
 import {
@@ -11,9 +11,7 @@ import {
   isLocalPlaygroundHost,
   LOCAL_API_ORIGIN,
   LOCAL_STYLEBOOK_API_ORIGIN,
-  normalizeOrganizationSlug,
-  organizationSlugFromSearch,
-  validateOrganizationSlug,
+  organizationSlugFromPlaygroundHost,
 } from "./lib/origin"
 import { fetchPlatformContext, type PlatformContext } from "./lib/session"
 
@@ -35,9 +33,17 @@ function groupOperations(operations: PlaygroundOperation[]): OperationGroup[] {
 
 export default function App() {
   const localAvailable = isLocalPlaygroundHost(window.location.hostname)
-  const initialOrganizationSlug = organizationSlugFromSearch(window.location.search)
-  const [organizationSlug, setOrganizationSlug] = useState(initialOrganizationSlug)
-  const [useLocalApi, setUseLocalApi] = useState(false)
+  const organizationSlug = organizationSlugFromPlaygroundHost(window.location.hostname)
+  const apiOrigin = localAvailable
+    ? LOCAL_API_ORIGIN
+    : organizationSlug
+      ? deriveApiOrigin(organizationSlug)
+      : ""
+  const stylebookApiOrigin = localAvailable
+    ? LOCAL_STYLEBOOK_API_ORIGIN
+    : organizationSlug
+      ? deriveStylebookApiOrigin(organizationSlug)
+      : ""
   const [apiKey, setApiKey] = useState("")
   const [document, setDocument] = useState<OpenApiDocument>()
   const [platformContext, setPlatformContext] = useState<PlatformContext>()
@@ -108,47 +114,35 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (localAvailable) {
-      void loadSessionContext(LOCAL_API_ORIGIN, LOCAL_STYLEBOOK_API_ORIGIN).catch(() => undefined)
+    if (!apiOrigin || !stylebookApiOrigin) {
+      setSessionError(
+        "Open the API Playground from your organization’s tenant-specific Playground domain.",
+      )
       return
     }
-    if (!validateOrganizationSlug(initialOrganizationSlug)) {
-      void loadSessionContext(
-        deriveApiOrigin(initialOrganizationSlug),
-        deriveStylebookApiOrigin(initialOrganizationSlug),
-      ).catch(() => undefined)
-    }
-    // Initial tenant context is intentionally read once from the navigation URL.
+    void loadSessionContext(apiOrigin, stylebookApiOrigin).catch(() => undefined)
+    // Tenant origins are intentionally inferred once from the current hostname.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function connect() {
     setConnectionError("")
-    let nextOrigin: string
-    if (useLocalApi && localAvailable) {
-      nextOrigin = LOCAL_API_ORIGIN
-    } else {
-      const error = validateOrganizationSlug(organizationSlug)
-      if (error) {
-        setConnectionError(error)
-        return
-      }
-      nextOrigin = deriveApiOrigin(organizationSlug)
+    if (!apiOrigin || !stylebookApiOrigin) {
+      setConnectionError(
+        "The current hostname does not identify a Backfield organization.",
+      )
+      return
     }
 
     setLoading(true)
     try {
-      const stylebookApiOrigin =
-        useLocalApi && localAvailable
-          ? LOCAL_STYLEBOOK_API_ORIGIN
-          : deriveStylebookApiOrigin(organizationSlug)
-      await loadSessionContext(nextOrigin, stylebookApiOrigin)
-      const schema = await fetchPublicSchema(nextOrigin)
+      await loadSessionContext(apiOrigin, stylebookApiOrigin)
+      const schema = await fetchPublicSchema(apiOrigin)
       const nextOperations = listOperations(schema)
       if (!nextOperations.length) {
         throw new Error("The OpenAPI document contains no supported operations.")
       }
-      setOrigin(nextOrigin)
+      setOrigin(apiOrigin)
       setDocument(schema)
       setSelectedOperationId(nextOperations[0].id)
       setCollapsedGroups(new Set())
@@ -163,18 +157,11 @@ export default function App() {
     }
   }
 
-  const previewOrigin =
-    useLocalApi && localAvailable
-      ? LOCAL_API_ORIGIN
-      : validateOrganizationSlug(organizationSlug)
-        ? "https://api.{organization-slug}.backfield.news"
-        : deriveApiOrigin(organizationSlug)
-
   return (
     <div className="app-frame">
       <header className="site-header">
         <div className="product-brand">
-          <PlaygroundMark className="product-mark" />
+          <TerminalSquare className="product-mark" strokeWidth={1.75} aria-hidden />
           <div>
             <h1>API Playground</h1>
             <p className="site-subtitle">Explore and test the Backfield public API</p>
@@ -204,15 +191,6 @@ export default function App() {
             {sessionError}
           </p>
         )}
-        <section className="security-notice" aria-labelledby="security-title">
-          <h2 id="security-title">Your API key stays in this tab</h2>
-          <p>
-            Your project API key is kept only in memory. It is never stored, added to the URL,
-            logged, sent to analytics, or included verbatim in generated curl. Closing or
-            refreshing this tab clears it.
-          </p>
-        </section>
-
         <section
           className="connection-card"
           aria-labelledby="connection-title"
@@ -220,30 +198,11 @@ export default function App() {
         >
           <div className="section-heading">
             <div>
-              <h2 id="connection-title">Connect to an organization</h2>
-              <p>Load its live API contract, then choose an endpoint to test.</p>
+              <h2 id="connection-title">Connect to the API</h2>
+              <p>Enter a project API key, then load this organization’s API contract.</p>
             </div>
           </div>
-          <div className="connection-grid">
-            <div className="field">
-              <label htmlFor="organization-slug">
-                <span className="field-name">Organization slug</span>
-                <span className="field-meta">Used only to derive the API hostname</span>
-              </label>
-              <input
-                id="organization-slug"
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                value={organizationSlug}
-                disabled={useLocalApi}
-                aria-describedby={connectionError ? "connection-error" : undefined}
-                onChange={(event) =>
-                  setOrganizationSlug(normalizeOrganizationSlug(event.target.value))
-                }
-                placeholder="example-newsroom"
-              />
-            </div>
+          <div className="connection-grid connection-grid-key-only">
             <div className="field">
               <label htmlFor="project-api-key">
                 <span className="field-name">Project API key</span>
@@ -264,22 +223,17 @@ export default function App() {
               </div>
             </div>
           </div>
-          {localAvailable && (
-            <label className="local-option">
-              <input
-                type="checkbox"
-                checked={useLocalApi}
-                onChange={(event) => setUseLocalApi(event.target.checked)}
-              />
-              Use the local API at {LOCAL_API_ORIGIN}
-            </label>
-          )}
           <div className="connection-actions">
-            <button className="connect-button" type="button" disabled={loading} onClick={connect}>
+            <button
+              className="connect-button"
+              type="button"
+              disabled={loading || !apiOrigin}
+              onClick={connect}
+            >
               {loading ? "Loading schema…" : "Load API schema"}
             </button>
             <div className="origin-preview">
-              API origin <code>{previewOrigin}</code>
+              API origin <code>{apiOrigin || "Unavailable for this hostname"}</code>
             </div>
           </div>
           {connectionError && (

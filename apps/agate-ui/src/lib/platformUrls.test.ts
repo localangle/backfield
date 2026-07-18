@@ -33,18 +33,26 @@ describe('platformUrls sibling hosts', () => {
     })
     vi.stubEnv('VITE_PLAYGROUND_URL', 'https://developer-tools.example.test')
 
-    expect(playgroundHref()).toBe(
-      'https://developer-tools.example.test/?organization=cpm',
-    )
+    expect(playgroundHref()).toBe('https://developer-tools.example.test')
   })
 
-  it('carries tenant context to the hosted Playground', () => {
+  it('uses a tenant-specific hosted Playground domain', () => {
     vi.stubGlobal('window', {
       location: { origin: 'https://agate.cpm.backfield.news' },
     })
 
-    expect(playgroundHref()).toBe(
-      'https://playground.backfield.news/?organization=cpm',
+    expect(playgroundHref()).toBe('https://playground.cpm.backfield.news')
+  })
+
+  it('supports an organization placeholder in a custom Playground URL', () => {
+    vi.stubGlobal('window', {
+      location: { origin: 'https://agate.cpm.backfield.news' },
+    })
+    vi.stubEnv(
+      'VITE_PLAYGROUND_URL',
+      'https://developer-tools.{organization_slug}.example.test',
     )
+
+    expect(playgroundHref()).toBe('https://developer-tools.cpm.example.test')
   })
 })

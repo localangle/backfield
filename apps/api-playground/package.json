@@ -11,6 +11,8 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@backfield/ui": "file:../../packages/backfield-ui",
+    "lucide-react": "^0.323.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
@@ -20,7 +22,10 @@
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.19",
     "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.17",
     "jsdom": "^29.1.0",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3",
     "vite": "^5.1.0",
     "vitest": "^3.0.5"

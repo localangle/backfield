@@ -39,8 +39,12 @@ UI_ORIGINS = os.getenv(
 ).split(",")
 PLAYGROUND_ORIGIN = os.getenv(
     "PLAYGROUND_ORIGIN",
-    "https://playground.backfield.news",
+    "",
 )
+PLAYGROUND_ORIGIN_REGEX = os.getenv(
+    "PLAYGROUND_ORIGIN_REGEX",
+    r"https://playground\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.backfield\.news",
+).strip()
 ALLOWED: list[str] = []
 for origin in [*UI_ORIGINS, PLAYGROUND_ORIGIN]:
     o = origin.strip()
@@ -56,6 +60,7 @@ ALLOWED = list(dict.fromkeys(ALLOWED))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED or ["http://localhost:5173"],
+    allow_origin_regex=PLAYGROUND_ORIGIN_REGEX or None,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],

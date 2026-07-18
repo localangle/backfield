@@ -134,6 +134,7 @@ smoke-fast:
 # --- Frontend validation / deploy builds ------------------------------------
 
 api-playground-bootstrap:
+	cd packages/backfield-ui && npm ci
 	cd apps/api-playground && npm ci
 
 ui-bootstrap:
@@ -163,12 +164,15 @@ stylebook-ui-build:
 	cd apps/stylebook-ui && npm ci && npm run build
 
 api-playground-lint:
+	cd packages/backfield-ui && npm ci
 	cd apps/api-playground && npm ci && npm run lint
 
 api-playground-test:
+	cd packages/backfield-ui && npm ci
 	cd apps/api-playground && npm ci && npm test
 
 api-playground-build:
+	cd packages/backfield-ui && npm ci
 	cd apps/api-playground && npm ci && npm run build
 
 ui-build: agate-ui-build stylebook-ui-build api-playground-build

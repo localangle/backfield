@@ -14,7 +14,11 @@
     "./siblingUiOrigin": "./src/siblingUiOrigin.ts",
     "./LeafletMap": "./src/LeafletMap.tsx",
     "./GeometryEditLeafletMap": "./src/GeometryEditLeafletMap.tsx",
-    "./axisAlignedRectangle": "./src/axisAlignedRectangle.ts"
+    "./axisAlignedRectangle": "./src/axisAlignedRectangle.ts",
+    "./ShellSidebar": "./src/ShellSidebar.tsx",
+    "./AgateProductMark": "./src/AgateProductMark.tsx",
+    "./StylebookProductMark": "./src/StylebookProductMark.tsx",
+    "./cn": "./src/cn.ts"
   },
   "scripts": {
     "test": "vitest run"

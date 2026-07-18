@@ -1,4 +1,15 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import {
+  ChevronDown,
+  ChevronRight,
+  HelpCircle,
+  Settings,
+  TerminalSquare,
+} from "lucide-react"
+import { AgateProductMark } from "@backfield/ui/AgateProductMark"
+import { StylebookProductMark } from "@backfield/ui/StylebookProductMark"
+import { ShellSidebar } from "@backfield/ui/ShellSidebar"
+import { cn } from "@backfield/ui/cn"
 
 import {
   LOCAL_AGATE_ORIGIN,
@@ -6,7 +17,21 @@ import {
   deriveProductOrigin,
 } from "../lib/origin"
 import type { PlatformContext } from "../lib/session"
-import PlaygroundMark from "./PlaygroundMark"
+
+const STORAGE_EXPANDED = "playground-sidebar-expanded"
+const STORAGE_WORKSPACES_EXPANDED = "playground-sidebar-workspaces-expanded"
+
+function readExpandedWorkspaceSlugs(): Set<string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_WORKSPACES_EXPANDED)
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return new Set()
+    return new Set(parsed.filter((slug): slug is string => typeof slug === "string"))
+  } catch {
+    return new Set()
+  }
+}
 
 interface PlatformSidebarProps {
   context: PlatformContext
@@ -14,73 +39,14 @@ interface PlatformSidebarProps {
   local: boolean
 }
 
-function Icon({ children }: { children: ReactNode }) {
-  return (
-    <svg
-      className="platform-nav-icon"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {children}
-    </svg>
-  )
-}
-
-function AgateIcon() {
-  return (
-    <Icon>
-      <rect width="7" height="9" x="3" y="3" rx="1" />
-      <rect width="7" height="5" x="14" y="3" rx="1" />
-      <rect width="7" height="9" x="14" y="12" rx="1" />
-      <rect width="7" height="5" x="3" y="16" rx="1" />
-    </Icon>
-  )
-}
-
-function StylebookIcon() {
-  return (
-    <Icon>
-      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
-      <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
-    </Icon>
-  )
-}
-
-function SettingsIcon() {
-  return (
-    <Icon>
-      <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
-      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.1A1.7 1.7 0 0 0 8 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 3.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2v-4h.1A1.7 1.7 0 0 0 3.6 8a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8 3.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V2h4v.1A1.7 1.7 0 0 0 15 3.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 8a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.1v4h-.1A1.7 1.7 0 0 0 19.4 15Z" />
-    </Icon>
-  )
-}
-
-function HelpIcon() {
-  return (
-    <Icon>
-      <circle cx="12" cy="12" r="10" />
-      <path d="M9.1 9a3 3 0 1 1 5.8 1c0 2-3 2-3 4" />
-      <path d="M12 18h.01" />
-    </Icon>
-  )
-}
-
 export default function PlatformSidebar({
   context,
   organizationSlug,
   local,
 }: PlatformSidebarProps) {
-  const [expanded, setExpanded] = useState(
-    () =>
-      typeof window.matchMedia !== "function" ||
-      !window.matchMedia("(max-width: 700px)").matches,
+  const [expandedWorkspaceSlugs, setExpandedWorkspaceSlugs] = useState<Set<string>>(
+    readExpandedWorkspaceSlugs,
   )
-  const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(new Set())
   const agateOrigin = local
     ? LOCAL_AGATE_ORIGIN
     : deriveProductOrigin("agate", organizationSlug)
@@ -89,146 +55,263 @@ export default function PlatformSidebar({
     : deriveProductOrigin("stylebook", organizationSlug)
 
   useEffect(() => {
-    if (expandedWorkspaces.size || !context.workspaces[0]) {
-      return
+    try {
+      localStorage.setItem(
+        STORAGE_WORKSPACES_EXPANDED,
+        JSON.stringify([...expandedWorkspaceSlugs]),
+      )
+    } catch {
+      /* ignore */
     }
-    setExpandedWorkspaces(new Set([context.workspaces[0].slug]))
-  }, [context.workspaces, expandedWorkspaces.size])
+  }, [expandedWorkspaceSlugs])
+
+  const toggleWorkspaceExpanded = useCallback((workspaceSlug: string) => {
+    setExpandedWorkspaceSlugs((prev) => {
+      const next = new Set(prev)
+      if (next.has(workspaceSlug)) next.delete(workspaceSlug)
+      else next.add(workspaceSlug)
+      return next
+    })
+  }, [])
 
   const firstProjectSlug = useMemo(
     () => context.workspaces.flatMap((workspace) => workspace.projects)[0]?.slug,
     [context.workspaces],
   )
 
-  function toggleWorkspace(slug: string) {
-    setExpandedWorkspaces((current) => {
-      const next = new Set(current)
-      if (next.has(slug)) {
-        next.delete(slug)
-      } else {
-        next.add(slug)
-      }
-      return next
-    })
-  }
+  const sortedStylebooks = useMemo(() => {
+    return [...context.stylebooks].sort(
+      (a, b) =>
+        Number(b.is_default) - Number(a.is_default) || a.name.localeCompare(b.name),
+    )
+  }, [context.stylebooks])
+
+  const sectionTitleClass =
+    "flex items-center gap-2 px-2 py-2 text-xs font-medium text-muted-foreground"
+
+  const hubLinkClass = cn(
+    "flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors",
+    "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    "text-muted-foreground hover:text-foreground",
+  )
+
+  const workspaceRowClass = cn(
+    "rounded-md text-sm transition-colors",
+    "flex w-full min-w-0 items-center px-0 py-0 text-left font-medium",
+    "text-foreground",
+  )
+
+  const projectUnderWorkspaceClass = cn(
+    "rounded-md text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    "flex w-full min-w-0 items-center py-1.5 pr-2 pl-7 text-left",
+    "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+  )
 
   return (
-    <aside
-      className={`platform-sidebar ${expanded ? "platform-sidebar-expanded" : ""}`}
-      aria-label="Platform"
-    >
-      <div className="platform-sidebar-header">
-        {expanded && (
-          <a
-            href={agateOrigin}
-            className="platform-organization"
-            title={context.user.organizationName}
-          >
-            {context.user.organizationName}
-          </a>
-        )}
-        <button
-          type="button"
-          className="platform-collapse"
-          aria-expanded={expanded}
-          aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
-          onClick={() => setExpanded((current) => !current)}
+    <ShellSidebar
+      storageKey={STORAGE_EXPANDED}
+      asideAriaLabel="Platform"
+      headerLeading={
+        <a
+          href={agateOrigin}
+          title={context.user.organizationName}
+          aria-label={context.user.organizationName}
+          className={cn(
+            "flex min-w-0 flex-1 items-center rounded-md px-1 py-1 -ml-1",
+            "hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          )}
         >
-          <span aria-hidden>{expanded ? "‹" : "›"}</span>
-        </button>
-      </div>
+          <span className="truncate text-sm font-semibold tracking-tight text-foreground">
+            {context.user.organizationName}
+          </span>
+        </a>
+      }
+    >
+      {(expanded: boolean, { expand }: { expand: () => void }) => (
+        <nav
+          className="flex flex-col flex-1 min-h-0 p-2 gap-0"
+          aria-label="Backfield products"
+        >
+          <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
+            {expanded ? (
+              <div className={sectionTitleClass}>
+                <AgateProductMark className="size-4 stroke-[1.75]" />
+                <span>Agate</span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                title="Agate — workspaces"
+                className={cn(
+                  "inline-flex h-9 w-full items-center justify-center rounded-md",
+                  "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                )}
+                onClick={() => expand()}
+              >
+                <AgateProductMark className="size-5 stroke-[1.75]" />
+              </button>
+            )}
 
-      <nav className="platform-navigation" aria-label="Backfield products">
-        <div className="platform-navigation-scroll">
-          <div className="platform-product-label">
-            <AgateIcon />
-            {expanded && <span>Agate</span>}
-          </div>
-          {expanded &&
-            context.workspaces.map((workspace) => {
-              const workspaceExpanded = expandedWorkspaces.has(workspace.slug)
+            {(expanded ? context.workspaces : []).map((workspace) => {
+              const workspaceExpanded = expandedWorkspaceSlugs.has(workspace.slug)
+              const projectsSorted = [...workspace.projects].sort((a, b) =>
+                a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+              )
+              const projectsPanelId = `sidebar-workspace-projects-${workspace.slug}`
               return (
-                <div className="platform-workspace" key={workspace.id}>
-                  <div className="platform-workspace-row">
+                <div
+                  key={`${workspace.slug}-${workspace.id}`}
+                  className="flex flex-col gap-0.5"
+                >
+                  <div className={cn(workspaceRowClass, "hover:bg-muted/60")}>
                     <button
                       type="button"
-                      className="platform-workspace-toggle"
-                      aria-expanded={workspaceExpanded}
+                      title={workspaceExpanded ? "Collapse" : "Expand"}
                       aria-label={`${workspaceExpanded ? "Collapse" : "Expand"} ${workspace.name}`}
-                      onClick={() => toggleWorkspace(workspace.slug)}
+                      aria-expanded={workspaceExpanded}
+                      aria-controls={projectsPanelId}
+                      onClick={() => toggleWorkspaceExpanded(workspace.slug)}
+                      className={cn(
+                        "inline-flex h-9 w-8 shrink-0 items-center justify-center rounded-md",
+                        "hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      )}
                     >
-                      <span aria-hidden>{workspaceExpanded ? "⌄" : "›"}</span>
+                      {workspaceExpanded ? (
+                        <ChevronDown
+                          className="h-4 w-4 shrink-0 opacity-70"
+                          aria-hidden
+                        />
+                      ) : (
+                        <ChevronRight
+                          className="h-4 w-4 shrink-0 opacity-70"
+                          aria-hidden
+                        />
+                      )}
                     </button>
                     <a
-                      className="platform-workspace-link"
                       href={`${agateOrigin}/workspace/${encodeURIComponent(workspace.slug)}`}
+                      title={workspace.name}
+                      aria-label={`Open workspace ${workspace.name} in Agate`}
+                      className={cn(
+                        "min-w-0 flex-1 truncate py-2 pr-2",
+                        "hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md",
+                      )}
                     >
                       {workspace.name}
                     </a>
                   </div>
-                  {workspaceExpanded && (
-                    <div className="platform-projects">
-                      {workspace.projects.map((project) => (
+                  {workspaceExpanded ? (
+                    <div id={projectsPanelId} className="flex flex-col gap-0.5">
+                      {projectsSorted.map((project) => (
                         <a
-                          key={project.id}
+                          key={`${workspace.slug}-p-${project.id}`}
                           href={`${agateOrigin}/project/${encodeURIComponent(project.slug)}`}
+                          title={project.name}
+                          aria-label={`Open project ${project.name} in Agate`}
+                          className={projectUnderWorkspaceClass}
                         >
-                          {project.name}
+                          <span className="min-w-0 truncate">{project.name}</span>
                         </a>
                       ))}
                     </div>
-                  )}
+                  ) : null}
                 </div>
               )
             })}
 
-          <div className="platform-section-rule" />
-          <div className="platform-product-label">
-            <StylebookIcon />
-            {expanded && <span>Stylebook</span>}
-          </div>
-          {expanded &&
-            context.stylebooks.map((stylebook) => {
-              const params = new URLSearchParams()
-              if (firstProjectSlug) params.set("project", firstProjectSlug)
-              const query = params.toString()
-              return (
-                <a
-                  className="platform-stylebook-link"
-                  key={stylebook.id}
-                  href={`${stylebookOrigin}/stylebook/${encodeURIComponent(stylebook.slug)}${
-                    query ? `?${query}` : ""
-                  }`}
-                >
-                  <span>{stylebook.name}</span>
-                  {stylebook.is_default && <small>Default</small>}
-                </a>
-              )
-            })}
-        </div>
+            {context.workspaces.length === 0 && expanded ? (
+              <div className="px-2 py-1.5 text-sm text-muted-foreground select-none">
+                No workspaces available
+              </div>
+            ) : null}
 
-        <div className="platform-navigation-footer">
-          {context.user.orgRole === "org_admin" && (
-            <a href={`${agateOrigin}/settings`} title={expanded ? undefined : "Settings"}>
-              <SettingsIcon />
-              {expanded && <span>Settings</span>}
+            {sortedStylebooks.length > 0 ? (
+              <>
+                <div className="border-t border-border/50 my-1" />
+                {expanded ? (
+                  <div className={sectionTitleClass}>
+                    <StylebookProductMark className="size-4 stroke-[1.75]" />
+                    <span>Stylebook</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    title="Stylebook"
+                    className={cn(
+                      "inline-flex h-9 w-full items-center justify-center rounded-md",
+                      "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    )}
+                    onClick={() => expand()}
+                  >
+                    <StylebookProductMark className="size-5 stroke-[1.75]" />
+                  </button>
+                )}
+                {(expanded ? sortedStylebooks : []).map((stylebook) => {
+                  const params = new URLSearchParams()
+                  if (firstProjectSlug) params.set("project", firstProjectSlug)
+                  const query = params.toString()
+                  const openHref = `${stylebookOrigin}/stylebook/${encodeURIComponent(stylebook.slug)}${
+                    query ? `?${query}` : ""
+                  }`
+                  return (
+                    <a
+                      key={stylebook.id}
+                      href={openHref}
+                      className={cn(
+                        "rounded-md text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        "flex w-full min-w-0 items-center justify-between gap-2 px-2 py-2 text-left",
+                        "text-foreground hover:bg-muted/60",
+                      )}
+                      title={stylebook.name}
+                      aria-label={`Open ${stylebook.name} in Stylebook`}
+                    >
+                      <span className="min-w-0 truncate">{stylebook.name}</span>
+                      {stylebook.is_default ? (
+                        <span className="shrink-0 rounded border border-border bg-background/80 px-1.5 py-0 text-[10px] font-medium text-muted-foreground">
+                          Default
+                        </span>
+                      ) : null}
+                    </a>
+                  )
+                })}
+              </>
+            ) : null}
+          </div>
+
+          <div className="border-t border-border/50 pt-2 shrink-0 flex flex-col gap-0">
+            {context.user.orgRole === "org_admin" ? (
+              <a
+                href={`${agateOrigin}/settings`}
+                className={hubLinkClass}
+                title={!expanded ? "Settings" : undefined}
+              >
+                <Settings className="h-5 w-5 shrink-0" aria-hidden />
+                {expanded ? <span>Settings</span> : null}
+              </a>
+            ) : null}
+            <a
+              href={window.location.href}
+              aria-current="page"
+              className={cn(
+                hubLinkClass,
+                "bg-accent text-accent-foreground hover:text-accent-foreground",
+              )}
+              title={!expanded ? "API Playground" : undefined}
+            >
+              <TerminalSquare className="h-5 w-5 shrink-0" aria-hidden />
+              {expanded ? <span>API Playground</span> : null}
             </a>
-          )}
-          <a
-            href={window.location.href}
-            className="platform-link-active"
-            aria-current="page"
-            title={expanded ? undefined : "API Playground"}
-          >
-            <PlaygroundMark className="platform-nav-icon" />
-            {expanded && <span>API Playground</span>}
-          </a>
-          <a href={`${agateOrigin}/help`} title={expanded ? undefined : "Help"}>
-            <HelpIcon />
-            {expanded && <span>Help</span>}
-          </a>
-        </div>
-      </nav>
-    </aside>
+            <a
+              href={`${agateOrigin}/help`}
+              className={hubLinkClass}
+              title={!expanded ? "Help" : undefined}
+            >
+              <HelpCircle className="h-5 w-5 shrink-0" aria-hidden />
+              {expanded ? <span>Help</span> : null}
+            </a>
+          </div>
+        </nav>
+      )}
+    </ShellSidebar>
   )
 }

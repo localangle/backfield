@@ -50,10 +50,18 @@ export function deriveProductOrigin(
   return `https://${product}.${slug}.backfield.news`
 }
 
-export function organizationSlugFromSearch(search: string): string {
-  const value = new URLSearchParams(search).get("organization") ?? ""
-  const normalized = normalizeOrganizationSlug(value)
-  return validateOrganizationSlug(normalized) ? "" : normalized
+export function organizationSlugFromPlaygroundHost(hostname: string): string {
+  const labels = hostname.toLowerCase().replace(/\.$/, "").split(".")
+  if (
+    labels.length !== 4 ||
+    labels[0] !== "playground" ||
+    labels[2] !== "backfield" ||
+    labels[3] !== "news"
+  ) {
+    return ""
+  }
+  const slug = normalizeOrganizationSlug(labels[1])
+  return validateOrganizationSlug(slug) ? "" : slug
 }
 
 export function isLocalPlaygroundHost(hostname: string): boolean {

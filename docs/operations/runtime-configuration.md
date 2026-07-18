@@ -17,9 +17,11 @@ provisioned with `backfield seed` / `backfield init`, not environment-variable a
 - `APP_VERSION`, `GIT_SHA`, `BUILD_TIME`: build identity returned by API `/version` and emitted at
   worker startup.
 - `UI_ORIGIN` / `UI_ORIGINS`: allowed browser origins for API access.
-- `PLAYGROUND_ORIGIN`: exact hosted Playground origin allowed by Core and Stylebook API CORS so the
-  signed-in shell can load session-scoped navigation data. Defaults to
-  `https://playground.backfield.news`.
+- `PLAYGROUND_ORIGIN`: optional exact custom Playground origin allowed by Core and Stylebook API
+  CORS.
+- `PLAYGROUND_ORIGIN_REGEX`: tenant Playground origins allowed by Core and Stylebook API CORS.
+  Defaults to the slug-constrained `https://playground.{organization-slug}.backfield.news`
+  pattern.
 
 All APIs and the worker emit JSON lines to stderr. API request logs exclude health/version paths and
 carry shared context such as service, environment, request ID, client, run ID, and job ID. Celery
@@ -30,9 +32,9 @@ Health endpoints are `GET /health` on Agate API, Stylebook API, and Core API.
 Frontend cross-app destinations are build-time Vite settings. `VITE_AGATE_UI_ORIGIN` and
 `VITE_STYLEBOOK_UI_ORIGIN` override tenant sibling-app discovery, `VITE_HELP_URL` overrides the Help
 destination, and `VITE_PLAYGROUND_URL` overrides the hosted API Playground destination. Local
-Agate and Stylebook builds otherwise link to `http://localhost:5176`; production builds default to
-`https://playground.backfield.news`. Tenant-host links add the non-secret organization slug as
-routing context so the Playground can load the matching signed-in platform sidebar.
+Agate and Stylebook builds otherwise link to `http://localhost:5176`; production builds derive
+`https://playground.{organization-slug}.backfield.news`. A custom `VITE_PLAYGROUND_URL` may contain
+the literal `{organization_slug}` placeholder or identify a fixed tenant deployment.
 
 ## Database
 
@@ -64,7 +66,9 @@ database capacity requirements.
   `.env`. Never reuse Compose development defaults outside local development.
 - `SESSION_COOKIE_DOMAIN`: **optional**. When unset or blank, Core API omits the cookie `Domain`
   attribute (host-only cookies). Set it only when sibling hosts must share a session (for example
-  a production cookie domain consumed by a separate deployment system).
+  a production cookie domain consumed by a separate deployment system). The tenant Playground
+  requires a shared parent domain such as `.backfield.news` so its requests to the tenant Core and
+  Stylebook APIs include the signed-in session.
 - `SERVICE_API_TOKEN` or `SERVICE_API_TOKENS`: Bearer token or token set for service-to-service
   access.
 

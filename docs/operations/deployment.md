@@ -77,10 +77,11 @@ The origin or CDN must route those paths to the matching API and serve `index.ht
 fallback. When the API receives a forwarded prefix rather than a stripped path, set
 `BACKFIELD_HTTP_PATH_PREFIX` on that API.
 
-Deploy the API Playground only at `playground.backfield.news`. It calls the organization-specific
-`https://api.{organization-slug}.backfield.news` origin directly, so the Core API CORS
-configuration must include the exact Playground origin. Preserve the Playground CSP and
-`Referrer-Policy: no-referrer` at the static host.
+Deploy the API Playground at `playground.{organization-slug}.backfield.news`. Configure wildcard
+DNS, TLS, and static-host routing for those tenant domains. The app infers and calls the matching
+`https://api.{organization-slug}.backfield.news` origin directly; Core and Stylebook APIs must
+allow the slug-constrained Playground origin pattern through `PLAYGROUND_ORIGIN_REGEX`. Preserve
+the Playground CSP and `Referrer-Policy: no-referrer` at the static host.
 
 Serve hashed assets with a long cache lifetime and `index.html` with `Cache-Control: no-cache`.
 

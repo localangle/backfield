@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 
-import { deriveApiOrigin, normalizeOrganizationSlug, validateOrganizationSlug } from "./origin"
+import {
+  deriveApiOrigin,
+  normalizeOrganizationSlug,
+  organizationSlugFromPlaygroundHost,
+  validateOrganizationSlug,
+} from "./origin"
 
 describe("organization API origin", () => {
   it("derives only the organization API hostname", () => {
@@ -12,5 +17,13 @@ describe("organization API origin", () => {
     expect(validateOrganizationSlug("news.example.com")).toBeDefined()
     expect(validateOrganizationSlug("-news")).toBeDefined()
     expect(() => deriveApiOrigin("https://other.example")).toThrow()
+  })
+
+  it("infers the organization only from a tenant Playground hostname", () => {
+    expect(organizationSlugFromPlaygroundHost("playground.local-angle.backfield.news")).toBe(
+      "local-angle",
+    )
+    expect(organizationSlugFromPlaygroundHost("playground.backfield.news")).toBe("")
+    expect(organizationSlugFromPlaygroundHost("developer-tools.example.test")).toBe("")
   })
 })
