@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { TerminalSquare } from "lucide-react"
+import { UserAccountMenu } from "@backfield/ui/UserAccountMenu"
 
 import EndpointExplorer from "./components/EndpointExplorer"
 import PlatformSidebar from "./components/PlatformSidebar"
@@ -8,12 +9,18 @@ import { listOperations, type OpenApiDocument, type PlaygroundOperation } from "
 import {
   deriveApiOrigin,
   deriveStylebookApiOrigin,
+  deriveProductOrigin,
   isLocalPlaygroundHost,
+  LOCAL_AGATE_ORIGIN,
   LOCAL_API_ORIGIN,
   LOCAL_STYLEBOOK_API_ORIGIN,
   organizationSlugFromPlaygroundHost,
 } from "./lib/origin"
-import { fetchPlatformContext, type PlatformContext } from "./lib/session"
+import {
+  fetchPlatformContext,
+  logoutSession,
+  type PlatformContext,
+} from "./lib/session"
 
 interface OperationGroup {
   name: string
@@ -43,6 +50,11 @@ export default function App() {
     ? LOCAL_STYLEBOOK_API_ORIGIN
     : organizationSlug
       ? deriveStylebookApiOrigin(organizationSlug)
+      : ""
+  const agateOrigin = localAvailable
+    ? LOCAL_AGATE_ORIGIN
+    : organizationSlug
+      ? deriveProductOrigin("agate", organizationSlug)
       : ""
   const [apiKey, setApiKey] = useState("")
   const [document, setDocument] = useState<OpenApiDocument>()
@@ -157,6 +169,13 @@ export default function App() {
     }
   }
 
+  async function logout() {
+    if (apiOrigin) {
+      await logoutSession(apiOrigin)
+    }
+    window.location.assign(agateOrigin ? `${agateOrigin}/login` : "/")
+  }
+
   return (
     <div className="app-frame">
       <header className="site-header">
@@ -167,9 +186,25 @@ export default function App() {
             <p className="site-subtitle">Explore and test the Backfield public API</p>
           </div>
         </div>
-        <span className="developer-label">
-          {platformContext?.user.email ?? "Backfield developer tools"}
-        </span>
+        {platformContext ? (
+          <UserAccountMenu
+            userLabel={platformContext.user.email}
+            isOrgAdmin={platformContext.user.orgRole === "org_admin"}
+            onChangePassword={() =>
+              window.location.assign(`${agateOrigin}/account/password`)
+            }
+            onManageUsers={() => window.location.assign(`${agateOrigin}/admin/users`)}
+            onManageCatalogs={() =>
+              window.location.assign(`${agateOrigin}/admin/stylebooks`)
+            }
+            onAiModelsSettings={() =>
+              window.location.assign(`${agateOrigin}/settings/models`)
+            }
+            onLogout={() => void logout()}
+          />
+        ) : (
+          <span className="developer-label">Backfield developer tools</span>
+        )}
       </header>
 
       <div className="platform-shell">

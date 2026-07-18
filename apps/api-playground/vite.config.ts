@@ -1,5 +1,9 @@
 import react from "@vitejs/plugin-react"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { defineConfig, type Plugin } from "vite"
+
+const appRoot = path.dirname(fileURLToPath(import.meta.url))
 
 const productionCsp = [
   "default-src 'none'",
@@ -48,6 +52,20 @@ function securityMetaPlugin(isProduction: boolean): Plugin {
 
 export default defineConfig(({ command }) => ({
   plugins: [securityMetaPlugin(command === "build"), react()],
+  resolve: {
+    // Shared UI dependencies must use the Playground's React instance.
+    dedupe: ["react", "react-dom"],
+    alias: [
+      {
+        find: /^react$/,
+        replacement: path.resolve(appRoot, "node_modules/react"),
+      },
+      {
+        find: /^react-dom$/,
+        replacement: path.resolve(appRoot, "node_modules/react-dom"),
+      },
+    ],
+  },
   server: {
     host: "0.0.0.0",
     port: 5176,
@@ -55,5 +73,11 @@ export default defineConfig(({ command }) => ({
   test: {
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",
+    server: {
+      deps: {
+        // Transform Radix so React aliases apply to the linked shared package in tests.
+        inline: [/@radix-ui/],
+      },
+    },
   },
 }))

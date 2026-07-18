@@ -56,6 +56,18 @@ async function sessionJson<T>(origin: string, path: string): Promise<T> {
   return (await response.json()) as T
 }
 
+export async function logoutSession(coreOrigin: string): Promise<void> {
+  try {
+    await fetch(`${coreOrigin}/v1/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+      referrerPolicy: "no-referrer",
+    })
+  } catch {
+    // Match the other apps: leave the signed-in shell even if logout cannot be confirmed.
+  }
+}
+
 export async function fetchPlatformContext(
   coreOrigin: string,
   stylebookApiOrigin: string,

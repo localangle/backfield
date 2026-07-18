@@ -16,6 +16,7 @@
     "./GeometryEditLeafletMap": "./src/GeometryEditLeafletMap.tsx",
     "./axisAlignedRectangle": "./src/axisAlignedRectangle.ts",
     "./ShellSidebar": "./src/ShellSidebar.tsx",
+    "./UserAccountMenu": "./src/UserAccountMenu.tsx",
     "./AgateProductMark": "./src/AgateProductMark.tsx",
     "./StylebookProductMark": "./src/StylebookProductMark.tsx",
     "./cn": "./src/cn.ts"

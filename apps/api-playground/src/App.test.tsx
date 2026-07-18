@@ -88,6 +88,10 @@ describe("API key handling", () => {
       "aria-current",
       "page",
     )
+    const accountMenu = screen.getByRole("button", {
+      name: "Account menu for developer@example.test",
+    })
+    expect(accountMenu).toHaveAttribute("aria-haspopup", "menu")
   })
 
   it("announces schema loading through the connection region", async () => {
