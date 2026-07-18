@@ -89,6 +89,23 @@ export default function App() {
   }, [filter, operations])
   const selectedOperation =
     operations.find((operation) => operation.id === selectedOperationId) ?? operations[0]
+  const projectOptions = useMemo(
+    () =>
+      (platformContext?.workspaces ?? [])
+        .flatMap((workspace) =>
+          workspace.projects.map((project) => ({
+            value: project.slug,
+            label: `${project.name} (${project.slug})`,
+            group: workspace.name,
+          })),
+        )
+        .sort(
+          (left, right) =>
+            left.group.localeCompare(right.group, undefined, { sensitivity: "base" }) ||
+            left.label.localeCompare(right.label, undefined, { sensitivity: "base" }),
+        ),
+    [platformContext],
+  )
 
   function toggleGroup(groupName: string) {
     setCollapsedGroups((current) => {
@@ -346,6 +363,7 @@ export default function App() {
               operation={selectedOperation}
               origin={origin}
               apiKey={apiKey}
+              projectOptions={projectOptions}
             />
           </div>
         )}

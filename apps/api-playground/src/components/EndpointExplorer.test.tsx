@@ -142,11 +142,32 @@ describe("OpenAPI parsing and endpoint rendering", () => {
         operation={operation}
         origin="https://api.news.backfield.news"
         apiKey=""
+        projectOptions={[
+          {
+            value: "daily-news",
+            label: "Daily News (daily-news)",
+            group: "Editorial",
+          },
+          {
+            value: "weekend-edition",
+            label: "Weekend Edition (weekend-edition)",
+            group: "Editorial",
+          },
+        ]}
       />,
     )
 
     expect(screen.getByRole("heading", { name: "Search and filters" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "Sort and page" })).toBeInTheDocument()
+
+    const project = screen.getByLabelText(/project_slug/) as HTMLSelectElement
+    expect(project.tagName).toBe("SELECT")
+    expect(project.querySelector("optgroup")).toHaveAttribute("label", "Editorial")
+    expect(Array.from(project.options).map((option) => option.value)).toEqual([
+      "",
+      "daily-news",
+      "weekend-edition",
+    ])
 
     const mentionType = screen.getByLabelText(/has_mentions/) as HTMLSelectElement
     expect(mentionType.tagName).toBe("SELECT")

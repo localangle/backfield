@@ -22,11 +22,13 @@ interface EndpointExplorerProps {
   operation: PlaygroundOperation
   origin: string
   apiKey: string
+  projectOptions?: SelectOption[]
 }
 
 interface SelectOption {
   value: string
   label: string
+  group?: string
 }
 
 interface ParameterPresentation {
@@ -96,7 +98,17 @@ function parameterPresentation(
   operation: PlaygroundOperation,
   parameter: OpenApiParameter,
   schema: OpenApiSchema | undefined,
+  projectOptions: SelectOption[],
 ): ParameterPresentation {
+  if (parameter.in === "path" && parameter.name === "project_slug") {
+    return {
+      control: "select",
+      emptyLabel: projectOptions.length ? "Select a project" : "No projects available",
+      options: projectOptions,
+      typeLabel: "String",
+    }
+  }
+
   const isArticleSearch = operation.displayPath === "/articles/search"
   if (isArticleSearch) {
     if (parameter.name === "q") {
@@ -218,6 +230,7 @@ function ParameterInput({
   document,
   operation,
   parameter,
+  projectOptions,
   value,
   wide,
   onChange,
@@ -225,12 +238,13 @@ function ParameterInput({
   document: OpenApiDocument
   operation: PlaygroundOperation
   parameter: OpenApiParameter
+  projectOptions: SelectOption[]
   value: string
   wide?: boolean
   onChange: (value: string) => void
 }) {
   const schema = resolveInputSchema(document, parameter.schema)
-  const presentation = parameterPresentation(operation, parameter, schema)
+  const presentation = parameterPresentation(operation, parameter, schema, projectOptions)
   const id = `parameter-${parameter.in}-${parameter.name}`
   const descriptionId = `${id}-description`
   const defaultLabel =
@@ -267,14 +281,33 @@ function ParameterInput({
         >
           <option value="">
             {parameter.required
-              ? "Select a value"
+              ? presentation.emptyLabel ?? "Select a value"
               : presentation.emptyLabel ?? defaultLabel ?? "Any"}
           </option>
-          {presentation.options?.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
+          {Array.from(
+            new Set(
+              presentation.options
+                ?.map((option) => option.group)
+                .filter((group): group is string => Boolean(group)),
+            ),
+          ).map((group) => (
+            <optgroup key={group} label={group}>
+              {presentation.options
+                ?.filter((option) => option.group === group)
+                .map((option) => (
+                  <option key={`${group}:${option.value}`} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+            </optgroup>
           ))}
+          {presentation.options
+            ?.filter((option) => !option.group)
+            .map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
         </select>
       ) : presentation.control === "textarea" ? (
         <textarea
@@ -345,6 +378,7 @@ export default function EndpointExplorer({
   operation,
   origin,
   apiKey,
+  projectOptions = [],
 }: EndpointExplorerProps) {
   const bodySchema = jsonBodySchema(operation)
   const initialBody = useMemo(() => {
@@ -429,6 +463,7 @@ export default function EndpointExplorer({
                           document={document}
                           operation={operation}
                           parameter={parameter}
+                          projectOptions={projectOptions}
                           value={values[key] ?? ""}
                           wide={section.wide.has(parameter.name)}
                           onChange={(value) =>

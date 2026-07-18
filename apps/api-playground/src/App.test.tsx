@@ -11,6 +11,14 @@ const schema = {
       get: {
         tags: ["Articles"],
         summary: "Search Project Articles",
+        parameters: [
+          {
+            name: "project_slug",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
       },
     },
   },
@@ -120,6 +128,9 @@ describe("API key handling", () => {
       }),
     )
     expect(await screen.findByRole("heading", { name: "List and search" })).toBeInTheDocument()
+    const projectSelect = screen.getByLabelText(/project_slug/) as HTMLSelectElement
+    expect(projectSelect.tagName).toBe("SELECT")
+    expect(projectSelect).toHaveTextContent("Daily News (daily-news)")
     expect(connectionRegion).toHaveAttribute("aria-busy", "false")
 
     const groupToggle = screen.getByRole("button", { name: "Articles, 1 endpoint" })
@@ -168,6 +179,9 @@ describe("API key handling", () => {
     fireEvent.click(screen.getByRole("button", { name: "Load API schema" }))
 
     expect(await screen.findByRole("heading", { name: "List and search" })).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText(/project_slug/), {
+      target: { value: "daily-news" },
+    })
     fireEvent.click(screen.getByRole("button", { name: "Execute request" }))
     expect(await screen.findByText("request-123")).toBeInTheDocument()
 
@@ -175,6 +189,7 @@ describe("API key handling", () => {
       new Headers(init?.headers).has("Authorization"),
     )
     expect(apiRequest).toBeDefined()
+    expect(String(apiRequest?.[0])).toContain("/projects/daily-news/articles/search")
     const requestInit = apiRequest?.[1]
     expect(new Headers(requestInit?.headers).get("Authorization")).toBe("Bearer top-secret-key")
     // The sidebar persists layout state; the key itself must never reach storage.

@@ -27,6 +27,8 @@ Locations, Organizations, Other) and displays paths relative to
 The `/articles/search` form is the reference parameter UX: it groups related fields, aligns paired
 controls, exposes schema types and numeric limits, and uses date, number, textarea, or select
 controls when the accepted values are known. Empty optional controls are omitted from requests.
+Every `project_slug` path parameter is a workspace-grouped dropdown populated from the signed-in
+user's available projects.
 
 ## Security boundary
 
