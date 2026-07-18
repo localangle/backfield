@@ -634,16 +634,39 @@ textarea {
 }
 
 .endpoint-group h2 {
+  margin: 0;
+}
+
+.endpoint-group-toggle {
   display: flex;
+  width: 100%;
   align-items: center;
   justify-content: space-between;
-  margin: 0;
-  padding: 11px 16px 6px;
+  border: 0;
+  background: transparent;
+  padding: 11px 16px 8px;
   color: hsl(var(--muted-foreground));
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.endpoint-group-toggle:hover {
+  background: hsl(var(--muted) / 0.7);
+}
+
+.endpoint-group-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.endpoint-group-chevron {
+  width: 12px;
+  color: hsl(var(--foreground));
+  font-size: 0.875rem;
+  line-height: 1;
 }
 
 .endpoint-link {
@@ -669,17 +692,19 @@ textarea {
   color: hsl(var(--accent-foreground));
 }
 
-.endpoint-link code,
-.endpoint-link small {
+.endpoint-summary,
+.endpoint-link code {
   display: block;
   overflow-wrap: anywhere;
 }
 
-.endpoint-link code {
-  font-size: 0.75rem;
+.endpoint-summary {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.35;
 }
 
-.endpoint-link small {
+.endpoint-link code {
   margin-top: 3px;
   color: hsl(var(--muted-foreground));
   font-size: 0.75rem;

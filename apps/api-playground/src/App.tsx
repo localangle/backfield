@@ -46,6 +46,7 @@ export default function App() {
   const [origin, setOrigin] = useState("")
   const [selectedOperationId, setSelectedOperationId] = useState("")
   const [filter, setFilter] = useState("")
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [connectionError, setConnectionError] = useState("")
 
@@ -70,6 +71,18 @@ export default function App() {
   }, [filter, operations])
   const selectedOperation =
     operations.find((operation) => operation.id === selectedOperationId) ?? operations[0]
+
+  function toggleGroup(groupName: string) {
+    setCollapsedGroups((current) => {
+      const next = new Set(current)
+      if (next.has(groupName)) {
+        next.delete(groupName)
+      } else {
+        next.add(groupName)
+      }
+      return next
+    })
+  }
 
   async function loadSessionContext(
     coreOrigin: string,
@@ -138,6 +151,7 @@ export default function App() {
       setOrigin(nextOrigin)
       setDocument(schema)
       setSelectedOperationId(nextOperations[0].id)
+      setCollapsedGroups(new Set())
     } catch (caught) {
       setDocument(undefined)
       setOrigin("")
@@ -295,33 +309,54 @@ export default function App() {
                 placeholder="Action, resource, or path"
               />
               <div className="endpoint-groups">
-                {visibleGroups.map((group) => (
-                  <section key={group.name} className="endpoint-group">
-                    <h2>
-                      <span>{group.name}</span>
-                      <span>{group.operations.length}</span>
-                    </h2>
-                    {group.operations.map((operation) => (
-                      <button
-                        key={operation.id}
-                        type="button"
-                        className={`endpoint-link ${
-                          operation.id === selectedOperation.id ? "endpoint-link-active" : ""
-                        }`}
-                        aria-current={operation.id === selectedOperation.id ? "page" : undefined}
-                        onClick={() => setSelectedOperationId(operation.id)}
-                      >
-                        <span className={`method method-${operation.method}`}>
-                          {operation.method.toUpperCase()}
-                        </span>
-                        <span>
-                          <code title={operation.path}>{operation.displayPath}</code>
-                          <small>{operation.summary}</small>
-                        </span>
-                      </button>
-                    ))}
-                  </section>
-                ))}
+                {visibleGroups.map((group) => {
+                  const expanded = !collapsedGroups.has(group.name)
+                  const endpointLabel =
+                    group.operations.length === 1 ? "1 endpoint" : `${group.operations.length} endpoints`
+                  return (
+                    <section key={group.name} className="endpoint-group">
+                      <h2>
+                        <button
+                          type="button"
+                          className="endpoint-group-toggle"
+                          aria-expanded={expanded}
+                          aria-label={`${group.name}, ${endpointLabel}`}
+                          onClick={() => toggleGroup(group.name)}
+                        >
+                          <span className="endpoint-group-name">
+                            <span className="endpoint-group-chevron" aria-hidden>
+                              {expanded ? "⌄" : "›"}
+                            </span>
+                            <span>{group.name}</span>
+                          </span>
+                          <span>{group.operations.length}</span>
+                        </button>
+                      </h2>
+                      {expanded &&
+                        group.operations.map((operation) => (
+                          <button
+                            key={operation.id}
+                            type="button"
+                            className={`endpoint-link ${
+                              operation.id === selectedOperation.id ? "endpoint-link-active" : ""
+                            }`}
+                            aria-current={
+                              operation.id === selectedOperation.id ? "page" : undefined
+                            }
+                            onClick={() => setSelectedOperationId(operation.id)}
+                          >
+                            <span className={`method method-${operation.method}`}>
+                              {operation.method.toUpperCase()}
+                            </span>
+                            <span className="endpoint-details">
+                              <span className="endpoint-summary">{operation.summary}</span>
+                              <code title={operation.path}>{operation.displayPath}</code>
+                            </span>
+                          </button>
+                        ))}
+                    </section>
+                  )
+                })}
                 {!visibleGroups.length && <p className="empty-message">No matching endpoints.</p>}
               </div>
             </nav>

@@ -120,6 +120,16 @@ describe("API key handling", () => {
     )
     expect(await screen.findByRole("heading", { name: "List articles" })).toBeInTheDocument()
     expect(connectionRegion).toHaveAttribute("aria-busy", "false")
+
+    const groupToggle = screen.getByRole("button", { name: "Other, 1 endpoint" })
+    expect(groupToggle).toHaveAttribute("aria-expanded", "true")
+    const endpointLink = document.querySelector(".endpoint-link")
+    expect(endpointLink?.querySelector(".endpoint-summary")).toHaveTextContent("List articles")
+    expect(endpointLink?.querySelector("code")).toHaveTextContent("/public/v1/articles")
+
+    fireEvent.click(groupToggle)
+    expect(groupToggle).toHaveAttribute("aria-expanded", "false")
+    expect(document.querySelector(".endpoint-link")).not.toBeInTheDocument()
   })
 
   it("uses the key for requests without persisting or displaying it", async () => {
