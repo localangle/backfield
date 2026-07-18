@@ -81,6 +81,8 @@ export interface PlaygroundOperation {
   summary: string
   description?: string
   group: string
+  /** Sort key within `group`; matches Backfield API docs nav order. */
+  groupOrder: number
   parameters: OpenApiParameter[]
   requestBody?: OpenApiRequestBody
 }
@@ -97,37 +99,352 @@ const httpMethods = new Set<HttpMethod>([
 ])
 
 const publicProjectPrefix = "/public/v1/projects/{project_slug}"
+
+/** Top-level groups and order match the Backfield API docs nav (`mkdocs-api.yml`). */
 const groupOrder = [
-  "Project",
+  "Projects",
+  "Metadata",
   "Articles",
   "Mentions",
+  "People",
   "Locations",
   "Organizations",
-  "People",
-  "Runs",
   "Other",
+] as const
+
+type DocsGroup = (typeof groupOrder)[number]
+
+interface DocsPresentation {
+  group: DocsGroup
+  summary: string
+  /** Stable order within the group, matching docs nav. */
+  order: number
+  match: (method: HttpMethod, displayPath: string) => boolean
+}
+
+function isEntityResourcePath(displayPath: string, resource: string, suffix: string): boolean {
+  return new RegExp(`^/${resource}/\\{[^}]+\\}${suffix}$`).test(displayPath)
+}
+
+function isArticleIdPath(displayPath: string, suffix: string): boolean {
+  return new RegExp(`^/articles/\\{[^}]+\\}${suffix}$`).test(displayPath)
+}
+
+/**
+ * Docs-facing labels and group membership for public operations.
+ * Order within each group follows the API Reference nav.
+ */
+const docsPresentations: DocsPresentation[] = [
+  // Projects
+  {
+    group: "Projects",
+    summary: "Get project",
+    order: 0,
+    match: (_method, displayPath) => displayPath === "/project",
+  },
+
+  // Metadata (facets live here in docs; article metadata endpoints stay under Articles)
+  {
+    group: "Metadata",
+    summary: "Article facets",
+    order: 0,
+    match: (method, displayPath) => method === "get" && displayPath === "/articles/facets",
+  },
+  {
+    group: "Metadata",
+    summary: "Mention facets",
+    order: 1,
+    match: (method, displayPath) => method === "get" && displayPath === "/mentions/facets",
+  },
+
+  // Articles
+  {
+    group: "Articles",
+    summary: "Get article",
+    order: 0,
+    match: (method, displayPath) => method === "get" && isArticleIdPath(displayPath, ""),
+  },
+  {
+    group: "Articles",
+    summary: "List and search",
+    order: 1,
+    match: (method, displayPath) => method === "get" && displayPath === "/articles/search",
+  },
+  {
+    group: "Articles",
+    summary: "Semantic search",
+    order: 2,
+    match: (method, displayPath) => method === "post" && displayPath === "/articles/semantic-search",
+  },
+  {
+    group: "Articles",
+    summary: "Geographic search",
+    order: 3,
+    match: (method, displayPath) => method === "get" && displayPath === "/articles/geo-search",
+  },
+  {
+    group: "Articles",
+    summary: "List metadata types",
+    order: 4,
+    match: (method, displayPath) => method === "get" && displayPath === "/articles/metadata/types",
+  },
+  {
+    group: "Articles",
+    summary: "List metadata values",
+    order: 5,
+    match: (method, displayPath) =>
+      method === "get" &&
+      /^\/articles\/metadata\/types\/\{[^}]+\}\/values$/.test(displayPath),
+  },
+  {
+    group: "Articles",
+    summary: "Get article metadata",
+    order: 6,
+    match: (method, displayPath) => method === "get" && isArticleIdPath(displayPath, "/metadata"),
+  },
+  {
+    group: "Articles",
+    summary: "List mentions",
+    order: 7,
+    match: (method, displayPath) => method === "get" && isArticleIdPath(displayPath, "/mentions"),
+  },
+  {
+    group: "Articles",
+    summary: "List people",
+    order: 8,
+    match: (method, displayPath) => method === "get" && isArticleIdPath(displayPath, "/people"),
+  },
+  {
+    group: "Articles",
+    summary: "List organizations",
+    order: 9,
+    match: (method, displayPath) =>
+      method === "get" && isArticleIdPath(displayPath, "/organizations"),
+  },
+  {
+    group: "Articles",
+    summary: "List locations",
+    order: 10,
+    match: (method, displayPath) => method === "get" && isArticleIdPath(displayPath, "/locations"),
+  },
+  {
+    group: "Articles",
+    summary: "List custom records",
+    order: 11,
+    match: (method, displayPath) =>
+      method === "get" && isArticleIdPath(displayPath, "/custom-records"),
+  },
+  {
+    group: "Articles",
+    summary: "List images",
+    order: 12,
+    match: (method, displayPath) => method === "get" && isArticleIdPath(displayPath, "/images"),
+  },
+
+  // Mentions
+  {
+    group: "Mentions",
+    summary: "Get mention",
+    order: 0,
+    match: (method, displayPath) =>
+      method === "get" && /^\/mentions\/\{[^}]+\}\/\{[^}]+\}$/.test(displayPath),
+  },
+  {
+    group: "Mentions",
+    summary: "List and search",
+    order: 1,
+    match: (method, displayPath) => method === "get" && displayPath === "/mentions/search",
+  },
+
+  // People (Entities → People in docs)
+  {
+    group: "People",
+    summary: "Get person",
+    order: 0,
+    match: (method, displayPath) =>
+      method === "get" && isEntityResourcePath(displayPath, "people", ""),
+  },
+  {
+    group: "People",
+    summary: "List and search",
+    order: 1,
+    match: (method, displayPath) =>
+      method === "get" && (displayPath === "/people" || displayPath === "/people/search"),
+  },
+  {
+    group: "People",
+    summary: "List types",
+    order: 2,
+    match: (method, displayPath) => method === "get" && displayPath === "/people/types",
+  },
+  {
+    group: "People",
+    summary: "List articles",
+    order: 3,
+    match: (method, displayPath) =>
+      method === "get" && isEntityResourcePath(displayPath, "people", "/articles"),
+  },
+  {
+    group: "People",
+    summary: "List mentions",
+    order: 4,
+    match: (method, displayPath) =>
+      method === "get" && isEntityResourcePath(displayPath, "people", "/mentions"),
+  },
+  {
+    group: "People",
+    summary: "List connections",
+    order: 5,
+    match: (method, displayPath) =>
+      method === "get" && isEntityResourcePath(displayPath, "people", "/connections"),
+  },
+
+  // Locations (Entities → Locations in docs)
+  {
+    group: "Locations",
+    summary: "Get location",
+    order: 0,
+    match: (method, displayPath) =>
+      method === "get" && isEntityResourcePath(displayPath, "locations", ""),
+  },
+  {
+    group: "Locations",
+    summary: "List and search",
+    order: 1,
+    match: (method, displayPath) =>
+      method === "get" &&
+      (displayPath === "/locations" || displayPath === "/locations/search"),
+  },
+  {
+    group: "Locations",
+    summary: "List types",
+    order: 2,
+    match: (method, displayPath) => method === "get" && displayPath === "/locations/types",
+  },
+  {
+    group: "Locations",
+    summary: "Geographic search",
+    order: 3,
+    match: (method, displayPath) => method === "get" && displayPath === "/locations/geo-search",
+  },
+  {
+    group: "Locations",
+    summary: "List articles",
+    order: 4,
+    match: (method, displayPath) =>
+      method === "get" && isEntityResourcePath(displayPath, "locations", "/articles"),
+  },
+  {
+    group: "Locations",
+    summary: "List mentions",
+    order: 5,
+    match: (method, displayPath) =>
+      method === "get" && isEntityResourcePath(displayPath, "locations", "/mentions"),
+  },
+  {
+    group: "Locations",
+    summary: "List connections",
+    order: 6,
+    match: (method, displayPath) =>
+      method === "get" && isEntityResourcePath(displayPath, "locations", "/connections"),
+  },
+
+  // Organizations (Entities → Organizations in docs)
+  {
+    group: "Organizations",
+    summary: "Get organization",
+    order: 0,
+    match: (method, displayPath) =>
+      method === "get" && isEntityResourcePath(displayPath, "organizations", ""),
+  },
+  {
+    group: "Organizations",
+    summary: "List and search",
+    order: 1,
+    match: (method, displayPath) =>
+      method === "get" &&
+      (displayPath === "/organizations" || displayPath === "/organizations/search"),
+  },
+  {
+    group: "Organizations",
+    summary: "List types",
+    order: 2,
+    match: (method, displayPath) => method === "get" && displayPath === "/organizations/types",
+  },
+  {
+    group: "Organizations",
+    summary: "List articles",
+    order: 3,
+    match: (method, displayPath) =>
+      method === "get" && isEntityResourcePath(displayPath, "organizations", "/articles"),
+  },
+  {
+    group: "Organizations",
+    summary: "List mentions",
+    order: 4,
+    match: (method, displayPath) =>
+      method === "get" && isEntityResourcePath(displayPath, "organizations", "/mentions"),
+  },
+  {
+    group: "Organizations",
+    summary: "List connections",
+    order: 5,
+    match: (method, displayPath) =>
+      method === "get" && isEntityResourcePath(displayPath, "organizations", "/connections"),
+  },
+
+  // Other (Mention timeline, Geo cells, Runs)
+  {
+    group: "Other",
+    summary: "Get timeline",
+    order: 0,
+    match: (method, displayPath) =>
+      method === "get" &&
+      (isEntityResourcePath(displayPath, "people", "/mentions/timeline") ||
+        isEntityResourcePath(displayPath, "locations", "/mentions/timeline") ||
+        isEntityResourcePath(displayPath, "organizations", "/mentions/timeline")),
+  },
+  {
+    group: "Other",
+    summary: "Coverage",
+    order: 1,
+    match: (method, displayPath) => method === "get" && displayPath === "/articles/geo-cells",
+  },
+  {
+    group: "Other",
+    summary: "List articles",
+    order: 2,
+    match: (method, displayPath) =>
+      method === "get" && /^\/articles\/geo-cells\/\{[^}]+\}$/.test(displayPath),
+  },
+  {
+    group: "Other",
+    summary: "Batch query",
+    order: 3,
+    match: (method, displayPath) =>
+      method === "post" && displayPath === "/articles/geo-cells/query",
+  },
+  {
+    group: "Other",
+    summary: "Trigger run",
+    order: 4,
+    match: (method, displayPath) => method === "post" && displayPath === "/runs",
+  },
+  {
+    group: "Other",
+    summary: "Get run",
+    order: 5,
+    match: (method, displayPath) =>
+      method === "get" && /^\/runs\/\{[^}]+\}$/.test(displayPath),
+  },
 ]
 
 function compactPath(path: string): string {
   if (!path.startsWith(publicProjectPrefix)) {
-    return path
+    return path.replace(/\/$/, "") || path
   }
   const relative = path.slice(publicProjectPrefix.length).replace(/\/$/, "")
   return relative || "/project"
-}
-
-function resourceGroup(path: string): string {
-  const firstSegment = compactPath(path).split("/").filter(Boolean)[0]
-  const knownGroups: Record<string, string> = {
-    project: "Project",
-    articles: "Articles",
-    mentions: "Mentions",
-    locations: "Locations",
-    organizations: "Organizations",
-    people: "People",
-    runs: "Runs",
-  }
-  return knownGroups[firstSegment ?? ""] ?? "Other"
 }
 
 function friendlySummary(summary: string): string {
@@ -140,6 +457,29 @@ function friendlySummary(summary: string): string {
     .replace(/\s+/g, " ")
     .trim()
 }
+
+function presentOperation(
+  method: HttpMethod,
+  displayPath: string,
+  openApiSummary: string,
+): { group: string; summary: string; order: number } {
+  const matched = docsPresentations.find((presentation) =>
+    presentation.match(method, displayPath),
+  )
+  if (matched) {
+    return {
+      group: matched.group,
+      summary: matched.summary,
+      order: matched.order,
+    }
+  }
+  return {
+    group: "Other",
+    summary: friendlySummary(openApiSummary),
+    order: 1000,
+  }
+}
+
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -240,16 +580,22 @@ export function listOperations(document: OpenApiDocument): PlaygroundOperation[]
         new Map(merged.map((parameter) => [`${parameter.in}:${parameter.name}`, parameter])).values(),
       )
 
+      const displayPath = compactPath(path)
+      const presentation = presentOperation(
+        method,
+        displayPath,
+        operation.summary ?? operation.operationId ?? `${method.toUpperCase()} ${path}`,
+      )
+
       operations.push({
         id: operation.operationId ?? `${method}:${path}`,
         method,
         path,
-        displayPath: compactPath(path),
-        summary: friendlySummary(
-          operation.summary ?? operation.operationId ?? `${method.toUpperCase()} ${path}`,
-        ),
+        displayPath,
+        summary: presentation.summary,
         description: operation.description,
-        group: resourceGroup(path),
+        group: presentation.group,
+        groupOrder: presentation.order,
         parameters,
         requestBody: resolveRequestBody(document, operation.requestBody),
       })
@@ -258,7 +604,9 @@ export function listOperations(document: OpenApiDocument): PlaygroundOperation[]
 
   return operations.sort((left, right) => {
     return (
-      groupOrder.indexOf(left.group) - groupOrder.indexOf(right.group) ||
+      groupOrder.indexOf(left.group as (typeof groupOrder)[number]) -
+        groupOrder.indexOf(right.group as (typeof groupOrder)[number]) ||
+      left.groupOrder - right.groupOrder ||
       left.displayPath.localeCompare(right.displayPath) ||
       left.method.localeCompare(right.method)
     )

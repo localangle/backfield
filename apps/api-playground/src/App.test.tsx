@@ -7,10 +7,10 @@ const schema = {
   openapi: "3.1.0",
   info: { title: "Backfield Public API", version: "1.0.0" },
   paths: {
-    "/public/v1/articles": {
+    "/public/v1/projects/{project_slug}/articles/search": {
       get: {
         tags: ["Articles"],
-        summary: "List articles",
+        summary: "Search Project Articles",
       },
     },
   },
@@ -119,14 +119,14 @@ describe("API key handling", () => {
         headers: { "Content-Type": "application/json" },
       }),
     )
-    expect(await screen.findByRole("heading", { name: "List articles" })).toBeInTheDocument()
+    expect(await screen.findByRole("heading", { name: "List and search" })).toBeInTheDocument()
     expect(connectionRegion).toHaveAttribute("aria-busy", "false")
 
-    const groupToggle = screen.getByRole("button", { name: "Other, 1 endpoint" })
+    const groupToggle = screen.getByRole("button", { name: "Articles, 1 endpoint" })
     expect(groupToggle).toHaveAttribute("aria-expanded", "true")
     const endpointLink = document.querySelector(".endpoint-link")
-    expect(endpointLink?.querySelector(".endpoint-summary")).toHaveTextContent("List articles")
-    expect(endpointLink?.querySelector("code")).toHaveTextContent("/public/v1/articles")
+    expect(endpointLink?.querySelector(".endpoint-summary")).toHaveTextContent("List and search")
+    expect(endpointLink?.querySelector("code")).toHaveTextContent("/articles/search")
 
     fireEvent.click(groupToggle)
     expect(groupToggle).toHaveAttribute("aria-expanded", "false")
@@ -167,7 +167,7 @@ describe("API key handling", () => {
     })
     fireEvent.click(screen.getByRole("button", { name: "Load API schema" }))
 
-    expect(await screen.findByRole("heading", { name: "List articles" })).toBeInTheDocument()
+    expect(await screen.findByRole("heading", { name: "List and search" })).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Execute request" }))
     expect(await screen.findByText("request-123")).toBeInTheDocument()
 

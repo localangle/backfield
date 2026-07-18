@@ -42,7 +42,8 @@ describe("OpenAPI parsing and endpoint rendering", () => {
     })
     const operation = listOperations(document)[0]
 
-    expect(operation.group).toBe("Articles")
+    expect(operation.group).toBe("Other")
+    expect(operation.summary).toBe("Create article")
     expect(operation.parameters[0].name).toBe("limit")
     render(
       <EndpointExplorer

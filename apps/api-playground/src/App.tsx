@@ -233,7 +233,6 @@ export default function App() {
             <div className="field">
               <label htmlFor="project-api-key">
                 <span className="field-name">Project API key</span>
-                <span className="field-meta">Held in memory only</span>
               </label>
               <div className="secret-row">
                 <input

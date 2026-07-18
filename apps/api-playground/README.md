@@ -20,9 +20,10 @@ users see in Agate and Stylebook. Those shared components are styled with Tailwi
 Playground compiles with preflight disabled; the rest of the app keeps its standalone plain CSS
 that mirrors the semantic color tokens, control dimensions, card treatment, product header, and
 focus states used by Agate and Stylebook. HTTP method badges, monospace paths, and response code
-blocks remain developer-tool-specific accents. The endpoint navigator groups operations by
-resource and displays paths relative to `/public/v1/projects/{project_slug}`; request construction
-still uses the exact OpenAPI path.
+blocks remain developer-tool-specific accents. The endpoint navigator groups and labels
+operations to match the Backfield API docs nav (Projects, Metadata, Articles, Mentions, People,
+Locations, Organizations, Other) and displays paths relative to
+`/public/v1/projects/{project_slug}`; request construction still uses the exact OpenAPI path.
 
 ## Security boundary
 
