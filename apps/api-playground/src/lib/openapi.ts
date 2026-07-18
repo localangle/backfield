@@ -20,9 +20,13 @@ export interface OpenApiSchema {
   maximum?: number
   minLength?: number
   maxLength?: number
+  minItems?: number
+  maxItems?: number
+  uniqueItems?: boolean
   pattern?: string
   items?: OpenApiSchema | OpenApiReference
   properties?: Record<string, OpenApiSchema | OpenApiReference>
+  additionalProperties?: boolean | OpenApiSchema | OpenApiReference
   required?: string[]
   nullable?: boolean
   oneOf?: Array<OpenApiSchema | OpenApiReference>
@@ -677,15 +681,21 @@ export function exampleForSchema(
     return exampleForSchema(document, combined, depth + 1)
   }
   if (schema.type === "array") {
-    const item = exampleForSchema(document, schema.items, depth + 1)
-    return item === undefined ? [] : [item]
+    return []
   }
   if (schema.type === "object" || schema.properties) {
+    const required = new Set(schema.required ?? [])
     return Object.fromEntries(
-      Object.entries(schema.properties ?? {}).map(([name, property]) => [
-        name,
-        exampleForSchema(document, property, depth + 1) ?? null,
-      ]),
+      Object.entries(schema.properties ?? {}).flatMap(([name, property]) => {
+        const propertySchema = resolveSchema(document, property)
+        const hasStarterValue =
+          required.has(name) ||
+          propertySchema?.example !== undefined ||
+          propertySchema?.default !== undefined
+        return hasStarterValue
+          ? [[name, exampleForSchema(document, property, depth + 1) ?? ""]]
+          : []
+      }),
     )
   }
   if (schema.type === "boolean") {

@@ -61,8 +61,9 @@ describe("OpenAPI parsing and endpoint rendering", () => {
 
     expect(screen.getByRole("heading", { name: "Create article" })).toBeInTheDocument()
     expect(screen.getByLabelText(/limit/)).toBeInTheDocument()
-    const bodyInput = screen.getByLabelText(/JSON request body/) as HTMLTextAreaElement
-    expect(bodyInput.value).toContain("City council meets")
+    expect(screen.getByText("Request body")).toBeInTheDocument()
+    expect(screen.getByLabelText(/title/)).toHaveValue("City council meets")
+    expect(screen.getByRole("button", { name: "Edit as JSON" })).toBeInTheDocument()
   })
 
   it("renders article search as an aligned, constrained form", async () => {
@@ -203,7 +204,8 @@ describe("OpenAPI parsing and endpoint rendering", () => {
       />,
     )
 
-    expect(screen.getByRole("heading", { name: "Search and filters" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Search" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Filters" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "Sort and page" })).toBeInTheDocument()
 
     const project = screen.getByLabelText(/project_slug/) as HTMLSelectElement
@@ -275,6 +277,71 @@ describe("OpenAPI parsing and endpoint rendering", () => {
         .getElementById("parameter-query-q")
         ?.closest(".parameter-field"),
     ).toHaveClass("parameter-field-wide")
+  })
+
+  it("renders request-body properties with the shared controls and raw JSON escape hatch", () => {
+    const document = parseOpenApiDocument({
+      openapi: "3.1.0",
+      info: { title: "Public API", version: "1.2.0" },
+      paths: {
+        "/public/v1/projects/{project_slug}/articles/semantic-search": {
+          post: {
+            summary: "Semantic search",
+            parameters: [
+              {
+                name: "project_slug",
+                in: "path",
+                required: true,
+                schema: { type: "string" },
+              },
+            ],
+            requestBody: {
+              required: true,
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    required: ["query"],
+                    properties: {
+                      query: {
+                        type: "string",
+                        minLength: 1,
+                        example: "city budget",
+                      },
+                      use_hyde: { type: "boolean", default: false },
+                      limit: {
+                        type: "integer",
+                        default: 25,
+                        minimum: 1,
+                        maximum: 100,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    })
+    const operation = listOperations(document)[0]
+    render(
+      <EndpointExplorer
+        document={document}
+        operation={operation}
+        origin="https://api.news.backfield.news"
+        apiKey=""
+      />,
+    )
+
+    expect(screen.getByRole("heading", { name: "Search" })).toBeInTheDocument()
+    expect(screen.getByLabelText(/query/)).toHaveValue("city budget")
+    expect(screen.getByLabelText(/use_hyde/).tagName).toBe("SELECT")
+    expect(screen.getByLabelText(/limit/)).toHaveAttribute("type", "number")
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit as JSON" }))
+    const rawBody = screen.getByRole("textbox") as HTMLTextAreaElement
+    expect(rawBody.value).toContain('"query": "city budget"')
   })
 
   it("rejects malformed schema documents", () => {

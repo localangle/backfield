@@ -24,16 +24,21 @@ blocks remain developer-tool-specific accents. The endpoint navigator groups and
 operations to match the Backfield API docs nav (Projects, Metadata, Articles, Mentions, People,
 Locations, Organizations, Other) and displays paths relative to
 `/public/v1/projects/{project_slug}`; request construction still uses the exact OpenAPI path.
-The `/articles/search` form is the reference parameter UX: it groups related fields, aligns paired
-controls, exposes schema types and numeric limits, and uses date, number, textarea, or select
-controls when the accepted values are known. Empty optional controls are omitted from requests.
+Every endpoint uses the same schema-first parameter UX: fields are organized into Project,
+Resource, Search, Area, Filters, Sort and page, Response details, and Request options sections as
+needed. Paired controls align consistently; types, defaults, required fields, and numeric limits
+come from OpenAPI; and known values use date, number, checkbox, textarea, or select controls. Empty
+optional controls are omitted from requests.
 Every `project_slug` path parameter is a workspace-grouped dropdown populated from the signed-in
-user's available projects.
-On `/articles/search`, selecting a project loads its article facets with the tab-scoped project API
-key and uses them to populate the `author` and `external_source` dropdowns. The `meta` parameter is
-a visual condition builder: each row combines a metadata type (from the project's metadata
-discovery endpoints), an is / is not operator, and a searchable category multi-select; rows encode
-to the documented repeatable `meta` clause grammar shown in a live preview.
+user's available projects, and the selected project carries across endpoint changes.
+When an operation supports `author`, `external_source`, mention nature, or entity-type filters,
+selecting a project loads the matching discovery endpoint with the tab-scoped project API key and
+populates dropdown choices. Every `meta` parameter uses the visual condition builder: each row
+combines a metadata type, an is / is not operator, and a searchable category multi-select; rows
+encode to the documented repeatable `meta` clause grammar shown in a live preview.
+The semantic-search, geo-cell batch, and trigger-run request bodies use the same structured field
+controls. **Edit as JSON** remains available as a lossless escape hatch, and request-body
+properties are validated against their OpenAPI constraints before the request is sent.
 
 ## Security boundary
 

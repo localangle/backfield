@@ -432,6 +432,38 @@ textarea {
   margin: -2px 0 8px;
 }
 
+.parameter-checkboxes {
+  display: flex;
+  min-height: 40px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid hsl(var(--input));
+  border-radius: calc(var(--radius) - 2px);
+  padding: 7px 10px;
+}
+
+.parameter-checkboxes .parameter-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  margin: 0;
+  border-radius: calc(var(--radius) - 4px);
+  padding: 3px 7px;
+  background: hsl(var(--muted) / 0.65);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.parameter-checkbox input {
+  width: 14px;
+  height: 14px;
+  min-height: 0;
+  padding: 0;
+  accent-color: hsl(var(--primary));
+}
+
 .meta-builder {
   display: grid;
   gap: 10px;
@@ -874,6 +906,32 @@ legend {
 
 .body-field {
   margin: 22px 0;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.body-editor-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.body-editor-heading .field-name,
+.body-editor-heading .field-meta {
+  display: block;
+}
+
+.body-mode-toggle {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 0.8125rem;
+}
+
+.body-parameter-sections {
+  margin-top: 8px;
 }
 
 .code-input {
@@ -898,6 +956,49 @@ legend {
 
 .result-note {
   margin: -2px 0 8px;
+}
+
+.result-block-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.result-block-heading h3,
+.result-block-heading h4 {
+  margin: 0;
+}
+
+.copy-button {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid hsl(var(--input));
+  border-radius: calc(var(--radius) - 2px);
+  color: hsl(var(--muted-foreground));
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.copy-button:hover {
+  background: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+
+.copy-button:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.copy-button svg {
+  width: 15px;
+  height: 15px;
 }
 
 pre {

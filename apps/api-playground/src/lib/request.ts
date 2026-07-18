@@ -1,10 +1,11 @@
 import {
   type OpenApiDocument,
   type OpenApiParameter,
+  type OpenApiReference,
+  type OpenApiSchema,
   type PlaygroundOperation,
   jsonBodySchema,
   resolveInputSchema,
-  resolveSchema,
 } from "./openapi"
 
 export type ParameterValues = Record<string, string>
@@ -32,7 +33,7 @@ function valuesForParameter(
   parameter: OpenApiParameter,
   value: string,
 ): string[] {
-  const schema = resolveSchema(document, parameter.schema)
+  const schema = resolveInputSchema(document, parameter.schema)
   if (schema?.type !== "array") {
     return [value]
   }
@@ -40,6 +41,111 @@ function valuesForParameter(
     .split(/[\n,]/)
     .map((part) => part.trim())
     .filter(Boolean)
+}
+
+function allowsNull(
+  document: OpenApiDocument,
+  schemaOrReference: OpenApiSchema | OpenApiReference | undefined,
+): boolean {
+  if (!schemaOrReference) return false
+  const schema = "$ref" in schemaOrReference
+    ? resolveInputSchema(document, schemaOrReference)
+    : schemaOrReference
+  if (schema?.nullable || schema?.type === "null") return true
+  return [...(schema?.anyOf ?? []), ...(schema?.oneOf ?? [])].some((item) => {
+    const resolved = resolveInputSchema(document, item)
+    return resolved?.type === "null"
+  })
+}
+
+function validateJsonValue(
+  document: OpenApiDocument,
+  schemaOrReference: OpenApiSchema | OpenApiReference | undefined,
+  value: unknown,
+  path: string,
+): void {
+  if (value === null && allowsNull(document, schemaOrReference)) return
+  const schema = resolveInputSchema(document, schemaOrReference)
+  if (!schema) return
+
+  if (schema.type === "object") {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error(`${path} must be a JSON object.`)
+    }
+    const record = value as Record<string, unknown>
+    for (const requiredName of schema.required ?? []) {
+      if (
+        !(requiredName in record) ||
+        record[requiredName] === undefined ||
+        record[requiredName] === null ||
+        record[requiredName] === ""
+      ) {
+        throw new Error(`${path}.${requiredName} is required.`)
+      }
+    }
+    for (const [name, propertySchema] of Object.entries(schema.properties ?? {})) {
+      if (record[name] !== undefined) {
+        validateJsonValue(document, propertySchema, record[name], `${path}.${name}`)
+      }
+    }
+    return
+  }
+
+  if (schema.type === "array") {
+    if (!Array.isArray(value)) throw new Error(`${path} must be a list.`)
+    if (schema.minItems !== undefined && value.length < schema.minItems) {
+      throw new Error(`${path} must contain at least ${schema.minItems} item(s).`)
+    }
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) {
+      throw new Error(`${path} must contain at most ${schema.maxItems} item(s).`)
+    }
+    value.forEach((item, index) =>
+      validateJsonValue(document, schema.items, item, `${path}[${index}]`),
+    )
+    return
+  }
+
+  if (schema.type === "string") {
+    if (typeof value !== "string") throw new Error(`${path} must be a string.`)
+    if (schema.minLength !== undefined && value.length < schema.minLength) {
+      throw new Error(`${path} must contain at least ${schema.minLength} characters.`)
+    }
+    if (schema.maxLength !== undefined && value.length > schema.maxLength) {
+      throw new Error(`${path} must contain at most ${schema.maxLength} characters.`)
+    }
+    if (schema.pattern && !new RegExp(schema.pattern).test(value)) {
+      throw new Error(`${path} is not in the expected format.`)
+    }
+  }
+  if (schema.type === "boolean" && typeof value !== "boolean") {
+    throw new Error(`${path} must be true or false.`)
+  }
+  if (
+    (schema.type === "integer" || schema.type === "number") &&
+    (typeof value !== "number" || !Number.isFinite(value))
+  ) {
+    throw new Error(`${path} must be a number.`)
+  }
+  if (schema.type === "integer" && typeof value === "number" && !Number.isInteger(value)) {
+    throw new Error(`${path} must be a whole number.`)
+  }
+  if (
+    (schema.type === "integer" || schema.type === "number") &&
+    typeof value === "number"
+  ) {
+    if (schema.minimum !== undefined && value < schema.minimum) {
+      throw new Error(`${path} must be at least ${schema.minimum}.`)
+    }
+    if (schema.maximum !== undefined && value > schema.maximum) {
+      throw new Error(`${path} must be at most ${schema.maximum}.`)
+    }
+  }
+  if (
+    schema.enum?.length &&
+    !schema.enum.some((candidate) => candidate === value)
+  ) {
+    throw new Error(`${path} must be one of: ${schema.enum.join(", ")}.`)
+  }
 }
 
 function shellQuote(value: string): string {
@@ -79,7 +185,11 @@ function validateParameterValue(
       throw new Error(`${parameter.name} must be at most ${schema.maximum}.`)
     }
   }
-  if (schema.format === "date") {
+  if (
+    schema.format === "date" ||
+    parameter.name === "pub_date_from" ||
+    parameter.name === "pub_date_to"
+  ) {
     const parsed = new Date(`${value}T00:00:00Z`)
     if (
       !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
@@ -100,6 +210,31 @@ function validateParameterValue(
   }
 }
 
+function validateCrossFieldParameters(
+  operation: PlaygroundOperation,
+  values: ParameterValues,
+): void {
+  if (!operation.displayPath.endsWith("/geo-search")) return
+  const longitude = values["query:center_lng"]?.trim() ?? ""
+  const latitude = values["query:center_lat"]?.trim() ?? ""
+  const radius = values["query:radius_miles"]?.trim() ?? ""
+  const bbox = values["query:bbox"]?.trim() ?? ""
+  const pointValues = [longitude, latitude, radius]
+  const hasPointValue = pointValues.some(Boolean)
+  const hasCompletePoint = pointValues.every(Boolean)
+  if (hasPointValue && !hasCompletePoint) {
+    throw new Error(
+      "center_lng, center_lat, and radius_miles must be provided together.",
+    )
+  }
+  if (hasCompletePoint && bbox) {
+    throw new Error("Choose either point and radius fields or bbox, not both.")
+  }
+  if (!hasCompletePoint && !bbox) {
+    throw new Error("Provide point and radius fields or a bbox.")
+  }
+}
+
 export function prepareRequest(
   document: OpenApiDocument,
   operation: PlaygroundOperation,
@@ -111,6 +246,7 @@ export function prepareRequest(
   let path = operation.path
   const query = new URLSearchParams()
   const headers = new Headers({ Accept: "application/json" })
+  validateCrossFieldParameters(operation, values)
 
   for (const parameter of operation.parameters) {
     if (parameter.in === "cookie") {
@@ -141,11 +277,13 @@ export function prepareRequest(
   const bodySchema = jsonBodySchema(operation)
   let body: string | undefined
   if (bodySchema && bodyText.trim()) {
+    let parsedBody: unknown
     try {
-      JSON.parse(bodyText)
+      parsedBody = JSON.parse(bodyText)
     } catch {
       throw new Error("Request body must be valid JSON.")
     }
+    validateJsonValue(document, bodySchema, parsedBody, "Request body")
     body = bodyText
     headers.set("Content-Type", "application/json")
   } else if (operation.requestBody?.required && bodySchema) {

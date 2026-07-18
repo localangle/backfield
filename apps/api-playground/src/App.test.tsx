@@ -149,6 +149,8 @@ describe("API key handling", () => {
 
   it("keeps the key for tab reloads without displaying or locally persisting it", async () => {
     const localStorageWrite = vi.spyOn(window.localStorage, "setItem")
+    const clipboardWrite = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal("navigator", { clipboard: { writeText: clipboardWrite } })
     const fetchMock = vi.fn<typeof fetch>().mockImplementation((input, init) => {
       const session = sessionResponse(input)
       if (session) return Promise.resolve(session)
@@ -231,5 +233,14 @@ describe("API key handling", () => {
     }
     expect(screen.getByText(/BACKFIELD_PROJECT_API_KEY/)).toBeInTheDocument()
     expect(document.body.textContent).not.toContain("top-secret-key")
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy curl" }))
+    await waitFor(() => expect(clipboardWrite).toHaveBeenCalledTimes(1))
+    expect(clipboardWrite.mock.calls[0][0]).toContain("curl")
+    expect(clipboardWrite.mock.calls[0][0]).not.toContain("top-secret-key")
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy response body" }))
+    await waitFor(() => expect(clipboardWrite).toHaveBeenCalledTimes(2))
+    expect(clipboardWrite.mock.calls[1][0]).toContain('"items": []')
   })
 })

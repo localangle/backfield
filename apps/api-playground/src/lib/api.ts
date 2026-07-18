@@ -5,6 +5,14 @@ export interface ArticleFacets {
   externalSources: string[]
 }
 
+export interface MentionFacets {
+  entityTypes: string[]
+  natures: string[]
+  locationTypes: string[]
+  personTypes: string[]
+  organizationTypes: string[]
+}
+
 export async function fetchPublicSchema(origin: string): Promise<OpenApiDocument> {
   const response = await fetch(`${origin}/public/v1/openapi.json`, {
     method: "GET",
@@ -102,5 +110,38 @@ export async function fetchArticleFacets(
   return {
     authors: payload.authors,
     externalSources: payload.external_sources,
+  }
+}
+
+function stringArray(
+  payload: Record<string, unknown>,
+  key: string,
+  responseName: string,
+): string[] {
+  const value = payload[key]
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+    throw new Error(`${responseName} response was invalid.`)
+  }
+  return value
+}
+
+export async function fetchMentionFacets(
+  origin: string,
+  projectSlug: string,
+  apiKey: string,
+  signal?: AbortSignal,
+): Promise<MentionFacets> {
+  const payload = (await publicJson(
+    origin,
+    `/public/v1/projects/${encodeURIComponent(projectSlug)}/mentions/facets`,
+    apiKey,
+    signal,
+  )) as Record<string, unknown>
+  return {
+    entityTypes: stringArray(payload, "entity_types", "Mention facets"),
+    natures: stringArray(payload, "natures", "Mention facets"),
+    locationTypes: stringArray(payload, "location_types", "Mention facets"),
+    personTypes: stringArray(payload, "person_types", "Mention facets"),
+    organizationTypes: stringArray(payload, "organization_types", "Mention facets"),
   }
 }

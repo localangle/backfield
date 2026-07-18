@@ -100,6 +100,7 @@ export default function App() {
   const [filter, setFilter] = useState(() =>
     readSessionValue(ENDPOINT_FILTER_SESSION_STORAGE),
   )
+  const [explorerProjectSlug, setExplorerProjectSlug] = useState("")
   // Endpoint groups start collapsed; users expand only what they need.
   const [expandedGroups, setExpandedGroups] =
     useState<Set<string>>(readExpandedGroups)
@@ -489,6 +490,8 @@ export default function App() {
               origin={origin}
               apiKey={apiKey}
               projectOptions={projectOptions}
+              projectSlug={explorerProjectSlug}
+              onProjectSlugChange={setExplorerProjectSlug}
             />
           </div>
         )}

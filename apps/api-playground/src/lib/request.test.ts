@@ -43,6 +43,38 @@ const document = parseOpenApiDocument({
   },
 })
 
+const bodyDocument = parseOpenApiDocument({
+  openapi: "3.1.0",
+  info: { title: "Test API", version: "1" },
+  paths: {
+    "/semantic-search": {
+      post: {
+        summary: "Semantic search",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["query"],
+                properties: {
+                  query: { type: "string", minLength: 1 },
+                  limit: { type: "integer", minimum: 1, maximum: 100 },
+                  meta: {
+                    type: "array",
+                    minItems: 1,
+                    items: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+})
+
 describe("request construction", () => {
   it("encodes path values, repeats array queries, and applies the bearer key", () => {
     const operation = listOperations(document)[0]
@@ -108,5 +140,41 @@ describe("request construction", () => {
         "",
       ),
     ).toThrow("limit must be at most 100")
+  })
+
+  it("validates structured request bodies before sending", () => {
+    const operation = listOperations(bodyDocument)[0]
+    expect(() =>
+      prepareRequest(
+        bodyDocument,
+        operation,
+        "https://api.news.backfield.news",
+        {},
+        JSON.stringify({ query: "", limit: 25 }),
+        "",
+      ),
+    ).toThrow("Request body.query is required")
+
+    expect(() =>
+      prepareRequest(
+        bodyDocument,
+        operation,
+        "https://api.news.backfield.news",
+        {},
+        JSON.stringify({ query: "city budget", limit: 101 }),
+        "",
+      ),
+    ).toThrow("Request body.limit must be at most 100")
+
+    expect(() =>
+      prepareRequest(
+        bodyDocument,
+        operation,
+        "https://api.news.backfield.news",
+        {},
+        JSON.stringify({ query: "city budget", meta: [] }),
+        "",
+      ),
+    ).toThrow("Request body.meta must contain at least 1 item")
   })
 })
