@@ -120,7 +120,9 @@ export default function EndpointExplorer({
       <header className="operation-header">
         <span className={`method method-${operation.method}`}>{operation.method.toUpperCase()}</span>
         <div>
-          <code className="operation-path">{operation.path}</code>
+          <code className="operation-path" title={operation.path}>
+            {operation.displayPath}
+          </code>
           <h2 id="operation-title">{operation.summary}</h2>
         </div>
       </header>

@@ -1,13 +1,14 @@
 # Backfield Public API Playground
 
-`apps/api-playground` is the developer-only, schema-driven client served in production at
+`apps/api-playground` is the signed-in, schema-driven developer client served in production at
 `https://playground.backfield.news`.
 
 The app asks for an organization slug and derives exactly
 `https://api.{organization-slug}.backfield.news`. When the playground itself runs on localhost, a
 separate checkbox explicitly enables `http://localhost:8004`; there is no free-form API origin.
 
-Agate and Stylebook link to the Playground from their sidebar footer. Their
+Agate and Stylebook link to the Playground from their sidebar footer and include the non-secret
+organization slug so the Playground can restore the signed-in platform sidebar. Their
 `VITE_PLAYGROUND_URL` build-time setting may override the destination for a custom deployment;
 localhost builds use `http://localhost:5176`, and production defaults to the hosted URL above.
 
@@ -16,12 +17,20 @@ localhost builds use `http://localhost:5176`, and production defaults to the hos
 The Playground keeps its standalone CSS and dependency-light runtime, but mirrors the semantic
 color tokens, control dimensions, card treatment, product header, and focus states used by Agate
 and Stylebook. HTTP method badges, monospace paths, and response code blocks remain
-developer-tool-specific accents.
+developer-tool-specific accents. The endpoint navigator groups operations by resource and displays
+paths relative to `/public/v1/projects/{project_slug}`; request construction still uses the exact
+OpenAPI path.
 
 ## Security boundary
 
-- The project API key is React state only. The app does not use local storage, session storage,
-  cookies, URL state, analytics, request history, or third-party scripts.
+- The Playground uses the existing Backfield session cookie only to load the signed-in
+  organization, workspaces, and stylebooks for its shell. Opening the app requires an active
+  Backfield session.
+- The project API key is React state only. It is never put in local storage, session storage,
+  cookies, URL state, analytics, request history, or third-party scripts. Public API requests omit
+  browser credentials.
+- The organization slug may be carried in the URL as non-secret routing context. No project slug,
+  API key, request values, or response data is put in the URL.
 - Refreshing or closing the tab clears the key. **Clear key** removes it immediately.
 - Generated curl uses `$BACKFIELD_PROJECT_API_KEY` instead of printing the entered key.
 - The production build injects a restrictive Content Security Policy. `index.html` also sets
@@ -49,7 +58,8 @@ npm ci
 npm run dev
 ```
 
-The local Core API must be available at `http://localhost:8004`.
+The local Core and Stylebook APIs must be available at `http://localhost:8004` and
+`http://localhost:8003`.
 
 ## Validation and production build
 

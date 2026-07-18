@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import App from "./App"
 
@@ -16,14 +16,63 @@ const schema = {
   },
 }
 
+function sessionResponse(input: RequestInfo | URL): Response | undefined {
+  const url = String(input)
+  if (url.endsWith("/v1/auth/me")) {
+    return new Response(
+      JSON.stringify({
+        authenticated: true,
+        email: "developer@example.test",
+        organization_id: 1,
+        organization_name: "Newsroom",
+        org_role: "org_admin",
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    )
+  }
+  if (url.endsWith("/v1/me/workspaces")) {
+    return new Response(
+      JSON.stringify([
+        {
+          id: 1,
+          name: "Editorial",
+          slug: "editorial",
+          projects: [{ id: 2, name: "Daily News", slug: "daily-news" }],
+        },
+      ]),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    )
+  }
+  if (url.endsWith("/v1/organizations/1/stylebooks")) {
+    return new Response(
+      JSON.stringify([
+        { id: 3, name: "Newsroom Stylebook", slug: "newsroom", is_default: true },
+      ]),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    )
+  }
+  return undefined
+}
+
 describe("API key handling", () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockImplementation(async (input) => {
+        const response = sessionResponse(input)
+        if (!response) throw new Error(`Unexpected request: ${String(input)}`)
+        return response
+      }),
+    )
+  })
+
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
   })
 
-  it("renders the Backfield product shell and connection landmarks", () => {
+  it("renders the Backfield product shell, sidebar, and connection landmarks", async () => {
     render(<App />)
 
     expect(screen.getByRole("banner")).toBeInTheDocument()
@@ -32,17 +81,24 @@ describe("API key handling", () => {
     expect(
       screen.getByRole("heading", { name: "Connect to an organization" }),
     ).toBeInTheDocument()
-    expect(screen.getByText("Backfield developer tools")).toBeInTheDocument()
+    expect(
+      await screen.findByRole("navigation", { name: "Backfield products" }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "API Playground" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    )
   })
 
   it("announces schema loading through the connection region", async () => {
     let resolveSchemaRequest!: (response: Response) => void
-    const fetchMock = vi.fn<typeof fetch>().mockImplementation(
-      () =>
-        new Promise<Response>((resolve) => {
-          resolveSchemaRequest = resolve
-        }),
-    )
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation((input) => {
+      const response = sessionResponse(input)
+      if (response) return Promise.resolve(response)
+      return new Promise<Response>((resolve) => {
+        resolveSchemaRequest = resolve
+      })
+    })
     vi.stubGlobal("fetch", fetchMock)
 
     render(<App />)
@@ -68,15 +124,19 @@ describe("API key handling", () => {
 
   it("uses the key for requests without persisting or displaying it", async () => {
     const storageWrite = vi.spyOn(Storage.prototype, "setItem")
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify(schema), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      const session = sessionResponse(input)
+      if (session) return Promise.resolve(session)
+      if (String(input).endsWith("/openapi.json")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(schema), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        )
+      }
+      if (init?.method === "GET") {
+        return Promise.resolve(
         new Response(JSON.stringify({ items: [] }), {
           status: 200,
           headers: {
@@ -85,6 +145,9 @@ describe("API key handling", () => {
           },
         }),
       )
+      }
+      return Promise.reject(new Error(`Unexpected request: ${String(input)}`))
+    })
     vi.stubGlobal("fetch", fetchMock)
 
     render(<App />)
@@ -100,8 +163,11 @@ describe("API key handling", () => {
     fireEvent.click(screen.getByRole("button", { name: "Execute request" }))
     expect(await screen.findByText("request-123")).toBeInTheDocument()
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
-    const requestInit = fetchMock.mock.calls[1][1]
+    const apiRequest = fetchMock.mock.calls.find(([, init]) =>
+      new Headers(init?.headers).has("Authorization"),
+    )
+    expect(apiRequest).toBeDefined()
+    const requestInit = apiRequest?.[1]
     expect(new Headers(requestInit?.headers).get("Authorization")).toBe("Bearer top-secret-key")
     expect(storageWrite).not.toHaveBeenCalled()
     expect(screen.getByText(/BACKFIELD_PROJECT_API_KEY/)).toBeInTheDocument()

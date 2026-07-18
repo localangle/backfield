@@ -19,7 +19,7 @@ const developmentCsp = [
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
-  "connect-src 'self' http://localhost:8004 http://127.0.0.1:8004 ws://localhost:* ws://127.0.0.1:*",
+  "connect-src 'self' http://localhost:8003 http://127.0.0.1:8003 http://localhost:8004 http://127.0.0.1:8004 ws://localhost:* ws://127.0.0.1:*",
   "base-uri 'none'",
   "form-action 'none'",
   "object-src 'none'",

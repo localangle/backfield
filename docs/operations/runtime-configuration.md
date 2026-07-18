@@ -17,6 +17,9 @@ provisioned with `backfield seed` / `backfield init`, not environment-variable a
 - `APP_VERSION`, `GIT_SHA`, `BUILD_TIME`: build identity returned by API `/version` and emitted at
   worker startup.
 - `UI_ORIGIN` / `UI_ORIGINS`: allowed browser origins for API access.
+- `PLAYGROUND_ORIGIN`: exact hosted Playground origin allowed by Core and Stylebook API CORS so the
+  signed-in shell can load session-scoped navigation data. Defaults to
+  `https://playground.backfield.news`.
 
 All APIs and the worker emit JSON lines to stderr. API request logs exclude health/version paths and
 carry shared context such as service, environment, request ID, client, run ID, and job ID. Celery
@@ -28,7 +31,8 @@ Frontend cross-app destinations are build-time Vite settings. `VITE_AGATE_UI_ORI
 `VITE_STYLEBOOK_UI_ORIGIN` override tenant sibling-app discovery, `VITE_HELP_URL` overrides the Help
 destination, and `VITE_PLAYGROUND_URL` overrides the hosted API Playground destination. Local
 Agate and Stylebook builds otherwise link to `http://localhost:5176`; production builds default to
-`https://playground.backfield.news`.
+`https://playground.backfield.news`. Tenant-host links add the non-secret organization slug as
+routing context so the Playground can load the matching signed-in platform sidebar.
 
 ## Database
 

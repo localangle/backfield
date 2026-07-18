@@ -34,20 +34,37 @@ export function helpHref(): string {
   return `${agateUiOrigin()}/help`
 }
 
-/** Standalone API Playground, with an explicit local-development target. */
+function withTenantContext(target: string, currentOrigin: string): string {
+  if (!currentOrigin) return target
+  const hostname = new URL(currentOrigin).hostname
+  const labels = hostname.split('.')
+  if (
+    labels.length < 4 ||
+    labels[labels.length - 2] !== 'backfield' ||
+    labels[labels.length - 1] !== 'news' ||
+    !['agate', 'stylebook'].includes(labels[0] ?? '')
+  ) {
+    return target
+  }
+  const url = new URL(target)
+  url.searchParams.set('organization', labels[1])
+  return url.toString()
+}
+
+/** Standalone API Playground with tenant context and an explicit local-development target. */
 export function playgroundHref(): string {
+  const origin = browserOrigin()
   const override = import.meta.env.VITE_PLAYGROUND_URL
   if (typeof override === 'string' && override.trim() !== '') {
-    return override.trim()
+    return withTenantContext(override.trim(), origin)
   }
-  const origin = browserOrigin()
   if (origin) {
     const url = new URL(origin)
     if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
       return `${url.protocol}//${url.hostname}:5176`
     }
   }
-  return 'https://playground.backfield.news'
+  return withTenantContext('https://playground.backfield.news', origin)
 }
 
 /**

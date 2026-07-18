@@ -39,17 +39,24 @@ from stylebook_api.routers import (
 configure_structured_logging("stylebook-api")
 
 UI_ORIGIN = os.getenv("UI_ORIGIN", "http://localhost:5175")
+PLAYGROUND_ORIGIN = os.getenv(
+    "PLAYGROUND_ORIGIN",
+    "https://playground.backfield.news",
+)
 if UI_ORIGIN.startswith("http://localhost"):
     ALLOWED = [
         "http://localhost:5175",
         "http://127.0.0.1:5175",
+        "http://localhost:5176",
+        "http://127.0.0.1:5176",
         "http://localhost:8000",
         "http://localhost:8001",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        PLAYGROUND_ORIGIN,
     ]
 else:
-    ALLOWED = [UI_ORIGIN]
+    ALLOWED = [UI_ORIGIN, PLAYGROUND_ORIGIN]
 
 app = FastAPI(title="Stylebook API", version="0.1.0")
 

@@ -77,6 +77,7 @@ export interface PlaygroundOperation {
   id: string
   method: HttpMethod
   path: string
+  displayPath: string
   summary: string
   description?: string
   group: string
@@ -94,6 +95,51 @@ const httpMethods = new Set<HttpMethod>([
   "put",
   "trace",
 ])
+
+const publicProjectPrefix = "/public/v1/projects/{project_slug}"
+const groupOrder = [
+  "Project",
+  "Articles",
+  "Mentions",
+  "Locations",
+  "Organizations",
+  "People",
+  "Runs",
+  "Other",
+]
+
+function compactPath(path: string): string {
+  if (!path.startsWith(publicProjectPrefix)) {
+    return path
+  }
+  const relative = path.slice(publicProjectPrefix.length).replace(/\/$/, "")
+  return relative || "/project"
+}
+
+function resourceGroup(path: string): string {
+  const firstSegment = compactPath(path).split("/").filter(Boolean)[0]
+  const knownGroups: Record<string, string> = {
+    project: "Project",
+    articles: "Articles",
+    mentions: "Mentions",
+    locations: "Locations",
+    organizations: "Organizations",
+    people: "People",
+    runs: "Runs",
+  }
+  return knownGroups[firstSegment ?? ""] ?? "Other"
+}
+
+function friendlySummary(summary: string): string {
+  return summary
+    .replace(/\bPublic\s+/g, "")
+    .replace(
+      /\bProject\s+(?=(?:Article|Mention|Location|Organization|Person|Run)s?\b)/g,
+      "",
+    )
+    .replace(/\s+/g, " ")
+    .trim()
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -198,9 +244,12 @@ export function listOperations(document: OpenApiDocument): PlaygroundOperation[]
         id: operation.operationId ?? `${method}:${path}`,
         method,
         path,
-        summary: operation.summary ?? operation.operationId ?? `${method.toUpperCase()} ${path}`,
+        displayPath: compactPath(path),
+        summary: friendlySummary(
+          operation.summary ?? operation.operationId ?? `${method.toUpperCase()} ${path}`,
+        ),
         description: operation.description,
-        group: operation.tags?.[0] ?? "Other",
+        group: resourceGroup(path),
         parameters,
         requestBody: resolveRequestBody(document, operation.requestBody),
       })
@@ -209,8 +258,8 @@ export function listOperations(document: OpenApiDocument): PlaygroundOperation[]
 
   return operations.sort((left, right) => {
     return (
-      left.group.localeCompare(right.group) ||
-      left.path.localeCompare(right.path) ||
+      groupOrder.indexOf(left.group) - groupOrder.indexOf(right.group) ||
+      left.displayPath.localeCompare(right.displayPath) ||
       left.method.localeCompare(right.method)
     )
   })

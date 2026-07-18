@@ -1,16 +1,21 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 import EndpointExplorer from "./components/EndpointExplorer"
+import PlatformSidebar from "./components/PlatformSidebar"
 import PlaygroundMark from "./components/PlaygroundMark"
 import { fetchPublicSchema } from "./lib/api"
 import { listOperations, type OpenApiDocument, type PlaygroundOperation } from "./lib/openapi"
 import {
   deriveApiOrigin,
+  deriveStylebookApiOrigin,
   isLocalPlaygroundHost,
   LOCAL_API_ORIGIN,
+  LOCAL_STYLEBOOK_API_ORIGIN,
   normalizeOrganizationSlug,
+  organizationSlugFromSearch,
   validateOrganizationSlug,
 } from "./lib/origin"
+import { fetchPlatformContext, type PlatformContext } from "./lib/session"
 
 interface OperationGroup {
   name: string
@@ -30,10 +35,14 @@ function groupOperations(operations: PlaygroundOperation[]): OperationGroup[] {
 
 export default function App() {
   const localAvailable = isLocalPlaygroundHost(window.location.hostname)
-  const [organizationSlug, setOrganizationSlug] = useState("")
+  const initialOrganizationSlug = organizationSlugFromSearch(window.location.search)
+  const [organizationSlug, setOrganizationSlug] = useState(initialOrganizationSlug)
   const [useLocalApi, setUseLocalApi] = useState(false)
   const [apiKey, setApiKey] = useState("")
   const [document, setDocument] = useState<OpenApiDocument>()
+  const [platformContext, setPlatformContext] = useState<PlatformContext>()
+  const [sessionError, setSessionError] = useState("")
+  const [sessionLoading, setSessionLoading] = useState(false)
   const [origin, setOrigin] = useState("")
   const [selectedOperationId, setSelectedOperationId] = useState("")
   const [filter, setFilter] = useState("")
@@ -45,7 +54,13 @@ export default function App() {
     const query = filter.trim().toLowerCase()
     const visible = query
       ? operations.filter((operation) =>
-          [operation.group, operation.method, operation.path, operation.summary]
+          [
+            operation.group,
+            operation.method,
+            operation.displayPath,
+            operation.path,
+            operation.summary,
+          ]
             .join(" ")
             .toLowerCase()
             .includes(query),
@@ -55,6 +70,44 @@ export default function App() {
   }, [filter, operations])
   const selectedOperation =
     operations.find((operation) => operation.id === selectedOperationId) ?? operations[0]
+
+  async function loadSessionContext(
+    coreOrigin: string,
+    stylebookApiOrigin: string,
+  ): Promise<PlatformContext> {
+    setSessionLoading(true)
+    setSessionError("")
+    try {
+      const context = await fetchPlatformContext(coreOrigin, stylebookApiOrigin)
+      setPlatformContext(context)
+      return context
+    } catch (caught) {
+      setPlatformContext(undefined)
+      const message =
+        caught instanceof Error
+          ? caught.message
+          : "Sign in to Backfield before opening the API Playground."
+      setSessionError(message)
+      throw caught
+    } finally {
+      setSessionLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (localAvailable) {
+      void loadSessionContext(LOCAL_API_ORIGIN, LOCAL_STYLEBOOK_API_ORIGIN).catch(() => undefined)
+      return
+    }
+    if (!validateOrganizationSlug(initialOrganizationSlug)) {
+      void loadSessionContext(
+        deriveApiOrigin(initialOrganizationSlug),
+        deriveStylebookApiOrigin(initialOrganizationSlug),
+      ).catch(() => undefined)
+    }
+    // Initial tenant context is intentionally read once from the navigation URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function connect() {
     setConnectionError("")
@@ -72,6 +125,11 @@ export default function App() {
 
     setLoading(true)
     try {
+      const stylebookApiOrigin =
+        useLocalApi && localAvailable
+          ? LOCAL_STYLEBOOK_API_ORIGIN
+          : deriveStylebookApiOrigin(organizationSlug)
+      await loadSessionContext(nextOrigin, stylebookApiOrigin)
       const schema = await fetchPublicSchema(nextOrigin)
       const nextOperations = listOperations(schema)
       if (!nextOperations.length) {
@@ -108,10 +166,30 @@ export default function App() {
             <p className="site-subtitle">Explore and test the Backfield public API</p>
           </div>
         </div>
-        <span className="developer-label">Backfield developer tools</span>
+        <span className="developer-label">
+          {platformContext?.user.email ?? "Backfield developer tools"}
+        </span>
       </header>
 
-      <main className="app-content">
+      <div className="platform-shell">
+        {platformContext && (
+          <PlatformSidebar
+            context={platformContext}
+            organizationSlug={organizationSlug}
+            local={localAvailable}
+          />
+        )}
+        <main className="app-content">
+        {sessionLoading && !platformContext && (
+          <p className="session-status" role="status">
+            Loading your Backfield workspace…
+          </p>
+        )}
+        {sessionError && (
+          <p className="session-error" role="alert">
+            {sessionError}
+          </p>
+        )}
         <section className="security-notice" aria-labelledby="security-title">
           <h2 id="security-title">Your API key stays in this tab</h2>
           <p>
@@ -214,12 +292,15 @@ export default function App() {
                 type="search"
                 value={filter}
                 onChange={(event) => setFilter(event.target.value)}
-                placeholder="Method, path, or summary"
+                placeholder="Action, resource, or path"
               />
               <div className="endpoint-groups">
                 {visibleGroups.map((group) => (
                   <section key={group.name} className="endpoint-group">
-                    <h2>{group.name}</h2>
+                    <h2>
+                      <span>{group.name}</span>
+                      <span>{group.operations.length}</span>
+                    </h2>
                     {group.operations.map((operation) => (
                       <button
                         key={operation.id}
@@ -234,7 +315,7 @@ export default function App() {
                           {operation.method.toUpperCase()}
                         </span>
                         <span>
-                          <code>{operation.path}</code>
+                          <code title={operation.path}>{operation.displayPath}</code>
                           <small>{operation.summary}</small>
                         </span>
                       </button>
@@ -253,7 +334,8 @@ export default function App() {
             />
           </div>
         )}
-      </main>
+        </main>
+      </div>
     </div>
   )
 }

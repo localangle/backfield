@@ -33,6 +33,18 @@ describe('platformUrls sibling hosts', () => {
     })
     vi.stubEnv('VITE_PLAYGROUND_URL', 'https://developer-tools.example.test')
 
-    expect(playgroundHref()).toBe('https://developer-tools.example.test')
+    expect(playgroundHref()).toBe(
+      'https://developer-tools.example.test/?organization=cpm',
+    )
+  })
+
+  it('carries tenant context to the hosted Playground', () => {
+    vi.stubGlobal('window', {
+      location: { origin: 'https://agate.cpm.backfield.news' },
+    })
+
+    expect(playgroundHref()).toBe(
+      'https://playground.backfield.news/?organization=cpm',
+    )
   })
 })
