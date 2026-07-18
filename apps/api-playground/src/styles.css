@@ -55,6 +55,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -78,6 +79,7 @@ button:disabled {
 
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
 textarea:focus-visible,
 a:focus-visible {
   outline: 2px solid hsl(var(--ring));
@@ -246,6 +248,7 @@ pre,
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid hsl(var(--input));
@@ -262,6 +265,11 @@ input {
   min-height: 40px;
 }
 
+select {
+  min-height: 40px;
+  appearance: auto;
+}
+
 input::placeholder,
 textarea::placeholder {
   color: hsl(var(--muted-foreground) / 0.75);
@@ -274,6 +282,55 @@ input:disabled {
 
 textarea {
   resize: vertical;
+}
+
+.parameter-sections {
+  display: grid;
+  gap: 28px;
+}
+
+.parameter-section-heading {
+  margin-bottom: 14px;
+}
+
+.parameter-section-heading h3 {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.parameter-section-heading p {
+  margin: 3px 0 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.8125rem;
+}
+
+.parameter-fields-grid {
+  align-items: stretch;
+}
+
+.parameter-field {
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  gap: 0;
+  align-content: start;
+}
+
+.parameter-field-wide {
+  grid-column: 1 / -1;
+}
+
+.parameter-description-slot {
+  min-height: 0;
+}
+
+.parameter-description-slot:empty {
+  display: none;
+}
+
+.parameter-field .field-description {
+  margin: -2px 0 8px;
 }
 
 .secret-row {

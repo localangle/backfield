@@ -11,10 +11,16 @@ export type HttpMethod =
 export interface OpenApiSchema {
   type?: string
   format?: string
+  title?: string
   description?: string
   default?: unknown
   example?: unknown
   enum?: unknown[]
+  minimum?: number
+  maximum?: number
+  minLength?: number
+  maxLength?: number
+  pattern?: string
   items?: OpenApiSchema | OpenApiReference
   properties?: Record<string, OpenApiSchema | OpenApiReference>
   required?: string[]
@@ -515,6 +521,34 @@ export function resolveSchema(
   }
   const resolved = resolveReference(document, schema)
   return isRecord(resolved) ? (resolved as OpenApiSchema) : undefined
+}
+
+/**
+ * Resolve the concrete, non-null schema used by a form control. FastAPI emits
+ * optional values as `anyOf: [<type>, null]`, often with a component reference.
+ */
+export function resolveInputSchema(
+  document: OpenApiDocument,
+  rawSchema: OpenApiSchema | OpenApiReference | undefined,
+): OpenApiSchema | undefined {
+  const schema = resolveSchema(document, rawSchema)
+  if (!schema) return undefined
+
+  const alternatives = schema.anyOf ?? schema.oneOf
+  if (!alternatives) return schema
+
+  for (const alternative of alternatives) {
+    const resolved = resolveSchema(document, alternative)
+    if (resolved && resolved.type !== "null") {
+      return {
+        ...schema,
+        ...resolved,
+        description: schema.description ?? resolved.description,
+        title: schema.title ?? resolved.title,
+      }
+    }
+  }
+  return schema
 }
 
 function resolveParameter(

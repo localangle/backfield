@@ -27,6 +27,16 @@ const document = parseOpenApiDocument({
             in: "header",
             schema: { type: "string" },
           },
+          {
+            name: "sort",
+            in: "query",
+            schema: { type: "string", enum: ["relevance", "pub_date"] },
+          },
+          {
+            name: "limit",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 100 },
+          },
         ],
       },
     },
@@ -71,5 +81,32 @@ describe("request construction", () => {
         "",
       ),
     ).toThrow("article_id is required")
+  })
+
+  it("rejects parameter values outside their schema constraints", () => {
+    const operation = listOperations(document)[0]
+    const baseValues = { "path:article_id": "story-123" }
+
+    expect(() =>
+      prepareRequest(
+        document,
+        operation,
+        "https://api.news.backfield.news",
+        { ...baseValues, "query:sort": "newest" },
+        "",
+        "",
+      ),
+    ).toThrow("sort must be one of: relevance, pub_date")
+
+    expect(() =>
+      prepareRequest(
+        document,
+        operation,
+        "https://api.news.backfield.news",
+        { ...baseValues, "query:limit": "101" },
+        "",
+        "",
+      ),
+    ).toThrow("limit must be at most 100")
   })
 })

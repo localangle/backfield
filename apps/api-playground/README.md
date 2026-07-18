@@ -24,6 +24,9 @@ blocks remain developer-tool-specific accents. The endpoint navigator groups and
 operations to match the Backfield API docs nav (Projects, Metadata, Articles, Mentions, People,
 Locations, Organizations, Other) and displays paths relative to
 `/public/v1/projects/{project_slug}`; request construction still uses the exact OpenAPI path.
+The `/articles/search` form is the reference parameter UX: it groups related fields, aligns paired
+controls, exposes schema types and numeric limits, and uses date, number, textarea, or select
+controls when the accepted values are known. Empty optional controls are omitted from requests.
 
 ## Security boundary
 

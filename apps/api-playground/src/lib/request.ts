@@ -3,6 +3,7 @@ import {
   type OpenApiParameter,
   type PlaygroundOperation,
   jsonBodySchema,
+  resolveInputSchema,
   resolveSchema,
 } from "./openapi"
 
@@ -45,6 +46,60 @@ function shellQuote(value: string): string {
   return `'${value.split("'").join("'\\''")}'`
 }
 
+function validateParameterValue(
+  document: OpenApiDocument,
+  parameter: OpenApiParameter,
+  value: string,
+): void {
+  const parameterSchema = resolveInputSchema(document, parameter.schema)
+  const schema =
+    parameterSchema?.type === "array"
+      ? resolveInputSchema(document, parameterSchema.items)
+      : parameterSchema
+  if (!schema) return
+
+  if (schema.enum?.length && !schema.enum.some((candidate) => String(candidate) === value)) {
+    throw new Error(`${parameter.name} must be one of: ${schema.enum.join(", ")}.`)
+  }
+  if (schema.type === "boolean" && value !== "true" && value !== "false") {
+    throw new Error(`${parameter.name} must be true or false.`)
+  }
+  if (schema.type === "integer" && !/^-?\d+$/.test(value)) {
+    throw new Error(`${parameter.name} must be a whole number.`)
+  }
+  if (schema.type === "number" && !Number.isFinite(Number(value))) {
+    throw new Error(`${parameter.name} must be a number.`)
+  }
+  if (schema.type === "integer" || schema.type === "number") {
+    const numericValue = Number(value)
+    if (schema.minimum !== undefined && numericValue < schema.minimum) {
+      throw new Error(`${parameter.name} must be at least ${schema.minimum}.`)
+    }
+    if (schema.maximum !== undefined && numericValue > schema.maximum) {
+      throw new Error(`${parameter.name} must be at most ${schema.maximum}.`)
+    }
+  }
+  if (schema.format === "date") {
+    const parsed = new Date(`${value}T00:00:00Z`)
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
+      Number.isNaN(parsed.getTime()) ||
+      parsed.toISOString().slice(0, 10) !== value
+    ) {
+      throw new Error(`${parameter.name} must be a valid date in YYYY-MM-DD format.`)
+    }
+  }
+  if (schema.minLength !== undefined && value.length < schema.minLength) {
+    throw new Error(`${parameter.name} must contain at least ${schema.minLength} characters.`)
+  }
+  if (schema.maxLength !== undefined && value.length > schema.maxLength) {
+    throw new Error(`${parameter.name} must contain at most ${schema.maxLength} characters.`)
+  }
+  if (schema.pattern && !new RegExp(schema.pattern).test(value)) {
+    throw new Error(`${parameter.name} is not in the expected format.`)
+  }
+}
+
 export function prepareRequest(
   document: OpenApiDocument,
   operation: PlaygroundOperation,
@@ -69,6 +124,9 @@ export function prepareRequest(
       continue
     }
     const parsedValues = valuesForParameter(document, parameter, value)
+    for (const parsedValue of parsedValues) {
+      validateParameterValue(document, parameter, parsedValue)
+    }
     if (parameter.in === "path") {
       path = path.replace(`{${parameter.name}}`, encodeURIComponent(parsedValues[0] ?? ""))
     } else if (parameter.in === "query") {
