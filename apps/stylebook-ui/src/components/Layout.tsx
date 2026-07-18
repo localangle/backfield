@@ -358,24 +358,9 @@ export default function Layout({ children, headerContent }: LayoutProps) {
             {username ? (
               <UserAccountMenu
                 userLabel={username}
-                isOrgAdmin={isOrgAdmin}
                 onChangePassword={() => {
                   window.location.assign(`${agateBase}/account/password`)
                 }}
-                onManageUsers={
-                  isOrgAdmin
-                    ? () => {
-                        window.location.assign(`${agateBase}/admin/users`)
-                      }
-                    : undefined
-                }
-                onManageCatalogs={
-                  isOrgAdmin
-                    ? () => {
-                        window.location.assign(`${agateBase}/admin/stylebooks`)
-                      }
-                    : undefined
-                }
                 onLogout={() => void handleLogout()}
               />
             ) : null}

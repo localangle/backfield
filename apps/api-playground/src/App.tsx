@@ -189,16 +189,8 @@ export default function App() {
         {platformContext ? (
           <UserAccountMenu
             userLabel={platformContext.user.email}
-            isOrgAdmin={platformContext.user.orgRole === "org_admin"}
             onChangePassword={() =>
               window.location.assign(`${agateOrigin}/account/password`)
-            }
-            onManageUsers={() => window.location.assign(`${agateOrigin}/admin/users`)}
-            onManageCatalogs={() =>
-              window.location.assign(`${agateOrigin}/admin/stylebooks`)
-            }
-            onAiModelsSettings={() =>
-              window.location.assign(`${agateOrigin}/settings/models`)
             }
             onLogout={() => void logout()}
           />
