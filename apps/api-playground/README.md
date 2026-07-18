@@ -35,14 +35,18 @@ Canonical `person_id`, `organization_id`, and `location_id` fields use debounced
 backed by their public search endpoints. Article and mention ID fields use the same pattern with
 article and mention search; the selected result stores the API ID while showing a readable label
 and context.
+Geographic search and coverage endpoints include an interactive map for drawing bounding boxes or
+choosing a point and radius. H3 detail and batch-query endpoints include a hex-cell picker with
+named resolution tiers; map selections stay synchronized with the underlying request fields.
 When an operation supports `author`, `external_source`, mention nature, or entity-type filters,
 selecting a project loads the matching discovery endpoint with the tab-scoped project API key and
 populates dropdown choices. Every `meta` parameter uses the visual condition builder: each row
 combines a metadata type, an is / is not operator, and a searchable category multi-select; rows
 encode to the documented repeatable `meta` clause grammar shown in a live preview.
-The semantic-search, geo-cell batch, and trigger-run request bodies use the same structured field
-controls. **Edit as JSON** remains available as a lossless escape hatch, and request-body
-properties are validated against their OpenAPI constraints before the request is sent.
+The semantic-search and geo-cell batch request bodies use the same structured field controls.
+**Edit as JSON** remains available as a lossless escape hatch, and request-body properties are
+validated against their OpenAPI constraints before the request is sent. The public trigger-run
+operation remains in the API contract but is intentionally omitted from the Playground interface.
 
 ## Security boundary
 

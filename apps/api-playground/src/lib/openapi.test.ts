@@ -40,8 +40,9 @@ describe("Playground operation presentation", () => {
       },
     })
 
+    const operations = listOperations(document)
     expect(
-      listOperations(document).map((operation) => [
+      operations.map((operation) => [
         operation.group,
         operation.summary,
         operation.displayPath,
@@ -54,8 +55,8 @@ describe("Playground operation presentation", () => {
       ["Mentions", "List and search", "/mentions/search"],
       ["People", "List and search", "/people/search"],
       ["Other", "Batch query", "/articles/geo-cells/query"],
-      ["Other", "Trigger run", "/runs"],
     ])
+    expect(operations.some((operation) => operation.displayPath === "/runs")).toBe(false)
   })
 
   it("presents project, entity, and timeline operations with docs names", () => {
@@ -94,12 +95,12 @@ describe("Playground operation presentation", () => {
     ])
   })
 
-  it("maps every public OpenAPI operation into the docs nav groups", () => {
+  it("maps every visible public OpenAPI operation into the docs nav groups", () => {
     const document = parseOpenApiDocument(
       JSON.parse(readFileSync(join(repoRoot, "docs/api/public.openapi.json"), "utf8")),
     )
     const operations = listOperations(document)
-    expect(operations).toHaveLength(48)
+    expect(operations).toHaveLength(47)
     expect(operations.map((operation) => operation.group)).toEqual([
       ...Array(1).fill("Projects"),
       ...Array(2).fill("Metadata"),
@@ -108,8 +109,13 @@ describe("Playground operation presentation", () => {
       ...Array(7).fill("People"),
       ...Array(8).fill("Locations"),
       ...Array(7).fill("Organizations"),
-      ...Array(8).fill("Other"),
+      ...Array(7).fill("Other"),
     ])
+    expect(
+      operations.some(
+        (operation) => operation.method === "post" && operation.displayPath === "/runs",
+      ),
+    ).toBe(false)
     expect(
       operations.every((operation) => !/\b(Public|Project)\b/.test(operation.summary)),
     ).toBe(true)

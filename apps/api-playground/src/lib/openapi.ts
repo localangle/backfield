@@ -436,14 +436,8 @@ const docsPresentations: DocsPresentation[] = [
   },
   {
     group: "Other",
-    summary: "Trigger run",
-    order: 4,
-    match: (method, displayPath) => method === "post" && displayPath === "/runs",
-  },
-  {
-    group: "Other",
     summary: "Get run",
-    order: 5,
+    order: 4,
     match: (method, displayPath) =>
       method === "get" && /^\/runs\/\{[^}]+\}$/.test(displayPath),
   },
@@ -619,6 +613,9 @@ export function listOperations(document: OpenApiDocument): PlaygroundOperation[]
       )
 
       const displayPath = compactPath(path)
+      if (method === "post" && displayPath === "/runs") {
+        continue
+      }
       const presentation = presentOperation(
         method,
         displayPath,

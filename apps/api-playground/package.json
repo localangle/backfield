@@ -12,13 +12,17 @@
   },
   "dependencies": {
     "@backfield/ui": "file:../../packages/backfield-ui",
+    "h3-js": "^4.5.0",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.323.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "react-leaflet": "^4.2.1"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.4.2",
     "@testing-library/react": "^16.0.1",
+    "@types/leaflet": "^1.9.21",
     "@types/node": "^26.1.1",
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.19",

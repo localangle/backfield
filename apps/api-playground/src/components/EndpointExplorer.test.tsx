@@ -344,6 +344,50 @@ describe("OpenAPI parsing and endpoint rendering", () => {
     expect(rawBody.value).toContain('"query": "city budget"')
   })
 
+  it("adds a map selector to geographic search parameters", async () => {
+    const document = parseOpenApiDocument({
+      openapi: "3.1.0",
+      info: { title: "Public API", version: "1.2.0" },
+      paths: {
+        "/public/v1/projects/{project_slug}/articles/geo-search": {
+          get: {
+            summary: "Geographic search",
+            parameters: [
+              {
+                name: "project_slug",
+                in: "path",
+                required: true,
+                schema: { type: "string" },
+              },
+              { name: "center_lng", in: "query", schema: { type: "number" } },
+              { name: "center_lat", in: "query", schema: { type: "number" } },
+              { name: "radius_miles", in: "query", schema: { type: "number" } },
+              { name: "bbox", in: "query", schema: { type: "string" } },
+            ],
+          },
+        },
+      },
+    })
+    const operation = listOperations(document)[0]
+
+    render(
+      <EndpointExplorer
+        document={document}
+        operation={operation}
+        origin="https://api.news.backfield.news"
+        apiKey=""
+      />,
+    )
+
+    expect(await screen.findByLabelText("Geographic area map")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Bounding box" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
+    expect(screen.getByRole("button", { name: "Point and radius" })).toBeInTheDocument()
+    expect(screen.getByLabelText(/bbox/)).toBeInTheDocument()
+  })
+
   it("rejects malformed schema documents", () => {
     expect(() => parseOpenApiDocument({ openapi: "3.1.0" })).toThrow("invalid OpenAPI")
   })

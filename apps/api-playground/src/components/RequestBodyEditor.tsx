@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { lazy, Suspense, useMemo, useState } from "react"
 
 import ParameterField from "./ParameterField"
 import {
@@ -12,6 +12,8 @@ import {
   sectionsForBodyFields,
   type PresentationContext,
 } from "../lib/presentation"
+
+const H3CellMap = lazy(() => import("./H3CellMap"))
 
 interface RequestBodyEditorProps {
   apiKey: string
@@ -91,6 +93,22 @@ export default function RequestBodyEditor({
     onChange(JSON.stringify(next, null, 2))
   }
 
+  function setFields(changes: Record<string, unknown>) {
+    const next = { ...body }
+    for (const [name, value] of Object.entries(changes)) {
+      if (
+        value === undefined ||
+        value === null ||
+        (Array.isArray(value) && value.length === 0)
+      ) {
+        delete next[name]
+      } else {
+        next[name] = value
+      }
+    }
+    onChange(JSON.stringify(next, null, 2))
+  }
+
   return (
     <div className="body-field">
       <div className="body-editor-heading">
@@ -144,6 +162,21 @@ export default function RequestBodyEditor({
                 <h3 id={`request-${section.id}`}>{section.title}</h3>
                 <p>{section.description}</p>
               </div>
+              {section.names.includes("cells") && section.names.includes("resolution") && (
+                <Suspense
+                  fallback={<div className="map-selector-loading">Loading map…</div>}
+                >
+                  <H3CellMap
+                    cells={Array.isArray(body.cells) ? body.cells.map(String) : []}
+                    resolution={
+                      typeof body.resolution === "number" ? body.resolution : 6
+                    }
+                    onChange={(cells, resolution) =>
+                      setFields({ cells, resolution })
+                    }
+                  />
+                </Suspense>
+              )}
               <div className="fields-grid parameter-fields-grid">
                 {section.names.map((name) => {
                   const fieldSchema = resolveInputSchema(document, properties[name])

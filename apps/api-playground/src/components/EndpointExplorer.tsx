@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { lazy, Suspense, useEffect, useMemo, useState } from "react"
 import { Check, Copy } from "lucide-react"
 
 import {
@@ -33,6 +33,13 @@ import {
   type ParameterValues,
   type PlaygroundResponse,
 } from "../lib/request"
+
+const GeoAreaMap = lazy(() => import("./GeoAreaMap"))
+const H3CellMap = lazy(() => import("./H3CellMap"))
+
+function MapLoading() {
+  return <div className="map-selector-loading">Loading map…</div>
+}
 
 interface EndpointExplorerProps {
   document: OpenApiDocument
@@ -372,6 +379,53 @@ export default function EndpointExplorer({
                       <h3 id={sectionId}>{section.title}</h3>
                       <p>{section.description}</p>
                     </div>
+                  )}
+                  {sectionParameters.some((parameter) => parameter.name === "bbox") && (
+                    <Suspense fallback={<MapLoading />}>
+                      <GeoAreaMap
+                        key={`${operation.displayPath}-geo-map`}
+                        bbox={values["query:bbox"] ?? ""}
+                        centerLat={values["query:center_lat"] ?? ""}
+                        centerLng={values["query:center_lng"] ?? ""}
+                        radiusMiles={values["query:radius_miles"] ?? ""}
+                        supportsPoint={operation.displayPath.endsWith("/geo-search")}
+                        onChange={(changed) =>
+                          setValues((current) => ({
+                            ...current,
+                            ...(changed.bbox !== undefined
+                              ? { "query:bbox": changed.bbox }
+                              : {}),
+                            ...(changed.centerLat !== undefined
+                              ? { "query:center_lat": changed.centerLat }
+                              : {}),
+                            ...(changed.centerLng !== undefined
+                              ? { "query:center_lng": changed.centerLng }
+                              : {}),
+                            ...(changed.radiusMiles !== undefined
+                              ? { "query:radius_miles": changed.radiusMiles }
+                              : {}),
+                          }))
+                        }
+                      />
+                    </Suspense>
+                  )}
+                  {sectionParameters.some((parameter) => parameter.name === "h3_cell") && (
+                    <Suspense fallback={<MapLoading />}>
+                      <H3CellMap
+                        key={`${operation.displayPath}-h3-map`}
+                        cells={
+                          values["path:h3_cell"] ? [values["path:h3_cell"]] : []
+                        }
+                        resolution={6}
+                        multiple={false}
+                        onChange={(cells) =>
+                          setValues((current) => ({
+                            ...current,
+                            "path:h3_cell": cells[0] ?? "",
+                          }))
+                        }
+                      />
+                    </Suspense>
                   )}
                   <div className="fields-grid parameter-fields-grid">
                     {sectionParameters.map((parameter) => {

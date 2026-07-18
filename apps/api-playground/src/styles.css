@@ -455,6 +455,98 @@ textarea {
   width: 100%;
 }
 
+.map-selector {
+  min-width: 0;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--card));
+  padding: 12px;
+}
+
+.map-selector-loading {
+  display: grid;
+  min-height: 360px;
+  place-items: center;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.45);
+  color: hsl(var(--muted-foreground));
+  font-size: 0.875rem;
+}
+
+.parameter-section > .map-selector,
+.parameter-section-heading + .map-selector {
+  margin-bottom: 20px;
+}
+
+.map-selector-toolbar,
+.map-selector-resolution,
+.map-selector-modes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.map-selector-toolbar {
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.map-selector-resolution > span {
+  margin-right: 2px;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.map-selector-resolution button,
+.map-selector-modes button,
+.map-selector-clear {
+  min-height: 30px;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) - 3px);
+  padding: 4px 9px;
+  background: hsl(var(--background));
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.map-selector-resolution button:hover,
+.map-selector-modes button:hover,
+.map-selector-clear:hover {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+
+.map-selector-resolution button.active,
+.map-selector-modes button.active {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.map-selector-frame {
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) - 2px);
+  background: hsl(var(--muted));
+}
+
+.map-selector-map {
+  width: 100%;
+  height: 360px;
+}
+
+.map-selector-help {
+  margin: 8px 0 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+}
+
 .parameter-checkboxes {
   display: flex;
   min-height: 40px;
