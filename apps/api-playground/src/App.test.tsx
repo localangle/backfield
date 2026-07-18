@@ -89,6 +89,7 @@ describe("API key handling", () => {
     expect(screen.getByRole("heading", { name: "API Playground", level: 1 })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "Connect to the API" })).toBeInTheDocument()
     expect(screen.queryByLabelText(/Organization slug/)).not.toBeInTheDocument()
+    expect(screen.queryByText("Backfield developer tools")).not.toBeInTheDocument()
     expect(screen.getByText("http://localhost:8004")).toBeInTheDocument()
     expect(
       await screen.findByRole("navigation", { name: "Backfield products" }),
@@ -101,6 +102,7 @@ describe("API key handling", () => {
       name: "Account menu for developer@example.test",
     })
     expect(accountMenu).toHaveAttribute("aria-haspopup", "menu")
+    expect(screen.queryByText("Backfield developer tools")).not.toBeInTheDocument()
   })
 
   it("announces schema loading through the connection region", async () => {

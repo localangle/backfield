@@ -314,23 +314,19 @@ export default function Layout({ children, headerContent }: LayoutProps) {
   const sectionTitleClass =
     "flex items-center gap-2 px-2 py-2 text-xs font-medium text-muted-foreground"
 
-  const workspaceRowClass = (active: boolean) =>
-    cn(
-      "rounded-md text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-      "flex w-full min-w-0 items-center gap-1 px-2 py-2 text-left font-medium",
-      active
-        ? "bg-accent text-accent-foreground"
-        : "text-foreground hover:bg-muted/60",
-    )
+  // Agate destinations are context links while the user is in Stylebook.
+  // The project_scope query controls workflow data, not navigation state.
+  const workspaceRowClass = cn(
+    "rounded-md text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    "flex w-full min-w-0 items-center gap-1 px-2 py-2 text-left font-medium",
+    "text-foreground hover:bg-muted/60",
+  )
 
-  const projectUnderWorkspaceClass = (active: boolean) =>
-    cn(
-      "rounded-md text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-      "flex w-full min-w-0 items-center py-1.5 pr-2 pl-7 text-left",
-      active
-        ? "bg-accent font-medium text-accent-foreground"
-        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-    )
+  const projectUnderWorkspaceClass = cn(
+    "rounded-md text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    "flex w-full min-w-0 items-center py-1.5 pr-2 pl-7 text-left",
+    "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+  )
 
   const stylebookRowClass = (active: boolean) =>
     cn(
@@ -414,11 +410,6 @@ export default function Layout({ children, headerContent }: LayoutProps) {
 
                 {(expanded ? workspaceRows : []).map((ws) => {
                   const workspaceExpanded = expandedWorkspaceSlugs.has(ws.slug)
-                  const wsContainsActiveProject = ws.projects.some(
-                    (p) => p.slug === workflowProjectSlug,
-                  )
-                  const wsHighlighted =
-                    activeWorkspaceSlug === ws.slug || wsContainsActiveProject
                   const projectsSorted = [...ws.projects].sort((a, b) =>
                     a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
                   )
@@ -430,7 +421,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
                     >
                       <div
                         className={cn(
-                          workspaceRowClass(wsHighlighted),
+                          workspaceRowClass,
                           "gap-0 p-0",
                         )}
                       >
@@ -473,15 +464,13 @@ export default function Layout({ children, headerContent }: LayoutProps) {
                       {workspaceExpanded ? (
                         <div id={projectsPanelId} className="flex flex-col gap-0.5">
                           {projectsSorted.map((p) => {
-                            const pActive = workflowProjectSlug === p.slug
                             return (
                               <a
                                 key={`${ws.slug}-p-${p.id}`}
                                 href={agateProjectHref(p.slug)}
                                 title={p.name}
                                 aria-label={`Open project ${p.name} in Agate`}
-                                aria-current={pActive ? "true" : undefined}
-                                className={projectUnderWorkspaceClass(pActive)}
+                                className={projectUnderWorkspaceClass}
                               >
                                 <span className="min-w-0 truncate">{p.name}</span>
                               </a>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { TerminalSquare } from "lucide-react"
+import { CircleUserRound, TerminalSquare } from "lucide-react"
 import { UserAccountMenu } from "@backfield/ui/UserAccountMenu"
 
 import EndpointExplorer from "./components/EndpointExplorer"
@@ -88,7 +88,11 @@ export default function App() {
   const [document, setDocument] = useState<OpenApiDocument>()
   const [platformContext, setPlatformContext] = useState<PlatformContext>()
   const [sessionError, setSessionError] = useState("")
-  const [sessionLoading, setSessionLoading] = useState(false)
+  // Start loading when this hostname can resolve an API origin so the header
+  // and sidebar reserve space instead of flashing empty chrome.
+  const [sessionLoading, setSessionLoading] = useState(
+    () => Boolean(apiOrigin && stylebookApiOrigin),
+  )
   const [origin, setOrigin] = useState("")
   const [selectedOperationId, setSelectedOperationId] = useState(() =>
     readSessionValue(SELECTED_OPERATION_SESSION_STORAGE),
@@ -282,19 +286,29 @@ export default function App() {
             }
             onLogout={() => void logout()}
           />
-        ) : (
-          <span className="developer-label">Backfield developer tools</span>
-        )}
+        ) : sessionLoading ? (
+          <span
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-input bg-background text-muted-foreground shadow-sm"
+            aria-hidden
+          >
+            <CircleUserRound className="h-5 w-5" />
+          </span>
+        ) : null}
       </header>
 
       <div className="platform-shell">
-        {platformContext && (
+        {platformContext ? (
           <PlatformSidebar
             context={platformContext}
             organizationSlug={organizationSlug}
             local={localAvailable}
           />
-        )}
+        ) : sessionLoading ? (
+          <aside
+            className="flex flex-col border-r bg-muted/30 shrink-0 min-h-0 self-stretch w-56"
+            aria-hidden
+          />
+        ) : null}
         <main className="app-content">
         {sessionLoading && !platformContext && (
           <p className="session-status" role="status">

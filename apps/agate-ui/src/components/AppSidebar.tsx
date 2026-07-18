@@ -277,11 +277,9 @@ export default function AppSidebar() {
 
               {(expanded ? workspaceRows : []).map((ws) => {
                 const workspaceExpanded = expandedWorkspaceSlugs.has(ws.slug)
-                const wsContainsActiveProject = ws.projects.some(
-                  (p) => p.slug === activeProjectSlug,
-                )
-                const wsHighlighted =
-                  activeWorkspaceSlug === ws.slug || wsContainsActiveProject
+                // Highlight only the exact destination. A selected project
+                // should not also make its parent workspace look selected.
+                const wsHighlighted = activeWorkspaceSlug === ws.slug
                 const projectsSorted = [...ws.projects].sort((a, b) =>
                   a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
                 )

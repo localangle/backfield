@@ -142,15 +142,6 @@ pre,
   line-height: 1.25rem;
 }
 
-.developer-label {
-  flex: 0 0 auto;
-  color: hsl(var(--muted-foreground));
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .platform-shell {
   display: flex;
   flex: 1;
@@ -1001,10 +992,6 @@ pre {
 
   .site-header h1 {
     font-size: 1.5rem;
-  }
-
-  .developer-label {
-    display: none;
   }
 
   .app-content {
