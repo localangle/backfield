@@ -40,8 +40,9 @@ that scope is limited to service-type project keys.
 Public resources are project-scoped under
 `/public/v1/projects/{project_slug}`. The authentication dependency validates
 the key and verifies that it belongs to the requested project. Browser session
-cookies are rejected on this surface. Internal service Bearer tokens are also
-accepted for automation, but are not consumer credentials.
+cookies are rejected on this surface. Internal service Bearer tokens remain
+runtime-compatible for trusted automation, but are not part of the public
+credential contract.
 
 The current checks live in
 [`public/deps.py`](../../apps/core-api/src/core_api/routers/public/deps.py), with
@@ -81,18 +82,54 @@ the current implementation. The article-scoped custom-record route is present.
 - Structured boundaries use Pydantic response models. Paginated collections
   generally return `items` plus `pagination` containing `limit`, `offset`, and
   `total`; individual routes define their precise schema in OpenAPI.
-- Errors use FastAPI's JSON `detail` response. Missing or out-of-project
-  resources are resolved within project scope, while an API key for another
-  project is rejected.
+- Every public error uses one envelope:
+  `{"error":{"code":"...","message":"...","details":...},"request_id":"..."}`.
+  Codes such as `unauthorized`, `forbidden`, `not_found`, and
+  `validation_error` are stable identifiers; message text is explanatory.
+  Error responses include `X-Request-ID`. Internal APIs retain FastAPI's
+  existing error shape.
 - The surface is read-oriented except for the scoped run trigger.
+- Successful responses include `RateLimit-Limit`, `RateLimit-Remaining`, and
+  `RateLimit-Reset` (seconds until reset). Limits use per-key and project-aggregate
+  one-minute buckets. A `429` also includes `Retry-After`. Redis failures are
+  logged and fail open so rate limiting never turns into an authentication outage.
+
+Article and mention metadata filters use repeatable `meta` values. Publication
+filters use `external_source`; compatibility aliases and single metadata-field
+parameters are not part of the v1 contract.
+
+Article keyword search accepts `sort=relevance|pub_date` and
+`sort_direction=asc|desc`. With `q`, the default is relevance descending;
+without `q`, the default is publication date descending. Relevance sorting
+requires a non-empty `q`. Responses echo the effective sort and direction.
+
+Canonical person, organization, and location article-list endpoints accept the same
+repeatable `meta` grammar plus `author`, `external_source`, and repeatable
+`include=counts`. Article-scoped people, organizations, and locations share
+`nature` and `quote` filters; location lists additionally accept
+`location_type`. Entity connection lists use the standard `items` and
+`pagination` envelope, default to 25 items (maximum 100), and accept
+`to_entity_type` and `nature`.
 
 ## Run trigger and polling
 
 1. `POST /public/v1/projects/{project_slug}/runs` with a body that includes
    `graph_id` and `inputs`. Requires a service-type project key with
-   `runs:trigger`. The target graph must have public run trigger enabled.
+   `runs:trigger`. The target graph must have public run trigger enabled. The
+   response is `202 Accepted` with `Location` and `Retry-After`.
 2. Poll `GET /public/v1/projects/{project_slug}/runs/{run_id}` until status and
-   item counts settle.
+   item counts settle. Pending and running responses include `Retry-After`.
+
+Clients may send an `Idempotency-Key` of 1–128 URL-safe visible characters.
+For seven days, repeating the key with the same canonical JSON body returns the
+current snapshot of the original run and `Idempotency-Replayed: true`; reusing it
+with a different body returns `409`. Only a SHA-256 request hash is retained, not
+the request body or credentials.
+
+Default one-minute limits are 600 standard reads, 60 semantic/geographic
+searches, and 5 run triggers per API key. Each project's aggregate limit is four
+times its corresponding per-key limit. Internal service tokens receive bounded
+token-derived identities and use the same limits.
 
 ## OpenAPI artifact
 
@@ -103,8 +140,12 @@ A filtered public-only OpenAPI document is committed at
 uv run python scripts/export_public_openapi.py
 ```
 
-Core API also serves the full schema at `/openapi.json` and interactive docs at
-`/docs`; public operations are identifiable by their `/public/v1` paths.
+Core API serves this public-only contract without authentication at
+`/public/v1/openapi.json`. The document contains only public paths and schemas
+reachable from them, declares project API key Bearer authentication, and lists
+production and local server URLs. Paths retain the `/public/v1` prefix, so
+clients append them directly to the server URL. The full internal schema
+remains available at `/openapi.json`.
 
 ## Related documentation
 

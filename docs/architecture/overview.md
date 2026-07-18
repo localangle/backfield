@@ -23,6 +23,8 @@ Redis and Celery.
   run-trigger routes. Project creation and mutation remain in Agate API.
 - `apps/agate-ui` owns the flow builder and run-review experience.
 - `apps/stylebook-ui` owns Stylebook catalog, candidate, cleanup, and activity interfaces.
+- `apps/api-playground` owns the developer-only schema explorer for `/public/v1`. It derives
+  organization API origins at runtime and keeps project API keys only in browser memory.
 
 ## Shared packages
 

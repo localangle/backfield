@@ -7,6 +7,11 @@ The trigger validates the stored `GraphSpec`, applies an optional public ingress
 stores the effective graph spec in `agate_run.result_json.graph_spec_json`. Workers execute that
 snapshot so later graph edits do not change queued work.
 
+Core public run requests may reserve a seven-day idempotency key before creating the run. The
+reservation and run are committed atomically, then work is enqueued; a creation failure rolls back
+both. Concurrent requests with the same project, operation, and key converge on one run. The table
+retains only a deterministic request hash and run link, never the input body.
+
 TextInput and JSONInput runs create one `agate_processed_item` and enqueue
 `execute_processed_item`. S3Input runs enqueue `execute_s3_batch_setup`, which:
 

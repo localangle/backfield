@@ -15,8 +15,9 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from core_api.routers.public import articles, entities, mentions, projects, runs
+from core_api.routers.public.errors import PUBLIC_ERROR_RESPONSES
 
-router = APIRouter(tags=["public"])
+router = APIRouter(tags=["public"], responses=PUBLIC_ERROR_RESPONSES)
 
 router.include_router(projects.router)
 router.include_router(articles.router)

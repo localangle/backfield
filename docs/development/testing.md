@@ -20,7 +20,8 @@ make ui-typecheck
 make ui-test
 make agate-ui-build
 make stylebook-ui-build
-# or both UI production builds:
+make api-playground-build
+# or all UI production builds:
 make ui-build
 ```
 

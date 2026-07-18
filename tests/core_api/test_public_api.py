@@ -311,8 +311,71 @@ def _create_project_api_key(client: TestClient, project_id: int = 1) -> str:
 
 
 def test_public_project_requires_api_key(public_client: TestClient) -> None:
-    r = public_client.get("/public/v1/projects/general")
+    r = public_client.get(
+        "/public/v1/projects/general",
+        headers={"X-Request-ID": "public-auth-test"},
+    )
     assert r.status_code == 401
+    assert r.headers["x-request-id"] == "public-auth-test"
+    assert r.json() == {
+        "error": {
+            "code": "unauthorized",
+            "message": "Missing Authorization header. Use Bearer <project_api_key>.",
+            "details": None,
+        },
+        "request_id": "public-auth-test",
+    }
+
+
+def test_public_validation_errors_use_public_envelope(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    r = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers={
+            "Authorization": f"Bearer {raw_key}",
+            "X-Request-ID": "public-validation-test",
+        },
+        params={"limit": 0},
+    )
+    assert r.status_code == 422
+    body = r.json()
+    assert body["error"]["code"] == "validation_error"
+    assert body["error"]["message"] == "Request validation failed."
+    assert body["error"]["details"]
+    assert body["request_id"] == "public-validation-test"
+    assert r.headers["x-request-id"] == "public-validation-test"
+
+
+def test_internal_validation_errors_keep_fastapi_shape(public_client: TestClient) -> None:
+    r = public_client.post("/v1/auth/login", json={})
+    assert r.status_code == 422
+    assert set(r.json()) == {"detail"}
+
+
+def test_public_openapi_endpoint_is_unauthenticated(public_client: TestClient) -> None:
+    r = public_client.get("/public/v1/openapi.json")
+    assert r.status_code == 200
+    document = r.json()
+    assert document["info"]["title"] == "Backfield Public API"
+    assert document["paths"]
+    assert all(path.startswith("/public/v1") for path in document["paths"])
+    assert "/public/v1/openapi.json" not in document["paths"]
+
+
+def test_unknown_public_route_uses_public_error_envelope(public_client: TestClient) -> None:
+    r = public_client.get(
+        "/public/v1/not-a-route",
+        headers={"X-Request-ID": "public-not-found-test"},
+    )
+    assert r.status_code == 404
+    assert r.json() == {
+        "error": {
+            "code": "not_found",
+            "message": "Not Found",
+            "details": None,
+        },
+        "request_id": "public-not-found-test",
+    }
 
 
 def test_public_project_rejects_session_cookie(public_client: TestClient) -> None:
@@ -394,6 +457,49 @@ def test_public_article_search_body_keyword(public_client: TestClient) -> None:
     assert r.status_code == 200
     assert r.json()["pagination"]["total"] == 1
     assert r.json()["items"][0]["headline"] == "City council votes on budget"
+
+
+def test_public_article_search_sort_defaults_and_validation(
+    public_client: TestClient,
+) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+
+    default = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+    )
+    assert default.status_code == 200
+    assert default.json()["sort"] == "pub_date"
+    assert default.json()["sort_direction"] == "desc"
+    assert [item["id"] for item in default.json()["items"]] == [1, 2]
+
+    ascending = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"sort": "pub_date", "sort_direction": "asc"},
+    )
+    assert ascending.status_code == 200
+    assert ascending.json()["sort"] == "pub_date"
+    assert ascending.json()["sort_direction"] == "asc"
+    assert [item["id"] for item in ascending.json()["items"]] == [2, 1]
+
+    keyword = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"q": "downtown"},
+    )
+    assert keyword.status_code == 200
+    assert keyword.json()["sort"] == "relevance"
+    assert keyword.json()["sort_direction"] == "desc"
+
+    invalid = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"sort": "relevance"},
+    )
+    assert invalid.status_code == 400
+    assert invalid.json()["error"]["code"] == "bad_request"
 
 
 @patch("core_api.routers.public.articles.semantic_search.embed_semantic_search_query")
@@ -557,7 +663,7 @@ def test_public_article_geo_cells_metadata_and_date_filters(public_client: TestC
         headers=headers,
         params={
             "bbox": "-88,41,-87,42",
-            "section": "local_government_politics",
+            "meta": "topic:local_government_politics",
             "pub_date_from": "2024-03-01",
             "pub_date_to": "2024-03-31",
         },
@@ -565,13 +671,13 @@ def test_public_article_geo_cells_metadata_and_date_filters(public_client: TestC
     assert matched.status_code == 200
     assert matched.json()["cells"][0]["article_count"] == 1
 
-    wrong_section = public_client.get(
+    wrong_metadata = public_client.get(
         "/public/v1/projects/general/articles/geo-cells",
         headers=headers,
-        params={"bbox": "-88,41,-87,42", "section": "sports"},
+        params={"bbox": "-88,41,-87,42", "meta": "topic:sports"},
     )
-    assert wrong_section.status_code == 200
-    assert wrong_section.json()["cells"] == []
+    assert wrong_metadata.status_code == 200
+    assert wrong_metadata.json()["cells"] == []
 
     out_of_range = public_client.get(
         "/public/v1/projects/general/articles/geo-cells",
@@ -742,10 +848,7 @@ def test_public_article_search_metadata_filter(public_client: TestClient) -> Non
     r = public_client.get(
         "/public/v1/projects/general/articles/search",
         headers=headers,
-        params={
-            "meta_type": "topic",
-            "meta_category": "local_government_politics",
-        },
+        params={"meta": "topic:local_government_politics"},
     )
     assert r.status_code == 200
     assert r.json()["pagination"]["total"] == 1
@@ -757,11 +860,7 @@ def test_public_article_search_exclude_metadata_filter(public_client: TestClient
     r = public_client.get(
         "/public/v1/projects/general/articles/search",
         headers=headers,
-        params={
-            "meta_type": "topic",
-            "exclude_meta_type": "topic",
-            "exclude_meta_category": "sports",
-        },
+        params=[("meta", "topic"), ("meta", "!topic:sports")],
     )
     assert r.status_code == 200
     assert r.json()["pagination"]["total"] == 1
@@ -769,7 +868,7 @@ def test_public_article_search_exclude_metadata_filter(public_client: TestClient
     r = public_client.get(
         "/public/v1/projects/general/articles/search",
         headers=headers,
-        params={"exclude_meta_type": "topic"},
+        params={"meta": "!topic"},
     )
     assert r.status_code == 200
     body = r.json()
@@ -841,7 +940,7 @@ def test_public_article_search_facets_and_filters(public_client: TestClient) -> 
         headers=headers,
         params={
             "author": "Jane Doe",
-            "section": "local_government_politics",
+            "meta": "topic:local_government_politics",
             "has_mentions": "location",
         },
     )
@@ -1096,6 +1195,23 @@ def test_public_article_locations(public_client: TestClient) -> None:
     assert item["geometry_json"]["type"] == "Point"
     assert "substrate_location_id" not in item
 
+    quoted = public_client.get(
+        "/public/v1/projects/general/articles/1/locations",
+        headers=headers,
+        params={"nature": "primary", "quote": "true", "location_type": "place"},
+    )
+    assert quoted.status_code == 200
+    assert quoted.json()["pagination"]["total"] == 1
+    assert quoted.json()["items"][0]["evidence"]["quote"] is True
+
+    excluded = public_client.get(
+        "/public/v1/projects/general/articles/1/locations",
+        headers=headers,
+        params={"location_type": "region"},
+    )
+    assert excluded.status_code == 200
+    assert excluded.json()["pagination"]["total"] == 0
+
 
 def test_public_article_images(public_client: TestClient) -> None:
     raw_key = _create_project_api_key(public_client)
@@ -1135,6 +1251,14 @@ def test_public_article_people(public_client: TestClient) -> None:
     assert filtered.status_code == 200
     assert filtered.json()["pagination"]["total"] == 0
 
+    quoted = public_client.get(
+        "/public/v1/projects/general/articles/1/people",
+        headers=headers,
+        params={"quote": "true"},
+    )
+    assert quoted.status_code == 200
+    assert quoted.json()["pagination"]["total"] == 0
+
 
 def test_public_article_organizations(public_client: TestClient) -> None:
     raw_key = _create_project_api_key(public_client)
@@ -1151,6 +1275,14 @@ def test_public_article_organizations(public_client: TestClient) -> None:
     assert org["nature"] == "actor"
     assert org["organization_type"] == "government"
     assert "substrate_organization_id" not in org
+
+    quoted = public_client.get(
+        "/public/v1/projects/general/articles/1/organizations",
+        headers=headers,
+        params={"quote": "true"},
+    )
+    assert quoted.status_code == 200
+    assert quoted.json()["pagination"]["total"] == 0
 
 
 def test_public_article_custom_records(public_client: TestClient) -> None:
@@ -1254,7 +1386,8 @@ def test_public_people_list_and_search(public_client: TestClient) -> None:
         headers=headers,
     )
     assert connections.status_code == 200
-    conns = connections.json()["connections"]
+    assert connections.json()["pagination"] == {"limit": 25, "offset": 0, "total": 2}
+    conns = connections.json()["items"]
     assert len(conns) == 2
     assert any(c["nature"] == "works_at" for c in conns)
     assert any(c["nature"] == "employs" for c in conns)
@@ -1403,8 +1536,8 @@ def test_public_organizations_list_and_search(public_client: TestClient) -> None
         headers=headers,
     )
     assert connections.status_code == 200
-    assert len(connections.json()["connections"]) == 1
-    assert connections.json()["connections"][0]["nature"] == "employs"
+    assert connections.json()["pagination"]["total"] == 1
+    assert connections.json()["items"][0]["nature"] == "employs"
 
 
 def test_public_organization_not_found(public_client: TestClient) -> None:
@@ -1510,8 +1643,8 @@ def test_public_locations_list_search_and_geo(public_client: TestClient) -> None
         headers=headers,
     )
     assert connections.status_code == 200
-    assert len(connections.json()["connections"]) == 1
-    assert connections.json()["connections"][0]["nature"] == "works_at"
+    assert connections.json()["pagination"]["total"] == 1
+    assert connections.json()["items"][0]["nature"] == "works_at"
 
 
 def test_public_location_not_found(public_client: TestClient) -> None:
@@ -1522,6 +1655,77 @@ def test_public_location_not_found(public_client: TestClient) -> None:
         headers=headers,
     )
     assert r.status_code == 404
+
+
+def test_public_entity_articles_share_article_filters_and_includes(
+    public_client: TestClient,
+) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    entity_ids = {
+        "people": public_client.get(
+            "/public/v1/projects/general/people",
+            headers=headers,
+        ).json()["items"][0]["id"],
+        "organizations": public_client.get(
+            "/public/v1/projects/general/organizations",
+            headers=headers,
+        ).json()["items"][0]["id"],
+        "locations": public_client.get(
+            "/public/v1/projects/general/locations",
+            headers=headers,
+        ).json()["items"][0]["id"],
+    }
+
+    for entity_type, entity_id in entity_ids.items():
+        matched = public_client.get(
+            f"/public/v1/projects/general/{entity_type}/{entity_id}/articles",
+            headers=headers,
+            params=[
+                ("meta", "topic:local_government_politics"),
+                ("author", "jane doe"),
+                ("include", "counts"),
+            ],
+        )
+        assert matched.status_code == 200
+        assert matched.json()["pagination"]["total"] == 1
+        assert matched.json()["items"][0]["counts"]["mentions"]["total"] == 3
+
+        excluded = public_client.get(
+            f"/public/v1/projects/general/{entity_type}/{entity_id}/articles",
+            headers=headers,
+            params=[("meta", "topic:sports")],
+        )
+        assert excluded.status_code == 200
+        assert excluded.json()["pagination"]["total"] == 0
+
+
+def test_public_connections_filter_sort_and_paginate(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    person_id = public_client.get(
+        "/public/v1/projects/general/people",
+        headers=headers,
+    ).json()["items"][0]["id"]
+    path = f"/public/v1/projects/general/people/{person_id}/connections"
+
+    page = public_client.get(
+        path,
+        headers=headers,
+        params={"limit": 1},
+    )
+    assert page.status_code == 200
+    assert page.json()["pagination"] == {"limit": 1, "offset": 0, "total": 2}
+    assert page.json()["items"][0]["from_label"] == "City Council"
+
+    filtered = public_client.get(
+        path,
+        headers=headers,
+        params={"to_entity_type": "location", "nature": "works_at"},
+    )
+    assert filtered.status_code == 200
+    assert filtered.json()["pagination"]["total"] == 1
+    assert filtered.json()["items"][0]["to_label"] == "City Hall"
 
 
 def test_public_mentions_search_facets_and_detail(public_client: TestClient) -> None:

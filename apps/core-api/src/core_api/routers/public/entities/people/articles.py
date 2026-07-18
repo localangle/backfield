@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from backfield_db import BackfieldProject
+from backfield_entities.public.article_hub import enrich_articles_with_counts
 from backfield_entities.public.articles import PublicArticleOut
 from backfield_entities.public.people import get_public_person, list_public_person_articles
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -10,7 +11,13 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from core_api.deps import get_session
-from core_api.routers.public.articles.helpers import parse_optional_date
+from core_api.routers.public.articles.helpers import (
+    INCLUDE_PARAM_DESCRIPTION,
+    META_PARAM_DESCRIPTION,
+    parse_article_includes,
+    parse_meta_clauses,
+    parse_optional_date,
+)
 from core_api.routers.public.deps import get_public_project
 from core_api.routers.public.entities.people.helpers import (
     parse_person_id,
@@ -37,6 +44,13 @@ def list_project_person_articles(
         None,
         description="Filter to articles with a mention of this editorial nature",
     ),
+    author: str | None = Query(None, description="Filter by byline (case-insensitive exact match)"),
+    external_source: str | None = Query(
+        None,
+        description="Filter by publication/outlet name (case-insensitive exact match)",
+    ),
+    meta: list[str] = Query(default=[], description=META_PARAM_DESCRIPTION),
+    include: list[str] = Query(default=[], description=INCLUDE_PARAM_DESCRIPTION),
     pub_date_from: str | None = Query(None),
     pub_date_to: str | None = Query(None),
     limit: int = Query(25, ge=1, le=100),
@@ -45,12 +59,16 @@ def list_project_person_articles(
     """Return paginated articles mentioning a canonical person in this project."""
     stylebook_id, project_id = resolve_public_people_scope(session, project)
     parsed_id = parse_person_id(person_id)
+    includes = parse_article_includes(include)
     result = list_public_person_articles(
         session,
         stylebook_id=stylebook_id,
         project_id=project_id,
         person_id=parsed_id,
         nature=nature,
+        meta_clauses=parse_meta_clauses(meta),
+        author=author,
+        external_source=external_source,
         pub_date_from=parse_optional_date(pub_date_from, param_name="pub_date_from"),
         pub_date_to=parse_optional_date(pub_date_to, param_name="pub_date_to"),
         limit=limit,
@@ -59,6 +77,8 @@ def list_project_person_articles(
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
     items, total = result
+    if "counts" in includes:
+        enrich_articles_with_counts(session, items)
     person = get_public_person(
         session,
         stylebook_id=stylebook_id,

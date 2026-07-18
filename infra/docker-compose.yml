@@ -122,7 +122,8 @@ services:
       - "127.0.0.1:8004:8004"
     environment:
       <<: [*shared-env, *pooled-database-env]
-      UI_ORIGINS: http://localhost:5173,http://localhost:5175,http://localhost:8004
+      UI_ORIGINS: http://localhost:5173,http://localhost:5175,http://localhost:5176,http://localhost:8004
+      PLAYGROUND_ORIGIN: https://playground.backfield.news
       REDIS_URL: redis://redis:6379/0
       CELERY_QUEUE: agate
       BACKFIELD_SQLALCHEMY_POOL_SIZE: ${BACKFIELD_SQLALCHEMY_POOL_SIZE:-3}
@@ -302,6 +303,20 @@ services:
         condition: service_healthy
       stylebook-api:
         condition: service_started
+
+  api-playground:
+    build:
+      context: ..
+      dockerfile: apps/api-playground/Dockerfile
+    working_dir: /app/apps/api-playground
+    ports:
+      - "127.0.0.1:5176:5176"
+    volumes:
+      - ../apps/api-playground:/app/apps/api-playground
+      - /app/apps/api-playground/node_modules
+    depends_on:
+      core-api:
+        condition: service_healthy
 
 volumes:
   postgres_data:

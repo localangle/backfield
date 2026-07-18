@@ -23,6 +23,18 @@ def list_project_article_locations(
     article_id: int,
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
+    nature: str | None = Query(
+        None,
+        description="Filter to mentions with this editorial nature",
+    ),
+    quote: bool | None = Query(
+        None,
+        description="When true, return only mentions with quoted evidence",
+    ),
+    location_type: str | None = Query(
+        None,
+        description="Filter by location type",
+    ),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> PaginatedResponse[PublicArticleLocationOut]:
@@ -31,6 +43,9 @@ def list_project_article_locations(
     items, total = list_article_locations(
         session,
         article_id=article_id,
+        nature=nature,
+        quotes_only=quote is True,
+        location_type=location_type,
         limit=limit,
         offset=offset,
     )

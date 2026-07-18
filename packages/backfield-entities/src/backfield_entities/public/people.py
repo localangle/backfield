@@ -18,7 +18,7 @@ from sqlalchemy import case, exists, literal, or_
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, func, select
 
-from backfield_entities.public.articles import PublicArticleOut
+from backfield_entities.public.articles import ArticleMetaClause, PublicArticleOut
 from backfield_entities.public.entity_articles import (
     collect_mention_article_pairs,
     paginate_public_articles_from_mention_pairs,
@@ -467,6 +467,9 @@ def list_public_person_articles(
     limit: int = 25,
     offset: int = 0,
     nature: str | None = None,
+    meta_clauses: tuple[ArticleMetaClause, ...] = (),
+    author: str | None = None,
+    external_source: str | None = None,
     pub_date_from: date | None = None,
     pub_date_to: date | None = None,
 ) -> tuple[list[PublicArticleOut], int] | None:
@@ -483,6 +486,9 @@ def list_public_person_articles(
         canonical_id=str(canon.id),
         project_id=project_id,
         nature=nature,
+        meta_clauses=meta_clauses,
+        author=author,
+        external_source=external_source,
         pub_date_from=pub_date_from,
         pub_date_to=pub_date_to,
     )

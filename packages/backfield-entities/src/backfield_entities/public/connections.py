@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from backfield_db import StylebookConnection
 from pydantic import BaseModel
 from sqlalchemy import and_, or_
 from sqlmodel import Session, select
 
 from backfield_entities.public.canonical_display import public_canonical_label
+
+PublicConnectionEntityType = Literal["location", "person", "organization"]
 
 
 class PublicConnectionOut(BaseModel):
@@ -45,25 +49,44 @@ def list_public_entity_connections(
     *,
     project_id: int,
     stylebook_id: int,
-    entity_type: str,
+    entity_type: PublicConnectionEntityType,
     entity_id: str,
-) -> list[PublicConnectionOut]:
+    to_entity_type: PublicConnectionEntityType | None = None,
+    nature: str | None = None,
+    limit: int = 25,
+    offset: int = 0,
+) -> tuple[list[PublicConnectionOut], int]:
+    target_type = (to_entity_type or "").strip()
+    nature_value = (nature or "").strip()
+    directional_filters = [
+        and_(
+            StylebookConnection.from_entity_type == entity_type,
+            StylebookConnection.from_entity_id == entity_id,
+            *(
+                [StylebookConnection.to_entity_type == target_type]
+                if target_type
+                else []
+            ),
+        ),
+        and_(
+            StylebookConnection.to_entity_type == entity_type,
+            StylebookConnection.to_entity_id == entity_id,
+            *(
+                [StylebookConnection.from_entity_type == target_type]
+                if target_type
+                else []
+            ),
+        ),
+    ]
+    filters = [
+        StylebookConnection.project_id == project_id,
+        or_(*directional_filters),
+    ]
+    if nature_value:
+        filters.append(StylebookConnection.nature == nature_value)
     rows = session.exec(
         select(StylebookConnection)
-        .where(
-            StylebookConnection.project_id == project_id,
-            or_(
-                and_(
-                    StylebookConnection.from_entity_type == entity_type,
-                    StylebookConnection.from_entity_id == entity_id,
-                ),
-                and_(
-                    StylebookConnection.to_entity_type == entity_type,
-                    StylebookConnection.to_entity_id == entity_id,
-                ),
-            ),
-        )
-        .order_by(StylebookConnection.created_at, StylebookConnection.id)
+        .where(*filters)
     ).all()
     out: list[PublicConnectionOut] = []
     for conn in rows:
@@ -92,4 +115,22 @@ def list_public_entity_connections(
                 nature=conn.nature,
             )
         )
-    return out
+    def target_sort_key(connection: PublicConnectionOut) -> tuple[str, str, int]:
+        if (
+            connection.from_entity_type == entity_type
+            and connection.from_entity_id == entity_id
+        ):
+            return (
+                connection.to_label.casefold(),
+                connection.to_entity_type,
+                connection.id,
+            )
+        return (
+            connection.from_label.casefold(),
+            connection.from_entity_type,
+            connection.id,
+        )
+
+    out.sort(key=target_sort_key)
+    total = len(out)
+    return out[offset : offset + limit], total

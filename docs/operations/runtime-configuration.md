@@ -64,7 +64,12 @@ equivalent to an unset value and can mask a safe local default with an unusable 
 ## Redis and Celery
 
 - `REDIS_URL`: Celery broker/backend for Agate enqueueing, worker execution, Core public run
-  triggers, and asynchronous Stylebook jobs.
+  triggers, public API rate limiting, and asynchronous Stylebook jobs.
+- `BACKFIELD_PUBLIC_RATE_LIMIT_ENABLED`: enables Core public API rate limiting; defaults to `1`.
+- `BACKFIELD_PUBLIC_RATE_LIMIT_READS_PER_MINUTE`: standard read limit per API key; defaults to 600.
+- `BACKFIELD_PUBLIC_RATE_LIMIT_SEARCH_PER_MINUTE`: semantic/geographic search limit per API key;
+  defaults to 60.
+- `BACKFIELD_PUBLIC_RATE_LIMIT_RUNS_PER_MINUTE`: public run-trigger limit per API key; defaults to 5.
 - `CELERY_QUEUE`: queue name; defaults to `agate`.
 - `CELERY_WORKER_CONCURRENCY`: prefork child count; defaults to 16 in the worker image and Compose.
 - `CELERY_PREFETCH_MULTIPLIER`: defaults to 1.
@@ -76,6 +81,10 @@ equivalent to an unset value and can mask a safe local default with an unusable 
 The worker app name is `agate_worker`. Queue task families include whole-run and per-item execution,
 S3 batch setup/finalization and reviewed-output synchronization, Stylebook bundle transfer, semantic
 reindexing, cleanup checks and AI review, and candidate AI review.
+
+Public limits also enforce project-aggregate buckets at four times each per-key limit. Internal
+service tokens use a hash-derived identity rather than bypassing limits. Redis errors fail open and
+emit a structured `public_rate_limit_redis_error` warning.
 
 ## Execution concurrency and time limits
 

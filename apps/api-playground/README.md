@@ -1,0 +1,52 @@
+# Backfield Public API Playground
+
+`apps/api-playground` is the developer-only, schema-driven client served in production at
+`https://playground.backfield.news`.
+
+The app asks for an organization slug and derives exactly
+`https://api.{organization-slug}.backfield.news`. When the playground itself runs on localhost, a
+separate checkbox explicitly enables `http://localhost:8004`; there is no free-form API origin.
+
+## Security boundary
+
+- The project API key is React state only. The app does not use local storage, session storage,
+  cookies, URL state, analytics, request history, or third-party scripts.
+- Refreshing or closing the tab clears the key. **Clear key** removes it immediately.
+- Generated curl uses `$BACKFIELD_PROJECT_API_KEY` instead of printing the entered key.
+- The production build injects a restrictive Content Security Policy. `index.html` also sets
+  `Referrer-Policy: no-referrer` through a meta policy, which works on any static host.
+- The production static host should send the same CSP and `Referrer-Policy: no-referrer` as HTTP
+  response headers. The in-document policies remain a defense when an operator has not yet added
+  host-level headers.
+
+No request or response history is persisted.
+
+## Local development
+
+From the repository root, start the normal local stack:
+
+```bash
+make up
+```
+
+Open `http://localhost:5176`, select the explicit local API option, and load the schema. To run the
+app directly:
+
+```bash
+cd apps/api-playground
+npm ci
+npm run dev
+```
+
+The local Core API must be available at `http://localhost:8004`.
+
+## Validation and production build
+
+```bash
+make api-playground-test
+make api-playground-build
+```
+
+The production bundle is written to `apps/api-playground/dist/`. Deploy it only at
+`playground.backfield.news`; the bundle does not accept a configured or user-entered production API
+origin.

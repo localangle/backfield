@@ -25,6 +25,9 @@ All schema changes use the single Alembic chain under `packages/backfield-db/ale
 - Access grants and API keys: `backfield_organization_membership`,
   `backfield_workspace_membership`, `backfield_project_membership`,
   `backfield_api_credential`.
+- Public request safety: `backfield_public_idempotency_record` stores a seven-day
+  project/operation/key reservation, canonical request hash, and linked Agate run.
+  It never stores request bodies or credentials.
 - Encrypted credentials: `backfield_project_secret`,
   `backfield_organization_integration_secret`.
 - Shared AI catalog and accounting: `backfield_ai_model_config`,
@@ -121,6 +124,8 @@ specialized indexes include:
 - project plus H3 resolution/cell indexes for map aggregation;
 - partial pending-candidate indexes on substrate entity tables;
 - unique identity fingerprints within a project and canonical slugs within a Stylebook;
+- unique public idempotency keys within project and operation, plus expiry and run
+  lookup indexes for retention cleanup and run linkage;
 - run, processed-item, node-type, activity-feed, cleanup-run, and AI-call aggregation indexes.
 
 Postgres uses PostGIS, `pg_trgm`, pgvector, and H3. Migrations create required extensions and fail
