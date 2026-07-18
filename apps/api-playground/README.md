@@ -31,6 +31,10 @@ come from OpenAPI; and known values use date, number, checkbox, textarea, or sel
 optional controls are omitted from requests.
 Every `project_slug` path parameter is a workspace-grouped dropdown populated from the signed-in
 user's available projects, and the selected project carries across endpoint changes.
+Canonical `person_id`, `organization_id`, and `location_id` fields use debounced typeahead controls
+backed by their public search endpoints. Article and mention ID fields use the same pattern with
+article and mention search; the selected result stores the API ID while showing a readable label
+and context.
 When an operation supports `author`, `external_source`, mention nature, or entity-type filters,
 selecting a project loads the matching discovery endpoint with the tab-scoped project API key and
 populates dropdown choices. Every `meta` parameter uses the visual condition builder: each row

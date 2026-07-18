@@ -18,6 +18,14 @@ export type ControlKind =
   | "select"
   | "text"
   | "textarea"
+  | "typeahead"
+
+export type TypeaheadKind =
+  | "article"
+  | "location"
+  | "mention"
+  | "organization"
+  | "person"
 
 export interface OptionLoad {
   status: "blocked" | "error" | "loading" | "ready"
@@ -38,6 +46,7 @@ export interface FieldPresentation {
   emptyLabel?: string
   options?: SelectOption[]
   placeholder?: string
+  typeaheadKind?: TypeaheadKind
   typeLabel: string
   wide?: boolean
 }
@@ -169,6 +178,27 @@ export function presentationForField(
         : "No projects available",
       options: context.projectOptions,
       typeLabel: "String",
+      wide: true,
+    }
+  }
+
+  const typeaheadKinds: Record<string, TypeaheadKind> = {
+    article_id: "article",
+    location_id: "location",
+    mention_id: "mention",
+    organization_id: "organization",
+    person_id: "person",
+  }
+  const typeaheadKind = location === "path" ? typeaheadKinds[name] : undefined
+  if (typeaheadKind) {
+    return {
+      control: "typeahead",
+      description,
+      placeholder: `Search ${typeaheadKind === "person" ? "people" : `${typeaheadKind}s`}…`,
+      typeaheadKind,
+      typeLabel: typeaheadKind === "article" || typeaheadKind === "mention"
+        ? "Integer"
+        : "String",
       wide: true,
     }
   }

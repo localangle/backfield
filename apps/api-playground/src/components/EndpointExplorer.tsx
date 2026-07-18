@@ -79,6 +79,7 @@ function ParameterInput({
   operation,
   parameter,
   presentationContext,
+  entityType,
   selectedProjectSlug,
   origin,
   apiKey,
@@ -90,6 +91,7 @@ function ParameterInput({
   operation: PlaygroundOperation
   parameter: OpenApiParameter
   presentationContext: PresentationContext
+  entityType?: string
   selectedProjectSlug: string
   origin: string
   apiKey: string
@@ -114,6 +116,7 @@ function ParameterInput({
       name={parameter.name}
       schema={schema}
       presentation={presentation}
+      entityType={entityType}
       required={parameter.required}
       value={value}
       wide={wide}
@@ -380,6 +383,10 @@ export default function EndpointExplorer({
                           operation={operation}
                           parameter={parameter}
                           presentationContext={presentationContext}
+                          entityType={
+                            values["path:entity_type"] ??
+                            values["query:entity_type"]
+                          }
                           selectedProjectSlug={selectedProjectSlug}
                           origin={origin}
                           apiKey={apiKey}
@@ -402,6 +409,21 @@ export default function EndpointExplorer({
                                 delete next["query:author"]
                                 delete next["query:external_source"]
                                 next["query:meta"] = ""
+                                for (const idName of [
+                                  "article_id",
+                                  "location_id",
+                                  "mention_id",
+                                  "organization_id",
+                                  "person_id",
+                                ]) {
+                                  delete next[`path:${idName}`]
+                                }
+                              }
+                              if (
+                                parameter.name === "entity_type" &&
+                                (parameter.in === "path" || parameter.in === "query")
+                              ) {
+                                delete next["path:mention_id"]
                               }
                               return next
                             })

@@ -68,6 +68,13 @@ describe("endpoint presentation contract", () => {
         if (parameter.name === "limit" || parameter.name === "offset") {
           expect(presentation.control).toBe("number")
         }
+        if (
+          ["article_id", "location_id", "mention_id", "organization_id", "person_id"].includes(
+            parameter.name,
+          )
+        ) {
+          expect(presentation.control).toBe("typeahead")
+        }
       }
     }
   })

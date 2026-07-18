@@ -412,8 +412,19 @@ textarea {
   display: grid;
   grid-row: span 3;
   grid-template-rows: subgrid;
-  gap: 0;
-  align-content: start;
+  row-gap: 0;
+  column-gap: 0;
+  min-width: 0;
+}
+
+.parameter-field > label,
+.parameter-field > .parameter-description-slot,
+.parameter-field > .parameter-control {
+  min-width: 0;
+}
+
+.parameter-field > label {
+  margin-bottom: 0;
 }
 
 .parameter-field-wide {
@@ -421,15 +432,27 @@ textarea {
 }
 
 .parameter-description-slot {
+  /* Always occupy the shared description row so adjacent controls stay aligned. */
   min-height: 0;
-}
-
-.parameter-description-slot:empty {
-  display: none;
+  margin: 0;
 }
 
 .parameter-field .field-description {
-  margin: -2px 0 8px;
+  margin: 2px 0 0;
+}
+
+.parameter-control {
+  margin-top: 8px;
+  min-width: 0;
+}
+
+.parameter-control > input,
+.parameter-control > select,
+.parameter-control > textarea,
+.parameter-control > .id-typeahead,
+.parameter-control > .meta-builder,
+.parameter-control > .parameter-checkboxes {
+  width: 100%;
 }
 
 .parameter-checkboxes {
@@ -462,6 +485,153 @@ textarea {
   min-height: 0;
   padding: 0;
   accent-color: hsl(var(--primary));
+}
+
+.id-typeahead {
+  position: relative;
+}
+
+.id-typeahead-input {
+  position: relative;
+}
+
+.id-typeahead-input > svg {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 12px;
+  width: 15px;
+  height: 15px;
+  color: hsl(var(--muted-foreground));
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.id-typeahead-input input {
+  padding-left: 36px;
+}
+
+.id-typeahead-helper {
+  margin: 5px 0 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+}
+
+.id-typeahead-helper.error-message {
+  margin-top: 5px;
+  color: hsl(var(--destructive));
+}
+
+.id-typeahead-selection {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) - 2px);
+  padding: 8px 10px;
+}
+
+.id-typeahead-selection > span:first-child,
+.id-typeahead-results button > span:first-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.id-typeahead-selection strong,
+.id-typeahead-selection small,
+.id-typeahead-results strong,
+.id-typeahead-results small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.id-typeahead-selection strong,
+.id-typeahead-results strong {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.id-typeahead-selection small,
+.id-typeahead-results small {
+  margin-top: 2px;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+}
+
+.id-typeahead-kind {
+  flex: 0 0 auto;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+
+.id-typeahead-selection button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: calc(var(--radius) - 4px);
+  color: hsl(var(--muted-foreground));
+}
+
+.id-typeahead-selection button:hover {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+
+.id-typeahead-selection button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.id-typeahead-results {
+  position: absolute;
+  z-index: 35;
+  right: 0;
+  left: 0;
+  max-height: 240px;
+  margin: 4px 0 0;
+  overflow-y: auto;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) - 2px);
+  background: hsl(var(--card));
+  padding: 4px;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
+  list-style: none;
+}
+
+.id-typeahead-results li + li {
+  border-top: 1px solid hsl(var(--border) / 0.6);
+}
+
+.id-typeahead-results button {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 10px;
+  border-radius: calc(var(--radius) - 4px);
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.id-typeahead-results button:hover,
+.id-typeahead-results button:focus-visible {
+  background: hsl(var(--muted));
+  outline: none;
+}
+
+.id-typeahead-empty {
+  padding: 9px 10px;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.8125rem;
 }
 
 .meta-builder {

@@ -1,4 +1,5 @@
 import { parseOpenApiDocument, type OpenApiDocument } from "./openapi"
+import type { TypeaheadKind } from "./presentation"
 
 export interface ArticleFacets {
   authors: string[]
@@ -11,6 +12,12 @@ export interface MentionFacets {
   locationTypes: string[]
   personTypes: string[]
   organizationTypes: string[]
+}
+
+export interface IdCandidate {
+  id: string
+  label: string
+  subtitle: string
 }
 
 export async function fetchPublicSchema(origin: string): Promise<OpenApiDocument> {
@@ -144,4 +151,106 @@ export async function fetchMentionFacets(
     personTypes: stringArray(payload, "person_types", "Mention facets"),
     organizationTypes: stringArray(payload, "organization_types", "Mention facets"),
   }
+}
+
+function optionalText(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key]
+  return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+function candidateSubtitle(
+  kind: TypeaheadKind,
+  item: Record<string, unknown>,
+): string {
+  if (kind === "person") {
+    return [
+      optionalText(item, "title"),
+      optionalText(item, "affiliation"),
+      optionalText(item, "person_type"),
+    ].filter(Boolean).join(" · ") || "Person"
+  }
+  if (kind === "location") {
+    return [
+      optionalText(item, "formatted_address"),
+      optionalText(item, "location_type"),
+    ].filter(Boolean).join(" · ") || "Location"
+  }
+  if (kind === "organization") {
+    return optionalText(item, "organization_type") ?? "Organization"
+  }
+  if (kind === "article") {
+    const source = item.source
+    const sourceName =
+      source && typeof source === "object"
+        ? optionalText(source as Record<string, unknown>, "name")
+        : undefined
+    return [
+      optionalText(item, "pub_date"),
+      optionalText(item, "author"),
+      sourceName,
+    ].filter(Boolean).join(" · ") || "Article"
+  }
+  const article = item.article
+  const headline =
+    article && typeof article === "object"
+      ? optionalText(article as Record<string, unknown>, "headline")
+      : undefined
+  return [
+    optionalText(item, "entity_type"),
+    optionalText(item, "nature"),
+    headline,
+  ].filter(Boolean).join(" · ") || "Mention"
+}
+
+export async function searchIdCandidates(
+  origin: string,
+  projectSlug: string,
+  apiKey: string,
+  kind: TypeaheadKind,
+  query: string,
+  entityType?: string,
+  signal?: AbortSignal,
+): Promise<IdCandidate[]> {
+  const resource: Record<TypeaheadKind, string> = {
+    article: "articles",
+    location: "locations",
+    mention: "mentions",
+    organization: "organizations",
+    person: "people",
+  }
+  const search = new URLSearchParams({
+    q: query,
+    limit: "10",
+    offset: "0",
+  })
+  if (kind === "person" || kind === "location" || kind === "organization") {
+    search.set("min_mentions", "0")
+  }
+  if (kind === "mention" && entityType) search.set("entity_type", entityType)
+  const payload = (await publicJson(
+    origin,
+    `/public/v1/projects/${encodeURIComponent(projectSlug)}/${resource[kind]}/search?${search}`,
+    apiKey,
+    signal,
+  )) as Record<string, unknown>
+  if (!Array.isArray(payload.items)) {
+    throw new Error(`${kind} search response was invalid.`)
+  }
+  return payload.items.flatMap((rawItem) => {
+    if (!rawItem || typeof rawItem !== "object") return []
+    const item = rawItem as Record<string, unknown>
+    const rawId = kind === "mention" ? item.mention_id : item.id
+    const rawLabel = kind === "article" ? item.headline : item.label
+    if (
+      (typeof rawId !== "string" && typeof rawId !== "number") ||
+      typeof rawLabel !== "string"
+    ) {
+      return []
+    }
+    return [{
+      id: String(rawId),
+      label: rawLabel,
+      subtitle: candidateSubtitle(kind, item),
+    }]
+  })
 }
