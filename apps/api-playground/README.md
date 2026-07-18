@@ -30,7 +30,10 @@ controls when the accepted values are known. Empty optional controls are omitted
 Every `project_slug` path parameter is a workspace-grouped dropdown populated from the signed-in
 user's available projects.
 On `/articles/search`, selecting a project loads its article facets with the in-memory project API
-key and uses them to populate the `author` and `external_source` dropdowns.
+key and uses them to populate the `author` and `external_source` dropdowns. The `meta` parameter is
+a visual condition builder: each row combines a metadata type (from the project's metadata
+discovery endpoints), an is / is not operator, and a searchable category multi-select; rows encode
+to the documented repeatable `meta` clause grammar shown in a live preview.
 
 ## Security boundary
 

@@ -18,30 +18,79 @@ export async function fetchPublicSchema(origin: string): Promise<OpenApiDocument
   return parseOpenApiDocument(await response.json())
 }
 
+export async function fetchArticleMetaTypes(
+  origin: string,
+  projectSlug: string,
+  apiKey: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const payload = await publicJson(
+    origin,
+    `/public/v1/projects/${encodeURIComponent(projectSlug)}/articles/metadata/types`,
+    apiKey,
+    signal,
+  )
+  const metaTypes = (payload as Record<string, unknown>).meta_types
+  if (!Array.isArray(metaTypes) || !metaTypes.every((value) => typeof value === "string")) {
+    throw new Error("Metadata types response was invalid.")
+  }
+  return metaTypes
+}
+
+export async function fetchArticleMetaValues(
+  origin: string,
+  projectSlug: string,
+  metaType: string,
+  apiKey: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const payload = await publicJson(
+    origin,
+    `/public/v1/projects/${encodeURIComponent(projectSlug)}/articles/metadata/types/${encodeURIComponent(metaType)}/values`,
+    apiKey,
+    signal,
+  )
+  const values = (payload as Record<string, unknown>).values
+  if (!Array.isArray(values) || !values.every((value) => typeof value === "string")) {
+    throw new Error("Metadata values response was invalid.")
+  }
+  return values
+}
+
+async function publicJson(
+  origin: string,
+  path: string,
+  apiKey: string,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const response = await fetch(`${origin}${path}`, {
+    method: "GET",
+    credentials: "omit",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    referrerPolicy: "no-referrer",
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Request failed with ${response.status}.`)
+  }
+  return await response.json()
+}
+
 export async function fetchArticleFacets(
   origin: string,
   projectSlug: string,
   apiKey: string,
   signal?: AbortSignal,
 ): Promise<ArticleFacets> {
-  const response = await fetch(
-    `${origin}/public/v1/projects/${encodeURIComponent(projectSlug)}/articles/facets`,
-    {
-      method: "GET",
-      credentials: "omit",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      referrerPolicy: "no-referrer",
-      signal,
-    },
-  )
-  if (!response.ok) {
-    throw new Error(`Article filter values request failed with ${response.status}.`)
-  }
-
-  const payload = (await response.json()) as Record<string, unknown>
+  const payload = (await publicJson(
+    origin,
+    `/public/v1/projects/${encodeURIComponent(projectSlug)}/articles/facets`,
+    apiKey,
+    signal,
+  )) as Record<string, unknown>
   if (
     !Array.isArray(payload.authors) ||
     !payload.authors.every((value) => typeof value === "string") ||

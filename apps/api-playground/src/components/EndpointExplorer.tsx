@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 
 import { fetchArticleFacets, type ArticleFacets } from "../lib/api"
+import MetaQueryBuilder from "./MetaQueryBuilder"
 import {
   exampleForSchema,
   jsonBodySchema,
@@ -33,7 +34,7 @@ interface SelectOption {
 }
 
 interface ParameterPresentation {
-  control: "date" | "number" | "select" | "text" | "textarea"
+  control: "date" | "meta-builder" | "number" | "select" | "text" | "textarea"
   description?: string
   disabled?: boolean
   emptyLabel?: string
@@ -191,7 +192,7 @@ function parameterPresentation(
       return {
         control: "select",
         description: parameter.description,
-        emptyLabel: "Automatic: relevance with keywords; otherwise publication date",
+        emptyLabel: "Default",
         options: [
           { value: "relevance", label: "Relevance" },
           { value: "pub_date", label: "Publication date" },
@@ -203,7 +204,7 @@ function parameterPresentation(
       return {
         control: "select",
         description: parameter.description,
-        emptyLabel: "Default: descending",
+        emptyLabel: "Default",
         options: [
           { value: "asc", label: "Ascending" },
           { value: "desc", label: "Descending" },
@@ -213,9 +214,9 @@ function parameterPresentation(
     }
     if (parameter.name === "meta") {
       return {
-        control: "textarea",
-        description: parameter.description,
-        placeholder: "One clause per line, for example:\ntopic:politics\n!format:opinion",
+        control: "meta-builder",
+        description:
+          "Build metadata conditions from this project's types and categories. Articles must match every condition (AND); within one condition, any selected category counts (OR).",
         typeLabel: "Repeatable string",
       }
     }
@@ -273,6 +274,8 @@ function ParameterInput({
   articleFacetLoad,
   hasApiKey,
   selectedProjectSlug,
+  origin,
+  apiKey,
   value,
   wide,
   onChange,
@@ -284,6 +287,8 @@ function ParameterInput({
   articleFacetLoad: ArticleFacetLoad
   hasApiKey: boolean
   selectedProjectSlug: string
+  origin: string
+  apiKey: string
   value: string
   wide?: boolean
   onChange: (value: string) => void
@@ -310,7 +315,7 @@ function ParameterInput({
 
   return (
     <div className={`field parameter-field ${wide ? "parameter-field-wide" : ""}`}>
-      <label htmlFor={id}>
+      <label htmlFor={presentation.control === "meta-builder" ? undefined : id}>
         <span className="field-name">
           {parameter.name}
           {parameter.required && (
@@ -331,7 +336,15 @@ function ParameterInput({
           </p>
         )}
       </div>
-      {presentation.control === "select" ? (
+      {presentation.control === "meta-builder" ? (
+        <MetaQueryBuilder
+          origin={origin}
+          projectSlug={selectedProjectSlug}
+          apiKey={apiKey}
+          value={value}
+          onChange={onChange}
+        />
+      ) : presentation.control === "select" ? (
         <select
           id={id}
           value={value}
@@ -561,6 +574,8 @@ export default function EndpointExplorer({
                           articleFacetLoad={articleFacetLoad}
                           hasApiKey={Boolean(apiKey)}
                           selectedProjectSlug={selectedProjectSlug}
+                          origin={origin}
+                          apiKey={apiKey}
                           value={values[key] ?? ""}
                           wide={section.wide.has(parameter.name)}
                           onChange={(value) => {
@@ -572,6 +587,7 @@ export default function EndpointExplorer({
                               ) {
                                 delete next["query:author"]
                                 delete next["query:external_source"]
+                                next["query:meta"] = ""
                               }
                               return next
                             })

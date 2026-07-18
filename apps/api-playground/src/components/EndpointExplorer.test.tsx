@@ -153,15 +153,34 @@ describe("OpenAPI parsing and endpoint rendering", () => {
     })
     vi.stubGlobal(
       "fetch",
-      vi.fn<typeof fetch>().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            authors: ["Jane Doe", "Sam Rivera"],
-            external_sources: ["Springfield Daily", "Wire Service"],
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      ),
+      vi.fn<typeof fetch>().mockImplementation(async (input) => {
+        const url = String(input)
+        if (url.endsWith("/articles/facets")) {
+          return new Response(
+            JSON.stringify({
+              authors: ["Jane Doe", "Sam Rivera"],
+              external_sources: ["Springfield Daily", "Wire Service"],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
+        }
+        if (url.endsWith("/articles/metadata/types")) {
+          return new Response(
+            JSON.stringify({ meta_types: ["topic", "format"] }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
+        }
+        if (url.includes("/articles/metadata/types/")) {
+          return new Response(
+            JSON.stringify({
+              meta_type: "topic",
+              values: ["local_government_politics", "public_safety"],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
+        }
+        throw new Error(`Unexpected request: ${url}`)
+      }),
     )
     render(
       <EndpointExplorer
@@ -234,7 +253,23 @@ describe("OpenAPI parsing and endpoint rendering", () => {
     expect(screen.getByLabelText(/limit/)).toHaveAttribute("min", "1")
     expect(screen.getByLabelText(/limit/)).toHaveAttribute("max", "100")
     expect(screen.getByLabelText(/limit/)).toHaveAttribute("placeholder", "Default: 25")
-    expect(screen.getByLabelText(/meta/).getAttribute("placeholder")).toContain("topic:politics")
+
+    // The meta parameter renders the visual condition builder instead of a textarea.
+    const addCondition = await screen.findByRole("button", { name: "Add condition" })
+    fireEvent.click(addCondition)
+    const metaType = await screen.findByLabelText("Metadata type")
+    expect(Array.from((metaType as HTMLSelectElement).options).map((o) => o.value)).toEqual([
+      "topic",
+      "format",
+    ])
+    expect(screen.getByLabelText("Condition operator")).toBeInTheDocument()
+    const categoryTrigger = screen.getByRole("button", { name: /Categories for condition/ })
+    fireEvent.click(categoryTrigger)
+    const option = await screen.findByRole("checkbox", {
+      name: "Local government politics",
+    })
+    fireEvent.click(option)
+    expect(screen.getByText("topic:local_government_politics")).toBeInTheDocument()
     expect(
       globalThis.document
         .getElementById("parameter-query-q")
