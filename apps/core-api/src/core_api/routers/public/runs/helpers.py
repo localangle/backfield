@@ -7,6 +7,8 @@ from backfield_db import AgateGraph, AgateProcessedItem, AgateRun
 from sqlalchemy import func
 from sqlmodel import Session, select
 
+from core_api.routers.public.runs.schemas import PublicRunCountsOut, PublicRunOut
+
 
 def run_item_counts(
     session: Session,
@@ -48,3 +50,26 @@ def run_item_counts(
     if run.status == "failed":
         return 1, 0, 0, 0, 1
     return 0, 0, 0, 0, 0
+
+
+def public_run_snapshot(
+    session: Session,
+    *,
+    run: AgateRun,
+    graph: AgateGraph | None,
+) -> PublicRunOut:
+    total, pending, running, succeeded, failed = run_item_counts(session, run=run, graph=graph)
+    return PublicRunOut(
+        run_id=run.id,
+        status=run.status,
+        counts=PublicRunCountsOut(
+            total=total,
+            pending=pending,
+            running=running,
+            succeeded=succeeded,
+            failed=failed,
+        ),
+        created_at=run.created_at,
+        updated_at=run.updated_at,
+        error_message=run.error_message,
+    )

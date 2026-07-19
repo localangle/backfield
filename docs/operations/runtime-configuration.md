@@ -17,12 +17,24 @@ provisioned with `backfield seed` / `backfield init`, not environment-variable a
 - `APP_VERSION`, `GIT_SHA`, `BUILD_TIME`: build identity returned by API `/version` and emitted at
   worker startup.
 - `UI_ORIGIN` / `UI_ORIGINS`: allowed browser origins for API access.
+- `PLAYGROUND_ORIGIN`: exact Playground origin allowed by Core and Stylebook API CORS for that
+  deployment (for example `https://playground.{organization-slug}.backfield.news`). Local Compose
+  already allows `http://localhost:5176` through `UI_ORIGINS` / localhost defaults.
+- `PLAYGROUND_ORIGIN_REGEX`: optional CORS origin regex. Defaults to empty; leave unset in
+  production and prefer an exact `PLAYGROUND_ORIGIN` per tenant deployment.
 
 All APIs and the worker emit JSON lines to stderr. API request logs exclude health/version paths and
 carry shared context such as service, environment, request ID, client, run ID, and job ID. Celery
 tasks emit task start/end events.
 
 Health endpoints are `GET /health` on Agate API, Stylebook API, and Core API.
+
+Frontend cross-app destinations are build-time Vite settings. `VITE_AGATE_UI_ORIGIN` and
+`VITE_STYLEBOOK_UI_ORIGIN` override tenant sibling-app discovery, `VITE_HELP_URL` overrides the Help
+destination, and `VITE_PLAYGROUND_URL` overrides the hosted API Playground destination. Local
+Agate and Stylebook builds otherwise link to `http://localhost:5176`; production builds derive
+`https://playground.{organization-slug}.backfield.news`. A custom `VITE_PLAYGROUND_URL` may contain
+the literal `{organization_slug}` placeholder or identify a fixed tenant deployment.
 
 ## Database
 
@@ -54,7 +66,9 @@ database capacity requirements.
   `.env`. Never reuse Compose development defaults outside local development.
 - `SESSION_COOKIE_DOMAIN`: **optional**. When unset or blank, Core API omits the cookie `Domain`
   attribute (host-only cookies). Set it only when sibling hosts must share a session (for example
-  a production cookie domain consumed by a separate deployment system).
+  a production cookie domain consumed by a separate deployment system). The tenant Playground
+  requires a shared parent domain such as `.backfield.news` so its requests to the tenant Core and
+  Stylebook APIs include the signed-in session.
 - `SERVICE_API_TOKEN` or `SERVICE_API_TOKENS`: Bearer token or token set for service-to-service
   access.
 
@@ -64,7 +78,12 @@ equivalent to an unset value and can mask a safe local default with an unusable 
 ## Redis and Celery
 
 - `REDIS_URL`: Celery broker/backend for Agate enqueueing, worker execution, Core public run
-  triggers, and asynchronous Stylebook jobs.
+  triggers, public API rate limiting, and asynchronous Stylebook jobs.
+- `BACKFIELD_PUBLIC_RATE_LIMIT_ENABLED`: enables Core public API rate limiting; defaults to `1`.
+- `BACKFIELD_PUBLIC_RATE_LIMIT_READS_PER_MINUTE`: standard read limit per API key; defaults to 600.
+- `BACKFIELD_PUBLIC_RATE_LIMIT_SEARCH_PER_MINUTE`: semantic/geographic search limit per API key;
+  defaults to 60.
+- `BACKFIELD_PUBLIC_RATE_LIMIT_RUNS_PER_MINUTE`: public run-trigger limit per API key; defaults to 5.
 - `CELERY_QUEUE`: queue name; defaults to `agate`.
 - `CELERY_WORKER_CONCURRENCY`: prefork child count; defaults to 16 in the worker image and Compose.
 - `CELERY_PREFETCH_MULTIPLIER`: defaults to 1.
@@ -76,6 +95,10 @@ equivalent to an unset value and can mask a safe local default with an unusable 
 The worker app name is `agate_worker`. Queue task families include whole-run and per-item execution,
 S3 batch setup/finalization and reviewed-output synchronization, Stylebook bundle transfer, semantic
 reindexing, cleanup checks and AI review, and candidate AI review.
+
+Public limits also enforce project-aggregate buckets at four times each per-key limit. Internal
+service tokens use a hash-derived identity rather than bypassing limits. Redis errors fail open and
+emit a structured `public_rate_limit_redis_error` warning.
 
 ## Execution concurrency and time limits
 

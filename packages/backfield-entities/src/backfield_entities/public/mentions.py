@@ -56,7 +56,6 @@ class PublicMentionArticleOut(BaseModel):
 class PublicMentionSearchItemOut(BaseModel):
     entity_type: PublicEntityMentionType
     mention_id: int
-    substrate_entity_id: int
     label: str
     nature: str | None = None
     role_in_story: str | None = None
@@ -74,7 +73,6 @@ class PublicMentionSearchItemOut(BaseModel):
 class PublicMentionDetailOut(BaseModel):
     entity_type: PublicEntityMentionType
     mention_id: int
-    substrate_entity_id: int
     label: str
     nature: str | None = None
     role_in_story: str | None = None
@@ -398,7 +396,6 @@ def _hydrate_location_search_items(
         out[mid] = PublicMentionSearchItemOut(
             entity_type="location",
             mention_id=mid,
-            substrate_entity_id=int(loc.id),  # type: ignore[arg-type]
             label=str(loc.name),
             nature=mention.nature,
             role_in_story=mention.role_in_story,
@@ -447,7 +444,6 @@ def _hydrate_person_search_items(
         out[mid] = PublicMentionSearchItemOut(
             entity_type="person",
             mention_id=mid,
-            substrate_entity_id=int(person.id),  # type: ignore[arg-type]
             label=str(person.name),
             nature=mention.nature,
             role_in_story=mention.role_in_story,
@@ -507,7 +503,6 @@ def _hydrate_organization_search_items(
         out[mid] = PublicMentionSearchItemOut(
             entity_type="organization",
             mention_id=mid,
-            substrate_entity_id=int(org.id),  # type: ignore[arg-type]
             label=str(org.name),
             nature=mention.nature,
             role_in_story=mention.role_in_story,
@@ -570,7 +565,6 @@ def _detail_from_search_item(
     return PublicMentionDetailOut(
         entity_type=item.entity_type,
         mention_id=item.mention_id,
-        substrate_entity_id=item.substrate_entity_id,
         label=item.label,
         nature=item.nature,
         role_in_story=item.role_in_story,

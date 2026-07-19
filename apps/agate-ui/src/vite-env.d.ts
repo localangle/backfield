@@ -8,6 +8,7 @@ interface ImportMetaEnv {
   readonly VITE_AGATE_UI_ORIGIN?: string
   readonly VITE_STYLEBOOK_UI_ORIGIN?: string
   readonly VITE_HELP_URL?: string
+  readonly VITE_PLAYGROUND_URL?: string
   readonly VITE_TIMEZONE?: string
 }
 

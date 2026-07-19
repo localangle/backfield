@@ -12,6 +12,8 @@ canonical agent/engineering checklist.
 - `apps/worker`: Celery execution, Backfield Output persistence, and background Stylebook and semantic-indexing jobs.
 - `apps/stylebook-api`: FastAPI service for catalogs, canonical entities, candidates, cleanup, activity, relationships, geocoding, and bundles.
 - `apps/stylebook-ui`: Stylebook catalog, candidate, cleanup, activity, and relationship interfaces.
+- `apps/api-playground`: Developer-only public API schema explorer; project API keys remain in
+  browser memory only.
 - `apps/core-api`: Sessions, users, organization and project administration, integrations, AI configuration, and `/public/v1`.
 - `packages/backfield-agate`: `agate-runtime` graph types, execution, run helpers, node definitions, metadata, and node-panel source files.
 - `packages/backfield-ai`: Model resolution, LiteLLM integration, embeddings, and AI call accounting.

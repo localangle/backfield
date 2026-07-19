@@ -1,7 +1,7 @@
 # Frontend conventions
 
-These conventions apply to `apps/agate-ui`, `apps/stylebook-ui`, and shared UI in
-`packages/backfield-ui`.
+These conventions apply to `apps/agate-ui`, `apps/stylebook-ui`, `apps/api-playground`, and shared
+UI in `packages/backfield-ui`.
 
 ## User-facing copy
 
@@ -17,6 +17,8 @@ These conventions apply to `apps/agate-ui`, `apps/stylebook-ui`, and shared UI i
   **Mentions in story**, with **Add mention**, **Remove mention**, and reorder controls.
 - Keep technical detail in developer documentation or an explicitly developer-only
   screen.
+- `apps/api-playground` is explicitly developer-only, so HTTP and OpenAPI terminology is
+  appropriate there. Keep labels direct and explain secret-handling behavior in product copy.
 
 ## Components and state
 
@@ -83,6 +85,7 @@ Use the repository targets:
 ```bash
 make agate-ui-build
 make stylebook-ui-build
+make api-playground-build
 make ui-build
 ```
 

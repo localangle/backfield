@@ -52,6 +52,7 @@ jobs:
           cache-dependency-path: |
             apps/agate-ui/package-lock.json
             apps/stylebook-ui/package-lock.json
+            apps/api-playground/package-lock.json
             packages/backfield-ui/package-lock.json
       - name: Frontend typecheck and tests
         run: make ui-typecheck ui-test
@@ -271,6 +272,7 @@ jobs:
           cache-dependency-path: |
             apps/agate-ui/package-lock.json
             apps/stylebook-ui/package-lock.json
+            apps/api-playground/package-lock.json
             packages/backfield-ui/package-lock.json
 
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
@@ -342,6 +344,9 @@ jobs:
           uv run python scripts/release_manifest.py package-ui \
             --source apps/stylebook-ui/dist \
             --output dist-artifacts/stylebook-ui.tar.gz
+          uv run python scripts/release_manifest.py package-ui \
+            --source apps/api-playground/dist \
+            --output dist-artifacts/api-playground.tar.gz
 
       - name: Verify and publish atomic artifact manifest
         env:
@@ -355,6 +360,7 @@ jobs:
             --bucket "$BACKFIELD_ARTIFACT_BUCKET" \
             --agate-ui dist-artifacts/agate-ui.tar.gz \
             --stylebook-ui dist-artifacts/stylebook-ui.tar.gz \
+            --api-playground dist-artifacts/api-playground.tar.gz \
             | tee publish-summary.txt
           {
             echo '## Backfield artifacts published'

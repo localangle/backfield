@@ -12,7 +12,8 @@ DOCKER_BAKE_ENV := APP_VERSION=$(APP_VERSION) GIT_SHA=$(GIT_SHA) BUILD_TIME=$(BU
 	up up-detached down logs migrate migrate-host reset-db clear-entity-data \
 	docker-trim docker-trim-full \
 	lint format test smoke smoke-fast \
-	ui-typecheck ui-test ui-build agate-ui-build stylebook-ui-build \
+	ui-bootstrap ui-typecheck ui-test ui-build agate-ui-build stylebook-ui-build \
+	api-playground-bootstrap api-playground-lint api-playground-test api-playground-build \
 	docker-build-prod-apis docker-build-prod-worker
 
 help:
@@ -34,12 +35,13 @@ help:
 	@echo "Validation"
 	@echo "  make lint / format / test"
 	@echo "  make ui-typecheck / ui-test"
+	@echo "  make api-playground-lint / api-playground-test"
 	@echo "  make smoke               - Golden Agate-to-Stylebook handoff"
 	@echo "  make smoke-fast          - Auth + basic Agate + basic Stylebook"
 	@echo "  Specialized smoke scripts: uv run python -u tests/smoke/<script>.py"
 	@echo ""
 	@echo "Deploy builds"
-	@echo "  make ui-build            - Production-build both UIs (includes typecheck)"
+	@echo "  make ui-build            - Production-build all UIs (includes typecheck)"
 	@echo "  make docker-build-prod-apis / docker-build-prod-worker"
 
 # --- Local stack -------------------------------------------------------------
@@ -131,15 +133,27 @@ smoke-fast:
 
 # --- Frontend validation / deploy builds ------------------------------------
 
+api-playground-bootstrap:
+	cd packages/backfield-ui && npm ci
+	cd apps/api-playground && npm ci
+
+ui-bootstrap:
+	cd packages/backfield-ui && npm ci
+	cd apps/agate-ui && npm ci
+	cd apps/stylebook-ui && npm ci
+	cd apps/api-playground && npm ci
+
 ui-typecheck:
 	cd packages/backfield-ui && npm ci
 	cd apps/agate-ui && npm ci && npm run sync-nodes && npx tsc --noEmit
 	cd apps/stylebook-ui && npm ci && npx tsc --noEmit
+	cd apps/api-playground && npm ci && npm run lint
 
 ui-test:
 	cd packages/backfield-ui && npm ci && npm test
 	cd apps/agate-ui && npm ci && npm run sync-nodes && npm test
 	cd apps/stylebook-ui && npm ci && npm test
+	cd apps/api-playground && npm ci && npm test
 
 agate-ui-build:
 	cd packages/backfield-ui && npm ci
@@ -149,7 +163,19 @@ stylebook-ui-build:
 	cd packages/backfield-ui && npm ci
 	cd apps/stylebook-ui && npm ci && npm run build
 
-ui-build: agate-ui-build stylebook-ui-build
+api-playground-lint:
+	cd packages/backfield-ui && npm ci
+	cd apps/api-playground && npm ci && npm run lint
+
+api-playground-test:
+	cd packages/backfield-ui && npm ci
+	cd apps/api-playground && npm ci && npm test
+
+api-playground-build:
+	cd packages/backfield-ui && npm ci
+	cd apps/api-playground && npm ci && npm run build
+
+ui-build: agate-ui-build stylebook-ui-build api-playground-build
 
 docker-build-prod-apis:
 	$(DOCKER_BAKE_ENV) docker buildx bake agate-api core-api stylebook-api --load

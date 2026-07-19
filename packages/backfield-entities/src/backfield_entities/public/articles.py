@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import date
+from enum import StrEnum
 from urllib.parse import urlparse
 
 from backfield_db import (
@@ -25,6 +26,16 @@ from backfield_entities.public.keyword_query import article_keyword_tsquery
 
 PUBLIC_ARTICLE_PREVIEW_MAX_LEN = 280
 _INTERNAL_ARTICLE_SOURCE_ID = "backfield_text_fingerprint"
+
+
+class PublicArticleSort(StrEnum):
+    relevance = "relevance"
+    pub_date = "pub_date"
+
+
+class PublicSortDirection(StrEnum):
+    asc = "asc"
+    desc = "desc"
 
 
 class PublicArticleMetaOut(BaseModel):
@@ -79,6 +90,8 @@ class PublicArticleSearchParams:
     has_mentions: str | None = None
     pub_date_from: date | None = None
     pub_date_to: date | None = None
+    sort: PublicArticleSort | None = None
+    sort_direction: PublicSortDirection | None = None
     limit: int = 25
     offset: int = 0
 
@@ -96,12 +109,17 @@ class PublicArticleSearchQueryOut(BaseModel):
     has_mentions: str | None = None
     pub_date_from: date | None = None
     pub_date_to: date | None = None
+    sort: PublicArticleSort
+    sort_direction: PublicSortDirection
 
 
 def public_article_search_query_out(
     params: PublicArticleSearchParams,
 ) -> PublicArticleSearchQueryOut:
     """Build the query echo object from resolved search params."""
+    params = resolve_public_article_search_params(params)
+    assert params.sort is not None
+    assert params.sort_direction is not None
     q = (params.q or "").strip()
     return PublicArticleSearchQueryOut(
         q=q or None,
@@ -114,6 +132,8 @@ def public_article_search_query_out(
         has_mentions=(params.has_mentions or "").strip() or None,
         pub_date_from=params.pub_date_from,
         pub_date_to=params.pub_date_to,
+        sort=params.sort,
+        sort_direction=params.sort_direction,
     )
 
 
@@ -174,15 +194,23 @@ def resolve_public_article_search_params(
     params: PublicArticleSearchParams,
 ) -> PublicArticleSearchParams:
     """Apply search sugar such as ``section`` → topic metadata filter."""
-    section_value = (params.section or "").strip()
-    if not section_value:
-        return params
-    return replace(
-        params,
-        section=None,
-        meta_type="topic",
-        meta_category=section_value,
+    q = (params.q or "").strip()
+    resolved_sort = params.sort or (
+        PublicArticleSort.relevance if q else PublicArticleSort.pub_date
     )
+    resolved_direction = params.sort_direction or PublicSortDirection.desc
+    changes: dict[str, object] = {
+        "sort": resolved_sort,
+        "sort_direction": resolved_direction,
+    }
+    section_value = (params.section or "").strip()
+    if section_value:
+        changes.update(
+            section=None,
+            meta_type="topic",
+            meta_category=section_value,
+        )
+    return replace(params, **changes)
 
 
 def _article_to_public_out(
@@ -350,6 +378,8 @@ def search_public_articles(
     params: PublicArticleSearchParams,
 ) -> tuple[list[PublicArticleOut], int]:
     params = resolve_public_article_search_params(params)
+    assert params.sort is not None
+    assert params.sort_direction is not None
     stmt = _active_articles_for_project(session, project_id)
 
     rank_expr = None
@@ -374,15 +404,26 @@ def search_public_articles(
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total = int(session.exec(count_stmt).one())
 
-    order_by: list = []
-    if rank_expr is not None:
-        order_by.append(rank_expr.desc())
-    order_by.extend(
-        [
-            col(SubstrateArticle.pub_date).desc().nulls_last(),
-            col(SubstrateArticle.id).desc(),
-        ]
+    descending = params.sort_direction is PublicSortDirection.desc
+    id_order = (
+        col(SubstrateArticle.id).desc()
+        if descending
+        else col(SubstrateArticle.id).asc()
     )
+    order_by: list = []
+    if params.sort is PublicArticleSort.relevance and rank_expr is not None:
+        order_by.append(rank_expr.desc() if descending else rank_expr.asc())
+        # Preserve the original relevance-search secondary ordering.
+        order_by.append(col(SubstrateArticle.pub_date).desc().nulls_last())
+    elif params.sort is PublicArticleSort.pub_date:
+        pub_date = col(SubstrateArticle.pub_date)
+        order_by.append(
+            pub_date.desc().nulls_last() if descending else pub_date.asc().nulls_first()
+        )
+    else:
+        # SQLite has no full-text rank; retain the prior publication-date fallback.
+        order_by.append(col(SubstrateArticle.pub_date).desc().nulls_last())
+    order_by.append(id_order)
     stmt = stmt.order_by(*order_by).limit(params.limit).offset(params.offset)
 
     articles = list(session.exec(stmt).all())

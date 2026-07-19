@@ -6,17 +6,27 @@ from typing import Any
 
 from backfield_auth.gate import require_project_access, resolve_auth
 from backfield_db import BackfieldProject
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, HTTPException, Request, Response, Security, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlmodel import Session, select
 
 from core_api.deps import get_session
+from core_api.routers.public.rate_limit import enforce_public_rate_limit
+
+project_api_key_scheme = HTTPBearer(
+    auto_error=False,
+    scheme_name="ProjectApiKey",
+    description="Project-scoped Backfield API key.",
+)
 
 
 def require_public_api_auth(
+    request: Request,
     session: Session = Depends(get_session),
-    authorization: str | None = Header(None, alias="Authorization"),
+    _documented_project_key: HTTPAuthorizationCredentials | None = Security(project_api_key_scheme),
 ) -> dict[str, Any]:
     """Require Bearer project API key (or service token for automation)."""
+    authorization = request.headers.get("Authorization")
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -33,6 +43,8 @@ def require_public_api_auth(
 
 def get_public_project(
     project_slug: str,
+    request: Request,
+    response: Response,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(require_public_api_auth),
 ) -> BackfieldProject:
@@ -43,7 +55,14 @@ def get_public_project(
     project = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
     if project is None or project.id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    return require_project_access(session, auth, int(project.id))
+    authorized_project = require_project_access(session, auth, int(project.id))
+    enforce_public_rate_limit(
+        request,
+        response,
+        auth=auth,
+        project_id=int(authorized_project.id),
+    )
+    return authorized_project
 
 
 def require_scope(scope: str):

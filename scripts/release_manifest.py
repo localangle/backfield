@@ -26,7 +26,54 @@ REPOSITORIES = (
     "backfield-stylebook-api",
     "backfield-worker",
 )
+UI_NAMES_V1 = ("agate-ui", "stylebook-ui")
+UI_NAMES_V2 = ("agate-ui", "stylebook-ui", "api-playground")
+CURRENT_SCHEMA_VERSION = 2
 SEMVER_RE = re.compile(r"^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$")
+
+
+def required_ui_names(schema_version: int) -> tuple[str, ...]:
+    if schema_version == 1:
+        return UI_NAMES_V1
+    if schema_version == CURRENT_SCHEMA_VERSION:
+        return UI_NAMES_V2
+    raise ValueError(f"unsupported manifest schema_version: {schema_version}")
+
+
+def validate_manifest_inventory(manifest: dict[str, Any]) -> None:
+    """Validate image/UI completeness before publish or alias side effects."""
+    schema_version = manifest.get("schema_version")
+    if not isinstance(schema_version, int):
+        raise ValueError("manifest schema_version must be an integer")
+    required_uis = required_ui_names(schema_version)
+
+    images = manifest.get("images")
+    if not isinstance(images, dict):
+        raise ValueError("manifest images must be an object")
+    missing_images = [name for name in REPOSITORIES if name not in images]
+    extra_images = [name for name in images if name not in REPOSITORIES]
+    if missing_images or extra_images:
+        raise ValueError(
+            "manifest images inventory mismatch: "
+            f"missing={missing_images!r} extra={extra_images!r}"
+        )
+
+    ui = manifest.get("ui")
+    if not isinstance(ui, dict):
+        raise ValueError("manifest ui must be an object")
+    missing_uis = [name for name in required_uis if name not in ui]
+    extra_uis = [name for name in ui if name not in required_uis]
+    if missing_uis or extra_uis:
+        raise ValueError(
+            "manifest ui inventory mismatch: "
+            f"missing={missing_uis!r} extra={extra_uis!r}"
+        )
+    for name, record in ui.items():
+        if not isinstance(record, dict):
+            raise ValueError(f"manifest ui.{name} must be an object")
+        for field in ("object_key", "sha256", "size"):
+            if field not in record:
+                raise ValueError(f"manifest ui.{name} missing {field}")
 
 
 def canonical_version(sha: str) -> str:
@@ -195,6 +242,18 @@ def build_manifest(
     if version != canonical_version(source_sha):
         raise ValueError(f"version {version!r} does not match source SHA {source_sha}")
 
+    required_uis = required_ui_names(CURRENT_SCHEMA_VERSION)
+    missing_uis = [name for name in required_uis if name not in ui_archives]
+    extra_uis = [name for name in ui_archives if name not in required_uis]
+    if missing_uis or extra_uis:
+        raise ValueError(
+            "ui_archives inventory mismatch: "
+            f"missing={missing_uis!r} extra={extra_uis!r}"
+        )
+    for name, archive in ui_archives.items():
+        if not archive.is_file():
+            raise ValueError(f"UI archive not found for {name}: {archive}")
+
     images: dict[str, Any] = {}
     critical: list[str] = []
     for repository in REPOSITORIES:
@@ -213,7 +272,8 @@ def build_manifest(
         raise RuntimeError("critical ECR findings block publication: " + ", ".join(critical))
 
     ui: dict[str, Any] = {}
-    for name, archive in ui_archives.items():
+    for name in required_uis:
+        archive = ui_archives[name]
         checksum = sha256_file(archive)
         key = f"versions/{version}/ui/{name}.tar.gz"
         _publish_ui_archive(
@@ -230,8 +290,8 @@ def build_manifest(
             "size": archive.stat().st_size,
         }
 
-    return {
-        "schema_version": 1,
+    manifest = {
+        "schema_version": CURRENT_SCHEMA_VERSION,
         "version": version,
         "source_version": None,
         "source_sha": source_sha,
@@ -240,6 +300,8 @@ def build_manifest(
         "images": images,
         "ui": ui,
     }
+    validate_manifest_inventory(manifest)
+    return manifest
 
 
 def publish_manifest(s3: Any, bucket: str, manifest: dict[str, Any]) -> str:
@@ -334,6 +396,7 @@ def create_release_alias(
     ecr: Any,
 ) -> dict[str, Any]:
     validate_release_version(release_version)
+    validate_manifest_inventory(source_manifest)
     source_version = str(source_manifest["version"])
     alias = copy.deepcopy(source_manifest)
     alias["version"] = release_version
@@ -379,6 +442,7 @@ def main() -> int:
     publish_cmd.add_argument("--bucket", required=True)
     publish_cmd.add_argument("--agate-ui", type=Path, required=True)
     publish_cmd.add_argument("--stylebook-ui", type=Path, required=True)
+    publish_cmd.add_argument("--api-playground", type=Path, required=True)
     publish_cmd.add_argument("--skip-scan-gate", action="store_true")
 
     alias_cmd = sub.add_parser("alias")
@@ -407,6 +471,7 @@ def main() -> int:
             ui_archives={
                 "agate-ui": args.agate_ui,
                 "stylebook-ui": args.stylebook_ui,
+                "api-playground": args.api_playground,
             },
             ecr=ecr,
             s3=s3,
@@ -420,6 +485,7 @@ def main() -> int:
         source = load_manifest(s3, args.bucket, args.source_version)
         if source.get("source_sha") != args.source_sha:
             raise ValueError("canonical manifest source SHA does not match release tag commit")
+        validate_manifest_inventory(source)
         manifest = create_release_alias(
             source_manifest=source,
             release_version=args.release_version,

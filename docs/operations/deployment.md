@@ -23,7 +23,7 @@ This repository builds and publishes production application artifacts:
 
 A consuming deployment system must fetch a complete published manifest, configure the runtime
 described in [runtime configuration](runtime-configuration.md), run migrations and seed tasks,
-deploy the four image digests, publish the two UI archives, and configure origin routing.
+deploy the four image digests, publish the three UI archives, and configure origin routing.
 
 ## Production image builds
 
@@ -65,6 +65,7 @@ Outputs are written to:
 
 - `apps/agate-ui/dist/`
 - `apps/stylebook-ui/dist/`
+- `apps/api-playground/dist/`
 
 Vite loads each app's `.env.production`. The default browser paths are:
 
@@ -76,6 +77,12 @@ The origin or CDN must route those paths to the matching API and serve `index.ht
 fallback. When the API receives a forwarded prefix rather than a stripped path, set
 `BACKFIELD_HTTP_PATH_PREFIX` on that API.
 
+Deploy the API Playground at `playground.{organization-slug}.backfield.news`. Configure wildcard
+DNS, TLS, and static-host routing for those tenant domains. The app infers and calls the matching
+`https://api.{organization-slug}.backfield.news` origin directly; set that tenant API’s
+`PLAYGROUND_ORIGIN` to the exact Playground URL (do not rely on a global origin regex). Preserve
+the Playground CSP and `Referrer-Policy: no-referrer` at the static host.
+
 Serve hashed assets with a long cache lifetime and `index.html` with `Cache-Control: no-cache`.
 
 ## Artifact publication
@@ -86,13 +93,17 @@ After lint, tests, and required smoke pass on `main` in the canonical
 1. derive the immutable version `main-<first-12-sha>-amd64`
 2. build and push any missing image targets to ECR with SBOM and supply-chain attestations
 3. wait for ECR scanning and block publication on critical findings
-4. build both UIs and create deterministic gzip archives
+4. build all three UIs and create deterministic gzip archives
 5. upload UI archives under `versions/<version>/ui/`
 6. upload `manifests/<version>.json` last as the ready-to-deploy marker
 
-The manifest records schema version, source SHA, build time, architecture, image tags/digests/URIs
-and scan counts, plus UI object keys, checksums, and sizes. Consumers should deploy by digest and
-verify UI checksums.
+New manifests use `schema_version: 2` and require four images plus three UI archives
+(`agate-ui`, `stylebook-ui`, and `api-playground`). Historical `schema_version: 1` manifests retain
+the two-UI inventory for rollback and SemVer aliasing. The manifest records schema version, source
+SHA, build time, architecture, image tags/digests/URIs and scan counts, plus UI object keys,
+checksums, and sizes. Consumers should deploy by digest and verify UI checksums. Release-alias
+manifests retain the canonical-version UI `object_key` values; consumers must use those keys rather
+than synthesizing paths from the SemVer alias.
 
 Publishing is retry-safe: CI skips image tags already present, and the manifest is written only after
 every required artifact is available and verified. Fork workflows do not publish artifacts.
@@ -115,10 +126,11 @@ For an external deployment system only (not supported as in-repo self-hosting):
 3. run `backfield-migrate` with `BACKFIELD_DATABASE_URL_DIRECT`
 4. run `backfield-seed --admin-email … --admin-password-file …`
 5. deploy the API and worker images by manifest digest
-6. publish and checksum-verify the two UI archives
-7. configure `/v1`, `/api/agate`, and `/api/stylebook` routing
-8. check each API's `/health` and `/version`
-9. run the applicable smoke checks against the deployed environment
+6. publish and checksum-verify the three UI archives, including the tenant API Playground host
+7. configure `/v1`, `/api/agate`, and `/api/stylebook` routing, plus Playground DNS/TLS
+8. set each tenant API `PLAYGROUND_ORIGIN` to that tenant’s Playground URL
+9. check each API's `/health` and `/version`
+10. run the applicable smoke checks against the deployed environment
 
 `backfield seed` is idempotent: it ensures the organization and administrator exist, but re-runs do
 not change an existing administrator's password or role.

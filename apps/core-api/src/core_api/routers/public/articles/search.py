@@ -6,11 +6,13 @@ from backfield_db import BackfieldProject
 from backfield_entities.public.article_hub import enrich_articles_with_counts
 from backfield_entities.public.articles import (
     PublicArticleSearchParams,
+    PublicArticleSort,
+    PublicSortDirection,
     public_article_search_query_out,
     resolve_public_article_search_params,
     search_public_articles,
 )
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session
 
 from core_api.deps import get_session
@@ -40,32 +42,10 @@ def search_project_articles(
             'quoted phrases ("…"), OR, and - exclusions (web search syntax).'
         ),
     ),
-    meta_type: str | None = Query(None, description="Include articles with this metadata type"),
-    meta_category: str | None = Query(
-        None,
-        description="With meta_type, include articles with this metadata category",
-    ),
-    exclude_meta_type: str | None = Query(
-        None,
-        description="Exclude articles with a metadata row of this type",
-    ),
-    exclude_meta_category: str | None = Query(
-        None,
-        description="With exclude_meta_type, exclude articles with this metadata category",
-    ),
-    section: str | None = Query(
-        None,
-        description="Include articles with this subject metadata category (editorial section)",
-    ),
     author: str | None = Query(None, description="Filter by byline (case-insensitive exact match)"),
     external_source: str | None = Query(
         None,
         description="Filter by publication/outlet name (case-insensitive exact match)",
-    ),
-    source: str | None = Query(
-        None,
-        description="Alias for external_source",
-        deprecated=True,
     ),
     has_mentions: str | None = Query(
         None,
@@ -73,28 +53,37 @@ def search_project_articles(
     ),
     pub_date_from: str | None = Query(None),
     pub_date_to: str | None = Query(None),
+    sort: PublicArticleSort | None = Query(
+        None,
+        description="Sort by relevance or publication date",
+    ),
+    sort_direction: PublicSortDirection | None = Query(
+        None,
+        description="Sort direction; defaults to descending",
+    ),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
     include: list[str] = Query(default=[], description=INCLUDE_PARAM_DESCRIPTION),
     meta: list[str] = Query(default=[], description=META_PARAM_DESCRIPTION),
 ) -> PublicArticleSearchOut:
     """Search project articles by keyword, metadata tags, and publication date."""
-    outlet = external_source or source
+    if sort is PublicArticleSort.relevance and not (q or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="sort=relevance requires a non-empty q.",
+        )
     includes = parse_article_includes(include)
     params = resolve_public_article_search_params(
         PublicArticleSearchParams(
             q=q,
-            meta_type=meta_type,
-            meta_category=meta_category,
-            exclude_meta_type=exclude_meta_type,
-            exclude_meta_category=exclude_meta_category,
-            section=section,
             meta_clauses=parse_meta_clauses(meta),
             author=author,
-            external_source=outlet,
+            external_source=external_source,
             has_mentions=parse_has_mentions(has_mentions),
             pub_date_from=parse_optional_date(pub_date_from, param_name="pub_date_from"),
             pub_date_to=parse_optional_date(pub_date_to, param_name="pub_date_to"),
+            sort=sort,
+            sort_direction=sort_direction,
             limit=limit,
             offset=offset,
         )
