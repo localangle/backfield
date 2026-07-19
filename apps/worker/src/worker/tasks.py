@@ -81,7 +81,7 @@ from backfield_entities.quality.finders.duplicate_organizations import (
 from backfield_entities.quality.finders.duplicate_people import duplicate_person_cluster_ids
 from celery import Celery, chord, group
 from celery.exceptions import Reject
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 from sqlmodel import Session, select
 
 from worker.flags.replace_geography import clear_replace_article_geography_flags
@@ -184,39 +184,57 @@ def _try_claim_processed_item(
     session: Session,
     item: AgateProcessedItem,
     *,
-    allow_running_reclaim: bool = False,
+    now: datetime | None = None,
 ) -> bool:
-    if item.status == "pending":
-        item.status = "running"
-        item.started_at = datetime.now(UTC)
-        item.updated_at = datetime.now(UTC)
-        session.add(item)
-        return True
-    if item.status == "running" and (
-        _is_stale_running_item(item) or allow_running_reclaim
-    ):
-        logger.warning(
-            "Reclaiming running processed_item id=%s run_id=%s redelivered=%s stale=%s",
-            item.id,
-            item.run_id,
-            allow_running_reclaim,
-            _is_stale_running_item(item),
-        )
-        item.started_at = datetime.now(UTC)
-        item.updated_at = datetime.now(UTC)
-        item.error_message = None
-        session.add(item)
-        return True
-    return False
-
-
-def _task_is_redelivered() -> bool:
-    try:
-        from celery import current_task
-
-        return bool(current_task.request.delivery_info.get("redelivered"))
-    except Exception:
+    """Atomically claim a pending item, or a stale running item via optimistic lock."""
+    if item.id is None:
         return False
+    now = now or datetime.now(UTC)
+    pending_result = session.execute(
+        update(AgateProcessedItem)
+        .where(
+            AgateProcessedItem.id == item.id,
+            AgateProcessedItem.status == "pending",
+        )
+        .values(
+            status="running",
+            started_at=now,
+            updated_at=now,
+            error_message=None,
+        )
+    )
+    if int(pending_result.rowcount or 0) == 1:
+        session.refresh(item)
+        return True
+
+    session.refresh(item)
+    if item.status != "running" or not _is_stale_running_item(item, now=now):
+        return False
+
+    observed_started_at = item.started_at
+    stale_result = session.execute(
+        update(AgateProcessedItem)
+        .where(
+            AgateProcessedItem.id == item.id,
+            AgateProcessedItem.status == "running",
+            AgateProcessedItem.started_at == observed_started_at,
+        )
+        .values(
+            started_at=now,
+            updated_at=now,
+            error_message=None,
+        )
+    )
+    if int(stale_result.rowcount or 0) != 1:
+        session.refresh(item)
+        return False
+    logger.warning(
+        "Reclaiming stale running processed_item id=%s run_id=%s",
+        item.id,
+        item.run_id,
+    )
+    session.refresh(item)
+    return True
 
 
 def _node_wall_clock_hooks() -> tuple[
@@ -632,13 +650,18 @@ def execute_s3_batch_setup(run_id: str) -> None:
             session.commit()
             return
 
-        if run.status != "pending":
-            return
-
-        run.status = "running"
-        run.updated_at = datetime.now(UTC)
-        session.add(run)
+        claimed_at = datetime.now(UTC)
+        claim_result = session.execute(
+            update(AgateRun)
+            .where(
+                AgateRun.id == run_id,
+                AgateRun.status == "pending",
+            )
+            .values(status="running", updated_at=claimed_at)
+        )
         session.commit()
+        if int(claim_result.rowcount or 0) != 1:
+            return
 
         run = session.get(AgateRun, run_id)
         if not run or run.status != "running":
@@ -934,14 +957,10 @@ def _execute_processed_item_impl(item_id: int) -> None:
                 released,
             )
             session.commit()
-        if not _try_claim_processed_item(
-            session,
-            item,
-            allow_running_reclaim=_task_is_redelivered(),
-        ):
+        if not _try_claim_processed_item(session, item):
             if item.status == "running":
-                # Worker loss can leave a zombie ``running`` row while the broker redelivers.
-                # Requeue so the next attempt can reclaim once ``redelivered`` is set.
+                # Another worker holds a fresh claim; requeue until the lease goes stale
+                # or orphan reconcile returns the row to pending.
                 raise Reject(requeue=True)
             return
         session.commit()

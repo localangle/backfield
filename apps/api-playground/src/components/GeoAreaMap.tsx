@@ -93,29 +93,68 @@ function AreaInteraction({
         ),
       )
     },
-    mousemove(event: LeafletMouseEvent) {
+  })
+
+  useEffect(() => {
+    const latLngFromWindowEvent = (event: MouseEvent): MapCenter => {
+      const bounds = map.getContainer().getBoundingClientRect()
+      const point = L.point(
+        Math.max(0, Math.min(bounds.width, event.clientX - bounds.left)),
+        Math.max(0, Math.min(bounds.height, event.clientY - bounds.top)),
+      )
+      const latlng = map.containerPointToLatLng(point)
+      return { lat: latlng.lat, lng: latlng.lng }
+    }
+
+    const onMove = (event: MouseEvent) => {
       if (!dragStart.current) return
+      const end = latLngFromWindowEvent(event)
       setPreview(
         bboxFromCorners(
           { lat: dragStart.current.lat, lng: dragStart.current.lng },
-          { lat: event.latlng.lat, lng: event.latlng.lng },
+          end,
         ),
       )
-    },
-    mouseup(event: LeafletMouseEvent) {
+    }
+
+    const onUp = (event: MouseEvent) => {
       if (!dragStart.current) return
       map.dragging.enable()
       const next = bboxFromCorners(
         { lat: dragStart.current.lat, lng: dragStart.current.lng },
-        { lat: event.latlng.lat, lng: event.latlng.lng },
+        latLngFromWindowEvent(event),
       )
       dragStart.current = null
       setPreview(null)
-      if (next.maxLat - next.minLat > 0.0005 && next.maxLng - next.minLng > 0.0005) {
+      if (
+        next &&
+        next.maxLat - next.minLat > 0.0005 &&
+        next.maxLng - next.minLng > 0.0005
+      ) {
         onBboxChange(next)
       }
-    },
-  })
+    }
+
+    const onBlur = () => {
+      if (!dragStart.current) return
+      map.dragging.enable()
+      dragStart.current = null
+      setPreview(null)
+    }
+
+    window.addEventListener("mousemove", onMove)
+    window.addEventListener("mouseup", onUp)
+    window.addEventListener("blur", onBlur)
+    return () => {
+      window.removeEventListener("mousemove", onMove)
+      window.removeEventListener("mouseup", onUp)
+      window.removeEventListener("blur", onBlur)
+      if (dragStart.current) {
+        map.dragging.enable()
+        dragStart.current = null
+      }
+    }
+  }, [map, onBboxChange])
 
   const shownBox = preview ?? bbox
   return shownBox && mode === "bbox" ? (

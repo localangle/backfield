@@ -1,6 +1,29 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+vi.mock("@backfield/ui/UserAccountMenu", () => ({
+  UserAccountMenu: ({
+    userLabel,
+    onLogout,
+  }: {
+    userLabel?: string
+    onLogout: () => void
+  }) => (
+    <div>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-label={userLabel ? `Account menu for ${userLabel}` : "Account menu"}
+      >
+        Account
+      </button>
+      <button type="button" onClick={() => void onLogout()}>
+        Log out
+      </button>
+    </div>
+  ),
+}))
+
 import App from "./App"
 
 const schema = {
@@ -268,5 +291,42 @@ describe("API key handling", () => {
         sessionStorage.getItem("backfield-playground-project-api-key"),
       ).toBeNull(),
     )
+  })
+
+  it("clears the project API key from storage and UI on logout", async () => {
+    const assign = vi.fn()
+    vi.stubGlobal("location", { ...window.location, assign })
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+      const response = sessionResponse(input)
+      if (response) return response
+      if (String(input).endsWith("/openapi.json")) {
+        return new Response(JSON.stringify(schema), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      if (String(input).endsWith("/v1/auth/logout") && init?.method === "POST") {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`Unexpected request: ${String(input)}`)
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(<App />)
+    fireEvent.change(screen.getByLabelText(/Project API key/), {
+      target: { value: "logout-secret-key" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Use API key" }))
+    await waitFor(() =>
+      expect(
+        sessionStorage.getItem("backfield-playground-project-api-key"),
+      ).toBe("logout-secret-key"),
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Log out" }))
+
+    await waitFor(() => expect(assign).toHaveBeenCalled())
+    expect(sessionStorage.getItem("backfield-playground-project-api-key")).toBeNull()
+    expect(screen.queryByDisplayValue("logout-secret-key")).not.toBeInTheDocument()
   })
 })

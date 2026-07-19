@@ -8,9 +8,14 @@ stores the effective graph spec in `agate_run.result_json.graph_spec_json`. Work
 snapshot so later graph edits do not change queued work.
 
 Core public run requests may reserve a seven-day idempotency key before creating the run. The
-reservation and run are committed atomically, then work is enqueued; a creation failure rolls back
-both. Concurrent requests with the same project, operation, and key converge on one run. The table
-retains only a deterministic request hash and run link, never the input body.
+reservation, run, and Celery enqueue descriptor are committed atomically with
+`enqueue_state=pending`, then the API claims the row and publishes to the broker. A successful
+publish marks `published`; a definite broker failure returns the row to `pending` and responds
+`503` with `Retry-After` so the same `Idempotency-Key` can finish enqueue. Concurrent requests with
+the same project, operation, and key converge on one run. The table retains only a deterministic
+request hash, run link, and enqueue descriptor—never the input body. Unkeyed public creates still
+enqueue best-effort after commit; clients that need durable trigger semantics should send
+`Idempotency-Key`.
 
 TextInput and JSONInput runs create one `agate_processed_item` and enqueue
 `execute_processed_item`. S3Input runs enqueue `execute_s3_batch_setup`, which:

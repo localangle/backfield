@@ -23,9 +23,18 @@ describe("map selection helpers", () => {
       maxLng: -87.5,
       maxLat: 42,
     })
-    expect(bboxToValue(bbox)).toBe("-87.8,41.7,-87.5,42")
+    expect(bbox).not.toBeNull()
+    expect(bboxToValue(bbox!)).toBe("-87.8,41.7,-87.5,42")
     expect(parseBbox("-87.8, 41.7, -87.5, 42")).toEqual(bbox)
     expect(parseBbox("-87.5,41.7,-87.8,42")).toBeNull()
+  })
+
+  it("rejects antimeridian-spanning bounding boxes", () => {
+    expect(
+      bboxFromCorners({ lat: 10, lng: 170 }, { lat: 20, lng: -170 }),
+    ).toBeNull()
+    expect(parseBbox("170,10,-170,20")).toBeNull()
+    expect(parseBbox("-170,10,170,20")).toBeNull()
   })
 
   it("validates point coordinates", () => {

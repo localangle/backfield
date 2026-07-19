@@ -24,7 +24,12 @@ from core_api.deps import get_session
 from core_api.routers.public.deps import get_public_project, require_scope
 from core_api.routers.public.runs.helpers import public_run_snapshot
 from core_api.routers.public.runs.schemas import PublicRunCreateIn, PublicRunOut
-from core_api.run_enqueue import enqueue_worker_task
+from core_api.run_enqueue import (
+    ENQUEUE_STATE_PENDING,
+    encode_enqueue_args,
+    enqueue_worker_task,
+    publish_idempotency_enqueue,
+)
 
 router = APIRouter()
 
@@ -102,21 +107,17 @@ def _cleanup_expired_records(session: Session, *, now: datetime) -> int:
     return len(ids)
 
 
-def _replay_or_conflict(
+def _set_run_headers(response: Response, *, project_slug: str, run_id: str) -> None:
+    response.headers["Location"] = f"/public/v1/projects/{project_slug}/runs/{run_id}"
+    response.headers["Retry-After"] = str(INITIAL_POLL_SECONDS)
+
+
+def _run_snapshot_for_record(
     session: Session,
     *,
     record: BackfieldPublicIdempotencyRecord,
-    request_hash: str,
     graph: AgateGraph,
 ) -> PublicRunOut:
-    if record.request_hash != request_hash:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "reason": "idempotency_key_reused",
-                "message": "Idempotency-Key was already used with a different request body.",
-            },
-        )
     if record.run_id is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -138,9 +139,68 @@ def _replay_or_conflict(
     return public_run_snapshot(session, run=run, graph=graph)
 
 
-def _set_run_headers(response: Response, *, project_slug: str, run_id: str) -> None:
-    response.headers["Location"] = f"/public/v1/projects/{project_slug}/runs/{run_id}"
-    response.headers["Retry-After"] = str(INITIAL_POLL_SECONDS)
+def _raise_enqueue_unavailable() -> None:
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "reason": "enqueue_unavailable",
+            "message": (
+                "The run was reserved but could not be queued for execution. "
+                "Retry the same Idempotency-Key shortly."
+            ),
+        },
+        headers={"Retry-After": str(INITIAL_POLL_SECONDS)},
+    )
+
+
+def _publish_and_snapshot(
+    session: Session,
+    *,
+    record: BackfieldPublicIdempotencyRecord,
+    graph: AgateGraph,
+    response: Response,
+    project_slug: str,
+    replayed: bool,
+) -> PublicRunOut:
+    outcome = publish_idempotency_enqueue(
+        session,
+        record,
+        enqueue_task=enqueue_worker_task,
+    )
+    if outcome == "unavailable":
+        _raise_enqueue_unavailable()
+    snapshot = _run_snapshot_for_record(session, record=record, graph=graph)
+    _set_run_headers(response, project_slug=project_slug, run_id=snapshot.run_id)
+    if replayed or outcome == "in_progress":
+        response.headers["Idempotency-Replayed"] = "true"
+    return snapshot
+
+
+def _replay_or_conflict(
+    session: Session,
+    *,
+    record: BackfieldPublicIdempotencyRecord,
+    request_hash: str,
+    graph: AgateGraph,
+    response: Response,
+    project_slug: str,
+) -> PublicRunOut:
+    if record.request_hash != request_hash:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "reason": "idempotency_key_reused",
+                "message": "Idempotency-Key was already used with a different request body.",
+            },
+        )
+    return _publish_and_snapshot(
+        session,
+        record=record,
+        graph=graph,
+        response=response,
+        project_slug=project_slug,
+        replayed=True,
+    )
 
 
 def create_public_run(
@@ -172,6 +232,7 @@ def create_public_run(
     project_id = int(project.id)
 
     _cleanup_expired_records(session, now=now)
+    reservation: BackfieldPublicIdempotencyRecord | None = None
     if idempotency_key is not None:
         existing = _find_record(
             session,
@@ -179,15 +240,14 @@ def create_public_run(
             idempotency_key=idempotency_key,
         )
         if existing is not None and not _is_expired(existing, now):
-            replay = _replay_or_conflict(
+            return _replay_or_conflict(
                 session,
                 record=existing,
                 request_hash=request_hash,
                 graph=graph,
+                response=response,
+                project_slug=project.slug,
             )
-            _set_run_headers(response, project_slug=project.slug, run_id=replay.run_id)
-            response.headers["Idempotency-Replayed"] = "true"
-            return replay
         if existing is not None:
             session.delete(existing)
             session.flush()
@@ -197,6 +257,7 @@ def create_public_run(
             operation=_OPERATION,
             idempotency_key=idempotency_key,
             request_hash=request_hash,
+            enqueue_state=ENQUEUE_STATE_PENDING,
             expires_at=now + IDEMPOTENCY_RETENTION,
         )
         session.add(reservation)
@@ -211,15 +272,14 @@ def create_public_run(
             )
             if winner is None:
                 raise
-            replay = _replay_or_conflict(
+            return _replay_or_conflict(
                 session,
                 record=winner,
                 request_hash=request_hash,
                 graph=graph,
+                response=response,
+                project_slug=project.slug,
             )
-            _set_run_headers(response, project_slug=project.slug, run_id=replay.run_id)
-            response.headers["Idempotency-Replayed"] = "true"
-            return replay
 
     try:
         triggered = trigger_agate_run(
@@ -237,15 +297,32 @@ def create_public_run(
         session.rollback()
         raise
 
-    if idempotency_key is not None:
+    if reservation is not None:
+        if triggered.enqueue_task_name is None or triggered.enqueue_args is None:
+            session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Run was created without an enqueue descriptor.",
+            )
         reservation.run_id = triggered.run.id
+        reservation.enqueue_task_name = triggered.enqueue_task_name
+        reservation.enqueue_args_json = encode_enqueue_args(triggered.enqueue_args)
+        reservation.enqueue_state = ENQUEUE_STATE_PENDING
         session.add(reservation)
         try:
             session.commit()
         except Exception:
             session.rollback()
             raise
-        triggered.enqueue(enqueue_worker_task)
+        session.refresh(reservation)
+        return _publish_and_snapshot(
+            session,
+            record=reservation,
+            graph=graph,
+            response=response,
+            project_slug=project.slug,
+            replayed=False,
+        )
 
     run = triggered.run
     _set_run_headers(response, project_slug=project.slug, run_id=run.id)

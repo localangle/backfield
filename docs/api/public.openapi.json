@@ -4036,6 +4036,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -4241,6 +4247,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -4564,6 +4576,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -4779,6 +4797,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -5103,6 +5127,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -5503,6 +5533,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -5708,6 +5744,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -5922,6 +5964,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -6320,6 +6368,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -6535,6 +6589,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -6764,6 +6824,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -7019,6 +7085,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -7256,6 +7328,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -7547,6 +7625,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -7819,6 +7903,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -8033,6 +8123,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -8306,6 +8402,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -8579,6 +8681,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -8889,6 +8997,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -9256,6 +9370,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -9566,6 +9686,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -9771,6 +9897,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -9985,6 +10117,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -10338,6 +10476,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -10612,6 +10756,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -10996,6 +11146,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -11260,6 +11416,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -11465,6 +11627,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -11938,6 +12106,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -12161,6 +12335,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -12471,6 +12651,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -12781,6 +12967,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -12986,6 +13178,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -13200,6 +13398,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -13553,6 +13757,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -13827,6 +14037,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -14211,6 +14427,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -14475,6 +14697,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -14837,6 +15065,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -15199,6 +15433,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -15404,6 +15644,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -15618,6 +15864,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -15971,6 +16223,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -16245,6 +16503,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -16629,6 +16893,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -16893,6 +17163,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -17146,6 +17422,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {
@@ -17367,6 +17649,12 @@
             },
             "description": "Service unavailable",
             "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
                 "schema": {

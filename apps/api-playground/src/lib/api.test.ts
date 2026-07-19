@@ -59,4 +59,3 @@ describe("public option discovery", () => {
     ).rejects.toThrow("Mention facets response was invalid")
   })
 })
-

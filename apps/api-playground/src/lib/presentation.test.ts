@@ -162,4 +162,3 @@ describe("endpoint presentation contract", () => {
     }
   })
 })
-

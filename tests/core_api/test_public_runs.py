@@ -573,3 +573,108 @@ def test_public_run_concurrent_idempotency_creates_one_run(
     assert {status_code for status_code, _ in results} == {202}
     assert len({run_id for _, run_id in results}) == 1
     assert len(stub_enqueue) == 1
+
+
+def test_public_run_keyed_enqueue_failure_returns_503_and_retries(
+    public_runs_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_key = _service_key_with_trigger(public_runs_client)
+    graph_id = _seed_public_text_graph(app.dependency_overrides[get_session])
+    enqueued: list[tuple[str, list[object]]] = []
+    fail_once = {"value": True}
+
+    def flaky_enqueue(task_name: str, args: list[object]) -> None:
+        if fail_once["value"]:
+            fail_once["value"] = False
+            raise RuntimeError("broker unavailable")
+        enqueued.append((task_name, args))
+
+    monkeypatch.setattr(public_runs_create, "enqueue_worker_task", flaky_enqueue)
+    headers = {
+        "Authorization": f"Bearer {raw_key}",
+        "Idempotency-Key": "retry-after-broker",
+    }
+    body = {"graph_id": graph_id, "inputs": {"article": {"text": "Retry me"}}}
+
+    first = public_runs_client.post(
+        "/public/v1/projects/general/runs",
+        headers=headers,
+        json=body,
+    )
+    assert first.status_code == 503
+    assert first.headers["retry-after"] == "2"
+    assert first.json()["error"]["details"]["reason"] == "enqueue_unavailable"
+    assert enqueued == []
+
+    gen = app.dependency_overrides[get_session]()
+    session = next(gen)
+    try:
+        record = session.exec(select(BackfieldPublicIdempotencyRecord)).one()
+        assert record.run_id is not None
+        assert record.enqueue_state == "pending"
+        assert record.enqueue_task_name == "worker.tasks.execute_processed_item"
+        reserved_run_id = record.run_id
+    finally:
+        session.close()
+
+    second = public_runs_client.post(
+        "/public/v1/projects/general/runs",
+        headers=headers,
+        json=body,
+    )
+    assert second.status_code == 202
+    assert second.json()["run_id"] == reserved_run_id
+    assert second.headers["idempotency-replayed"] == "true"
+    assert len(enqueued) == 1
+
+    gen = app.dependency_overrides[get_session]()
+    session = next(gen)
+    try:
+        record = session.exec(select(BackfieldPublicIdempotencyRecord)).one()
+        assert record.enqueue_state == "published"
+        assert record.enqueued_at is not None
+    finally:
+        session.close()
+
+
+def test_public_run_keyed_pending_replay_publishes_once(
+    public_runs_client: TestClient,
+    stub_enqueue: list[tuple[str, list[object]]],
+) -> None:
+    raw_key = _service_key_with_trigger(public_runs_client)
+    graph_id = _seed_public_text_graph(app.dependency_overrides[get_session])
+    headers = {
+        "Authorization": f"Bearer {raw_key}",
+        "Idempotency-Key": "pending-replay",
+    }
+    body = {"graph_id": graph_id, "inputs": {"article": {"text": "Pending"}}}
+    first = public_runs_client.post(
+        "/public/v1/projects/general/runs",
+        headers=headers,
+        json=body,
+    )
+    assert first.status_code == 202
+    assert len(stub_enqueue) == 1
+
+    gen = app.dependency_overrides[get_session]()
+    session = next(gen)
+    try:
+        record = session.exec(select(BackfieldPublicIdempotencyRecord)).one()
+        record.enqueue_state = "pending"
+        record.enqueued_at = None
+        record.enqueue_claimed_at = None
+        session.add(record)
+        session.commit()
+    finally:
+        session.close()
+
+    replay = public_runs_client.post(
+        "/public/v1/projects/general/runs",
+        headers=headers,
+        json=body,
+    )
+    assert replay.status_code == 202
+    assert replay.json()["run_id"] == first.json()["run_id"]
+    assert replay.headers["idempotency-replayed"] == "true"
+    assert len(stub_enqueue) == 2

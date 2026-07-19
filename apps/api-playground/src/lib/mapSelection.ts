@@ -21,13 +21,20 @@ export interface MapCenter {
 
 export const DEFAULT_MAP_CENTER: MapCenter = { lat: 41.878, lng: -87.63 }
 
-export function bboxFromCorners(a: MapCenter, b: MapCenter): BoundingBox {
-  return {
+export function spansAntimeridian(bbox: BoundingBox): boolean {
+  return bbox.maxLng - bbox.minLng > 180
+}
+
+export function bboxFromCorners(a: MapCenter, b: MapCenter): BoundingBox | null {
+  const bbox: BoundingBox = {
     minLng: Math.min(a.lng, b.lng),
     minLat: Math.min(a.lat, b.lat),
     maxLng: Math.max(a.lng, b.lng),
     maxLat: Math.max(a.lat, b.lat),
   }
+  // Public API envelopes are non-wrapping; reject boxes that cross the antimeridian.
+  if (spansAntimeridian(bbox)) return null
+  return bbox
 }
 
 export function parseBbox(value: string): BoundingBox | null {
@@ -40,12 +47,14 @@ export function parseBbox(value: string): BoundingBox | null {
   ) {
     return null
   }
-  return {
+  const bbox: BoundingBox = {
     minLng: values[0],
     minLat: values[1],
     maxLng: values[2],
     maxLat: values[3],
   }
+  if (spansAntimeridian(bbox)) return null
+  return bbox
 }
 
 export function bboxToValue(bbox: BoundingBox): string {

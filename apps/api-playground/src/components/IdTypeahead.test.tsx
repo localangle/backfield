@@ -70,4 +70,3 @@ describe("ID typeahead", () => {
     expect(screen.getByText("Select a project first.")).toBeInTheDocument()
   })
 })
-

@@ -6,7 +6,7 @@ Backfield turns unstructured news stories into structured data at scale. Among o
 
 It applies journalistically useful metadata, including subjects, topics, story formats and user needs, and embeds articles so they can be searched by meaning in addition to keywords. It also allows for the extraction of custom data (think: recipes, obituaries, restaurants and things-to-do lists) that can be used to create new products and display articles in new ways.
 
-It does all this with an awareness of the standards and traditions of journalism, taking into account newswriting style and structure, as well as norms around editorial importance and accuracy. All of this takes place within an interface that allows users to customize the system for their organization's specific needs — and exposes data for user-friendly editorial review. 
+It does all this with an awareness of the standards and traditions of journalism, taking into account newswriting style and structure, as well as norms around editorial importance and accuracy. All of this takes place within an interface that allows users to customize the system for their organization's specific needs — and exposes data for user-friendly editorial review.
 
 Backfield was built from the premise that [structured journalism](https://structureofnews.wordpress.com/structured-journalism/), at scale, can open new opportunities to build new products and services, understand how our coverage resonates with audiences, and transact in the burgeoning AI ecosystem.
 

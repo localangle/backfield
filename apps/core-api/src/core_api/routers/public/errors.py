@@ -164,6 +164,12 @@ PUBLIC_ERROR_RESPONSES = {
     503: {
         "model": PublicErrorResponse,
         "description": "Service unavailable",
-        "headers": _REQUEST_ID_HEADER,
+        "headers": {
+            **_REQUEST_ID_HEADER,
+            "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {"type": "integer"},
+            },
+        },
     },
 }

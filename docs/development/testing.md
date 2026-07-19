@@ -114,7 +114,7 @@ On pull requests and pushes that run CI:
 
 1. syncs all Python workspace packages
 2. runs `make lint`
-3. runs `make ui-typecheck ui-test`, builds both production UIs, and checks same-origin bundles
+3. runs `make ui-typecheck ui-test`, builds all three production UIs, and checks same-origin bundles
 4. builds the production API and worker images
 5. runs `make test`
 6. secret-scans the tree

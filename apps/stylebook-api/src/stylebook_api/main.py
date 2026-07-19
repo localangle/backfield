@@ -43,10 +43,9 @@ PLAYGROUND_ORIGIN = os.getenv(
     "PLAYGROUND_ORIGIN",
     "",
 )
-PLAYGROUND_ORIGIN_REGEX = os.getenv(
-    "PLAYGROUND_ORIGIN_REGEX",
-    r"https://playground\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.backfield\.news",
-).strip()
+# Optional regex override for non-production experiments only. Production should leave this
+# empty and set an exact per-deployment PLAYGROUND_ORIGIN instead.
+PLAYGROUND_ORIGIN_REGEX = os.getenv("PLAYGROUND_ORIGIN_REGEX", "").strip()
 if UI_ORIGIN.startswith("http://localhost"):
     ALLOWED = [
         "http://localhost:5175",
@@ -61,6 +60,7 @@ if UI_ORIGIN.startswith("http://localhost"):
     ]
 else:
     ALLOWED = [UI_ORIGIN, PLAYGROUND_ORIGIN]
+ALLOWED = [origin for origin in ALLOWED if origin and origin.strip()]
 
 app = FastAPI(title="Stylebook API", version="0.1.0")
 

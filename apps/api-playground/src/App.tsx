@@ -260,6 +260,7 @@ export default function App() {
   }
 
   async function logout() {
+    clearApiKey()
     if (apiOrigin) {
       await logoutSession(apiOrigin)
     }
@@ -269,6 +270,11 @@ export default function App() {
   function clearApiKey() {
     setApiKey("")
     setApiKeyDraft("")
+    try {
+      sessionStorage.removeItem(API_KEY_SESSION_STORAGE)
+    } catch {
+      // Storage may be unavailable; in-memory state is still cleared above.
+    }
   }
 
   return (

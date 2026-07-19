@@ -518,4 +518,3 @@ export function operationNeedsMentionFacets(operation: PlaygroundOperation): boo
 export function operationNeedsMetadataTypes(operation: PlaygroundOperation): boolean {
   return operation.parameters.some((parameter) => parameter.name === "meta_type")
 }
-

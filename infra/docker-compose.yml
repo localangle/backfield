@@ -91,7 +91,6 @@ services:
     environment:
       <<: [*shared-env, *pooled-database-env]
       UI_ORIGIN: http://localhost:5175
-      PLAYGROUND_ORIGIN_REGEX: 'https://playground\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.backfield\.news'
       REDIS_URL: redis://redis:6379/0
       BACKFIELD_SQLALCHEMY_POOL_SIZE: ${BACKFIELD_SQLALCHEMY_POOL_SIZE:-3}
       BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-2}
@@ -124,7 +123,6 @@ services:
     environment:
       <<: [*shared-env, *pooled-database-env]
       UI_ORIGINS: http://localhost:5173,http://localhost:5175,http://localhost:5176,http://localhost:8004
-      PLAYGROUND_ORIGIN_REGEX: 'https://playground\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.backfield\.news'
       REDIS_URL: redis://redis:6379/0
       CELERY_QUEUE: agate
       BACKFIELD_SQLALCHEMY_POOL_SIZE: ${BACKFIELD_SQLALCHEMY_POOL_SIZE:-3}

@@ -131,11 +131,14 @@ repeatable `meta` grammar plus `author`, `external_source`, and repeatable
 2. Poll `GET /public/v1/projects/{project_slug}/runs/{run_id}` until status and
    item counts settle. Pending and running responses include `Retry-After`.
 
-Clients may send an `Idempotency-Key` of 1–128 URL-safe visible characters.
-For seven days, repeating the key with the same canonical JSON body returns the
-current snapshot of the original run and `Idempotency-Replayed: true`; reusing it
-with a different body returns `409`. Only a SHA-256 request hash is retained, not
-the request body or credentials.
+Clients should send an `Idempotency-Key` of 1–128 URL-safe visible characters when
+they need durable create-or-replay semantics. For seven days, repeating the key with
+the same canonical JSON body returns the current snapshot of the original run and
+`Idempotency-Replayed: true`; reusing it with a different body returns `409`. If the
+run was reserved but not yet queued, a replay finishes publish. A definite broker
+failure returns `503` with `Retry-After`; retry the same key. Only a SHA-256 request
+hash and enqueue descriptor are retained, not the request body or credentials.
+Creates without `Idempotency-Key` still enqueue best-effort after commit.
 
 Default one-minute limits are 600 standard reads, 60 semantic/geographic
 searches, and 5 run triggers per API key. Each project's aggregate limit is four

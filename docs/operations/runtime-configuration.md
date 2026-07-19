@@ -17,11 +17,11 @@ provisioned with `backfield seed` / `backfield init`, not environment-variable a
 - `APP_VERSION`, `GIT_SHA`, `BUILD_TIME`: build identity returned by API `/version` and emitted at
   worker startup.
 - `UI_ORIGIN` / `UI_ORIGINS`: allowed browser origins for API access.
-- `PLAYGROUND_ORIGIN`: optional exact custom Playground origin allowed by Core and Stylebook API
-  CORS.
-- `PLAYGROUND_ORIGIN_REGEX`: tenant Playground origins allowed by Core and Stylebook API CORS.
-  Defaults to the slug-constrained `https://playground.{organization-slug}.backfield.news`
-  pattern.
+- `PLAYGROUND_ORIGIN`: exact Playground origin allowed by Core and Stylebook API CORS for that
+  deployment (for example `https://playground.{organization-slug}.backfield.news`). Local Compose
+  already allows `http://localhost:5176` through `UI_ORIGINS` / localhost defaults.
+- `PLAYGROUND_ORIGIN_REGEX`: optional CORS origin regex. Defaults to empty; leave unset in
+  production and prefer an exact `PLAYGROUND_ORIGIN` per tenant deployment.
 
 All APIs and the worker emit JSON lines to stderr. API request logs exclude health/version paths and
 carry shared context such as service, environment, request ID, client, run ID, and job ID. Celery

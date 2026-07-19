@@ -155,6 +155,10 @@ class BackfieldPublicIdempotencyRecord(SQLModel, table=True):
         ),
         Index("ix_backfield_public_idempotency_expires", "expires_at"),
         Index("ix_backfield_public_idempotency_run", "run_id"),
+        Index(
+            "ix_backfield_public_idempotency_enqueue_state",
+            "enqueue_state",
+        ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -176,6 +180,25 @@ class BackfieldPublicIdempotencyRecord(SQLModel, table=True):
             nullable=True,
         ),
     )
+    enqueue_task_name: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    enqueue_args_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    enqueue_state: str = Field(
+        default="pending",
+        sa_column=Column(Text, nullable=False, server_default="pending"),
+    )
+    enqueue_claimed_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    enqueued_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    enqueue_attempt_count: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False, server_default="0"),
+    )
+    enqueue_last_error: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
