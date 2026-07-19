@@ -1,15 +1,16 @@
 /** Split-host SPA origins for Backfield Cloud front doors. */
 
-export type UiApp = "agate" | "stylebook"
+export type UiApp = "agate" | "stylebook" | "playground"
 
 /**
- * Map `agate.{client}…` ↔ `stylebook.{client}…` when the first DNS label is the
- * product host. Custom / same-origin hosts are left unchanged.
+ * Map `agate|stylebook|playground.{client}…` when the first DNS label is a
+ * product host. Preserves staging (`.stg.`) and production suffixes. Custom /
+ * same-origin hosts are left unchanged.
  */
 export function swapUiHostname(hostname: string, target: UiApp): string {
   const labels = hostname.split(".")
   const first = labels[0]
-  if (first === "agate" || first === "stylebook") {
+  if (first === "agate" || first === "stylebook" || first === "playground") {
     labels[0] = target
     return labels.join(".")
   }

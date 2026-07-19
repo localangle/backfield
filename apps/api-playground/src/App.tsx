@@ -14,7 +14,7 @@ import {
   LOCAL_AGATE_ORIGIN,
   LOCAL_API_ORIGIN,
   LOCAL_STYLEBOOK_API_ORIGIN,
-  organizationSlugFromPlaygroundHost,
+  parsePlaygroundHost,
 } from "./lib/origin"
 import {
   fetchPlatformContext,
@@ -68,21 +68,23 @@ function groupOperations(operations: PlaygroundOperation[]): OperationGroup[] {
 
 export default function App() {
   const localAvailable = isLocalPlaygroundHost(window.location.hostname)
-  const organizationSlug = organizationSlugFromPlaygroundHost(window.location.hostname)
+  const tenant = parsePlaygroundHost(window.location.hostname)
+  const organizationSlug = tenant?.slug ?? ""
+  const parentDomain = tenant?.parentDomain ?? "backfield.news"
   const apiOrigin = localAvailable
     ? LOCAL_API_ORIGIN
-    : organizationSlug
-      ? deriveApiOrigin(organizationSlug)
+    : tenant
+      ? deriveApiOrigin(organizationSlug, parentDomain)
       : ""
   const stylebookApiOrigin = localAvailable
     ? LOCAL_STYLEBOOK_API_ORIGIN
-    : organizationSlug
-      ? deriveStylebookApiOrigin(organizationSlug)
+    : tenant
+      ? deriveStylebookApiOrigin(organizationSlug, parentDomain)
       : ""
   const agateOrigin = localAvailable
     ? LOCAL_AGATE_ORIGIN
-    : organizationSlug
-      ? deriveProductOrigin("agate", organizationSlug)
+    : tenant
+      ? deriveProductOrigin("agate", organizationSlug, parentDomain)
       : ""
   const [apiKey, setApiKey] = useState(() => readSessionValue(API_KEY_SESSION_STORAGE))
   const [apiKeyDraft, setApiKeyDraft] = useState(apiKey)
@@ -310,6 +312,7 @@ export default function App() {
           <PlatformSidebar
             context={platformContext}
             organizationSlug={organizationSlug}
+            parentDomain={parentDomain}
             local={localAvailable}
           />
         ) : sessionLoading ? (

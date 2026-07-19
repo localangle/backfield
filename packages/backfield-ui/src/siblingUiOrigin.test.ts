@@ -13,6 +13,12 @@ describe("swapUiHostname", () => {
     expect(swapUiHostname("agate.canary.stg.backfield.news", "stylebook")).toBe(
       "stylebook.canary.stg.backfield.news",
     )
+    expect(swapUiHostname("agate.canary.stg.backfield.news", "playground")).toBe(
+      "playground.canary.stg.backfield.news",
+    )
+    expect(swapUiHostname("stylebook.cpm.backfield.news", "playground")).toBe(
+      "playground.cpm.backfield.news",
+    )
   })
 
   it("leaves non-split hosts unchanged", () => {

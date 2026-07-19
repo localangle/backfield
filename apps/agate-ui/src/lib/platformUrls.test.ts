@@ -44,6 +44,14 @@ describe('platformUrls sibling hosts', () => {
     expect(playgroundHref()).toBe('https://playground.cpm.backfield.news')
   })
 
+  it('preserves staging when linking to the Playground', () => {
+    vi.stubGlobal('window', {
+      location: { origin: 'https://agate.canary.stg.backfield.news' },
+    })
+
+    expect(playgroundHref()).toBe('https://playground.canary.stg.backfield.news')
+  })
+
   it('supports an organization placeholder in a custom Playground URL', () => {
     vi.stubGlobal('window', {
       location: { origin: 'https://agate.cpm.backfield.news' },
