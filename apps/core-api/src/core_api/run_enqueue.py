@@ -81,6 +81,10 @@ def claim_idempotency_enqueue(
             enqueue_attempt_count=column("enqueue_attempt_count") + 1,
             enqueue_last_error=None,
         )
+        # This is an atomic database claim; the caller refreshes the record
+        # afterward. Avoid Python-side predicate evaluation, which can compare
+        # SQLite's naive datetimes with the aware UTC cutoff during a race.
+        .execution_options(synchronize_session=False)
     )
     session.commit()
     return int(result.rowcount or 0) == 1
