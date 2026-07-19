@@ -21,6 +21,8 @@ Product and platform guides for editors and operators of a running Backfield env
 Authenticated HTTP surfaces and review contracts:
 
 - [`api/public.md`](api/public.md) — `/public/v1`, project scope, conventions, OpenAPI
+- [`../apps/api-playground/README.md`](../apps/api-playground/README.md) — interactive schema
+  browsing, request controls, and key handling
 - [`api/core.md`](api/core.md) — sessions, tenancy, credentials, AI configuration
 - [`api/agate.md`](api/agate.md) — runs, processed items, node metadata, persistence
 - [`api/stylebook.md`](api/stylebook.md) — catalogs, entities, candidates, bundles

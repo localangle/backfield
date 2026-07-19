@@ -1,7 +1,8 @@
 # Backfield Public API Playground
 
-`apps/api-playground` is the signed-in, schema-driven developer client served on tenant-specific
-production domains such as `https://playground.example-newsroom.backfield.news`.
+`apps/api-playground` is the schema-driven developer client for browsing and exercising the public
+API. It is served on tenant-specific production domains such as
+`https://playground.example-newsroom.backfield.news`.
 
 The app infers the organization slug from its own hostname and calls exactly
 `https://api.{organization-slug}.backfield.news`. On localhost it automatically uses
@@ -87,8 +88,9 @@ From the repository root, start the normal local stack:
 make up
 ```
 
-Open `http://localhost:5176` and load the schema. To run the app directly (the shared
-`@backfield/ui` package needs its own install first):
+Open `http://localhost:5176`; the public schema loads automatically and can be browsed without
+authentication. Apply a project API key when you want to execute requests. To run the app directly
+(the shared `@backfield/ui` package needs its own install first):
 
 ```bash
 cd packages/backfield-ui && npm ci

@@ -57,6 +57,10 @@ Backfield's public API allows users to query the extracted and enriched data in 
 
 See [docs.backfield.news](https://docs.backfield.news) for Public API documentation.
 
+The included **API Playground** provides an interactive, schema-driven way to explore those
+endpoints. The public contract is available without authentication; applying a project API key
+enables requests, generated curl commands, typeaheads, metadata filters, and geographic controls.
+
 The Backfield ecosystem continues to evolve, and more applications will be made available as they are launched.
 
 ## Quickstart
@@ -89,13 +93,15 @@ Once that is done:
 
 1. Open [Agate](http://localhost:5173) and sign in with the administrator you just created.
 2. Go to **Settings → AI models** and configure credentials for the models and integrations your flows will use.
-3. Follow [Local development setup](docs/development/local-setup.md) for stack commands, data lifecycle, and troubleshooting links.
+3. Open the [API Playground](http://localhost:5176) to browse the public API schema. Apply a project API key when you want to execute requests.
+4. Follow [Local development setup](docs/development/local-setup.md) for stack commands, data lifecycle, and troubleshooting links.
 
 
 | App            | Local address                                           | Use it for                                      |
 | -------------- | ------------------------------------------------------- | ----------------------------------------------- |
 | **Agate**      | [localhost:5173](http://localhost:5173)                 | Building flows and reviewing article results    |
 | **Stylebook**  | [localhost:5175](http://localhost:5175)                 | Browsing and curating canonical records         |
+| **API Playground** | [localhost:5176](http://localhost:5176)             | Exploring the public schema and testing requests |
 | **Public API** | [localhost:8004/public/v1](http://localhost:8004/public/v1) | Querying extracted and enriched project data |
 
 

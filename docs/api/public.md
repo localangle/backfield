@@ -23,6 +23,17 @@ http://127.0.0.1:8004
 
 Public routes are therefore under `http://127.0.0.1:8004/public/v1/...`.
 
+## API Playground
+
+The local stack serves the interactive API Playground at
+[localhost:5176](http://localhost:5176). It loads the public OpenAPI contract immediately, so the
+endpoint catalog and request fields can be browsed without authentication. Apply a project API key
+in the Playground to execute requests and load project-scoped choices. Generated curl commands use
+`$BACKFIELD_PROJECT_API_KEY` instead of embedding the key.
+
+See the [`apps/api-playground` guide](../../apps/api-playground/README.md) for interaction,
+security, and frontend development details.
+
 ## Authentication and project scope
 
 Send a project API key as a Bearer token:
