@@ -307,14 +307,12 @@ function H3Grid({
 interface H3CellMapProps {
   cells: string[]
   resolution: number
-  multiple?: boolean
   onChange: (cells: string[], resolution: number) => void
 }
 
 export default function H3CellMap({
   cells,
   resolution,
-  multiple = true,
   onChange,
 }: H3CellMapProps) {
   const selectedResolution = cells[0] ? cellResolution(cells[0]) : null
@@ -339,29 +337,23 @@ export default function H3CellMap({
   const toggleCell = useCallback(
     (cell: string) => {
       const current = cellsRef.current
-      if (!multiple) {
-        changeCells(current[0] === cell ? [] : [cell])
-        return
-      }
       changeCells(
         current.includes(cell)
           ? current.filter((selectedCell) => selectedCell !== cell)
           : [...current, cell],
       )
     },
-    [changeCells, multiple],
+    [changeCells],
   )
 
   const paintCell = useCallback(
     (cell: string) => {
       const current = cellsRef.current
-      if (!multiple) {
-        changeCells([cell])
-      } else if (!current.includes(cell)) {
+      if (!current.includes(cell)) {
         changeCells([...current, cell])
       }
     },
-    [changeCells, multiple],
+    [changeCells],
   )
 
   return (
@@ -391,7 +383,7 @@ export default function H3CellMap({
             className="map-selector-clear"
             onClick={() => changeCells([])}
           >
-            Clear {multiple ? "cells" : "cell"}
+            Clear cells
           </button>
         )}
       </div>
@@ -426,8 +418,8 @@ export default function H3CellMap({
       </div>
 
       <p className="map-selector-help">
-        Click {multiple ? "hexes" : "a hex"} to toggle highlighting, or hold Shift and drag to
-        highlight {multiple ? "several cells" : "a cell"}. Drag normally to pan.
+        Click hexes to toggle highlighting, or hold Shift and drag to highlight several cells.
+        Drag normally to pan.
       </p>
     </div>
   )

@@ -1085,12 +1085,13 @@ textarea {
 
 .method {
   display: inline-flex;
-  min-width: 48px;
-  width: fit-content;
+  width: 52px;
+  height: 22px;
+  flex: 0 0 auto;
+  align-self: start;
   align-items: center;
   justify-content: center;
   border-radius: 4px;
-  padding: 3px 5px;
   color: #fff;
   font-size: 0.625rem;
   font-weight: 700;

@@ -11,6 +11,7 @@ import RequestBodyEditor from "./RequestBodyEditor"
 import {
   exampleForSchema,
   jsonBodySchema,
+  listOperations,
   resolveInputSchema,
   type OpenApiDocument,
   type OpenApiParameter,
@@ -33,6 +34,7 @@ import {
   type ParameterValues,
   type PlaygroundResponse,
 } from "../lib/request"
+import { cellResolution } from "../lib/mapSelection"
 
 const GeoAreaMap = lazy(() => import("./GeoAreaMap"))
 const H3CellMap = lazy(() => import("./H3CellMap"))
@@ -185,6 +187,7 @@ export default function EndpointExplorer({
   const [curl, setCurl] = useState("")
   const [error, setError] = useState("")
   const [executing, setExecuting] = useState(false)
+  const [h3HighlightCells, setH3HighlightCells] = useState<string[]>([])
   const bodyFieldNames = new Set(Object.keys(resolvedBodySchema?.properties ?? {}))
   const needsArticleFacets =
     operationNeedsArticleFacets(operation) ||
@@ -313,6 +316,10 @@ export default function EndpointExplorer({
     return () => controller.abort()
   }, [apiKey, operation, origin, selectedProjectSlug])
 
+  useEffect(() => {
+    setH3HighlightCells([])
+  }, [operation.id, operation.displayPath])
+
   const presentationContext: PresentationContext = {
     projectOptions,
     articleFacets: articleFacetLoad,
@@ -324,7 +331,78 @@ export default function EndpointExplorer({
     setError("")
     setResponse(undefined)
     try {
-      const request = prepareRequest(document, operation, origin, values, bodyText, apiKey)
+      const selectedCells = (
+        h3HighlightCells.length > 0
+          ? h3HighlightCells
+          : (values["path:h3_cell"] ?? "")
+              .split(/[\n,]/)
+              .map((cell) => cell.trim())
+              .filter(Boolean)
+      )
+      const isSingleCellDetail = /^\/articles\/geo-cells\/\{[^}]+\}$/.test(
+        operation.displayPath,
+      )
+
+      let request
+      if (isSingleCellDetail && selectedCells.length > 1) {
+        const batchOperation = listOperations(document).find(
+          (candidate) =>
+            candidate.method === "post" &&
+            candidate.displayPath === "/articles/geo-cells/query",
+        )
+        if (!batchOperation) {
+          throw new Error(
+            "Multiple H3 cells are selected, but the batch query endpoint is unavailable.",
+          )
+        }
+        const batchBody: Record<string, unknown> = {
+          cells: selectedCells,
+          resolution: cellResolution(selectedCells[0]) ?? 6,
+        }
+        for (const name of [
+          "location_type",
+          "nature",
+          "external_source",
+          "pub_date_from",
+          "pub_date_to",
+        ]) {
+          const value = values[`query:${name}`]?.trim()
+          if (value) batchBody[name] = value
+        }
+        const meta = values["query:meta"]?.trim()
+        if (meta) {
+          batchBody.meta = meta
+            .split(/[\n,]/)
+            .map((item) => item.trim())
+            .filter(Boolean)
+        }
+        const limit = values["query:limit"]?.trim()
+        if (limit) batchBody.limit = Number(limit)
+        const offset = values["query:offset"]?.trim()
+        if (offset) batchBody.offset = Number(offset)
+
+        request = prepareRequest(
+          document,
+          batchOperation,
+          origin,
+          { "path:project_slug": values["path:project_slug"] ?? "" },
+          JSON.stringify(batchBody, null, 2),
+          apiKey,
+        )
+      } else {
+        const requestValues =
+          isSingleCellDetail && selectedCells.length === 1
+            ? { ...values, "path:h3_cell": selectedCells[0] }
+            : values
+        request = prepareRequest(
+          document,
+          operation,
+          origin,
+          requestValues,
+          bodyText,
+          apiKey,
+        )
+      }
       setCurl(request.curl)
       setExecuting(true)
       setResponse(await executePreparedRequest(request))
@@ -414,16 +492,21 @@ export default function EndpointExplorer({
                       <H3CellMap
                         key={`${operation.displayPath}-h3-map`}
                         cells={
-                          values["path:h3_cell"] ? [values["path:h3_cell"]] : []
+                          h3HighlightCells.length > 0
+                            ? h3HighlightCells
+                            : (values["path:h3_cell"] ?? "")
+                                .split(/[\n,]/)
+                                .map((cell) => cell.trim())
+                                .filter(Boolean)
                         }
                         resolution={6}
-                        multiple={false}
-                        onChange={(cells) =>
+                        onChange={(cells) => {
+                          setH3HighlightCells(cells)
                           setValues((current) => ({
                             ...current,
-                            "path:h3_cell": cells[0] ?? "",
+                            "path:h3_cell": cells.join("\n"),
                           }))
-                        }
+                        }}
                       />
                     </Suspense>
                   )}
@@ -454,6 +537,17 @@ export default function EndpointExplorer({
                               onProjectSlugChange?.(value)
                               setBodyText(initialBody)
                             }
+                            if (
+                              parameter.in === "path" &&
+                              parameter.name === "h3_cell"
+                            ) {
+                              setH3HighlightCells(
+                                value
+                                  .split(/[\n,]/)
+                                  .map((cell) => cell.trim())
+                                  .filter(Boolean),
+                              )
+                            }
                             setValues((current) => {
                               const next = { ...current, [key]: value }
                               if (
@@ -472,6 +566,7 @@ export default function EndpointExplorer({
                                 ]) {
                                   delete next[`path:${idName}`]
                                 }
+                                setH3HighlightCells([])
                               }
                               if (
                                 parameter.name === "entity_type" &&

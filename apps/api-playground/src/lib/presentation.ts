@@ -193,6 +193,17 @@ export function presentationForField(
     }
   }
 
+  if (location === "path" && name === "h3_cell") {
+    return {
+      control: "textarea",
+      helperText:
+        "One H3 cell per line. A single cell uses this endpoint; multiple cells are sent as a batch query.",
+      placeholder: "One H3 cell ID per line",
+      typeLabel: "String",
+      wide: true,
+    }
+  }
+
   const typeaheadKinds: Record<string, TypeaheadKind> = {
     article_id: "article",
     location_id: "location",
@@ -461,7 +472,7 @@ export function sectionsForOperation(
       names,
       wide: new Set(
         names.filter((name) =>
-          ["project_slug", "q", "query", "meta", "bbox", "cells", "include"].includes(name),
+          ["project_slug", "q", "query", "meta", "bbox", "cells", "include", "h3_cell"].includes(name),
         ),
       ),
     }]

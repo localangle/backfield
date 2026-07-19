@@ -264,7 +264,25 @@ export function prepareRequest(
       validateParameterValue(document, parameter, parsedValue)
     }
     if (parameter.in === "path") {
-      path = path.replace(`{${parameter.name}}`, encodeURIComponent(parsedValues[0] ?? ""))
+      const pathValue =
+        parameter.name === "h3_cell"
+          ? (parsedValues[0]
+              ?.split(/[\n,]/)
+              .map((part) => part.trim())
+              .filter(Boolean)[0] ?? "")
+          : (parsedValues[0] ?? "")
+      if (parameter.name === "h3_cell") {
+        const cellCount = (values[parameterKey(parameter)] ?? "")
+          .split(/[\n,]/)
+          .map((part) => part.trim())
+          .filter(Boolean).length
+        if (cellCount > 1) {
+          throw new Error(
+            "This endpoint accepts one h3_cell. Clear the selection to a single cell, or use Batch query for multiple cells.",
+          )
+        }
+      }
+      path = path.replace(`{${parameter.name}}`, encodeURIComponent(pathValue))
     } else if (parameter.in === "query") {
       for (const parsedValue of parsedValues) {
         query.append(parameter.name, parsedValue)
