@@ -1,6 +1,6 @@
 /** Cross-app navigation (Agate ↔ Stylebook SPAs). */
 
-import { resolveUiOrigin } from '@backfield/ui/siblingUiOrigin'
+import { resolveUiOrigin, swapUiHostname } from '@backfield/ui/siblingUiOrigin'
 
 function browserOrigin(): string {
   if (typeof window !== 'undefined') {
@@ -62,6 +62,18 @@ export function playgroundHref(): string {
   const override = import.meta.env.VITE_PLAYGROUND_URL
   if (typeof override === 'string' && override.trim() !== '') {
     return override.trim().replace('{organization_slug}', organizationSlug)
+  }
+  // Swap the product label only so staging (`.stg.`) is preserved.
+  if (origin) {
+    try {
+      const url = new URL(origin)
+      const swapped = swapUiHostname(url.hostname, 'playground')
+      if (swapped !== url.hostname) {
+        return `https://${swapped}`
+      }
+    } catch {
+      // Fall through to the generic playground host.
+    }
   }
   return organizationSlug
     ? `https://playground.${organizationSlug}.backfield.news`

@@ -1,11 +1,13 @@
 # Backfield Public API Playground
 
 `apps/api-playground` is the schema-driven developer client for browsing and exercising the public
-API. It is served on tenant-specific production domains such as
-`https://playground.example-newsroom.backfield.news`.
+API. It is served on tenant-specific domains such as
+`https://playground.example-newsroom.backfield.news` (production) and
+`https://playground.example-newsroom.stg.backfield.news` (staging).
 
-The app infers the organization slug from its own hostname and calls exactly
-`https://api.{organization-slug}.backfield.news`. On localhost it automatically uses
+The app infers the organization slug and environment from its own hostname and calls the matching
+API origin (`https://api.{organization-slug}.backfield.news` or
+`https://api.{organization-slug}.stg.backfield.news`). On localhost it automatically uses
 `http://localhost:8004`. There is no organization or API-origin selector.
 
 Agate and Stylebook link to the matching tenant Playground from their sidebar footer. Their

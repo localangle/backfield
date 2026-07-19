@@ -15,6 +15,7 @@ import {
   LOCAL_AGATE_ORIGIN,
   LOCAL_STYLEBOOK_ORIGIN,
   deriveProductOrigin,
+  type ParentDomain,
 } from "../lib/origin"
 import type { PlatformContext } from "../lib/session"
 
@@ -36,12 +37,14 @@ function readExpandedWorkspaceSlugs(): Set<string> {
 interface PlatformSidebarProps {
   context: PlatformContext
   organizationSlug: string
+  parentDomain: ParentDomain
   local: boolean
 }
 
 export default function PlatformSidebar({
   context,
   organizationSlug,
+  parentDomain,
   local,
 }: PlatformSidebarProps) {
   const [expandedWorkspaceSlugs, setExpandedWorkspaceSlugs] = useState<Set<string>>(
@@ -49,10 +52,10 @@ export default function PlatformSidebar({
   )
   const agateOrigin = local
     ? LOCAL_AGATE_ORIGIN
-    : deriveProductOrigin("agate", organizationSlug)
+    : deriveProductOrigin("agate", organizationSlug, parentDomain)
   const stylebookOrigin = local
     ? LOCAL_STYLEBOOK_ORIGIN
-    : deriveProductOrigin("stylebook", organizationSlug)
+    : deriveProductOrigin("stylebook", organizationSlug, parentDomain)
 
   useEffect(() => {
     try {
