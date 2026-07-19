@@ -41,9 +41,9 @@ export interface PresentationContext {
 
 export interface FieldPresentation {
   control: ControlKind
-  description?: string
   disabled?: boolean
   emptyLabel?: string
+  helperText?: string
   options?: SelectOption[]
   placeholder?: string
   typeaheadKind?: TypeaheadKind
@@ -74,20 +74,6 @@ const DIRECTION_OPTIONS: SelectOption[] = [
   { value: "asc", label: "Ascending" },
   { value: "desc", label: "Descending" },
 ]
-
-const DATE_DESCRIPTIONS: Record<string, string> = {
-  pub_date_from: "Include articles published on or after this date.",
-  pub_date_to: "Include articles published on or before this date.",
-}
-
-const FIELD_DESCRIPTIONS: Record<string, string> = {
-  limit: "Number of results to return. The default is 25; the maximum is 100.",
-  offset: "Number of results to skip. The default is 0.",
-  bbox: "Bounding box as min_lng,min_lat,max_lng,max_lat.",
-  cells: "Enter one H3 cell ID per line.",
-  meta:
-    "Build metadata conditions from this project's types and categories. Results must match every condition (AND); within one condition, any selected category counts (OR).",
-}
 
 const HUMAN_LABELS: Record<string, string> = {
   asc: "Ascending",
@@ -155,11 +141,36 @@ function sortOptions(operation: PlaygroundOperation): SelectOption[] {
 }
 
 function includeOptions(operation: PlaygroundOperation): SelectOption[] {
-  return optionsFromValues(
-    /^\/articles\/\{article_id\}$/.test(operation.displayPath)
-      ? ["counts", "text"]
-      : ["counts"],
-  )
+  const detailPath = /^\/articles\/\{article_id\}$/.test(operation.displayPath)
+  return [
+    { value: "counts", label: "Mention counts" },
+    ...(detailPath ? [{ value: "text", label: "Full article text" }] : []),
+  ]
+}
+
+function helperTextForField(
+  operation: PlaygroundOperation,
+  name: string,
+  location: OpenApiParameter["in"] | "body",
+): string | undefined {
+  if (name === "q" && operation.displayPath === "/articles/search") {
+    return 'Supports quoted phrases, OR, and -term exclusions.'
+  }
+  if (name === "use_hyde" && location === "body") {
+    return "When true, generates a hypothetical answer and embeds that for retrieval."
+  }
+  if (name === "resolution" && operation.displayPath === "/articles/geo-cells") {
+    return "Leave blank to derive resolution from the bounding-box size."
+  }
+  if (name === "radius_miles") {
+    return "Required together with center_lng and center_lat."
+  }
+  if (name === "include") {
+    return /^\/articles\/\{article_id\}$/.test(operation.displayPath)
+      ? "counts adds mention totals; text includes the article body."
+      : "counts adds mention totals for each article."
+  }
+  return undefined
 }
 
 export function presentationForField(
@@ -193,7 +204,6 @@ export function presentationForField(
   if (typeaheadKind) {
     return {
       control: "typeahead",
-      description,
       placeholder: `Search ${typeaheadKind === "person" ? "people" : `${typeaheadKind}s`}…`,
       typeaheadKind,
       typeLabel: typeaheadKind === "article" || typeaheadKind === "mention"
@@ -206,7 +216,6 @@ export function presentationForField(
   if (name === "meta") {
     return {
       control: "meta-builder",
-      description: FIELD_DESCRIPTIONS.meta,
       typeLabel: "Repeatable string",
       wide: true,
     }
@@ -216,7 +225,6 @@ export function presentationForField(
     const noun = name === "author" ? "author" : "source"
     return {
       control: "select",
-      description,
       typeLabel: "String",
       ...loadedOptions(
         context.articleFacets,
@@ -229,7 +237,6 @@ export function presentationForField(
   if (name === "meta_type") {
     return {
       control: "select",
-      description,
       typeLabel: "String",
       ...loadedOptions(context.metadataTypes, "metaTypes", "metadata type"),
     }
@@ -238,10 +245,6 @@ export function presentationForField(
   if (name === "entity_type" || name === "has_mentions" || name === "to_entity_type") {
     return {
       control: "select",
-      description:
-        name === "has_mentions"
-          ? "Require at least one mention of a specific entity type."
-          : description,
       emptyLabel: name === "has_mentions" ? "Any mention type" : "Any entity type",
       options: ENTITY_OPTIONS,
       typeLabel: "String",
@@ -258,7 +261,6 @@ export function presentationForField(
   if (mentionFacetKey) {
     return {
       control: schema?.type === "array" ? "checkboxes" : "select",
-      description,
       typeLabel: schema?.type === "array" ? "Repeatable string" : "String",
       ...loadedOptions(
         context.mentionFacets,
@@ -271,8 +273,8 @@ export function presentationForField(
   if (name === "include") {
     return {
       control: "checkboxes",
-      description,
       emptyLabel: "No extra details",
+      helperText: helperTextForField(operation, name, location),
       options: includeOptions(operation),
       typeLabel: "Repeatable string",
       wide: true,
@@ -282,7 +284,6 @@ export function presentationForField(
   if (name === "sort") {
     return {
       control: "select",
-      description,
       emptyLabel: "Default",
       options: enumOptions(schema) ?? sortOptions(operation),
       typeLabel: "String",
@@ -292,7 +293,6 @@ export function presentationForField(
   if (name === "sort_direction") {
     return {
       control: "select",
-      description,
       emptyLabel: "Default",
       options: enumOptions(schema) ?? DIRECTION_OPTIONS,
       typeLabel: "String",
@@ -302,19 +302,22 @@ export function presentationForField(
   if (name === "pub_date_from" || name === "pub_date_to") {
     return {
       control: "date",
-      description: DATE_DESCRIPTIONS[name],
       typeLabel: "Date",
     }
   }
 
   if (name === "q" || name === "query") {
+    const articleKeywordSearch =
+      name === "q" && operation.displayPath === "/articles/search"
     return {
       control: "text",
-      description,
+      helperText: helperTextForField(operation, name, location),
       placeholder:
         name === "query"
           ? "Describe the articles you want to find"
-          : 'For example: budget OR "city council"',
+          : articleKeywordSearch
+            ? 'For example: budget OR "city council"'
+            : undefined,
       typeLabel: "String",
       wide: true,
     }
@@ -323,7 +326,6 @@ export function presentationForField(
   if (name === "bbox") {
     return {
       control: "text",
-      description: description ?? FIELD_DESCRIPTIONS.bbox,
       placeholder: "-87.8,41.7,-87.5,42.0",
       typeLabel: "Coordinates",
       wide: true,
@@ -333,7 +335,6 @@ export function presentationForField(
   if (name === "cells") {
     return {
       control: "textarea",
-      description: description ?? FIELD_DESCRIPTIONS.cells,
       placeholder: "One H3 cell ID per line",
       typeLabel: "Repeatable string",
       wide: true,
@@ -343,7 +344,6 @@ export function presentationForField(
   if (name === "inputs") {
     return {
       control: "textarea",
-      description: description ?? "Optional graph inputs as a JSON object.",
       placeholder: '{\n  "input_name": "value"\n}',
       typeLabel: "JSON object",
       wide: true,
@@ -354,7 +354,6 @@ export function presentationForField(
   if (options) {
     return {
       control: "select",
-      description,
       options,
       typeLabel: schema?.type === "integer" ? "Integer" : "String",
     }
@@ -363,7 +362,7 @@ export function presentationForField(
   if (schema?.type === "boolean") {
     return {
       control: "select",
-      description,
+      helperText: helperTextForField(operation, name, location),
       options: BOOLEAN_OPTIONS,
       typeLabel: "Boolean",
     }
@@ -372,7 +371,6 @@ export function presentationForField(
   if (schema?.type === "array") {
     return {
       control: "textarea",
-      description,
       placeholder: "One value per line or comma-separated",
       typeLabel: "Repeatable string",
       wide: true,
@@ -382,7 +380,7 @@ export function presentationForField(
   if (schema?.type === "integer" || schema?.type === "number") {
     return {
       control: "number",
-      description: FIELD_DESCRIPTIONS[name] ?? description,
+      helperText: helperTextForField(operation, name, location),
       placeholder:
         schema.default !== undefined ? `Default: ${String(schema.default)}` : undefined,
       typeLabel: schema.type === "integer" ? "Integer" : "Number",
@@ -391,7 +389,6 @@ export function presentationForField(
 
   return {
     control: "text",
-    description,
     typeLabel: "String",
   }
 }

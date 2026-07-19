@@ -26,7 +26,7 @@ describe("endpoint presentation contract", () => {
   const operations = listOperations(document)
 
   it("covers every public operation and every supported parameter exactly once", () => {
-    expect(operations).toHaveLength(48)
+    expect(operations).toHaveLength(47)
 
     for (const operation of operations) {
       const parameters = operation.parameters.filter(
@@ -79,9 +79,65 @@ describe("endpoint presentation contract", () => {
     }
   })
 
+  it("keeps only non-obvious helper text", () => {
+    const articleSearch = operations.find(
+      (operation) => operation.displayPath === "/articles/search",
+    )
+    const semanticSearch = operations.find(
+      (operation) => operation.displayPath === "/articles/semantic-search",
+    )
+    const coverage = operations.find(
+      (operation) => operation.displayPath === "/articles/geo-cells",
+    )
+    expect(articleSearch).toBeDefined()
+    expect(semanticSearch).toBeDefined()
+    expect(coverage).toBeDefined()
+
+    expect(
+      presentationForField(
+        articleSearch!,
+        "q",
+        { type: "string" },
+        "Keyword match",
+        blockedContext,
+        "query",
+      ).helperText,
+    ).toMatch(/quoted phrases/)
+    expect(
+      presentationForField(
+        articleSearch!,
+        "limit",
+        { type: "integer", default: 25 },
+        "Maximum results",
+        blockedContext,
+        "query",
+      ).helperText,
+    ).toBeUndefined()
+    expect(
+      presentationForField(
+        semanticSearch!,
+        "use_hyde",
+        { type: "boolean", default: false },
+        "When true, use HyDE",
+        blockedContext,
+        "body",
+      ).helperText,
+    ).toMatch(/hypothetical/)
+    expect(
+      presentationForField(
+        coverage!,
+        "resolution",
+        { type: "integer" },
+        "Optional H3 display resolution",
+        blockedContext,
+        "query",
+      ).helperText,
+    ).toMatch(/Leave blank/)
+  })
+
   it("presents every request-body property through the shared field model", () => {
     const bodyOperations = operations.filter((operation) => jsonBodySchema(operation))
-    expect(bodyOperations).toHaveLength(3)
+    expect(bodyOperations).toHaveLength(2)
 
     for (const operation of bodyOperations) {
       const schema = resolveInputSchema(document, jsonBodySchema(operation))

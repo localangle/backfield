@@ -432,13 +432,13 @@ textarea {
 }
 
 .parameter-description-slot {
-  /* Always occupy the shared description row so adjacent controls stay aligned. */
+  /* Keep optional help in a shared row below adjacent controls. */
   min-height: 0;
   margin: 0;
 }
 
 .parameter-field .field-description {
-  margin: 2px 0 0;
+  margin: 8px 0 0;
 }
 
 .parameter-control {

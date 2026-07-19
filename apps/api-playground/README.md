@@ -28,7 +28,8 @@ Every endpoint uses the same schema-first parameter UX: fields are organized int
 Resource, Search, Area, Filters, Sort and page, Response details, and Request options sections as
 needed. Paired controls align consistently; types, defaults, required fields, and numeric limits
 come from OpenAPI; and known values use date, number, checkbox, textarea, or select controls. Empty
-optional controls are omitted from requests.
+optional controls are omitted from requests. Field help appears below its control and is reserved
+for details that are necessary to complete the request; defaults remain in the control itself.
 Every `project_slug` path parameter is a workspace-grouped dropdown populated from the signed-in
 user's available projects, and the selected project carries across endpoint changes.
 Canonical `person_id`, `organization_id`, and `location_id` fields use debounced typeahead controls
@@ -67,6 +68,7 @@ operation remains in the API contract but is intentionally omitted from the Play
 - Generated curl uses `$BACKFIELD_PROJECT_API_KEY` instead of printing the entered key.
 - The production build injects a restrictive Content Security Policy. `index.html` also sets
   `Referrer-Policy: no-referrer` through a meta policy, which works on any static host.
+  Map tiles are loaded from `https://*.basemaps.cartocdn.com` (allowed in `img-src`).
 - The production static host should send the same CSP and `Referrer-Policy: no-referrer` as HTTP
   response headers. The in-document policies remain a defense when an operator has not yet added
   host-level headers.

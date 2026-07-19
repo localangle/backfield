@@ -43,13 +43,7 @@ export default function ParameterField({
   onChange,
 }: ParameterFieldProps) {
   const descriptionId = `${id}-description`
-  const defaultLabel =
-    schema?.default !== undefined &&
-    !(Array.isArray(schema.default) && schema.default.length === 0)
-      ? `Default: ${String(schema.default)}`
-      : undefined
-  const helpParts = [presentation.description, defaultLabel].filter(Boolean)
-  const describedBy = helpParts.length ? descriptionId : undefined
+  const describedBy = presentation.helperText ? descriptionId : undefined
   const checkboxValues = selectedValues(value)
 
   let control: ReactNode
@@ -197,14 +191,14 @@ export default function ParameterField({
           {required && <span className="required-badge">Required</span>}
         </span>
       </label>
+      <div className="parameter-control">{control}</div>
       <div className="parameter-description-slot">
-        {helpParts.length > 0 ? (
+        {presentation.helperText ? (
           <p id={descriptionId} className="field-description">
-            {helpParts.join(" ")}
+            {presentation.helperText}
           </p>
         ) : null}
       </div>
-      <div className="parameter-control">{control}</div>
     </div>
   )
 }
