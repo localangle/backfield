@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { listOperations, parseOpenApiDocument, resolveInputSchema } from "../lib/openapi"
@@ -342,6 +342,69 @@ describe("OpenAPI parsing and endpoint rendering", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit as JSON" }))
     const rawBody = screen.getByRole("textbox") as HTMLTextAreaElement
     expect(rawBody.value).toContain('"query": "city budget"')
+  })
+
+  it("clears request validation errors when form values change", async () => {
+    const document = parseOpenApiDocument({
+      openapi: "3.1.0",
+      info: { title: "Public API", version: "1.2.0" },
+      paths: {
+        "/public/v1/projects/{project_slug}/articles/semantic-search": {
+          post: {
+            summary: "Semantic search",
+            parameters: [
+              {
+                name: "limit",
+                in: "query",
+                schema: { type: "integer", minimum: 1, maximum: 100 },
+              },
+            ],
+            requestBody: {
+              required: true,
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    required: ["query"],
+                    properties: {
+                      query: { type: "string", example: "city budget" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    })
+    const operation = listOperations(document)[0]
+    render(
+      <EndpointExplorer
+        document={document}
+        operation={operation}
+        origin="https://api.news.backfield.news"
+        apiKey="project-key"
+      />,
+    )
+
+    fireEvent.change(screen.getByLabelText(/limit/), { target: { value: "0" } })
+    fireEvent.click(screen.getByRole("button", { name: "Execute request" }))
+    expect(screen.getByRole("alert")).toHaveTextContent("limit must be at least 1.")
+
+    fireEvent.change(screen.getByLabelText(/limit/), { target: { value: "25" } })
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit as JSON" }))
+    fireEvent.change(screen.getByLabelText("JSON request body"), {
+      target: { value: "{" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Execute request" }))
+    expect(screen.getByRole("alert")).toHaveTextContent("Request body must be valid JSON.")
+
+    fireEvent.change(screen.getByLabelText("JSON request body"), {
+      target: { value: '{"query":"city budget"}' },
+    })
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument())
   })
 
   it("adds a map selector to geographic search parameters", async () => {

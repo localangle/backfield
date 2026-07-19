@@ -320,6 +320,10 @@ export default function EndpointExplorer({
     setH3HighlightCells([])
   }, [operation.id, operation.displayPath])
 
+  useEffect(() => {
+    setError("")
+  }, [bodyText, values])
+
   const presentationContext: PresentationContext = {
     projectOptions,
     articleFacets: articleFacetLoad,
@@ -605,12 +609,15 @@ export default function EndpointExplorer({
       <button
         className="execute-button"
         type="button"
-        disabled={executing}
+        disabled={executing || !apiKey}
         aria-describedby={error ? "request-error" : undefined}
         onClick={execute}
       >
         {executing ? "Sending request…" : "Execute request"}
       </button>
+      {!apiKey && (
+        <p className="result-note">Add a project API key above to execute requests.</p>
+      )}
       {error && (
         <p id="request-error" className="error-message" role="alert">
           {error}

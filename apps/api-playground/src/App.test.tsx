@@ -69,8 +69,14 @@ describe("API key handling", () => {
       "fetch",
       vi.fn<typeof fetch>().mockImplementation(async (input) => {
         const response = sessionResponse(input)
-        if (!response) throw new Error(`Unexpected request: ${String(input)}`)
-        return response
+        if (response) return response
+        if (String(input).endsWith("/openapi.json")) {
+          return new Response(JSON.stringify(schema), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        }
+        throw new Error(`Unexpected request: ${String(input)}`)
       }),
     )
   })
@@ -87,7 +93,13 @@ describe("API key handling", () => {
     expect(screen.getByRole("banner")).toBeInTheDocument()
     expect(screen.getByRole("main")).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "API Playground", level: 1 })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: "Connect to the API" })).toBeInTheDocument()
+    expect(
+      await screen.findByRole("heading", { name: "Browse the API schema" }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/Browse every endpoint without authentication/),
+    ).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Execute request" })).toBeDisabled()
     expect(screen.queryByLabelText(/Organization slug/)).not.toBeInTheDocument()
     expect(screen.queryByText("Backfield developer tools")).not.toBeInTheDocument()
     expect(screen.getByText("http://localhost:8004")).toBeInTheDocument()
@@ -117,10 +129,8 @@ describe("API key handling", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     render(<App />)
-    fireEvent.click(screen.getByRole("button", { name: "Load API schema" }))
-
     const connectionRegion = screen.getByRole("region", {
-      name: "Connect to the API",
+      name: "API schema",
     })
     await waitFor(() => expect(connectionRegion).toHaveAttribute("aria-busy", "true"))
 
@@ -198,6 +208,7 @@ describe("API key handling", () => {
     fireEvent.change(screen.getByLabelText(/Project API key/), {
       target: { value: "top-secret-key" },
     })
+    fireEvent.click(screen.getByRole("button", { name: "Use API key" }))
     await waitFor(() =>
       expect(
         sessionStorage.getItem("backfield-playground-project-api-key"),
@@ -245,5 +256,17 @@ describe("API key handling", () => {
     fireEvent.click(screen.getByRole("button", { name: "Copy response body" }))
     await waitFor(() => expect(clipboardWrite).toHaveBeenCalledTimes(2))
     expect(clipboardWrite.mock.calls[1][0]).toContain('"items": []')
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear key" }))
+    expect(
+      await screen.findByRole("heading", { name: "Browse the API schema" }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Execute request" })).toBeDisabled()
+    expect(screen.getByRole("heading", { name: "List and search" })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        sessionStorage.getItem("backfield-playground-project-api-key"),
+      ).toBeNull(),
+    )
   })
 })

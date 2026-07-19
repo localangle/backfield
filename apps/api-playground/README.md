@@ -53,9 +53,11 @@ operation remains in the API contract but is intentionally omitted from the Play
 
 ## Security boundary
 
-- The Playground uses the existing Backfield session cookie only to load the signed-in
-  organization, workspaces, and stylebooks for its shell. Opening the app requires an active
-  Backfield session.
+- The public schema loads immediately without authentication so every endpoint can be browsed.
+  A project API key is required only to execute requests and load project-scoped field choices.
+- When available, the existing Backfield session cookie loads the signed-in organization,
+  workspaces, and stylebooks for the shell and project selector. Schema browsing does not depend
+  on that session.
 - The project API key is held in React state and this tab's `sessionStorage`, so it survives a
   reload but is discarded when the tab closes. It is never put in local storage, cookies, URL
   state, analytics, request history, or third-party scripts. Public API requests omit browser

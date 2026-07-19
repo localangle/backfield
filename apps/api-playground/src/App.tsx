@@ -85,6 +85,7 @@ export default function App() {
       ? deriveProductOrigin("agate", organizationSlug)
       : ""
   const [apiKey, setApiKey] = useState(() => readSessionValue(API_KEY_SESSION_STORAGE))
+  const [apiKeyDraft, setApiKeyDraft] = useState(apiKey)
   const [document, setDocument] = useState<OpenApiDocument>()
   const [platformContext, setPlatformContext] = useState<PlatformContext>()
   const [sessionError, setSessionError] = useState("")
@@ -218,16 +219,13 @@ export default function App() {
       )
       return
     }
-    if (apiKey) {
-      void connect()
-    } else {
-      void loadSessionContext(apiOrigin, stylebookApiOrigin).catch(() => undefined)
-    }
+    void loadSessionContext(apiOrigin, stylebookApiOrigin).catch(() => undefined)
+    void loadSchema()
     // Tenant origins are intentionally inferred once from the current hostname.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function connect() {
+  async function loadSchema() {
     setConnectionError("")
     if (!apiOrigin || !stylebookApiOrigin) {
       setConnectionError(
@@ -238,7 +236,6 @@ export default function App() {
 
     setLoading(true)
     try {
-      await loadSessionContext(apiOrigin, stylebookApiOrigin)
       const schema = await fetchPublicSchema(apiOrigin)
       const nextOperations = listOperations(schema)
       if (!nextOperations.length) {
@@ -267,6 +264,11 @@ export default function App() {
       await logoutSession(apiOrigin)
     }
     window.location.assign(agateOrigin ? `${agateOrigin}/login` : "/")
+  }
+
+  function clearApiKey() {
+    setApiKey("")
+    setApiKeyDraft("")
   }
 
   return (
@@ -342,14 +344,14 @@ export default function App() {
                   className="secondary-button"
                   type="button"
                   disabled={loading}
-                  onClick={connect}
+                  onClick={loadSchema}
                 >
                   {loading ? "Reloading…" : "Reload schema"}
                 </button>
                 <button
                   className="secondary-button"
                   type="button"
-                  onClick={() => setApiKey("")}
+                  onClick={clearApiKey}
                 >
                   Clear key
                 </button>
@@ -359,8 +361,16 @@ export default function App() {
             <>
               <div className="section-heading">
                 <div>
-                  <h2 id="connection-title">Connect to the API</h2>
-                  <p>Enter a project API key, then load this organization’s API contract.</p>
+                  <h2 id="connection-title">
+                    {document ? "Browse the API schema" : "API schema"}
+                  </h2>
+                  <p>
+                    {document
+                      ? "Browse every endpoint without authentication. Add a project API key to execute requests."
+                      : loading
+                        ? "Loading this organization’s public API schema…"
+                        : "The public API schema is available without authentication. Add a project API key to execute requests."}
+                  </p>
                 </div>
               </div>
               <div className="connection-grid connection-grid-key-only">
@@ -373,14 +383,14 @@ export default function App() {
                       id="project-api-key"
                       type="password"
                       autoComplete="off"
-                      value={apiKey}
-                      onChange={(event) => setApiKey(event.target.value)}
+                      value={apiKeyDraft}
+                      onChange={(event) => setApiKeyDraft(event.target.value)}
                       placeholder="Paste a project API key"
                     />
                     <button
                       type="button"
                       className="secondary-button"
-                      onClick={() => setApiKey("")}
+                      onClick={() => setApiKeyDraft("")}
                     >
                       Clear
                     </button>
@@ -391,10 +401,22 @@ export default function App() {
                 <button
                   className="connect-button"
                   type="button"
-                  disabled={loading || !apiOrigin}
-                  onClick={connect}
+                  disabled={!apiKeyDraft.trim()}
+                  onClick={() => setApiKey(apiKeyDraft.trim())}
                 >
-                  {loading ? "Loading schema…" : "Load API schema"}
+                  Use API key
+                </button>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={loading || !apiOrigin}
+                  onClick={loadSchema}
+                >
+                  {loading
+                    ? "Loading schema…"
+                    : document
+                      ? "Reload schema"
+                      : "Retry schema"}
                 </button>
                 <div className="origin-preview">
                   API origin <code>{apiOrigin || "Unavailable for this hostname"}</code>
