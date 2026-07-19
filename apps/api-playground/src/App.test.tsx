@@ -131,6 +131,9 @@ describe("API key handling", () => {
       }),
     )
     expect(await screen.findByRole("heading", { name: "List and search" })).toBeInTheDocument()
+    expect(screen.queryByText(/Version 1\.0\.0/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^1\.0\.0$/)).not.toBeInTheDocument()
+    expect(screen.getByText("1 operations")).toBeInTheDocument()
     const projectSelect = screen.getByLabelText(/project_slug/) as HTMLSelectElement
     expect(projectSelect.tagName).toBe("SELECT")
     expect(projectSelect).toHaveTextContent("Daily News (daily-news)")

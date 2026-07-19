@@ -334,9 +334,7 @@ export default function App() {
                 <span className="connection-status-dot" aria-hidden />
                 <div>
                   <h2 id="connection-title">API schema loaded</h2>
-                  <p>
-                    {document.info.title} · Version {document.info.version}
-                  </p>
+                  <p>{document.info.title}</p>
                 </div>
               </div>
               <div className="connection-compact-actions">
@@ -416,9 +414,7 @@ export default function App() {
             <nav className="endpoint-navigation" aria-label="Public API endpoints">
               <div className="schema-summary">
                 <strong>{document.info.title}</strong>
-                <span>
-                  Version {document.info.version} · {operations.length} operations
-                </span>
+                <span>{operations.length} operations</span>
               </div>
               <label className="filter-label" htmlFor="endpoint-filter">
                 Filter endpoints
