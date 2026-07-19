@@ -386,6 +386,14 @@ export default function AppSidebar() {
             </div>
 
             <div className="border-t border-border/50 pt-2 shrink-0 space-y-1">
+              <a
+                href={playgroundHref()}
+                className={hubLinkClass}
+                title={!expanded ? 'API Playground' : undefined}
+              >
+                <TerminalSquare className="h-5 w-5 shrink-0" aria-hidden />
+                {expanded ? <span>API Playground</span> : null}
+              </a>
               {isOrgAdmin ? (
                 <NavLink
                   to="/settings"
@@ -396,14 +404,6 @@ export default function AppSidebar() {
                   {expanded ? <span>Settings</span> : null}
                 </NavLink>
               ) : null}
-              <a
-                href={playgroundHref()}
-                className={hubLinkClass}
-                title={!expanded ? 'API Playground' : undefined}
-              >
-                <TerminalSquare className="h-5 w-5 shrink-0" aria-hidden />
-                {expanded ? <span>API Playground</span> : null}
-              </a>
               <a
                 href={helpHref()}
                 className={hubLinkClass}

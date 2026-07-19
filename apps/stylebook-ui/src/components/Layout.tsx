@@ -535,6 +535,18 @@ export default function Layout({ children, headerContent }: LayoutProps) {
               </div>
 
               <div className="border-t border-border/50 pt-2 shrink-0 flex flex-col gap-0">
+                <a
+                  href={playgroundHref()}
+                  className={cn(
+                    "flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors",
+                    "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    "text-muted-foreground hover:text-foreground",
+                  )}
+                  title={!expanded ? "API Playground" : undefined}
+                >
+                  <TerminalSquare className="h-5 w-5 shrink-0" aria-hidden />
+                  {expanded ? <span>API Playground</span> : null}
+                </a>
                 {isOrgAdmin ? (
                   <a
                     href={`${agateBase}/settings`}
@@ -549,18 +561,6 @@ export default function Layout({ children, headerContent }: LayoutProps) {
                     {expanded ? <span>Settings</span> : null}
                   </a>
                 ) : null}
-                <a
-                  href={playgroundHref()}
-                  className={cn(
-                    "flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors",
-                    "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    "text-muted-foreground hover:text-foreground",
-                  )}
-                  title={!expanded ? "API Playground" : undefined}
-                >
-                  <TerminalSquare className="h-5 w-5 shrink-0" aria-hidden />
-                  {expanded ? <span>API Playground</span> : null}
-                </a>
                 <a
                   href={help}
                   className={cn(

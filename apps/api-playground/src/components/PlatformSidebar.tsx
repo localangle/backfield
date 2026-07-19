@@ -282,16 +282,6 @@ export default function PlatformSidebar({
           </div>
 
           <div className="border-t border-border/50 pt-2 shrink-0 space-y-1">
-            {context.user.orgRole === "org_admin" ? (
-              <a
-                href={`${agateOrigin}/settings`}
-                className={hubLinkClass}
-                title={!expanded ? "Settings" : undefined}
-              >
-                <Settings className="h-5 w-5 shrink-0" aria-hidden />
-                {expanded ? <span>Settings</span> : null}
-              </a>
-            ) : null}
             <a
               href={window.location.href}
               aria-current="page"
@@ -304,6 +294,16 @@ export default function PlatformSidebar({
               <TerminalSquare className="h-5 w-5 shrink-0" aria-hidden />
               {expanded ? <span>API Playground</span> : null}
             </a>
+            {context.user.orgRole === "org_admin" ? (
+              <a
+                href={`${agateOrigin}/settings`}
+                className={hubLinkClass}
+                title={!expanded ? "Settings" : undefined}
+              >
+                <Settings className="h-5 w-5 shrink-0" aria-hidden />
+                {expanded ? <span>Settings</span> : null}
+              </a>
+            ) : null}
             <a
               href={`${agateOrigin}/help`}
               className={hubLinkClass}
