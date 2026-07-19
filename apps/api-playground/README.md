@@ -38,7 +38,8 @@ article and mention search; the selected result stores the API ID while showing 
 and context.
 Geographic search and coverage endpoints include an interactive map for drawing bounding boxes or
 choosing a point and radius. H3 detail and batch-query endpoints include a hex-cell picker with
-named resolution tiers; map selections stay synchronized with the underlying request fields.
+named resolution tiers. Click toggles a cell, while Shift-drag highlights cells across the pointer
+path; highlighted cells stay synchronized with the underlying request fields.
 When an operation supports `author`, `external_source`, mention nature, or entity-type filters,
 selecting a project loads the matching discovery endpoint with the tab-scoped project API key and
 populates dropdown choices. Every `meta` parameter uses the visual condition builder: each row
