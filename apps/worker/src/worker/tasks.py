@@ -9,7 +9,7 @@ import os
 import tempfile
 from collections.abc import Callable
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -81,8 +81,8 @@ from backfield_entities.quality.finders.duplicate_organizations import (
 from backfield_entities.quality.finders.duplicate_people import duplicate_person_cluster_ids
 from celery import Celery, chord, group
 from celery.exceptions import Reject
-from sqlalchemy import delete, update
-from sqlmodel import Session, select
+from sqlalchemy import delete, func, update
+from sqlmodel import Session, col, select
 
 from worker.flags.replace_geography import clear_replace_article_geography_flags
 from worker.nodes.db_output import run_db_output
@@ -134,50 +134,35 @@ def _is_stale_running_item(item: AgateProcessedItem, *, now: datetime | None = N
     return (now - touch).total_seconds() > _STALE_RUNNING_AFTER_S
 
 
-def _reap_stale_running_items(
-    session: Session,
-    items: list[AgateProcessedItem],
-    *,
-    now: datetime | None = None,
-) -> None:
-    """Mark zombie ``running`` rows terminal so batch runs can finalize after worker loss."""
-    now = now or datetime.now(UTC)
-    for row in items:
-        if not _is_stale_running_item(row, now=now):
-            continue
-        row.status = "failed"
-        row.error_message = _STALE_RUNNING_MESSAGE
-        row.updated_at = now
-        session.add(row)
-
-
 def _reap_stale_running_items_for_run(
     session: Session,
     run_id: str,
     *,
     now: datetime | None = None,
 ) -> int:
-    """Reap stale ``running`` rows for one parent run (batch progress helper)."""
+    """Atomically fail stale ``running`` rows for one parent run."""
     now = now or datetime.now(UTC)
-    rows = list(
-        session.exec(
-            select(AgateProcessedItem).where(
-                AgateProcessedItem.run_id == run_id,
-                AgateProcessedItem.status == "running",
-            )
-        ).all()
+    stale_before = now - timedelta(seconds=_STALE_RUNNING_AFTER_S)
+    touch_timestamp = func.coalesce(
+        AgateProcessedItem.started_at,
+        AgateProcessedItem.updated_at,
+        AgateProcessedItem.created_at,
     )
-    stale_rows = [row for row in rows if _is_stale_running_item(row, now=now)]
-    if not stale_rows:
-        return 0
-    _reap_stale_running_items(session, stale_rows, now=now)
-    return len(stale_rows)
-
-
-def _item_blocks_run_finalization(item: AgateProcessedItem) -> bool:
-    if item.status == "pending":
-        return True
-    return item.status == "running" and not _is_stale_running_item(item)
+    result = session.execute(
+        update(AgateProcessedItem)
+        .where(
+            AgateProcessedItem.run_id == run_id,
+            AgateProcessedItem.status == "running",
+            touch_timestamp < stale_before,
+        )
+        .values(
+            status="failed",
+            error_message=_STALE_RUNNING_MESSAGE,
+            updated_at=now,
+        )
+        .execution_options(synchronize_session="fetch")
+    )
+    return int(result.rowcount or 0)
 
 
 def _try_claim_processed_item(
@@ -479,40 +464,71 @@ def _first_s3_input_params(spec: GraphSpec) -> dict[str, Any]:
     raise ValueError("S3 batch setup requires an S3Input node in the graph.")
 
 
+def _parent_run_status(session: Session, run_id: str) -> str | None:
+    return session.exec(select(AgateRun.status).where(AgateRun.id == run_id)).first()
+
+
+def _run_has_unfinished_items(session: Session, run_id: str) -> bool:
+    blocker_id = session.exec(
+        select(AgateProcessedItem.id)
+        .where(
+            AgateProcessedItem.run_id == run_id,
+            col(AgateProcessedItem.status).in_(("pending", "running")),
+        )
+        .limit(1)
+    ).first()
+    return blocker_id is not None
+
+
 def _finalize_s3_parent_run(session: Session, run_id: str) -> None:
-    run = session.get(AgateRun, run_id)
-    if not run:
+    if _parent_run_status(session, run_id) != "running":
         return
-    items = list(
-        session.exec(select(AgateProcessedItem).where(AgateProcessedItem.run_id == run_id)).all()
-    )
-    _reap_stale_running_items(session, items)
-    session.commit()
-    items = list(
-        session.exec(select(AgateProcessedItem).where(AgateProcessedItem.run_id == run_id)).all()
-    )
-    if any(_item_blocks_run_finalization(row) for row in items):
+
+    reaped = _reap_stale_running_items_for_run(session, run_id)
+    if reaped:
+        # Keep stale recovery durable and release item locks before taking the parent lock.
+        session.commit()
+
+    if _run_has_unfinished_items(session, run_id):
         return
-    failed = [row for row in items if row.status == "failed"]
-    base: dict[str, Any] = {}
-    if run.result_json:
-        try:
-            base = json.loads(run.result_json)
-        except json.JSONDecodeError:
-            base = {}
-    base["items"] = [
+
+    run = session.exec(
+        select(AgateRun)
+        .where(AgateRun.id == run_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).first()
+    if run is None or run.status != "running":
+        return
+    if _run_has_unfinished_items(session, run_id):
+        return
+
+    items = list(
+        session.exec(
+            select(
+                AgateProcessedItem.id,
+                AgateProcessedItem.source_file,
+                AgateProcessedItem.status,
+                AgateProcessedItem.error_message,
+            )
+            .where(AgateProcessedItem.run_id == run_id)
+            .order_by(AgateProcessedItem.id)
+        ).all()
+    )
+    item_summary = [
         {
-            "id": row.id,
-            "source_file": row.source_file,
-            "status": row.status,
-            "error_message": row.error_message,
+            "id": item_id,
+            "source_file": source_file,
+            "status": status,
+            "error_message": error_message,
         }
-        for row in items
+        for item_id, source_file, status, error_message in items
     ]
-    run.result_json = json.dumps(base)
-    if failed:
+    failed_count = sum(1 for _, _, status, _ in items if status == "failed")
+    run.result_json = merge_run_result_payload(run.result_json, items=item_summary)
+    if failed_count:
         run.status = "failed"
-        run.error_message = f"{len(failed)} of {len(items)} file task(s) failed."
+        run.error_message = f"{failed_count} of {len(items)} file task(s) failed."
     else:
         run.status = "succeeded"
         run.error_message = None
@@ -932,16 +948,19 @@ def _execute_processed_item_impl(item_id: int) -> None:
         if not item:
             return
         reaped = _reap_stale_running_items_for_run(session, item.run_id)
-        running_rows = list(
-            session.exec(
-                select(AgateProcessedItem).where(
+        running_count = int(
+            session.scalar(
+                select(func.count())
+                .select_from(AgateProcessedItem)
+                .where(
                     AgateProcessedItem.run_id == item.run_id,
                     AgateProcessedItem.status == "running",
                 )
-            ).all()
+            )
+            or 0
         )
         released = 0
-        if should_reconcile_orphan_running_items(len(running_rows), run_id=item.run_id):
+        if should_reconcile_orphan_running_items(running_count, run_id=item.run_id):
             active_ids = active_execute_processed_item_ids(celery_app) | {int(item_id)}
             released = release_orphan_running_items_for_run(
                 session,

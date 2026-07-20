@@ -2094,9 +2094,12 @@ class AgateProcessedItem(SQLModel, table=True):
     """Per-S3-object execution unit for S3Input batch runs (parent ``agate_run``)."""
 
     __tablename__ = "agate_processed_item"
+    __table_args__ = (
+        Index("ix_agate_processed_item_run_status", "run_id", "status"),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
-    run_id: str = Field(foreign_key="agate_run.id", index=True)
+    run_id: str = Field(foreign_key="agate_run.id")
     source_file: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     input_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     status: str = Field(
