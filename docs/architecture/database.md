@@ -127,7 +127,8 @@ specialized indexes include:
 - unique identity fingerprints within a project and canonical slugs within a Stylebook;
 - unique public idempotency keys within project and operation, plus expiry, run,
   and enqueue-state indexes for retention cleanup, run linkage, and publish recovery;
-- run, processed-item, node-type, activity-feed, cleanup-run, and AI-call aggregation indexes.
+- processed-item run/status indexes for batch progress and finalization, plus run, node-type,
+  activity-feed, cleanup-run, and AI-call aggregation indexes.
 
 Postgres uses PostGIS, `pg_trgm`, pgvector, and H3. Migrations create required extensions and fail
 when the database role cannot install them.

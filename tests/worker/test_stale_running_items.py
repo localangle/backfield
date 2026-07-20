@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from backfield_db import AgateProcessedItem
+from sqlmodel import Session, SQLModel, create_engine
 from worker import tasks as worker_tasks
 
 
@@ -29,24 +30,6 @@ def test_is_not_stale_while_within_hard_limit() -> None:
         started_at=now - timedelta(seconds=60),
     )
     assert not worker_tasks._is_stale_running_item(item, now=now)
-
-
-def test_item_blocks_finalization_only_for_active_running() -> None:
-    now = datetime.now(UTC)
-    active = AgateProcessedItem(
-        id=1,
-        run_id="run-1",
-        status="running",
-        started_at=now - timedelta(seconds=30),
-    )
-    stale = AgateProcessedItem(
-        id=2,
-        run_id="run-1",
-        status="running",
-        started_at=now - timedelta(seconds=worker_tasks._STALE_RUNNING_AFTER_S + 5),
-    )
-    assert worker_tasks._item_blocks_run_finalization(active)
-    assert not worker_tasks._item_blocks_run_finalization(stale)
 
 
 def test_try_claim_pending_uses_conditional_update() -> None:
@@ -124,6 +107,8 @@ def test_try_claim_keeps_active_running_without_stale_lease() -> None:
 
 
 def test_reap_stale_running_items_for_run_only_affects_stale_rows() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
     now = datetime(2026, 6, 17, 12, 0, 0, tzinfo=UTC)
     stale = AgateProcessedItem(
         id=1,
@@ -144,25 +129,20 @@ def test_reap_stale_running_items_for_run_only_affects_stale_rows() -> None:
         started_at=now - timedelta(seconds=worker_tasks._STALE_RUNNING_AFTER_S + 5),
     )
 
-    class _ExecResult:
-        def __init__(self, rows: list[AgateProcessedItem]) -> None:
-            self._rows = rows
+    with Session(engine) as session:
+        session.add(stale)
+        session.add(active)
+        session.add(other_run)
+        session.commit()
 
-        def all(self) -> list[AgateProcessedItem]:
-            return self._rows
+        reaped = worker_tasks._reap_stale_running_items_for_run(session, "run-1", now=now)
+        session.commit()
+        session.refresh(stale)
+        session.refresh(active)
+        session.refresh(other_run)
 
-    added: list[AgateProcessedItem] = []
-
-    class _Session:
-        def exec(self, _stmt: object) -> _ExecResult:
-            return _ExecResult([stale, active])
-
-        def add(self, row: AgateProcessedItem) -> None:
-            added.append(row)
-
-    reaped = worker_tasks._reap_stale_running_items_for_run(_Session(), "run-1", now=now)
-    assert reaped == 1
-    assert stale.status == "failed"
-    assert stale.error_message == worker_tasks._STALE_RUNNING_MESSAGE
-    assert active.status == "running"
-    assert other_run.status == "running"
+        assert reaped == 1
+        assert stale.status == "failed"
+        assert stale.error_message == worker_tasks._STALE_RUNNING_MESSAGE
+        assert active.status == "running"
+        assert other_run.status == "running"

@@ -163,8 +163,8 @@ All published ports bind to `127.0.0.1`:
 
 - Agate UI: <http://localhost:5173>
 - Stylebook UI: <http://localhost:5175>
-- API Playground: <http://localhost:5176> (schema browsing is unauthenticated; requests require a
-  project API key)
+- API Playground: <http://localhost:5176> (requires a signed-in Backfield session; requests also
+  need a project API key)
 - Agate API: <http://localhost:8000>
 - Stylebook API: <http://localhost:8003>
 - Core API: <http://localhost:8004>

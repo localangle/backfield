@@ -120,8 +120,9 @@ describe("API key handling", () => {
       await screen.findByRole("heading", { name: "Browse the API schema" }),
     ).toBeInTheDocument()
     expect(
-      screen.getByText(/Browse every endpoint without authentication/),
+      screen.getByText(/Browse every endpoint/),
     ).toBeInTheDocument()
+    expect(screen.queryByText(/without authentication/)).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Execute request" })).toBeDisabled()
     expect(screen.queryByLabelText(/Organization slug/)).not.toBeInTheDocument()
     expect(screen.queryByText("Backfield developer tools")).not.toBeInTheDocument()
@@ -152,7 +153,7 @@ describe("API key handling", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     render(<App />)
-    const connectionRegion = screen.getByRole("region", {
+    const connectionRegion = await screen.findByRole("region", {
       name: "API schema",
     })
     await waitFor(() => expect(connectionRegion).toHaveAttribute("aria-busy", "true"))
@@ -228,7 +229,7 @@ describe("API key handling", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     const firstRender = render(<App />)
-    fireEvent.change(screen.getByLabelText(/Project API key/), {
+    fireEvent.change(await screen.findByLabelText(/Project API key/), {
       target: { value: "top-secret-key" },
     })
     fireEvent.click(screen.getByRole("button", { name: "Use API key" }))
@@ -241,8 +242,9 @@ describe("API key handling", () => {
     // A fresh mount models a reload in the same browser tab.
     firstRender.unmount()
     render(<App />)
-    expect(screen.getByLabelText(/Project API key/)).toHaveValue("top-secret-key")
-
+    expect(
+      sessionStorage.getItem("backfield-playground-project-api-key"),
+    ).toBe("top-secret-key")
     expect(await screen.findByRole("heading", { name: "List and search" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "API schema loaded" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Reload schema" })).toBeInTheDocument()
@@ -313,7 +315,7 @@ describe("API key handling", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     render(<App />)
-    fireEvent.change(screen.getByLabelText(/Project API key/), {
+    fireEvent.change(await screen.findByLabelText(/Project API key/), {
       target: { value: "logout-secret-key" },
     })
     fireEvent.click(screen.getByRole("button", { name: "Use API key" }))
@@ -336,6 +338,42 @@ describe("tenant session host", () => {
     cleanup()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+  })
+
+  it("redirects unauthenticated visits to the Agate login screen", async () => {
+    const assign = vi.fn()
+    vi.stubGlobal("location", {
+      ...window.location,
+      hostname: "playground.canary.stg.backfield.news",
+      origin: "https://playground.canary.stg.backfield.news",
+      href: "https://playground.canary.stg.backfield.news/",
+      assign,
+    })
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockImplementation(async (input) => {
+        if (String(input).endsWith("/v1/auth/me")) {
+          return new Response(JSON.stringify({ detail: "Not authenticated" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          })
+        }
+        throw new Error(`Unexpected request: ${String(input)}`)
+      }),
+    )
+
+    render(<App />)
+
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith(
+        "https://agate.canary.stg.backfield.news/login",
+      ),
+    )
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Browse the API schema" })).not.toBeInTheDocument()
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Loading your Backfield workspace…",
+    )
   })
 
   it("loads the signed-in shell from the Agate host, not api.*", async () => {

@@ -42,7 +42,9 @@ Deleting a flow removes its run-control records and detaches durable article row
 - A run pins the effective graph specification before work is queued.
 - S3 Input starts batch setup and creates one processed item per input object.
 - Inline Text Input or JSON Input creates a processed item at trigger time.
-- Run cancellation is available while pending or running. Cancellation is represented by the stored terminal failure state and fixed cancellation detail.
+- Run cancellation is available while pending or running. Cancellation atomically fails active
+  items, preserves completed items, and returns the same compact status shape used for polling.
+  Repeating cancellation returns that terminal status without changing the run again.
 - Replay creates a new run from an existing run contract; item rerun requeues an existing processed item and clears its review state.
 
 For active runs, poll `GET /runs/{run_id}/status` and page summaries through `GET /runs/{run_id}/items`. Full `GET /runs/{run_id}` remains supported for callers that need the complete run response.
