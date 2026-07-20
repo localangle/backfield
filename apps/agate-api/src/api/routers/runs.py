@@ -2446,7 +2446,7 @@ def sync_run_processed_item_s3_output(
 
 
 def _serialize_run(session: Session, r: AgateRun) -> RunOut:
-    """Build ``RunOut`` for ``GET /runs/{id}`` and ``POST /runs/{id}/cancel`` responses."""
+    """Build the complete ``RunOut`` response for ``GET /runs/{id}``."""
     pid = _graph_project_id(session, r.graph_id)
     result = None
     if r.result_json:
@@ -2524,15 +2524,39 @@ def _serialize_run_status(session: Session, r: AgateRun) -> RunStatusOut:
     )
 
 
-@router.post("/{run_id}/cancel", response_model=RunOut)
+def _cancel_processed_items(session: Session, run_id: str, *, now: datetime) -> int:
+    """Fail pending/running items in one bounded update without hydrating payload columns."""
+    result = session.execute(
+        update(AgateProcessedItem)
+        .where(
+            AgateProcessedItem.run_id == run_id,
+            col(AgateProcessedItem.status).in_(("pending", "running")),
+        )
+        .values(
+            status="failed",
+            error_message=case(
+                (
+                    AgateProcessedItem.status == "running",
+                    _RUN_CANCELLED_MESSAGE + " (was running)",
+                ),
+                else_=_RUN_CANCELLED_MESSAGE,
+            ),
+            updated_at=now,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    return int(result.rowcount or 0)
+
+
+@router.post("/{run_id}/cancel", response_model=RunStatusOut)
 def cancel_run(
     run_id: str,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
-):
+) -> RunStatusOut:
     """Mark a pending or running run as stopped and fail in-flight batch items.
 
-    Workers respect the updated row so graph execution can exit before writing success.
+    Repeated cancellation returns the same compact terminal status.
     """
     r = session.get(AgateRun, run_id)
     if not r:
@@ -2541,6 +2565,14 @@ def cancel_run(
     if pid:
         require_project_access(session, auth, pid)
 
+    r = session.exec(
+        select(AgateRun)
+        .where(AgateRun.id == run_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).one()
+    if r.status == "failed" and r.error_message == _RUN_CANCELLED_MESSAGE:
+        return _serialize_run_status(session, r)
     if r.status not in ("pending", "running"):
         raise HTTPException(
             400,
@@ -2550,29 +2582,15 @@ def cancel_run(
             ),
         )
 
-    items = list(
-        session.exec(select(AgateProcessedItem).where(AgateProcessedItem.run_id == run_id)).all()
-    )
     now = datetime.now(UTC)
-    for item in items:
-        if item.status == "pending":
-            item.status = "failed"
-            item.error_message = _RUN_CANCELLED_MESSAGE
-            item.updated_at = now
-            session.add(item)
-        elif item.status == "running":
-            item.status = "failed"
-            item.error_message = _RUN_CANCELLED_MESSAGE + " (was running)"
-            item.updated_at = now
-            session.add(item)
-
+    _cancel_processed_items(session, run_id, now=now)
     r.status = "failed"
     r.error_message = _RUN_CANCELLED_MESSAGE
     r.updated_at = now
     session.add(r)
     session.commit()
     session.refresh(r)
-    return _serialize_run(session, r)
+    return _serialize_run_status(session, r)
 
 
 @router.get("/{run_id}/status", response_model=RunStatusOut)

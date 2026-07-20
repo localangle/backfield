@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 
 import pytest
 from backfield_db import (
@@ -107,3 +108,101 @@ def test_execute_processed_item_text_input_shim(single_engine, monkeypatch):
         wrap = json.loads(run.result_json or "{}")
         assert "items" in wrap
         assert len(wrap["items"]) == 1
+
+
+def test_worker_cannot_store_output_after_cancellation(single_engine):
+    engine, item_id, run_id = single_engine
+    claimed_at = datetime.now(UTC)
+    with Session(engine) as session:
+        run = session.get(AgateRun, run_id)
+        item = session.get(AgateProcessedItem, item_id)
+        assert run is not None
+        assert item is not None
+        run.status = "failed"
+        run.error_message = worker_tasks._RUN_CANCELLED_MESSAGE
+        item.status = "failed"
+        item.started_at = claimed_at
+        item.error_message = worker_tasks._RUN_CANCELLED_MESSAGE + " (was running)"
+        session.add(run)
+        session.add(item)
+        session.commit()
+
+        stored = worker_tasks._update_processed_item_outcome_if_active(
+            session,
+            item_id=item_id,
+            run_id=run_id,
+            claimed_at=claimed_at,
+            status="succeeded",
+            result_json='{"result":"late"}',
+            substrate_article_id=None,
+            error_message=None,
+            now=datetime.now(UTC),
+        )
+        session.rollback()
+        session.refresh(item)
+
+        assert not stored
+        assert item.status == "failed"
+        assert item.error_message == worker_tasks._RUN_CANCELLED_MESSAGE + " (was running)"
+        assert item.result_json is None
+
+
+def test_stale_worker_cannot_complete_a_newer_claim(single_engine):
+    engine, item_id, run_id = single_engine
+    stale_claimed_at = datetime(2026, 7, 20, 12, 0, tzinfo=UTC)
+    newer_claimed_at = datetime(2026, 7, 20, 12, 5, tzinfo=UTC)
+    with Session(engine) as session:
+        run = session.get(AgateRun, run_id)
+        item = session.get(AgateProcessedItem, item_id)
+        assert run is not None
+        assert item is not None
+        run.status = "running"
+        item.status = "running"
+        item.started_at = newer_claimed_at
+        session.add(run)
+        session.add(item)
+        session.commit()
+
+        stored = worker_tasks._update_processed_item_outcome_if_active(
+            session,
+            item_id=item_id,
+            run_id=run_id,
+            claimed_at=stale_claimed_at,
+            status="succeeded",
+            result_json='{"result":"stale"}',
+            substrate_article_id=None,
+            error_message=None,
+            now=datetime.now(UTC),
+        )
+        session.rollback()
+        session.refresh(item)
+
+        assert not stored
+        assert item.status == "running"
+        assert item.started_at == newer_claimed_at.replace(tzinfo=None)
+        assert item.result_json is None
+
+    with pytest.raises(RuntimeError, match="claim is no longer active"):
+        worker_tasks._ensure_processed_item_active(
+            engine,
+            run_id=run_id,
+            item_id=item_id,
+            claimed_at=stale_claimed_at,
+        )
+
+
+def test_between_node_check_stops_cancelled_run(single_engine):
+    engine, _item_id, run_id = single_engine
+    with Session(engine) as session:
+        run = session.get(AgateRun, run_id)
+        assert run is not None
+        run.status = "failed"
+        run.error_message = worker_tasks._RUN_CANCELLED_MESSAGE
+        session.add(run)
+        session.commit()
+
+    before_node, _after_node, _timings = worker_tasks._node_wall_clock_hooks(
+        before_node_check=lambda: worker_tasks._ensure_parent_run_running(engine, run_id)
+    )
+    with pytest.raises(RuntimeError, match=worker_tasks._RUN_CANCELLED_MESSAGE):
+        before_node("node-2", "Output")

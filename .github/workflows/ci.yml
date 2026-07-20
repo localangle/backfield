@@ -151,7 +151,11 @@ jobs:
       - name: Verify processed-item finalization locking
         env:
           BACKFIELD_DATABASE_URL_DIRECT: postgresql+psycopg://postgres:postgres@127.0.0.1:5433/backfield
-        run: uv run pytest tests/worker/test_s3_finalization_postgres.py -q
+        run: |
+          uv run pytest \
+            tests/worker/test_s3_finalization_postgres.py \
+            tests/worker/test_run_cancellation_postgres.py \
+            -q
       - name: Seed smoke user (fresh DB)
         env:
           BACKFIELD_DATABASE_URL_DIRECT: postgresql+psycopg://postgres:postgres@127.0.0.1:5433/backfield

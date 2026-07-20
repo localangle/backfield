@@ -1097,8 +1097,8 @@ export async function syncProcessedItemS3Output(
 export async function cancelRun(runId: string | number): Promise<Run> {
   const raw = (await fetchAPI(`/runs/${runId}/cancel`, {
     method: 'POST',
-  })) as RawRun
-  return normalizeRun(raw)
+  })) as RawRunStatus
+  return normalizeRunStatus(raw)
 }
 
 export async function checkHealth(): Promise<{ ok: boolean }> {

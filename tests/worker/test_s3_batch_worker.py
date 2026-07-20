@@ -364,6 +364,57 @@ def test_execute_s3_batch_setup_fanout_and_finalize(batch_engine, monkeypatch):
         assert summary.get("graph_spec_json") == graph.spec_json
 
 
+def test_s3_setup_rolls_back_items_if_run_is_cancelled_during_listing(
+    batch_engine,
+    monkeypatch,
+):
+    engine, graph_id = batch_engine
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "ak")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "sk")
+
+    with Session(engine) as session:
+        run = AgateRun(graph_id=graph_id, status="pending")
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+        run_id = str(run.id)
+
+    class _CancellingS3(_FakeS3):
+        cancelled = False
+
+        def get_object(self, **kwargs: Any) -> dict[str, Any]:
+            if not self.cancelled:
+                self.cancelled = True
+                with Session(engine) as cancel_session:
+                    run = cancel_session.get(AgateRun, run_id)
+                    assert run is not None
+                    run.status = "failed"
+                    run.error_message = worker_tasks._RUN_CANCELLED_MESSAGE
+                    run.updated_at = datetime.now(UTC)
+                    cancel_session.add(run)
+                    cancel_session.commit()
+            return super().get_object(**kwargs)
+
+    monkeypatch.setattr(worker_tasks, "_s3_client_from_env", _CancellingS3)
+    monkeypatch.setattr(
+        worker_tasks,
+        "chord",
+        lambda *_args, **_kwargs: pytest.fail("cancelled setup must not queue item work"),
+    )
+
+    worker_tasks.execute_s3_batch_setup(run_id)
+
+    with Session(engine) as session:
+        run = session.get(AgateRun, run_id)
+        assert run is not None
+        assert run.status == "failed"
+        assert run.error_message == worker_tasks._RUN_CANCELLED_MESSAGE
+        items = session.exec(
+            select(AgateProcessedItem).where(AgateProcessedItem.run_id == run_id)
+        ).all()
+        assert list(items) == []
+
+
 def test_execute_run_replay_setup_clones_items(batch_engine, monkeypatch):
     engine, graph_id = batch_engine
 
