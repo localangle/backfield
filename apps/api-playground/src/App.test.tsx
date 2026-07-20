@@ -330,3 +330,44 @@ describe("API key handling", () => {
     expect(screen.queryByDisplayValue("logout-secret-key")).not.toBeInTheDocument()
   })
 })
+
+describe("tenant session host", () => {
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it("loads the signed-in shell from the Agate host, not api.*", async () => {
+    vi.stubGlobal("location", {
+      ...window.location,
+      hostname: "playground.canary.stg.backfield.news",
+      origin: "https://playground.canary.stg.backfield.news",
+      href: "https://playground.canary.stg.backfield.news/",
+    })
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const response = sessionResponse(input)
+      if (response) return response
+      if (String(input).endsWith("/openapi.json")) {
+        return new Response(JSON.stringify(schema), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      throw new Error(`Unexpected request: ${String(input)}`)
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(<App />)
+
+    expect(
+      await screen.findByRole("navigation", { name: "Backfield products" }),
+    ).toBeInTheDocument()
+    expect(screen.getByText("https://api.canary.stg.backfield.news")).toBeInTheDocument()
+
+    const requested = fetchMock.mock.calls.map(([input]) => String(input))
+    expect(requested).toContain("https://agate.canary.stg.backfield.news/v1/auth/me")
+    expect(requested).toContain("https://api.canary.stg.backfield.news/public/v1/openapi.json")
+    expect(requested).not.toContain("https://api.canary.stg.backfield.news/v1/auth/me")
+  })
+})

@@ -86,6 +86,9 @@ export default function App() {
     : tenant
       ? deriveProductOrigin("agate", organizationSlug, parentDomain)
       : ""
+  // Local Compose exposes Core session routes on :8004. Cloud keeps /v1 session
+  // and admin routes on the Agate UI host; api.* only serves /public/v1.
+  const sessionOrigin = localAvailable ? apiOrigin : agateOrigin
   const [apiKey, setApiKey] = useState(() => readSessionValue(API_KEY_SESSION_STORAGE))
   const [apiKeyDraft, setApiKeyDraft] = useState(apiKey)
   const [document, setDocument] = useState<OpenApiDocument>()
@@ -94,7 +97,7 @@ export default function App() {
   // Start loading when this hostname can resolve an API origin so the header
   // and sidebar reserve space instead of flashing empty chrome.
   const [sessionLoading, setSessionLoading] = useState(
-    () => Boolean(apiOrigin && stylebookApiOrigin),
+    () => Boolean(apiOrigin && stylebookApiOrigin && sessionOrigin),
   )
   const [origin, setOrigin] = useState("")
   const [selectedOperationId, setSelectedOperationId] = useState(() =>
@@ -215,13 +218,13 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (!apiOrigin || !stylebookApiOrigin) {
+    if (!apiOrigin || !stylebookApiOrigin || !sessionOrigin) {
       setSessionError(
         "Open the API Playground from your organization’s tenant-specific Playground domain.",
       )
       return
     }
-    void loadSessionContext(apiOrigin, stylebookApiOrigin).catch(() => undefined)
+    void loadSessionContext(sessionOrigin, stylebookApiOrigin).catch(() => undefined)
     void loadSchema()
     // Tenant origins are intentionally inferred once from the current hostname.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -263,8 +266,8 @@ export default function App() {
 
   async function logout() {
     clearApiKey()
-    if (apiOrigin) {
-      await logoutSession(apiOrigin)
+    if (sessionOrigin) {
+      await logoutSession(sessionOrigin)
     }
     window.location.assign(agateOrigin ? `${agateOrigin}/login` : "/")
   }
