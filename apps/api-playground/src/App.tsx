@@ -19,6 +19,7 @@ import {
 import {
   fetchPlatformContext,
   logoutSession,
+  SessionAuthRequiredError,
   type PlatformContext,
 } from "./lib/session"
 
@@ -194,6 +195,10 @@ export default function App() {
     })
   }
 
+  function redirectToLogin() {
+    window.location.assign(agateOrigin ? `${agateOrigin}/login` : "/")
+  }
+
   async function loadSessionContext(
     coreOrigin: string,
     stylebookApiOrigin: string,
@@ -203,29 +208,39 @@ export default function App() {
     try {
       const context = await fetchPlatformContext(coreOrigin, stylebookApiOrigin)
       setPlatformContext(context)
+      setSessionLoading(false)
       return context
     } catch (caught) {
       setPlatformContext(undefined)
+      // Match Agate/Stylebook: unauthenticated visits leave for the shared login screen.
+      if (caught instanceof SessionAuthRequiredError) {
+        redirectToLogin()
+        // Keep the loading shell visible while the browser navigates away.
+        throw caught
+      }
       const message =
         caught instanceof Error
           ? caught.message
-          : "Sign in to Backfield before opening the API Playground."
+          : "Unable to load your Backfield workspace."
       setSessionError(message)
-      throw caught
-    } finally {
       setSessionLoading(false)
+      throw caught
     }
   }
 
   useEffect(() => {
     if (!apiOrigin || !stylebookApiOrigin || !sessionOrigin) {
+      setSessionLoading(false)
       setSessionError(
         "Open the API Playground from your organization’s tenant-specific Playground domain.",
       )
       return
     }
-    void loadSessionContext(sessionOrigin, stylebookApiOrigin).catch(() => undefined)
-    void loadSchema()
+    void loadSessionContext(sessionOrigin, stylebookApiOrigin)
+      .then(() => {
+        void loadSchema()
+      })
+      .catch(() => undefined)
     // Tenant origins are intentionally inferred once from the current hostname.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -269,7 +284,7 @@ export default function App() {
     if (sessionOrigin) {
       await logoutSession(sessionOrigin)
     }
-    window.location.assign(agateOrigin ? `${agateOrigin}/login` : "/")
+    redirectToLogin()
   }
 
   function clearApiKey() {
@@ -335,6 +350,8 @@ export default function App() {
             {sessionError}
           </p>
         )}
+        {platformContext && (
+          <>
         <section
           className={`connection-card ${
             document && apiKey ? "connection-card-compact" : ""
@@ -378,10 +395,10 @@ export default function App() {
                   </h2>
                   <p>
                     {document
-                      ? "Browse every endpoint without authentication. Add a project API key to execute requests."
+                      ? "Browse every endpoint. Add a project API key to execute requests."
                       : loading
                         ? "Loading this organization’s public API schema…"
-                        : "The public API schema is available without authentication. Add a project API key to execute requests."}
+                        : "Load this organization’s public API schema. Add a project API key to execute requests."}
                   </p>
                 </div>
               </div>
@@ -524,6 +541,8 @@ export default function App() {
               onProjectSlugChange={setExplorerProjectSlug}
             />
           </div>
+        )}
+          </>
         )}
         </main>
       </div>

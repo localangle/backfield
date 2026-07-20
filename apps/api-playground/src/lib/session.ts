@@ -40,6 +40,14 @@ interface MeResponse {
   org_role?: string | null
 }
 
+/** Thrown when the browser has no usable Backfield session; callers redirect to Agate login. */
+export class SessionAuthRequiredError extends Error {
+  constructor() {
+    super("Sign in to Backfield before opening the API Playground.")
+    this.name = "SessionAuthRequiredError"
+  }
+}
+
 async function sessionJson<T>(origin: string, path: string): Promise<T> {
   const response = await fetch(`${origin}${path}`, {
     credentials: "include",
@@ -47,11 +55,10 @@ async function sessionJson<T>(origin: string, path: string): Promise<T> {
     referrerPolicy: "no-referrer",
   })
   if (!response.ok) {
-    throw new Error(
-      response.status === 401 || response.status === 403
-        ? "Sign in to Backfield before opening the API Playground."
-        : `Backfield session request failed with ${response.status}.`,
-    )
+    if (response.status === 401 || response.status === 403) {
+      throw new SessionAuthRequiredError()
+    }
+    throw new Error(`Backfield session request failed with ${response.status}.`)
   }
   return (await response.json()) as T
 }
@@ -74,7 +81,7 @@ export async function fetchPlatformContext(
 ): Promise<PlatformContext> {
   const me = await sessionJson<MeResponse>(coreOrigin, "/v1/auth/me")
   if (!me.authenticated || !me.email || me.organization_id == null) {
-    throw new Error("Sign in to Backfield before opening the API Playground.")
+    throw new SessionAuthRequiredError()
   }
 
   const [workspaces, stylebooks] = await Promise.all([
