@@ -92,6 +92,9 @@ Bundles do not transfer project saved entities, candidate queues, caches, or act
 - merge and empty-canonical deletion actions for all current canonical domains;
 - dismissal recording;
 - optional AI review with proposal listing, acceptance, rejection, status, and cancellation.
+  AI review resolves provider credentials from the selected Agate model config and organization
+  AI settings (not only a bare worker `OPENAI_API_KEY`); missing credentials fail the review with
+  an error message instead of succeeding with zero proposals.
 
 Cleanup mutations require catalog edit access and preserve catalog tenancy.
 
