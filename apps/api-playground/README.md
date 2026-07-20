@@ -5,9 +5,10 @@ API. It is served on tenant-specific domains such as
 `https://playground.example-newsroom.backfield.news` (production) and
 `https://playground.example-newsroom.stg.backfield.news` (staging).
 
-The app infers the organization slug and environment from its own hostname and calls the matching
-API origin (`https://api.{organization-slug}.backfield.news` or
-`https://api.{organization-slug}.stg.backfield.news`). On localhost it automatically uses
+The app infers the organization slug and environment from its own hostname. Public schema and
+API execution use `https://api.{organization-slug}.[stg.]backfield.news`. Signed-in shell
+session calls use the matching Agate host (`https://agate.{organization-slug}.[stg.]backfield.news`),
+because cloud `api.*` front doors only expose `/public/v1`. On localhost both use
 `http://localhost:8004`. There is no organization or API-origin selector.
 
 Agate and Stylebook link to the matching tenant Playground from their sidebar footer. Their
