@@ -1566,6 +1566,8 @@ def _duplicate_cluster_ids_for_check(
 @celery_app.task(name="worker.tasks.execute_cleanup_ai_review")
 def execute_cleanup_ai_review(review_id: str) -> None:
     """Run LLM partition proposals for all duplicate clusters in a cleanup check."""
+    from worker.substrate.cleanup.cleanup_llm_auth import resolve_cleanup_llm_auth
+
     engine = get_engine()
     with Session(engine) as session:
         review = session.get(StylebookCleanupAiReview, review_id)
@@ -1580,8 +1582,20 @@ def execute_cleanup_ai_review(review_id: str) -> None:
         check_id = str(review.check_id)
         stylebook_id = int(review.stylebook_id)
         organization_id = int(stylebook.organization_id)
-        model = (review.provider_model_id or "").strip() or "gpt-5-nano"
-        model_config_id = review.ai_model_config_id
+        try:
+            llm_auth = resolve_cleanup_llm_auth(
+                session,
+                organization_id=organization_id,
+                provider_model_id=review.provider_model_id,
+                ai_model_config_id=review.ai_model_config_id,
+                default_model="gpt-5-nano",
+            )
+        except ValueError as exc:
+            _fail_cleanup_ai_review(engine, review_id, str(exc))
+            return
+        model = llm_auth.model
+        model_config_id = llm_auth.model_config_id
+        api_key_overlay = dict(llm_auth.api_key_overlay)
         try:
             cluster_id_lists = _duplicate_cluster_ids_for_check(
                 session,
@@ -1611,8 +1625,6 @@ def execute_cleanup_ai_review(review_id: str) -> None:
         check_id = str(review.check_id)
         stylebook_id = int(review.stylebook_id)
         organization_id = int(stylebook.organization_id)
-        model = (review.provider_model_id or "").strip() or "gpt-5-nano"
-        model_config_id = review.ai_model_config_id
         for member_ids in cluster_id_lists:
             members = load_cluster_members(
                 session,
@@ -1634,6 +1646,7 @@ def execute_cleanup_ai_review(review_id: str) -> None:
             members_by_cluster=cluster_payloads,
             model=model,
             model_config_id=model_config_id,
+            api_key_overlay=api_key_overlay,
         )
     except Exception as exc:
         logger.exception("execute_cleanup_ai_review failed")

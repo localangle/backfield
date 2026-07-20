@@ -19,6 +19,8 @@ from backfield_entities.quality.llm_questionable_organizations import (
 )
 from sqlmodel import Session
 
+from worker.substrate.cleanup.cleanup_llm_auth import overlay_catalog_auth
+
 
 @dataclass(frozen=True)
 class QuestionableOrganizationLlmContext:
@@ -26,31 +28,6 @@ class QuestionableOrganizationLlmContext:
     api_key_overlay: dict[str, str]
     model: str
     model_config_id: str
-
-
-def _overlay_catalog_auth(
-    overlay: dict[str, str],
-    *,
-    provider: str,
-    api_key: str | None,
-    api_base: str | None,
-) -> dict[str, str]:
-    merged = dict(overlay)
-    if api_key:
-        provider_key = provider.strip().lower()
-        if provider_key == "openai":
-            merged["OPENAI_API_KEY"] = api_key
-        elif provider_key == "anthropic":
-            merged["ANTHROPIC_API_KEY"] = api_key
-        elif provider_key == "gemini":
-            merged["GEMINI_API_KEY"] = api_key
-        elif provider_key == "openrouter":
-            merged["OPENROUTER_API_KEY"] = api_key
-        elif provider_key == "azure":
-            merged["AZURE_API_KEY"] = api_key
-    if api_base:
-        merged["AZURE_API_BASE"] = api_base
-    return merged
 
 
 def resolve_cleanup_project_id(session: Session, *, scope: CleanupRunScope) -> int:
@@ -96,7 +73,7 @@ def resolve_questionable_organization_llm_context(
             provider_model_id=str(cfg.provider_model_id),
         ),
     )
-    overlay = _overlay_catalog_auth(
+    overlay = overlay_catalog_auth(
         overlay,
         provider=str(cfg.provider),
         api_key=catalog_key,
