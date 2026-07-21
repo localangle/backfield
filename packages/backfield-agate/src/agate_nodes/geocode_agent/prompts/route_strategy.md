@@ -16,7 +16,7 @@ Meanings:
 
 ## When to use **no_web_search**
 
-- Clearly structural types that do not benefit from web search: **state**, **county**, **city**, **neighborhood**, **address** (already has a street line), **street_road**, **intersection***, **span**, **region***, **natural**.
+- Clearly structural types that do not benefit from web search: **state**, **county**, **city**, **neighborhood**, **address** (already has a street line), **street_road**, **intersection***, **span**, **region***, **natural**, **country** (ISO identity + optional Pelias country-layer bbox).
 - **place** with a full numeric street address already present in **components.address** (or equivalent). Pelias should receive that street line directly; web search is only a post-Pelias fallback if needed.
 - Non-addressable natural POIs where search would not resolve a street address.
 

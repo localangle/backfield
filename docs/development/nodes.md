@@ -113,9 +113,12 @@ or coordinates. Shared coordinates alone never collapse differently named places
 
 Address display formatting is identity-preserving: a numbered address must retain
 its house number and meaningful street tokens after any model-assisted polish.
-Recognized country rows use structured ISO identity and can be accepted without
-resolver geometry. Natural features use only jurisdiction explicitly present in
-their extracted location string.
+Recognized country rows use structured ISO identity as the accept gate and can be
+accepted without resolver geometry. When Pelias returns a matching ``country``-layer
+bbox, consolidate attaches that polygon (`geocode_disposition:
+accepted_with_pelias_boundary`); otherwise the row stays identity-only
+(`accepted_authoritative_identity`) and Places shows “No geography.” Natural
+features use only jurisdiction explicitly present in their extracted location string.
 
 Consolidate QA also routes state/country contradictions to `needs_review` with
 `geocode_qa_code: geocode_subnational_mismatch` when the extract names a US state

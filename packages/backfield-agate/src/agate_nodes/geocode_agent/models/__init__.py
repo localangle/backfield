@@ -8,6 +8,7 @@ from .area.street_road import StreetRoad
 from .area.span import Span
 from .area.region import Region
 from .area.natural import NaturalPlace
+from .area.country import Country
 from .point.point import Point
 from .point.address import Address
 from .point.place import Place
@@ -24,6 +25,7 @@ __all__ = [
     "Span",
     "Region",
     "NaturalPlace",
+    "Country",
     "Point",
     "Address",
     "Place",

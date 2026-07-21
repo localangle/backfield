@@ -511,7 +511,7 @@ async def consolidate_node(state: AgentState) -> AgentState:
     if location_type == "country" and isinstance(country_identity, dict):
         country_name = str(country_identity.get("name") or "").strip()
         country_code = str(country_identity.get("abbr") or "").strip().upper()
-        country_entry = {
+        country_entry: dict[str, Any] = {
             "id": f"iso-country:{country_code}",
             "original_text": original_text,
             "location": country_name,
@@ -523,6 +523,31 @@ async def consolidate_node(state: AgentState) -> AgentState:
         canonical_id = country_identity.get("canonical_id")
         if canonical_id:
             country_entry["canonical_id"] = str(canonical_id)
+
+        # Optional Pelias (or cache) country-layer bbox — identity remains authoritative.
+        if geocoding_result is not None and getattr(geocoding_result, "result", None) is not None:
+            geom = geocoding_result.result.geometry
+            geom_type = getattr(geom, "type", None)
+            geom_coords = getattr(geom, "coordinates", None)
+            if geom_type and geom_coords is not None:
+                result_payload: dict[str, Any] = {
+                    "id": geocoding_result.result.id,
+                    "formatted_address": geocoding_result.result.processed_str,
+                    "geometry": {
+                        "type": geom_type,
+                        "coordinates": geom_coords,
+                    },
+                }
+                conf = getattr(geocoding_result.result, "confidence", None) or {}
+                if isinstance(conf, dict) and conf.get("canonical_id") and "canonical_id" not in country_entry:
+                    country_entry["canonical_id"] = str(conf["canonical_id"]).strip()
+                country_entry["geocode"] = {
+                    "geocode_type": geocoding_result.geocoder,
+                    "result": result_payload,
+                }
+                if geom_type == "Polygon":
+                    country_entry["geocode_disposition"] = "accepted_with_pelias_boundary"
+
         for key, value in extra_fields.items():
             if key != "description":
                 country_entry[key] = value
