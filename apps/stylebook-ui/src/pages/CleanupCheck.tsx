@@ -1208,27 +1208,27 @@ function QuestionableCanonicalsList({
           </Button>
         </div>
       ) : null}
-      <div className="rounded-lg border overflow-x-auto">
-      <table className="w-full min-w-[1100px] table-fixed text-sm">
+      <div className="rounded-lg border overflow-hidden">
+      <table className="w-full table-fixed text-sm">
         <colgroup>
           {showActions ? (
             <>
-              <col style={{ width: "24%" }} />
+              <col style={{ width: "18%" }} />
               <col style={{ width: "12%" }} />
+              <col style={{ width: "20%" }} />
               <col style={{ width: "22%" }} />
-              <col style={{ width: "24%" }} />
-              <col style={{ width: "6%" }} />
-              <col style={{ width: "6%" }} />
-              <col style={{ width: "6%" }} />
+              <col style={{ width: "7%" }} />
+              <col style={{ width: "7%" }} />
+              <col style={{ width: "14%" }} />
             </>
           ) : (
             <>
-              <col style={{ width: "27%" }} />
-              <col style={{ width: "14%" }} />
-              <col style={{ width: "27%" }} />
               <col style={{ width: "22%" }} />
-              <col style={{ width: "5%" }} />
-              <col style={{ width: "5%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "26%" }} />
+              <col style={{ width: "26%" }} />
+              <col style={{ width: "6%" }} />
+              <col style={{ width: "6%" }} />
             </>
           )}
         </colgroup>
@@ -1308,12 +1308,13 @@ function QuestionableCanonicalsList({
                   {canonical.mention_count ?? 0}
                 </td>
                 {showActions ? (
-                  <td className="px-2 py-3 align-top text-right whitespace-nowrap">
-                    <div className="inline-flex flex-col items-stretch justify-end gap-1.5">
+                  <td className="px-3 py-3 align-top text-right">
+                    <div className="flex w-full min-w-0 flex-col items-stretch gap-1.5">
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
+                        className="w-full"
                         disabled={bulkBusy}
                         onClick={() => void onKeep(canonical.id)}
                       >
@@ -1323,7 +1324,7 @@ function QuestionableCanonicalsList({
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="text-destructive hover:text-destructive"
+                        className="w-full text-destructive hover:text-destructive"
                         disabled={bulkBusy}
                         onClick={() => void onDelete(canonical.id)}
                       >
