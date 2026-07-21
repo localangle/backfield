@@ -36,6 +36,7 @@ _STRUCTURAL_LOCATION_TYPES: frozenset[str] = frozenset(
         "span",
         "intersection_road",
         "intersection_highway",
+        "country",
     }
 )
 
@@ -72,9 +73,13 @@ def _router_audit_log(payload: dict) -> None:
 
 async def route_strategy_node(state: AgentState) -> AgentState:
     """After ``resolve_cache_or_miss``: LLM-picks strategy, or skip on cache hit."""
-    country_dispatch_complete = (
+    # Unresolved countries, or countries that already have geometry / skipped external.
+    country_dispatch_complete = state.get("geocoding_failure_reason") == "country_identity_unresolved" or (
         state.get("country_terminal_identity") is not None
-        or state.get("geocoding_failure_reason") == "country_identity_unresolved"
+        and (
+            state.get("geocoding_result") is not None
+            or bool(state.get("skip_external_geocode"))
+        )
     )
     if state.get("geocoding_result") is not None or country_dispatch_complete:
         state["router_audit"] = None
