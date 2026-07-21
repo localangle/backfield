@@ -9,7 +9,7 @@ This might include:
 - **Landmarks**
 - **Buildings**
 - **Schools**
-- **Parks**
+- **Parks, zoos, gardens, conservatories, plazas**, and other managed public destinations
 - **Specific facilities or venues**
 
 ## Non-Addressable Locations
@@ -17,8 +17,10 @@ This might include:
 This would NOT include:
 - General regions or areas
 - Cities, counties or administrative divisions
-- Natural features like lakes or forests
+- True geographic features like rivers, lakes, mountains, or coastlines (those belong on the **natural** type, not place)
 - Abstract concepts or non-physical locations
+
+When unsure between a visit destination and a geographic feature, prefer **addressable**.
 
 ## Special Case
 

@@ -115,7 +115,11 @@ Address display formatting is identity-preserving: a numbered address must retai
 its house number and meaningful street tokens after any model-assisted polish.
 Recognized country rows use structured ISO identity and can be accepted without
 resolver geometry. Natural features use only jurisdiction explicitly present in
-their extracted location string.
+their extracted location string. Dispatch trusts extract **type**: `place` always
+attempts POI geocoding (parks, zoos, plazas, conservatories included); `natural`
+is reserved for true geographic features (rivers, lakes, mountains). Deterministic
+component building must not reinterpret `type: place` as natural from name tokens
+like park or river.
 
 Consolidate QA also routes state/country contradictions to `needs_review` with
 `geocode_qa_code: geocode_subnational_mismatch` when the extract names a US state

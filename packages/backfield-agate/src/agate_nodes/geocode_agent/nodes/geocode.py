@@ -154,16 +154,20 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
         place_info = components.get("place", {})
         if isinstance(place_info, dict):
             place_name = place_info.get("name", location_text)
-            is_addressable = place_info.get("addressable", None)
         else:
             place_name = str(place_info) if place_info else location_text
-            is_addressable = None
 
         city_name = components.get("city", "")
         state_info = components.get("state", {})
         state_abbr = state_info.get("abbr") if isinstance(state_info, dict) else None
         model = Place(name=place_name, city=city_name, state_abbr=state_abbr, country=country_code)
-        model._input_addressability = is_addressable
+        # type=place always attempts POI geocoding; never honor false skips from extract.
+        model._input_addressability = True
+        explicit_street = (
+            str(components.get("address") or "").strip() if isinstance(components, dict) else ""
+        )
+        if explicit_street:
+            model._explicit_street_address = explicit_street
         model._original_text = state.get("original_text", "")
         hints = state.get("geocode_hints") or normalized_geocode_hints(state.get("extra_fields"))
         model._geocode_hints = hints or None
