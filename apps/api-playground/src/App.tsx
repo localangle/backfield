@@ -4,6 +4,7 @@ import { UserAccountMenu } from "@backfield/ui/UserAccountMenu"
 
 import EndpointExplorer from "./components/EndpointExplorer"
 import PlatformSidebar from "./components/PlatformSidebar"
+import NotFound from "./pages/NotFound"
 import { fetchPublicSchema } from "./lib/api"
 import { listOperations, type OpenApiDocument, type PlaygroundOperation } from "./lib/openapi"
 import {
@@ -67,7 +68,20 @@ function groupOperations(operations: PlaygroundOperation[]): OperationGroup[] {
   }))
 }
 
+/** Playground has no client router; only `/` is a real app route. */
+function isPlaygroundHomePath(pathname: string): boolean {
+  const normalized = pathname.replace(/\/+$/, "") || "/"
+  return normalized === "/"
+}
+
 export default function App() {
+  if (!isPlaygroundHomePath(window.location.pathname)) {
+    return <NotFound />
+  }
+  return <PlaygroundHome />
+}
+
+function PlaygroundHome() {
   const localAvailable = isLocalPlaygroundHost(window.location.hostname)
   const tenant = parsePlaygroundHost(window.location.hostname)
   const organizationSlug = tenant?.slug ?? ""
