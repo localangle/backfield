@@ -33,10 +33,18 @@ class PlaceInfo(BaseModel):
 
     name: str = Field(description="Name of the place")
     addressable: bool = Field(
-        default=False, description="Whether the place has a findable street address"
+        default=True,
+        description=(
+            "Whether the place should attempt POI geocoding. Named destinations "
+            "(venues, parks, zoos, plazas) are addressable even without a mailing line."
+        ),
     )
     natural: bool = Field(
-        default=False, description="Whether the place represents a natural location"
+        default=False,
+        description=(
+            "Whether the place is a true geographic feature. Prefer type=natural instead; "
+            "do not set from name tokens like park or river."
+        ),
     )
 
 

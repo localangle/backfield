@@ -1414,3 +1414,39 @@ pre {
     padding: 14px;
   }
 }
+
+.not-found-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  min-height: 100vh;
+  padding: 3rem 1.5rem;
+  text-align: center;
+}
+
+.not-found-page .not-found-code {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+}
+
+.not-found-page h1 {
+  margin: 0;
+  font-size: 1.875rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.not-found-page p {
+  margin: 0;
+  max-width: 28rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.not-found-page .connect-button {
+  display: inline-flex;
+  text-decoration: none;
+}

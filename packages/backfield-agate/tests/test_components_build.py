@@ -66,11 +66,48 @@ def test_place_with_embedded_street_address() -> None:
         ctx,
     )
     assert components["place"]["name"] == "Humboldt Park"
-    assert components["place"]["natural"] is True
+    assert components["place"]["natural"] is False
     assert components["place"]["addressable"] is True
     assert "2800" in components["address"]
     assert "Division" in components["address"]
     assert components["city"] == "Chicago"
+
+
+@pytest.mark.parametrize(
+    "location,expected_name",
+    [
+        ("Lincoln Park Zoo, Chicago, IL", "Lincoln Park Zoo"),
+        ("Garfield Park Conservatory, Chicago, IL", "Garfield Park Conservatory"),
+        ("River East Plaza, Chicago, IL", "River East Plaza"),
+    ],
+)
+def test_named_destinations_stay_addressable_place_path(
+    location: str,
+    expected_name: str,
+) -> None:
+    """Park/river tokens must not force natural+non-addressable for type=place."""
+    ctx = extract_article_context("Visitors gathered in Chicago, IL this weekend.")
+    components = build_components(location, "place", ctx)
+    assert components["place"]["name"] == expected_name
+    assert components["place"]["natural"] is False
+    assert components["place"]["addressable"] is True
+    assert components["city"] == "Chicago"
+    assert components["state"]["abbr"] == "IL"
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "Chicago River, IL",
+        "Lake Michigan, IL",
+    ],
+)
+def test_natural_type_does_not_invent_place_addressability(location: str) -> None:
+    ctx = extract_article_context("Boaters on the water near Chicago, IL.")
+    components = build_components(location, "natural", ctx)
+    # type=natural does not fill place; name-token heuristics must not invent one.
+    assert components["place"] == {}
+    assert components["address"] == ""
 
 
 def test_block_address_normalizes_journalistic_phrasing() -> None:

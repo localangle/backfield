@@ -57,7 +57,7 @@ The **`location`** field must always be a geocodable proper-name string (city, v
 
 Classify each included location with one type:
 
-- **place**: A **named** physical site people could find on a map — building, campus, business, landmark, park, stadium, **named bridge**. Never an event title, hearing name, or activity label. Natural features use **natural**, not place. Treat a **named bridge** as place when it is a landmark or venue; use **span** only for an explicit roadway segment between two endpoints.
+- **place**: A **named** physical site people could find or visit on a map — building, campus, business, landmark, stadium, **named bridge**, and **managed destinations / public sites** such as parks, zoos, gardens, conservatories, plazas, and similar facilities. Never an event title, hearing name, or activity label. Treat a **named bridge** as place when it is a landmark or venue; use **span** only for an explicit roadway segment between two endpoints. Prefer **place** whenever the story treats the site as a **visit destination or venue**, even if the name contains words like park, river, or lake (e.g. Lincoln Park Zoo, Garfield Park Conservatory, River East Plaza).
 - **address**: A street address with a house number. Journalistic **block references** ("6500 block of South Hermitage Avenue," "500 block of Portland Ave.") also use this type — but **`location` must be the normalized mailing-style address**, never the verbatim "block of" phrase (see **Block addresses** below). If a place also includes an address, extract only the address as this type. Streets without a house or block number are not addresses.
 - **intersection_road**: An intersection of two non-highway roads. You may infer the intersection from context elsewhere in the article.
 - **intersection_highway**: An intersection where at least one component is an interstate or highway ("I-94 and Selby Avenue").
@@ -72,7 +72,7 @@ Classify each included location with one type:
 - **region_national**: A region of the United States ("the South").
 - **country**: A country.
 - **political_district**: A **numbered or ordinally identified** political boundary used as geography — congressional districts, state house/senate districts, city wards, numbered precincts. Use only when the story treats the district as a **jurisdiction** (elections, representation, redistricting) and the text references a **formal district with a stable number** ("8th Congressional District," "Ward 15"). Never use it for colloquial regions, counties, neighborhoods, or **athletic/scholastic conferences, classes, and brackets** — those competition labels are omitted entirely (see Hard stops).
-- **natural**: A specific named natural feature (river, lake, mountain range). General natural regions ("the California coast") are regions.
+- **natural**: A specific named **geographic feature** the story treats as geography rather than a visit destination — river, lake, mountain, range, coastline, etc. ("Chicago River," "Lake Michigan"). Do **not** use **natural** for parks, zoos, gardens, conservatories, plazas, or other managed public sites; those are **place**. General natural regions ("the California coast") are regions.
 - **other**: Anything that fits no category above.
 
 ## Formatting rules
@@ -108,10 +108,10 @@ Separate each location into components where possible:
 
 - **full**: The full geocodable string ("Minneapolis, MN"; "Longfellow, Minneapolis, MN").
 - **type**: The type from the list above.
-- **place**: Only for named places — businesses, landmarks, **schools**, **bridges**:
-  - **name**: The place name ("Dogwood Coffee," "Hopkins High School," "Stone Arch Bridge").
-  - **natural**: True when the place is a natural feature unlikely to have a street address.
-  - **addressable**: True when the place likely has a findable street address (business, building, school, landmark). **Named bridges and similar named crossings** are **`addressable: true`** — they geocode as POIs even without a mailing address. False otherwise.
+- **place**: Only for named places — businesses, landmarks, **schools**, **bridges**, parks, zoos, gardens, conservatories, plazas, and similar destinations:
+  - **name**: The place name ("Dogwood Coffee," "Hopkins High School," "Stone Arch Bridge," "Lincoln Park Zoo").
+  - **natural**: Almost always **false** for `type: place`. True only if the object is somehow both typed place and a true geographic feature (rare). Do **not** set true just because the name contains park, river, lake, or similar tokens.
+  - **addressable**: **True** for named destinations and venues (including parks, zoos, conservatories, plazas, bridges). Geocode attempts a POI pin even without a mailing address in the story. If the article states a street address for the place, put that street line in **`components.address`** (not only in geocode hints).
 - **street_road**: Only for street_road types:
   - **name**: The street name.
   - **boundary**: A geocodable string for the most specific boundary containing the segment, inferred from context.

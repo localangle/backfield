@@ -13,6 +13,7 @@ import RunDetail from './pages/RunDetail'
 import ProcessedItemDetail from './pages/ProcessedItemDetail'
 import LeafletMapHarness from './pages/LeafletMapHarness'
 import Login from './pages/Login'
+import NotFound from './pages/NotFound'
 import ChangePasswordPage from './pages/ChangePassword'
 import ManageUsers from './pages/ManageUsers'
 import ManageCatalogs from './pages/ManageCatalogs'
@@ -208,6 +209,7 @@ function AppRoutes() {
         <Route index element={<SettingsHub />} />
         <Route path="models" element={<AiModelsSettings />} />
         <Route path="integrations" element={<OrgIntegrationsSettings />} />
+        <Route path="*" element={<NotFound />} />
       </Route>
       <Route
         path="/flow/:graphId"
@@ -243,6 +245,16 @@ function AppRoutes() {
           <ProtectedRoute>
             <HubLayout>
               <LeafletMapHarness />
+            </HubLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="*"
+        element={
+          <ProtectedRoute>
+            <HubLayout>
+              <NotFound />
             </HubLayout>
           </ProtectedRoute>
         }

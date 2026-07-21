@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+import asyncio
+from unittest.mock import AsyncMock, patch
 
 from agate_nodes.geocode_agent.models.point.place import Place
 from agate_utils.search import SearchResponse, SearchResult
@@ -110,10 +111,50 @@ def test_place_prep_prefers_street_address_for_structured_query() -> None:
     assert "400 Sibley St" in prep["full_address"]
 
 
+def test_place_geocode_does_not_skip_when_marked_not_addressable() -> None:
+    """type=place must still attempt Pelias even if addressability was false."""
+    place = Place(name="Lincoln Park Zoo", city="Chicago", state_abbr="IL", country="US")
+    place._input_addressability = False
+    sentinel = object()
+    with (
+        patch(
+            "agate_nodes.geocode_agent.models.point.place.has_llm_auth",
+            return_value=True,
+        ),
+        patch(
+            "agate_nodes.geocode_agent.models.point.address.Address.geocode",
+            new_callable=AsyncMock,
+            return_value=sentinel,
+        ) as super_geocode,
+    ):
+        out = asyncio.run(place.geocode(openai_api_key="sk-test"))
+    assert out is sentinel
+    super_geocode.assert_awaited_once()
+
+
+def test_create_model_place_always_addressable_with_components_address() -> None:
+    from agate_nodes.geocode_agent.nodes.geocode import _create_model
+
+    state = {
+        "original_text": "Visitors at River East Plaza.",
+        "geocode_hints": None,
+        "extra_fields": {},
+    }
+    components = {
+        "place": {"name": "River East Plaza", "natural": True, "addressable": False},
+        "address": "401 E Illinois St",
+        "city": "Chicago",
+        "state": {"name": "Illinois", "abbr": "IL"},
+    }
+    model = _create_model("place", "River East Plaza, Chicago, IL", components, state)
+    assert isinstance(model, Place)
+    assert model._input_addressability is True
+    assert model.street_address == "401 E Illinois St"
+    assert model.name == "River East Plaza"
+
+
 def test_place_web_search_fallback_after_inconclusive_pelias() -> None:
     """allow_web_search=False skips upfront search but still falls back after Pelias miss."""
-    import asyncio
-
     from agate_utils.geocoding.geocoding_types import (
         GeocodingResult,
         GeocodingResultData,

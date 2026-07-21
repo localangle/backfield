@@ -13,25 +13,6 @@ import usaddress
 from agate_nodes.place_extract.article_context import ArticleContext
 from agate_nodes.place_extract.location_utils import split_location_parts
 
-NATURAL_PLACE_TOKENS = (
-    "park",
-    "lake",
-    "river",
-    "beach",
-    "forest",
-    "mountain",
-    "canyon",
-    "bay",
-    "ocean",
-    "sea",
-    "gulf",
-    "creek",
-    "falls",
-    "trail",
-    "wilderness",
-    "national park",
-)
-
 SPAN_BETWEEN_RE = re.compile(
     r"^(?P<street>.+?)\s+between\s+(?P<start>.+?)\s+and\s+(?P<end>.+)$",
     flags=re.IGNORECASE,
@@ -346,11 +327,6 @@ def _has_address_number(tagged: dict[str, str]) -> bool:
     return bool(tagged.get("AddressNumber"))
 
 
-def _is_natural_place(name: str) -> bool:
-    lowered = name.lower()
-    return any(token in lowered for token in NATURAL_PLACE_TOKENS)
-
-
 def _extract_address_from_location(
     location: str,
     *,
@@ -467,6 +443,8 @@ def build_components(
     formatted_address = _format_usaddress(tagged)
 
     if location_type == "place":
+        # Trust extract type for dispatch: type=place is always a POI path.
+        # Do not reinterpret category from name tokens (park, river, etc.).
         place_name = primary or location.split(",")[0].strip()
         embedded_address = _extract_address_from_location(
             location,
@@ -474,11 +452,10 @@ def build_components(
             state_abbr=state_abbr,
             extra_segments=parts[1:],
         )
-        is_natural = _is_natural_place(place_name)
         components["place"] = {
             "name": place_name,
-            "natural": is_natural,
-            "addressable": bool(embedded_address) or not is_natural,
+            "natural": False,
+            "addressable": True,
         }
         if embedded_address:
             components["address"] = embedded_address

@@ -12,13 +12,13 @@ Meanings:
 
 ## When to prefer **web_search**
 
-- If **location_type** is **place** and **components.place.addressable** is **true**, and **components.address** is empty or whitespace-only, and there is **no** house number in the structured data (treat **components.street_road** as a corridor name only, not a full mailing address), **prefer `web_search`**. Rich **geocode_hints** help shape the **search query**; they are **not** a reason to skip web search in this case.
+- If **location_type** is **place** and **components.address** is empty or whitespace-only, and there is **no** house number in the structured data (treat **components.street_road** as a corridor name only, not a full mailing address), **prefer `web_search`**. Named destinations (parks, zoos, plazas, venues) still need a street or venue pin; do not skip search because the name looks outdoor. Rich **geocode_hints** help shape the **search query**; they are **not** a reason to skip web search in this case.
 
 ## When to use **no_web_search**
 
 - Clearly structural types that do not benefit from web search: **state**, **county**, **city**, **neighborhood**, **address** (already has a street line), **street_road**, **intersection***, **span**, **region***, **natural**, **country** (ISO identity + optional Pelias country-layer bbox).
 - **place** with a full numeric street address already present in **components.address** (or equivalent). Pelias should receive that street line directly; web search is only a post-Pelias fallback if needed.
-- Non-addressable natural POIs where search would not resolve a street address.
+- True geographic **natural** features (rivers, lakes, mountains) resolved on the natural path — not `type: place` destinations.
 
 Use **geocode_hints** for geographic disambiguation (street, neighborhood, nearby
 anchor); they complement **components_json** but do not override the rules above.

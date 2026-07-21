@@ -117,7 +117,10 @@ export default function CleanupCheck() {
     catalogBasePath,
     catalogScopeSuffix,
     projectFilterSlug,
+    projectScopeSlug,
   } = useProjectCatalogScope()
+  /** Cleanup APIs key runs by `project`; use filter when set, else workflow scope. */
+  const cleanupProjectSlug = projectFilterSlug || projectScopeSlug || undefined
   const crumbRoot = useScopeBreadcrumbRoot()
   const [searchParams, setSearchParams] = useSearchParams()
   const urlQuery = searchParams.get("q") ?? ""
@@ -181,19 +184,19 @@ export default function CleanupCheck() {
       await listCleanupChecks({
         stylebookSlug,
         checkId: config.id,
-        project: projectFilterSlug || undefined,
+        project: cleanupProjectSlug,
       })
     } catch {
       // Hub refreshes on next visit; ignore background sync failures.
     }
-  }, [stylebookSlug, config, projectFilterSlug])
+  }, [stylebookSlug, config, cleanupProjectSlug])
 
   useEffect(() => {
     if (!stylebookSlug || !config) return
     void getLatestCleanupCheckRun({
       stylebookSlug,
       checkId: config.id,
-      project: projectFilterSlug || undefined,
+      project: cleanupProjectSlug,
     })
       .then((run) => {
         setCheckRunStatus(run?.status ?? "never_run")
@@ -201,11 +204,11 @@ export default function CleanupCheck() {
       .catch(() => {
         setCheckRunStatus("never_run")
       })
-  }, [stylebookSlug, config, projectFilterSlug])
+  }, [stylebookSlug, config, cleanupProjectSlug])
 
   useEffect(() => {
     setPage(1)
-  }, [checkId, projectFilterSlug, urlQuery])
+  }, [checkId, cleanupProjectSlug, urlQuery])
 
   useEffect(() => {
     setSearchQuery(urlQuery)
@@ -231,7 +234,7 @@ export default function CleanupCheck() {
       const response = await getCleanupCheckResults({
         stylebookSlug,
         checkId,
-        project: projectFilterSlug || undefined,
+        project: cleanupProjectSlug,
         page,
         perPage: PER_PAGE,
         q: isClusterCheck ? urlQuery || undefined : undefined,
@@ -257,7 +260,7 @@ export default function CleanupCheck() {
     } finally {
       setLoading(false)
     }
-  }, [stylebookSlug, checkId, config, projectFilterSlug, page, showError, isClusterCheck, urlQuery])
+  }, [stylebookSlug, checkId, config, cleanupProjectSlug, page, showError, isClusterCheck, urlQuery])
 
   useEffect(() => {
     void loadResults()
@@ -427,7 +430,7 @@ export default function CleanupCheck() {
       const response = await getCleanupCheckResults({
         stylebookSlug,
         checkId: config.id,
-        project: projectFilterSlug || undefined,
+        project: cleanupProjectSlug,
         page: pageNum,
         perPage: 200,
       })
@@ -439,7 +442,7 @@ export default function CleanupCheck() {
       pageNum += 1
     }
     return rows
-  }, [stylebookSlug, config, projectFilterSlug])
+  }, [stylebookSlug, config, cleanupProjectSlug])
 
   const handleKeepQuestionableCanonical = useCallback(
     async (canonicalId: string) => {
@@ -705,17 +708,18 @@ export default function CleanupCheck() {
   }, [clusterResults, listResults])
 
   const handleRefreshEmptyPage = useCallback(() => {
-    if (!clusterResults) {
+    const results = clusterResults ?? listResults
+    if (!results) {
       void loadResults()
       return
     }
-    const lastPage = Math.max(1, Math.ceil(clusterResults.total / PER_PAGE))
-    if (clusterResults.page > lastPage) {
+    const lastPage = Math.max(1, Math.ceil(results.total / PER_PAGE))
+    if (results.page > lastPage) {
       setPage(lastPage)
       return
     }
     void loadResults()
-  }, [clusterResults, loadResults])
+  }, [clusterResults, listResults, loadResults])
 
   const showAiReviewControls =
     canEdit &&
@@ -744,6 +748,23 @@ export default function CleanupCheck() {
   }
 
   const cleanupHubPath = `${catalogBasePath}/cleanup${catalogScopeSuffix}`
+  const pageExhaustedWithMore =
+    (config.kind === "cluster" &&
+      clusterResults != null &&
+      clusterResults.clusters.length === 0 &&
+      clusterResults.total > 0) ||
+    (config.kind === "list" &&
+      listResults != null &&
+      listResults.canonicals.length === 0 &&
+      listResults.total > 0)
+  const emptyPageItemLabel =
+    config.kind === "cluster"
+      ? "clusters"
+      : entityType === "location"
+        ? "locations"
+        : entityType === "person"
+          ? "people"
+          : "organizations"
 
   return (
     <div className="space-y-6">
@@ -842,11 +863,11 @@ export default function CleanupCheck() {
               ? "This review failed. Run it again from the Review tab to see candidates."
               : "Run this review from the Review tab to see candidates."}
         </p>
-      ) : config.kind === "cluster" &&
-        clusterResults &&
-        clusterResults.clusters.length === 0 &&
-        clusterResults.total > 0 ? (
-        <EmptyCleanupPageAction itemLabel="clusters" onRefresh={handleRefreshEmptyPage} />
+      ) : pageExhaustedWithMore ? (
+        <EmptyCleanupPageAction
+          itemLabel={emptyPageItemLabel}
+          onRefresh={handleRefreshEmptyPage}
+        />
       ) : config.kind === "cluster" ? (
         <DuplicateClusterList
           clusters={clusterResults?.clusters ?? []}
@@ -1187,27 +1208,27 @@ function QuestionableCanonicalsList({
           </Button>
         </div>
       ) : null}
-      <div className="rounded-lg border overflow-x-auto">
-      <table className="w-full min-w-[1100px] table-fixed text-sm">
+      <div className="rounded-lg border overflow-hidden">
+      <table className="w-full table-fixed text-sm">
         <colgroup>
           {showActions ? (
             <>
-              <col style={{ width: "24%" }} />
+              <col style={{ width: "18%" }} />
               <col style={{ width: "12%" }} />
+              <col style={{ width: "20%" }} />
               <col style={{ width: "22%" }} />
-              <col style={{ width: "24%" }} />
-              <col style={{ width: "6%" }} />
-              <col style={{ width: "6%" }} />
-              <col style={{ width: "6%" }} />
+              <col style={{ width: "7%" }} />
+              <col style={{ width: "7%" }} />
+              <col style={{ width: "14%" }} />
             </>
           ) : (
             <>
-              <col style={{ width: "27%" }} />
-              <col style={{ width: "14%" }} />
-              <col style={{ width: "27%" }} />
               <col style={{ width: "22%" }} />
-              <col style={{ width: "5%" }} />
-              <col style={{ width: "5%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "26%" }} />
+              <col style={{ width: "26%" }} />
+              <col style={{ width: "6%" }} />
+              <col style={{ width: "6%" }} />
             </>
           )}
         </colgroup>
@@ -1287,12 +1308,13 @@ function QuestionableCanonicalsList({
                   {canonical.mention_count ?? 0}
                 </td>
                 {showActions ? (
-                  <td className="px-2 py-3 align-top text-right whitespace-nowrap">
-                    <div className="inline-flex flex-col items-stretch justify-end gap-1.5">
+                  <td className="px-3 py-3 align-top text-right">
+                    <div className="flex w-full min-w-0 flex-col items-stretch gap-1.5">
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
+                        className="w-full"
                         disabled={bulkBusy}
                         onClick={() => void onKeep(canonical.id)}
                       >
@@ -1302,7 +1324,7 @@ function QuestionableCanonicalsList({
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="text-destructive hover:text-destructive"
+                        className="w-full text-destructive hover:text-destructive"
                         disabled={bulkBusy}
                         onClick={() => void onDelete(canonical.id)}
                       >

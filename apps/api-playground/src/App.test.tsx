@@ -110,6 +110,20 @@ describe("API key handling", () => {
     vi.unstubAllGlobals()
   })
 
+  it("shows a not-found page for unknown paths", () => {
+    vi.stubGlobal("location", {
+      ...window.location,
+      pathname: "/does-not-exist",
+    })
+    render(<App />)
+    expect(screen.getByRole("heading", { name: "Page not found" })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Back to API Playground" })).toHaveAttribute(
+      "href",
+      "/",
+    )
+    expect(screen.queryByRole("heading", { name: "API Playground", level: 1 })).not.toBeInTheDocument()
+  })
+
   it("renders the Backfield product shell, sidebar, and connection landmarks", async () => {
     render(<App />)
 

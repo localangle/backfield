@@ -5,7 +5,6 @@ import {
   Routes,
   useLocation,
   useParams,
-  useSearchParams,
 } from "react-router-dom"
 import { AppMessageProvider } from "@/components/AppMessageProvider"
 import { AuthProvider, useAuth } from "@/lib/auth"
@@ -35,6 +34,7 @@ import Cleanup from "@/pages/Cleanup"
 import CleanupCheck from "@/pages/CleanupCheck"
 import Recent from "@/pages/Recent"
 import StubPage from "@/pages/StubPage"
+import NotFound from "@/pages/NotFound"
 
 function ProtectedLayout() {
   const { isAuthenticated, loading } = useAuth()
@@ -134,12 +134,6 @@ function LegacyImportRedirect() {
       replace
     />
   )
-}
-
-function CatchAllRedirect() {
-  const { search } = useLocation()
-  const qs = stripLegacyStylebookFromSearch(search)
-  return <Navigate to={`/stylebook/default${qs}`} replace />
 }
 
 export default function App() {
@@ -247,9 +241,10 @@ export default function App() {
                 path="agents/:agentType"
                 element={<StubPage title="Agents" />}
               />
+              <Route path="*" element={<NotFound />} />
             </Route>
 
-            <Route path="*" element={<CatchAllRedirect />} />
+            <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
       </AppMessageProvider>

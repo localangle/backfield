@@ -476,6 +476,13 @@ class Place(Address):
         *,
         allow_web_search: bool = True,
     ) -> Optional[GeocodingResult]:
+        """Geocode a named place as a POI.
+
+        ``type: place`` always attempts resolution: explicit street from extract
+        evidence, then web search when needed, then structured Pelias. Never
+        early-return ``None`` solely because a name looks outdoor or was marked
+        non-addressable by keyword heuristics.
+        """
         logger.info("Starting place geocoding: %s", self.name)
 
         if not has_llm_auth(openai_api_key, self._geographic_reasoning_model_config_id()):
@@ -490,8 +497,12 @@ class Place(Address):
             addressability = self._check_if_addressable(openai_key)
 
         if addressability == "not addressable":
-            logger.info("Place '%s' marked not addressable; skipping", self.name)
-            return None
+            # Still attempt Pelias/venue resolution for type=place destinations.
+            logger.info(
+                "Place '%s' marked not addressable; still attempting POI geocode",
+                self.name,
+            )
+            return await super().geocode(pelias_api_key, geocodio_api_key, openai_api_key)
 
         if addressability == "has address":
             mock_results = SearchResponse(success=True, results=[], query=self.name)

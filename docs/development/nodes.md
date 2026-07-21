@@ -119,6 +119,10 @@ bbox, consolidate attaches that polygon (`geocode_disposition:
 accepted_with_pelias_boundary`); otherwise the row stays identity-only
 (`accepted_authoritative_identity`) and Places shows “No geography.” Natural
 features use only jurisdiction explicitly present in their extracted location string.
+Dispatch trusts extract **type**: `place` always attempts POI geocoding (parks,
+zoos, plazas, conservatories included); `natural` is reserved for true geographic
+features (rivers, lakes, mountains). Deterministic component building must not
+reinterpret `type: place` as natural from name tokens like park or river.
 
 Consolidate QA also routes state/country contradictions to `needs_review` with
 `geocode_qa_code: geocode_subnational_mismatch` when the extract names a US state
