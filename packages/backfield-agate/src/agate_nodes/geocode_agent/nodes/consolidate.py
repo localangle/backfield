@@ -10,6 +10,11 @@ from backfield_entities.ingest.geocode_cache.sanity import (
     explicit_location_components_match_labels,
 )
 
+from ..poi_evidence import (
+    is_pelias_geocoder,
+    pelias_poi_result_acceptable,
+    poi_acceptance_is_address_unverified,
+)
 from ..types import AgentState
 from .emit_location_line import (
     compute_emit_location_line,
@@ -506,7 +511,7 @@ async def consolidate_node(state: AgentState) -> AgentState:
     if location_type == "country" and isinstance(country_identity, dict):
         country_name = str(country_identity.get("name") or "").strip()
         country_code = str(country_identity.get("abbr") or "").strip().upper()
-        country_entry = {
+        country_entry: dict[str, Any] = {
             "id": f"iso-country:{country_code}",
             "original_text": original_text,
             "location": country_name,
@@ -518,6 +523,31 @@ async def consolidate_node(state: AgentState) -> AgentState:
         canonical_id = country_identity.get("canonical_id")
         if canonical_id:
             country_entry["canonical_id"] = str(canonical_id)
+
+        # Optional Pelias (or cache) country-layer bbox — identity remains authoritative.
+        if geocoding_result is not None and getattr(geocoding_result, "result", None) is not None:
+            geom = geocoding_result.result.geometry
+            geom_type = getattr(geom, "type", None)
+            geom_coords = getattr(geom, "coordinates", None)
+            if geom_type and geom_coords is not None:
+                result_payload: dict[str, Any] = {
+                    "id": geocoding_result.result.id,
+                    "formatted_address": geocoding_result.result.processed_str,
+                    "geometry": {
+                        "type": geom_type,
+                        "coordinates": geom_coords,
+                    },
+                }
+                conf = getattr(geocoding_result.result, "confidence", None) or {}
+                if isinstance(conf, dict) and conf.get("canonical_id") and "canonical_id" not in country_entry:
+                    country_entry["canonical_id"] = str(conf["canonical_id"]).strip()
+                country_entry["geocode"] = {
+                    "geocode_type": geocoding_result.geocoder,
+                    "result": result_payload,
+                }
+                if geom_type == "Polygon":
+                    country_entry["geocode_disposition"] = "accepted_with_pelias_boundary"
+
         for key, value in extra_fields.items():
             if key != "description":
                 country_entry[key] = value
@@ -693,17 +723,31 @@ async def consolidate_node(state: AgentState) -> AgentState:
         match_label=formatted_line,
         match_formatted_address=formatted_line,
     ):
-        qa_entry = _point_entry_without_geometry(
-            {
-                **location_entry,
-                "geocode_component_mismatch": True,
-                "geocode_qa_code": "geocode_component_mismatch",
-            }
+        # Precision-first POI exception: Pelias venue labels often omit house numbers.
+        # Accept when POI identity + city/state agree (or exact address evidence exists
+        # in structured Pelias fields). Does not loosen the shared cache sanity gate.
+        poi_exception = (
+            location_type == "place"
+            and is_pelias_geocoder(geocoding_result.geocoder)
+            and pelias_poi_result_acceptable(comps_dict, geocoding_result)
         )
-        _attach_router_audit(qa_entry, state)
-        consolidated["places"]["needs_review"].append(qa_entry)
-        state["final_output"] = consolidated
-        return state
+        if poi_exception:
+            if poi_acceptance_is_address_unverified(comps_dict, geocoding_result):
+                location_entry["address_verification"] = "unverified"
+                location_entry["geocode_qa_code"] = "poi_identity_match"
+            # else: exact address evidence in Pelias structured fields — keep as normal point
+        else:
+            qa_entry = _point_entry_without_geometry(
+                {
+                    **location_entry,
+                    "geocode_component_mismatch": True,
+                    "geocode_qa_code": "geocode_component_mismatch",
+                }
+            )
+            _attach_router_audit(qa_entry, state)
+            consolidated["places"]["needs_review"].append(qa_entry)
+            state["final_output"] = consolidated
+            return state
     subnational_mismatch = _geocode_subnational_label_mismatch_qa(
         location_type,
         comps_dict,
@@ -806,6 +850,11 @@ async def consolidate_node(state: AgentState) -> AgentState:
         for key, value in extra_fields.items():
             if key not in ["description"]:  # Description is already handled above
                 point_entry[key] = value
+
+        # Preserve POI-exception provenance set earlier on location_entry.
+        for provenance_key in ("address_verification", "geocode_qa_code"):
+            if provenance_key in location_entry:
+                point_entry[provenance_key] = location_entry[provenance_key]
 
         _attach_router_audit(point_entry, state)
 

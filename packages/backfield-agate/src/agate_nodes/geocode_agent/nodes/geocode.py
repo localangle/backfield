@@ -16,6 +16,7 @@ from ..models import (
     Address,
     Area,
     City,
+    Country,
     County,
     Intersection,
     NaturalPlace,
@@ -113,6 +114,13 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
         state_name = state_info.get("name") if isinstance(state_info, dict) else location_text
         return State(name=state_name, country=country_code)
 
+    if location_type == "country":
+        identity = _country_component_identity(components)
+        if identity is None:
+            return None
+        country_name, code = identity
+        return Country(name=country_name, country=code)
+
     if location_type == "county":
         county_name = components.get("county", location_text)
         state_info = components.get("state", {})
@@ -160,14 +168,16 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
         city_name = components.get("city", "")
         state_info = components.get("state", {})
         state_abbr = state_info.get("abbr") if isinstance(state_info, dict) else None
-        model = Place(name=place_name, city=city_name, state_abbr=state_abbr, country=country_code)
+        street_address = str(components.get("address") or "").strip() or None
+        model = Place(
+            name=place_name,
+            city=city_name,
+            state_abbr=state_abbr,
+            country=country_code,
+            street_address=street_address,
+        )
         # type=place always attempts POI geocoding; never honor false skips from extract.
         model._input_addressability = True
-        explicit_street = (
-            str(components.get("address") or "").strip() if isinstance(components, dict) else ""
-        )
-        if explicit_street:
-            model._explicit_street_address = explicit_street
         model._original_text = state.get("original_text", "")
         hints = state.get("geocode_hints") or normalized_geocode_hints(state.get("extra_fields"))
         model._geocode_hints = hints or None
@@ -527,21 +537,45 @@ async def resolve_cache_or_miss(state: AgentState) -> AgentState:
 
         country_name, country_code = country_identity
         canonical_id = None
+        cache_polygon: object | None = None
         if geocoding_result is not None:
             confidence = getattr(geocoding_result.result, "confidence", None)
             if isinstance(confidence, dict):
                 raw_canonical_id = confidence.get("canonical_id")
                 if raw_canonical_id is not None:
                     canonical_id = str(raw_canonical_id).strip() or None
-        state["geocoding_result"] = None
-        state["geocoding_model"] = None
+            geom = getattr(getattr(geocoding_result, "result", None), "geometry", None)
+            if getattr(geom, "type", None) == "Polygon":
+                cache_polygon = geocoding_result
+
         state["geocoding_failure_reason"] = None
         state["country_terminal_identity"] = {
             "name": country_name,
             "abbr": country_code,
             "canonical_id": canonical_id,
         }
-        state["skip_external_geocode"] = True
+        if cache_polygon is not None:
+            # Stylebook/cache already supplied a country polygon — keep it.
+            state["geocoding_result"] = cache_polygon
+            state["geocoding_model"] = None
+            state["skip_external_geocode"] = True
+            _adv_info(
+                state,
+                "[CACHE SUCCESS] Country polygon from cache/canonical: %s",
+                getattr(getattr(cache_polygon, "result", None), "processed_str", country_name),
+            )
+            return state
+
+        # ISO identity accepted; allow Pelias country-layer bbox lookup next.
+        state["geocoding_result"] = None
+        state["geocoding_model"] = None
+        state["skip_external_geocode"] = False
+        _adv_info(
+            state,
+            "[COUNTRY IDENTITY] %s (%s) — attempting Pelias country bbox",
+            country_name,
+            country_code,
+        )
         return state
 
     if geocoding_result:
@@ -642,12 +676,13 @@ async def orchestrate_external_geocode(state: AgentState) -> AgentState:
             geocode_kwargs = {"openai_api_key": openai_api_key}
         else:
             if isinstance(model, Place):
-                # Advanced graph sets ``allow_web_search`` from route_strategy; baseline graph omits it (default True).
+                # Advanced graph sets ``allow_web_search`` from route_strategy; baseline graph
+                # omits it (default True). ``allow_web_search=False`` skips *upfront* search;
+                # Place.geocode may still fall back to web search after inconclusive Pelias.
+                # Always pass the Brave key so that fallback path can run.
                 raw_allow = state.get("allow_web_search")
                 allow_web = True if raw_allow is None else bool(raw_allow)
-                geocode_kwargs["brave_search_api_key"] = (
-                    brave_search_api_key if allow_web else None
-                )
+                geocode_kwargs["brave_search_api_key"] = brave_search_api_key
                 geocode_kwargs["allow_web_search"] = allow_web
             if isinstance(model, StreetRoad):
                 geocode_kwargs["original_text"] = state.get("original_text", "")
@@ -657,15 +692,29 @@ async def orchestrate_external_geocode(state: AgentState) -> AgentState:
         state["geocoding_result"] = result
         state["geocoding_model"] = model
 
+        if isinstance(model, Place) and getattr(model, "_web_search_fallback_used", False):
+            audit = state.get("router_audit")
+            if isinstance(audit, dict):
+                state["router_audit"] = {
+                    **audit,
+                    "web_search_fallback_used": True,
+                }
+            else:
+                state["router_audit"] = {"web_search_fallback_used": True}
+
         if isinstance(model, Place) and hasattr(model, "_failure_reason") and model._failure_reason:
             state["geocoding_failure_reason"] = model._failure_reason
         elif isinstance(model, Intersection) and not result:
             state["geocoding_failure_reason"] = "Intersection geocoding failed"
         elif not result:
-            state["geocoding_failure_reason"] = (
-                state.get("geocoding_failure_reason")
-                or f"Geocoding produced no result for {location_type}"
-            )
+            # Country identity is already accepted; a missing Pelias bbox is not a hard failure.
+            if location_type == "country" and state.get("country_terminal_identity"):
+                state["geocoding_failure_reason"] = None
+            else:
+                state["geocoding_failure_reason"] = (
+                    state.get("geocoding_failure_reason")
+                    or f"Geocoding produced no result for {location_type}"
+                )
         else:
             state["geocoding_failure_reason"] = None
 
@@ -674,6 +723,12 @@ async def orchestrate_external_geocode(state: AgentState) -> AgentState:
                 _adv_info(state, "Geocoding success: %s", result.result.processed_str)
             except Exception as e:
                 logger.error("Error logging geocoding success: %s", e)
+        elif location_type == "country" and state.get("country_terminal_identity"):
+            _adv_info(
+                state,
+                "No Pelias country bbox for %s; keeping ISO identity-only row",
+                location_text,
+            )
         else:
             logger.warning("Geocoding failed for %s", location_text)
 

@@ -113,19 +113,41 @@ or coordinates. Shared coordinates alone never collapse differently named places
 
 Address display formatting is identity-preserving: a numbered address must retain
 its house number and meaningful street tokens after any model-assisted polish.
-Recognized country rows use structured ISO identity and can be accepted without
-resolver geometry. Natural features use only jurisdiction explicitly present in
-their extracted location string. Dispatch trusts extract **type**: `place` always
-attempts POI geocoding (parks, zoos, plazas, conservatories included); `natural`
-is reserved for true geographic features (rivers, lakes, mountains). Deterministic
-component building must not reinterpret `type: place` as natural from name tokens
-like park or river.
+Recognized country rows use structured ISO identity as the accept gate and can be
+accepted without resolver geometry. When Pelias returns a matching ``country``-layer
+bbox, consolidate attaches that polygon (`geocode_disposition:
+accepted_with_pelias_boundary`); otherwise the row stays identity-only
+(`accepted_authoritative_identity`) and Places shows “No geography.” Natural
+features use only jurisdiction explicitly present in their extracted location string.
+Dispatch trusts extract **type**: `place` always attempts POI geocoding (parks,
+zoos, plazas, conservatories included); `natural` is reserved for true geographic
+features (rivers, lakes, mountains). Deterministic component building must not
+reinterpret `type: place` as natural from name tokens like park or river.
 
 Consolidate QA also routes state/country contradictions to `needs_review` with
 `geocode_qa_code: geocode_subnational_mismatch` when the extract names a US state
 (or asserts `components.state` / `components.country`) and the geocoder returns a
 different admin label (for example Oregon resolved as Maryland). Stylebook or
 canonical cache hits skip this check.
+
+For **place** rows, consolidate still requires house-number agreement between
+`components.address` and the provider display label when that number is present.
+When the label omits the house number (common for Pelias venue hits), a
+**Pelias-only** exception may keep the point if structured evidence is decisive:
+
+- exact house-number + jurisdiction evidence in Pelias properties, or
+- exact normalized POI-name identity (`components.place.name` vs `pelias_name`)
+  plus explicit city and state agreement from Pelias locality/region fields.
+
+POI-identity accepts set `address_verification: unverified` and
+`geocode_qa_code: poi_identity_match`. Wrong venue names and jurisdiction
+mismatches still go to `needs_review` with `geocode_component_mismatch`.
+This exception does **not** loosen Stylebook/cache linking sanity.
+
+Place geocoding passes extracted `components.address` into Pelias structured
+queries (venue name remains in free-text search). Router `no_web_search` skips
+*upfront* Brave/DuckDuckGo when a street line is already present; Place may still
+run web search as a **fallback** after inconclusive Pelias.
 
 ### Extract prompts
 
