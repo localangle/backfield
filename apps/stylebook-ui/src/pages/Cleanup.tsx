@@ -68,33 +68,51 @@ function applyChecksToSnapshots(checks: CleanupCheck[]): Record<string, CheckRun
 
 export default function Cleanup() {
   const { showError } = useAppMessage()
-  const { stylebookSlug, catalogBasePath, catalogScopeSuffix, projectFilterSlug } =
-    useProjectCatalogScope()
+  const {
+    stylebookSlug,
+    catalogBasePath,
+    catalogScopeSuffix,
+    projectFilterSlug,
+    projectScopeSlug,
+  } = useProjectCatalogScope()
+  /** Cleanup APIs key runs by `project`; use filter when set, else workflow scope. */
+  const cleanupProjectSlug = projectFilterSlug || projectScopeSlug || undefined
   const crumbRoot = useScopeBreadcrumbRoot()
   const selectedStylebookLabel = useSelectedStylebookLabel()
   const location = useLocation()
   const [runSnapshots, setRunSnapshots] = useState<Record<string, CheckRunSnapshot>>(emptySnapshots)
   const [hubLoading, setHubLoading] = useState(true)
   const pollTokensRef = useRef<Record<string, number>>({})
+  const hubLoadSeqRef = useRef(0)
 
-  const loadHub = useCallback(async () => {
+  const loadHub = useCallback(async (signal?: AbortSignal) => {
     if (!stylebookSlug) return
+    const seq = ++hubLoadSeqRef.current
     setHubLoading(true)
     try {
       const response = await listCleanupChecks({
         stylebookSlug,
-        project: projectFilterSlug || undefined,
+        project: cleanupProjectSlug,
+        signal,
       })
+      if (seq !== hubLoadSeqRef.current) return
       setRunSnapshots(applyChecksToSnapshots(response.checks))
     } catch (error) {
+      if (seq !== hubLoadSeqRef.current) return
+      if (error instanceof DOMException && error.name === "AbortError") return
       showError(error instanceof Error ? error.message : "Failed to load reviews")
     } finally {
-      setHubLoading(false)
+      if (seq === hubLoadSeqRef.current) setHubLoading(false)
     }
-  }, [stylebookSlug, projectFilterSlug, showError])
+  }, [stylebookSlug, cleanupProjectSlug, showError])
 
   useEffect(() => {
-    void loadHub()
+    const controller = new AbortController()
+    void loadHub(controller.signal)
+    return () => {
+      controller.abort()
+      hubLoadSeqRef.current += 1
+    }
   }, [loadHub, location.key])
 
   const pollRun = useCallback(
@@ -106,12 +124,12 @@ export default function Cleanup() {
         const run = await pollCleanupCheckRun({
           stylebookSlug,
           checkId,
-          project: projectFilterSlug || undefined,
+          project: cleanupProjectSlug,
         })
         if (pollTokensRef.current[checkId] !== token) return
         const response = await listCleanupChecks({
           stylebookSlug,
-          project: projectFilterSlug || undefined,
+          project: cleanupProjectSlug,
           checkId,
         })
         const check = response.checks[0]
@@ -132,7 +150,7 @@ export default function Cleanup() {
         showError(error instanceof Error ? error.message : "Failed to run review")
       }
     },
-    [stylebookSlug, projectFilterSlug, showError],
+    [stylebookSlug, cleanupProjectSlug, showError],
   )
 
   const runCheck = useCallback(
@@ -151,7 +169,7 @@ export default function Cleanup() {
         await startCleanupCheckRun({
           stylebookSlug,
           checkId,
-          project: projectFilterSlug || undefined,
+          project: cleanupProjectSlug,
         })
         await pollRun(checkId)
       } catch (error) {
@@ -162,7 +180,7 @@ export default function Cleanup() {
         showError(error instanceof Error ? error.message : "Failed to run review")
       }
     },
-    [stylebookSlug, projectFilterSlug, pollRun, showError],
+    [stylebookSlug, cleanupProjectSlug, pollRun, showError],
   )
 
   const stopCheck = useCallback(
@@ -172,7 +190,7 @@ export default function Cleanup() {
         await cancelCleanupCheckRun({
           stylebookSlug,
           checkId,
-          project: projectFilterSlug || undefined,
+          project: cleanupProjectSlug,
         })
         pollTokensRef.current[checkId] = (pollTokensRef.current[checkId] ?? 0) + 1
         setRunSnapshots((prev) => ({
@@ -183,7 +201,7 @@ export default function Cleanup() {
         showError(error instanceof Error ? error.message : "Failed to stop review")
       }
     },
-    [stylebookSlug, projectFilterSlug, showError],
+    [stylebookSlug, cleanupProjectSlug, showError],
   )
 
   return (

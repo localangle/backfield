@@ -117,7 +117,10 @@ export default function CleanupCheck() {
     catalogBasePath,
     catalogScopeSuffix,
     projectFilterSlug,
+    projectScopeSlug,
   } = useProjectCatalogScope()
+  /** Cleanup APIs key runs by `project`; use filter when set, else workflow scope. */
+  const cleanupProjectSlug = projectFilterSlug || projectScopeSlug || undefined
   const crumbRoot = useScopeBreadcrumbRoot()
   const [searchParams, setSearchParams] = useSearchParams()
   const urlQuery = searchParams.get("q") ?? ""
@@ -181,19 +184,19 @@ export default function CleanupCheck() {
       await listCleanupChecks({
         stylebookSlug,
         checkId: config.id,
-        project: projectFilterSlug || undefined,
+        project: cleanupProjectSlug,
       })
     } catch {
       // Hub refreshes on next visit; ignore background sync failures.
     }
-  }, [stylebookSlug, config, projectFilterSlug])
+  }, [stylebookSlug, config, cleanupProjectSlug])
 
   useEffect(() => {
     if (!stylebookSlug || !config) return
     void getLatestCleanupCheckRun({
       stylebookSlug,
       checkId: config.id,
-      project: projectFilterSlug || undefined,
+      project: cleanupProjectSlug,
     })
       .then((run) => {
         setCheckRunStatus(run?.status ?? "never_run")
@@ -201,11 +204,11 @@ export default function CleanupCheck() {
       .catch(() => {
         setCheckRunStatus("never_run")
       })
-  }, [stylebookSlug, config, projectFilterSlug])
+  }, [stylebookSlug, config, cleanupProjectSlug])
 
   useEffect(() => {
     setPage(1)
-  }, [checkId, projectFilterSlug, urlQuery])
+  }, [checkId, cleanupProjectSlug, urlQuery])
 
   useEffect(() => {
     setSearchQuery(urlQuery)
@@ -231,7 +234,7 @@ export default function CleanupCheck() {
       const response = await getCleanupCheckResults({
         stylebookSlug,
         checkId,
-        project: projectFilterSlug || undefined,
+        project: cleanupProjectSlug,
         page,
         perPage: PER_PAGE,
         q: isClusterCheck ? urlQuery || undefined : undefined,
@@ -257,7 +260,7 @@ export default function CleanupCheck() {
     } finally {
       setLoading(false)
     }
-  }, [stylebookSlug, checkId, config, projectFilterSlug, page, showError, isClusterCheck, urlQuery])
+  }, [stylebookSlug, checkId, config, cleanupProjectSlug, page, showError, isClusterCheck, urlQuery])
 
   useEffect(() => {
     void loadResults()
@@ -427,7 +430,7 @@ export default function CleanupCheck() {
       const response = await getCleanupCheckResults({
         stylebookSlug,
         checkId: config.id,
-        project: projectFilterSlug || undefined,
+        project: cleanupProjectSlug,
         page: pageNum,
         perPage: 200,
       })
@@ -439,7 +442,7 @@ export default function CleanupCheck() {
       pageNum += 1
     }
     return rows
-  }, [stylebookSlug, config, projectFilterSlug])
+  }, [stylebookSlug, config, cleanupProjectSlug])
 
   const handleKeepQuestionableCanonical = useCallback(
     async (canonicalId: string) => {

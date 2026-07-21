@@ -714,7 +714,14 @@ def _check_out_from_run(
     *,
     check: CleanupCheckDef,
     latest_run: StylebookCleanupCheckRun | None,
+    latest_succeeded: StylebookCleanupCheckRun | None = None,
 ) -> CleanupCheckOut:
+    """Build a hub row from the latest run.
+
+    When the latest run is still queued/running, preserve the last succeeded
+    completion timestamp and open-item count so the hub does not flash
+    "Not run yet" while a new pass is in flight.
+    """
     if latest_run is None:
         return CleanupCheckOut(
             id=check.id,
@@ -725,8 +732,12 @@ def _check_out_from_run(
             status="never_run",
         )
     count = 0
+    completed_at = latest_run.completed_at
     if latest_run.status == "succeeded":
         count = _visible_count_for_run(session, run=latest_run)
+    elif latest_run.status in ("queued", "running") and latest_succeeded is not None:
+        count = _visible_count_for_run(session, run=latest_succeeded)
+        completed_at = latest_succeeded.completed_at
     return CleanupCheckOut(
         id=check.id,
         title=check.title,
@@ -737,8 +748,8 @@ def _check_out_from_run(
         status=str(latest_run.status),
         run_id=str(latest_run.id),
         started_at=latest_run.started_at,
-        completed_at=latest_run.completed_at,
-        ran_at=latest_run.completed_at,
+        completed_at=completed_at,
+        ran_at=completed_at,
         error_message=latest_run.error_message,
     )
 
@@ -964,7 +975,20 @@ def list_cleanup_checks(
             check_id=check.id,
             scope_hash=scope_hash,
         )
-        check_out = _check_out_from_run(session, check=check, latest_run=latest_run)
+        latest_succeeded: StylebookCleanupCheckRun | None = None
+        if latest_run is not None and latest_run.status in ("queued", "running"):
+            latest_succeeded = get_latest_succeeded_cleanup_check_run(
+                session,
+                stylebook_id=stylebook_id,
+                check_id=check.id,
+                scope_hash=scope_hash,
+            )
+        check_out = _check_out_from_run(
+            session,
+            check=check,
+            latest_run=latest_run,
+            latest_succeeded=latest_succeeded,
+        )
         total_open += check_out.count
         checks_out.append(check_out)
     return CleanupChecksResponse(checks=checks_out, total_open=total_open)
