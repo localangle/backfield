@@ -708,17 +708,18 @@ export default function CleanupCheck() {
   }, [clusterResults, listResults])
 
   const handleRefreshEmptyPage = useCallback(() => {
-    if (!clusterResults) {
+    const results = clusterResults ?? listResults
+    if (!results) {
       void loadResults()
       return
     }
-    const lastPage = Math.max(1, Math.ceil(clusterResults.total / PER_PAGE))
-    if (clusterResults.page > lastPage) {
+    const lastPage = Math.max(1, Math.ceil(results.total / PER_PAGE))
+    if (results.page > lastPage) {
       setPage(lastPage)
       return
     }
     void loadResults()
-  }, [clusterResults, loadResults])
+  }, [clusterResults, listResults, loadResults])
 
   const showAiReviewControls =
     canEdit &&
@@ -747,6 +748,23 @@ export default function CleanupCheck() {
   }
 
   const cleanupHubPath = `${catalogBasePath}/cleanup${catalogScopeSuffix}`
+  const pageExhaustedWithMore =
+    (config.kind === "cluster" &&
+      clusterResults != null &&
+      clusterResults.clusters.length === 0 &&
+      clusterResults.total > 0) ||
+    (config.kind === "list" &&
+      listResults != null &&
+      listResults.canonicals.length === 0 &&
+      listResults.total > 0)
+  const emptyPageItemLabel =
+    config.kind === "cluster"
+      ? "clusters"
+      : entityType === "location"
+        ? "locations"
+        : entityType === "person"
+          ? "people"
+          : "organizations"
 
   return (
     <div className="space-y-6">
@@ -845,11 +863,11 @@ export default function CleanupCheck() {
               ? "This review failed. Run it again from the Review tab to see candidates."
               : "Run this review from the Review tab to see candidates."}
         </p>
-      ) : config.kind === "cluster" &&
-        clusterResults &&
-        clusterResults.clusters.length === 0 &&
-        clusterResults.total > 0 ? (
-        <EmptyCleanupPageAction itemLabel="clusters" onRefresh={handleRefreshEmptyPage} />
+      ) : pageExhaustedWithMore ? (
+        <EmptyCleanupPageAction
+          itemLabel={emptyPageItemLabel}
+          onRefresh={handleRefreshEmptyPage}
+        />
       ) : config.kind === "cluster" ? (
         <DuplicateClusterList
           clusters={clusterResults?.clusters ?? []}
