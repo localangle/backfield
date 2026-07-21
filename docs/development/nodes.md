@@ -123,6 +123,25 @@ Consolidate QA also routes state/country contradictions to `needs_review` with
 different admin label (for example Oregon resolved as Maryland). Stylebook or
 canonical cache hits skip this check.
 
+For **place** rows, consolidate still requires house-number agreement between
+`components.address` and the provider display label when that number is present.
+When the label omits the house number (common for Pelias venue hits), a
+**Pelias-only** exception may keep the point if structured evidence is decisive:
+
+- exact house-number + jurisdiction evidence in Pelias properties, or
+- exact normalized POI-name identity (`components.place.name` vs `pelias_name`)
+  plus explicit city and state agreement from Pelias locality/region fields.
+
+POI-identity accepts set `address_verification: unverified` and
+`geocode_qa_code: poi_identity_match`. Wrong venue names and jurisdiction
+mismatches still go to `needs_review` with `geocode_component_mismatch`.
+This exception does **not** loosen Stylebook/cache linking sanity.
+
+Place geocoding passes extracted `components.address` into Pelias structured
+queries (venue name remains in free-text search). Router `no_web_search` skips
+*upfront* Brave/DuckDuckGo when a street line is already present; Place may still
+run web search as a **fallback** after inconclusive Pelias.
+
 ### Extract prompts
 
 Keep static instructions, field rules, and output-format guidance before the input

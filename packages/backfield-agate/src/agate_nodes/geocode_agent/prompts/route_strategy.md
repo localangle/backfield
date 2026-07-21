@@ -7,8 +7,8 @@ Respond with **only** a JSON object (no markdown fences) with keys:
 
 Meanings:
 
-- **web_search**: For **place** resolution that may need a street address, allow **Brave Search** (when configured) and **DuckDuckGo** as fallback to find snippets, then parse an address and geocode it. Use this whenever a place might need the web to supply a missing street line.
-- **no_web_search**: **Neither Brave nor DuckDuckGo** runs. Use only structured geocoders (Pelias, etc.) and existing components.
+- **web_search**: For **place** resolution that may need a street address, run **Brave Search** (when configured) and **DuckDuckGo** *upfront* to find snippets, then parse an address and geocode it. Use this whenever a place is missing a street line and likely needs the web to supply one.
+- **no_web_search**: Skip *upfront* Brave/DuckDuckGo. Use structured geocoders (Pelias, etc.) and existing components first. For **place** rows, if Pelias is still inconclusive the runtime may still run web search as a **fallback** after direct geocoding fails—so choosing `no_web_search` when `components.address` is already present is correct (use the extracted street line with Pelias; do not spend an upfront search).
 
 ## When to prefer **web_search**
 
@@ -17,7 +17,7 @@ Meanings:
 ## When to use **no_web_search**
 
 - Clearly structural types that do not benefit from web search: **state**, **county**, **city**, **neighborhood**, **address** (already has a street line), **street_road**, **intersection***, **span**, **region***, **natural**.
-- **place** with a full numeric street address already present in **components.address** (or equivalent) so web search adds little.
+- **place** with a full numeric street address already present in **components.address** (or equivalent). Pelias should receive that street line directly; web search is only a post-Pelias fallback if needed.
 - Non-addressable natural POIs where search would not resolve a street address.
 
 Use **geocode_hints** for geographic disambiguation (street, neighborhood, nearby

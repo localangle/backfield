@@ -10,6 +10,11 @@ from backfield_entities.ingest.geocode_cache.sanity import (
     explicit_location_components_match_labels,
 )
 
+from ..poi_evidence import (
+    is_pelias_geocoder,
+    pelias_poi_result_acceptable,
+    poi_acceptance_is_address_unverified,
+)
 from ..types import AgentState
 from .emit_location_line import (
     compute_emit_location_line,
@@ -693,17 +698,31 @@ async def consolidate_node(state: AgentState) -> AgentState:
         match_label=formatted_line,
         match_formatted_address=formatted_line,
     ):
-        qa_entry = _point_entry_without_geometry(
-            {
-                **location_entry,
-                "geocode_component_mismatch": True,
-                "geocode_qa_code": "geocode_component_mismatch",
-            }
+        # Precision-first POI exception: Pelias venue labels often omit house numbers.
+        # Accept when POI identity + city/state agree (or exact address evidence exists
+        # in structured Pelias fields). Does not loosen the shared cache sanity gate.
+        poi_exception = (
+            location_type == "place"
+            and is_pelias_geocoder(geocoding_result.geocoder)
+            and pelias_poi_result_acceptable(comps_dict, geocoding_result)
         )
-        _attach_router_audit(qa_entry, state)
-        consolidated["places"]["needs_review"].append(qa_entry)
-        state["final_output"] = consolidated
-        return state
+        if poi_exception:
+            if poi_acceptance_is_address_unverified(comps_dict, geocoding_result):
+                location_entry["address_verification"] = "unverified"
+                location_entry["geocode_qa_code"] = "poi_identity_match"
+            # else: exact address evidence in Pelias structured fields — keep as normal point
+        else:
+            qa_entry = _point_entry_without_geometry(
+                {
+                    **location_entry,
+                    "geocode_component_mismatch": True,
+                    "geocode_qa_code": "geocode_component_mismatch",
+                }
+            )
+            _attach_router_audit(qa_entry, state)
+            consolidated["places"]["needs_review"].append(qa_entry)
+            state["final_output"] = consolidated
+            return state
     subnational_mismatch = _geocode_subnational_label_mismatch_qa(
         location_type,
         comps_dict,
@@ -806,6 +825,11 @@ async def consolidate_node(state: AgentState) -> AgentState:
         for key, value in extra_fields.items():
             if key not in ["description"]:  # Description is already handled above
                 point_entry[key] = value
+
+        # Preserve POI-exception provenance set earlier on location_entry.
+        for provenance_key in ("address_verification", "geocode_qa_code"):
+            if provenance_key in location_entry:
+                point_entry[provenance_key] = location_entry[provenance_key]
 
         _attach_router_audit(point_entry, state)
 

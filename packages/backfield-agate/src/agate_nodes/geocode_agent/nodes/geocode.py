@@ -162,7 +162,14 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
         city_name = components.get("city", "")
         state_info = components.get("state", {})
         state_abbr = state_info.get("abbr") if isinstance(state_info, dict) else None
-        model = Place(name=place_name, city=city_name, state_abbr=state_abbr, country=country_code)
+        street_address = str(components.get("address") or "").strip() or None
+        model = Place(
+            name=place_name,
+            city=city_name,
+            state_abbr=state_abbr,
+            country=country_code,
+            street_address=street_address,
+        )
         model._input_addressability = is_addressable
         model._original_text = state.get("original_text", "")
         hints = state.get("geocode_hints") or normalized_geocode_hints(state.get("extra_fields"))
@@ -638,12 +645,13 @@ async def orchestrate_external_geocode(state: AgentState) -> AgentState:
             geocode_kwargs = {"openai_api_key": openai_api_key}
         else:
             if isinstance(model, Place):
-                # Advanced graph sets ``allow_web_search`` from route_strategy; baseline graph omits it (default True).
+                # Advanced graph sets ``allow_web_search`` from route_strategy; baseline graph
+                # omits it (default True). ``allow_web_search=False`` skips *upfront* search;
+                # Place.geocode may still fall back to web search after inconclusive Pelias.
+                # Always pass the Brave key so that fallback path can run.
                 raw_allow = state.get("allow_web_search")
                 allow_web = True if raw_allow is None else bool(raw_allow)
-                geocode_kwargs["brave_search_api_key"] = (
-                    brave_search_api_key if allow_web else None
-                )
+                geocode_kwargs["brave_search_api_key"] = brave_search_api_key
                 geocode_kwargs["allow_web_search"] = allow_web
             if isinstance(model, StreetRoad):
                 geocode_kwargs["original_text"] = state.get("original_text", "")
@@ -652,6 +660,16 @@ async def orchestrate_external_geocode(state: AgentState) -> AgentState:
 
         state["geocoding_result"] = result
         state["geocoding_model"] = model
+
+        if isinstance(model, Place) and getattr(model, "_web_search_fallback_used", False):
+            audit = state.get("router_audit")
+            if isinstance(audit, dict):
+                state["router_audit"] = {
+                    **audit,
+                    "web_search_fallback_used": True,
+                }
+            else:
+                state["router_audit"] = {"web_search_fallback_used": True}
 
         if isinstance(model, Place) and hasattr(model, "_failure_reason") and model._failure_reason:
             state["geocoding_failure_reason"] = model._failure_reason

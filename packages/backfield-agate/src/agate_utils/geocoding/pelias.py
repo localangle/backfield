@@ -151,6 +151,11 @@ def _pelias_feature_to_result(
         "pelias_confidence": properties.get("confidence"),
         "pelias_has_bbox": bool(bbox and len(bbox) == 4),
         "pelias_bbox": bbox if isinstance(bbox, list) and len(bbox) == 4 else None,
+        # Structured address / POI identity for consolidate QA (not display-label only).
+        "pelias_name": properties.get("name"),
+        "pelias_housenumber": properties.get("housenumber"),
+        "pelias_street": properties.get("street"),
+        "pelias_postalcode": properties.get("postalcode"),
         # Useful for jurisdiction filtering in area models.
         "pelias_country_code": properties.get("country_code"),
         "pelias_country": properties.get("country"),
