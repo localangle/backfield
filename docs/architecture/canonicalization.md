@@ -43,14 +43,19 @@ address, and name-anchor checks. The same final commit gate protects rules, cach
 refresh paths. `BACKFIELD_STRICT_CANONICAL_GATES=0` disables the additional recall gates, but not
 base compatibility or final link validation.
 
-Resolved locations without a safe match generally materialize a canonical. These categories stay
-review-oriented:
+Canonical identity matching is independent of geocode quality. A missing or rejected map result is
+unknown evidence rather than an identity conflict: exact and fuzzy canonical recall still run, and
+linking to an existing canonical does not copy substrate geography into the canonical. Geocode
+quality remains visible as a review warning alongside the link, create, or defer recommendation.
 
-- private residences and ordinary addresses;
+Locations without a safe match may recommend a geography-free canonical. Automatic ingest keeps
+that recommendation pending when geography is missing or review-required, and keeps address-like
+creation recommendations editorial even when a map result exists. These categories retain
+additional policy restrictions:
+
+- private residences;
 - roadway spans;
 - road and highway intersections;
-- streets without the required resolved geometry;
-- extraction or geocode results already marked for review.
 
 Intersections and spans never auto-materialize, although they may link to an existing compatible
 canonical. Exact and fuzzy candidates for addresses, intersections, and named places must preserve
@@ -60,7 +65,8 @@ Political districts use structured district identity when available.
 Every extracted location has one terminal disposition: an accepted location or a reason-coded
 review row. Explicit structured country, subdivision, postal code, and address precision constrain
 resolver results. Rejected, imprecise, and mail-only results do not retain provider identity,
-geometry, H3, or cache eligibility and cannot materialize canonicals.
+geometry, H3, or cache eligibility; they can still link by identity or produce an editorial create
+recommendation.
 Recognized country identity comes from its ISO code and does not require resolver geometry.
 Unknown country labels remain unclassified rather than inheriting a default country. Address
 display values retain their house number and street identity, and point reconciliation does not

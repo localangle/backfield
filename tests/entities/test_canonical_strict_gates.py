@@ -24,6 +24,10 @@ from backfield_entities.canonical.link_matrix import (
     link_pair_allowed,
 )
 from backfield_entities.canonical.match_score import RECALL_MIN_SCORE
+from backfield_entities.canonical.plan_types import (
+    CanonicalPersistDecision,
+    CanonicalPersistPlan,
+)
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from backfield_entities.entities.location.policy import (
     _jurisdiction_pair_demotes_recall_score,
@@ -256,6 +260,105 @@ def test_decide_links_imported_canonical_by_normalized_label_without_alias(
             isinstance(r, dict) and r.get("code") == "linked_exact_normalized_label"
             for r in plan.resolution_reasons
         )
+
+
+def test_needs_review_location_still_links_exact_canonical_without_geometry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BACKFIELD_STRICT_CANONICAL_GATES", "1")
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="review-exact-location")
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Navy Pier, Chicago, IL",
+            slug="navy-pier-chicago-il",
+            location_type="place",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        location = SubstrateLocation(
+            project_id=1,
+            name="Navy Pier, Chicago, IL",
+            normalized_name="navy pier, chicago, il",
+            location_type="place",
+            status="needs_review",
+            canonical_link_status="pending",
+            geometry_json=None,
+            identity_fingerprint="fp-review-exact-location",
+        )
+        session.add(location)
+        session.commit()
+
+        plan = decide_location_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="needs_review",
+            location=location,
+            entry={"geocode_qa_code": "geocode_component_mismatch"},
+        )
+
+        assert plan.decision.value == "link_existing"
+        assert plan.existing_canonical_id == str(canon.id)
+        codes = [str(reason.get("code") or "") for reason in plan.resolution_reasons]
+        assert codes[0] == "geocode_quality_warning"
+        assert "linked_exact_normalized_label" in codes
+
+
+def test_failed_location_without_match_recommends_geography_free_canonical() -> None:
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="review-create-location")
+        location = SubstrateLocation(
+            project_id=1,
+            name="New Community Center, Chicago, IL",
+            normalized_name="new community center, chicago, il",
+            location_type="place",
+            status="failed",
+            canonical_link_status="pending",
+            geometry_json=None,
+            identity_fingerprint="fp-review-create-location",
+        )
+        session.add(location)
+        session.commit()
+
+        plan = decide_location_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="needs_review",
+            location=location,
+            entry={},
+        )
+
+        assert plan.decision.value == "materialize_new"
+        assert [reason.get("code") for reason in plan.resolution_reasons] == [
+            "geocode_quality_warning",
+            "materialized_new_canonical",
+        ]
+
+
+def test_ai_assisted_mode_adjudicates_fuzzy_autolink_for_any_location_type() -> None:
+    location = SubstrateLocation(
+        project_id=1,
+        name="Illinois Quantum & Microelectronics Park, Chicago, IL",
+        normalized_name="illinois quantum & microelectronics park, chicago, il",
+        location_type="place",
+        identity_fingerprint="fp-fuzzy-ai-review",
+    )
+    plan = CanonicalPersistPlan(
+        decision=CanonicalPersistDecision.LINK_EXISTING,
+        existing_canonical_id="canonical-id",
+        resolution_reasons=(
+            {
+                "code": "linked_fuzzy_autolink",
+                "recall_canonical_ids": ["canonical-id"],
+            },
+        ),
+    )
+
+    assert plan_requires_llm_canonical_adjudication(plan, location) is True
 
 
 @pytest.mark.parametrize(

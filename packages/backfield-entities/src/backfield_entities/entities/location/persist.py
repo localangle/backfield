@@ -29,6 +29,7 @@ from backfield_entities.canonical.slug import (
 )
 from backfield_entities.entities.location.policy import plan_has_ambiguous_canonical_match
 from backfield_entities.entities.location.recall import location_alias_lookup_keys
+from backfield_entities.entities.location.types import is_address_like_location_type
 from backfield_entities.geo.h3_index import apply_h3_fields
 from backfield_entities.text.match_normalize import normalize_match_text
 
@@ -466,7 +467,13 @@ def apply_candidate_ai_review_recommendation(
     reasons = [
         r
         for r in reasons
-        if str(r.get("code") or "") not in ("canonical_suggestion", "canonical_adjudication")
+        if str(r.get("code") or "")
+        not in (
+            "canonical_suggestion",
+            "canonical_adjudication",
+            "deferred_policy",
+            "geocode_quality_warning",
+        )
     ]
     for r in plan.resolution_reasons:
         if isinstance(r, dict):
@@ -481,6 +488,21 @@ def apply_candidate_ai_review_recommendation(
     location.canonical_review_reasons_json = reasons
     session.add(location)
     return has_suggestion
+
+
+def materialization_requires_editorial_review(
+    location: SubstrateLocation,
+    *,
+    places_bucket: str,
+) -> bool:
+    """True when a create recommendation must not be auto-applied."""
+    status = str(location.status or "").strip().lower()
+    return (
+        places_bucket == "needs_review"
+        or status in {"needs_review", "failed"}
+        or is_address_like_location_type(location.location_type)
+        or location.geometry_json is None
+    )
 
 
 def apply_canonical_persist_plan(
@@ -501,6 +523,19 @@ def apply_canonical_persist_plan(
     extra = _canonical_suggestion_from_rules_plan(plan)
     if extra is not None and not has_suggestion:
         reasons.append(extra)
+    if (
+        plan.decision == CanonicalPersistDecision.MATERIALIZE_NEW
+        and auto_apply_canonicalization
+        and materialization_requires_editorial_review(location, places_bucket=places_bucket)
+    ):
+        apply_canonical_persist_plan_review_only(
+            session,
+            stylebook_id=stylebook_id,
+            location=location,
+            plan=plan,
+            places_bucket=places_bucket,
+        )
+        return
     if plan.decision == CanonicalPersistDecision.DEFER:
         if auto_apply_canonicalization and _resolution_includes_private_place_or_residence(plan):
             location.canonical_link_status = CANONICAL_LINK_WAIVED

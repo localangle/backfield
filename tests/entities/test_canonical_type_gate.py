@@ -537,7 +537,7 @@ def test_decide_canonical_persist_plan_address_does_not_link_neighborhood_alias(
             entry={"address_place_kind": "public_named"},
         )
 
-    assert plan.decision == CanonicalPersistDecision.DEFER
+    assert plan.decision == CanonicalPersistDecision.MATERIALIZE_NEW
     assert plan.existing_canonical_id is None
 
 

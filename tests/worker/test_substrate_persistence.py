@@ -2055,8 +2055,8 @@ def test_persist_fuzzy_links_preseeded_canonical_when_alias_normalization_differ
         assert_canonical_link_invariant(locs[0])
 
 
-def test_persist_materializes_canonical_for_city_without_geometry_when_no_match() -> None:
-    """Non-excluded types auto-materialize when there is no link, even without geometry JSON."""
+def test_persist_recommends_canonical_for_city_without_geometry_when_no_match() -> None:
+    """Geography-free create plans stay pending instead of auto-materializing."""
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
 
@@ -2110,16 +2110,19 @@ def test_persist_materializes_canonical_for_city_without_geometry_when_no_match(
         locs = session.exec(select(SubstrateLocation)).all()
         assert len(locs) == 1
         assert locs[0].geometry_json is None
-        assert locs[0].canonical_link_status == CANONICAL_LINK_LINKED
-        assert locs[0].stylebook_location_canonical_id is not None
+        assert locs[0].canonical_link_status == CANONICAL_LINK_PENDING
+        assert locs[0].stylebook_location_canonical_id is None
+        reasons = locs[0].canonical_review_reasons_json
+        assert isinstance(reasons, list)
+        assert any(
+            isinstance(reason, dict)
+            and reason.get("code") == "canonical_suggestion"
+            and reason.get("suggested_action") == "materialize_new"
+            for reason in reasons
+        )
 
         canon_rows = session.exec(select(StylebookLocationCanonical)).all()
-        assert len(canon_rows) == 1
-        fk = locs[0].stylebook_location_canonical_id
-        canon = session.get(StylebookLocationCanonical, str(fk))
-        assert canon is not None
-        assert canon.location_type == "city"
-        assert canon.formatted_address and "Peoria" in canon.formatted_address
+        assert canon_rows == []
         assert_canonical_link_invariant(locs[0])
 
 
