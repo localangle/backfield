@@ -607,7 +607,7 @@ export default function EndpointExplorer({
       )}
 
       <button
-        className="execute-button"
+        className={`execute-button${executing ? " is-executing" : ""}`}
         type="button"
         disabled={executing || !apiKey}
         aria-describedby={error ? "request-error" : undefined}
