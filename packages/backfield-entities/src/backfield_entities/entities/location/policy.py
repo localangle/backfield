@@ -195,27 +195,28 @@ def _address_place_kind_from_entry(entry: dict[str, Any] | None) -> str:
     return ADDRESS_PLACE_KIND_UNKNOWN
 
 
-def _should_defer(
-    *,
-    places_bucket: str,
+def _address_place_kind(
     location: SubstrateLocation,
-    entry: dict[str, Any] | None = None,
-) -> bool:
-    if places_bucket == "needs_review":
-        return True
-    st = str(location.status or "")
-    if st in ("needs_review", "failed"):
-        return True
-    lt = (location.location_type or "").strip().lower()
+    entry: dict[str, Any] | None,
+) -> str:
     kind = _address_place_kind_from_entry(entry)
-    if is_address_like_location_type(lt) and kind == ADDRESS_PLACE_KIND_PRIVATE_RESIDENCE:
-        return True
-    if lt == "address" and kind != ADDRESS_PLACE_KIND_PUBLIC_NAMED:
-        return True
-    # Roadway spans are not auto-canonicalized; editors can link or create later from the queue.
-    if lt == "span":
-        return True
-    return False
+    if kind != ADDRESS_PLACE_KIND_UNKNOWN:
+        return kind
+    details = location.source_details_json
+    if isinstance(details, dict):
+        return _address_place_kind_from_entry(details)
+    return ADDRESS_PLACE_KIND_UNKNOWN
+
+
+def _is_private_place_or_residence(
+    location: SubstrateLocation,
+    entry: dict[str, Any] | None,
+) -> bool:
+    lt = (location.location_type or "").strip().lower()
+    return (
+        is_address_like_location_type(lt)
+        and _address_place_kind(location, entry) == ADDRESS_PLACE_KIND_PRIVATE_RESIDENCE
+    )
 
 
 _NO_AUTOMATIC_CANONICAL_MATERIALIZATION_TYPES: frozenset[str] = frozenset(
@@ -268,15 +269,6 @@ _HEAD_ANCHOR_GATED_TYPES: frozenset[str] = frozenset(
         "natural",
     }
 )
-
-
-def _location_type_allows_autocreate_without_strict_geometry(location_type: str | None) -> bool:
-    lt = (location_type or "").strip().lower()
-    if lt in _NO_AUTOMATIC_CANONICAL_MATERIALIZATION_TYPES:
-        return False
-    if "span" in lt:
-        return False
-    return True
 
 
 def _should_apply_head_anchor_gate(location_type: str | None) -> bool:
@@ -371,15 +363,6 @@ def _match_basis_for_audit(location_type: str | None) -> str:
     if (location_type or "").strip().lower() == "address":
         return "string_and_point_geometry"
     return "string_only"
-
-
-def _should_materialize_new_strict(location: SubstrateLocation) -> bool:
-    """Legacy gate for excluded types: only materialize with resolved geocode + geometry."""
-    if location.geometry_json is None:
-        return False
-    if str(location.status or "") != "resolved":
-        return False
-    return True
 
 
 _JURISDICTION_SCORE_GATE_SUBSTRATE_TYPES: frozenset[str] = frozenset(
@@ -790,26 +773,16 @@ def _best_allowed_recall_score(
 
 
 def _should_materialize_when_no_canonical_match(location: SubstrateLocation) -> bool:
-    """After exact match + fuzzy tiers: whether to create a new canonical.
+    """After exact match + fuzzy tiers: whether to recommend a new canonical.
 
-    Most location types get a canonical when nothing linked and recall is not ambiguous,
-    as long as the row is not a hard geocode failure and has a normalized name.
-
-    Address and street-road types keep the strict geometry rule. Spans and
-    intersections never materialize automatically (editors can still link them to
-    existing canonicals or create canonicals manually from the queue).
+    Missing or rejected geography is not evidence against the extracted identity. Most
+    named location types may therefore recommend a geography-free canonical. Persistence
+    separately prevents review-required geography from auto-materializing.
     """
     lt = (location.location_type or "").strip().lower()
     if lt in _NEVER_AUTO_MATERIALIZE_TYPES:
         return False
-    if _location_type_allows_autocreate_without_strict_geometry(location.location_type):
-        st = str(location.status or "")
-        if st == "failed":
-            return False
-        if not str(location.normalized_name or "").strip():
-            return False
-        return True
-    return _should_materialize_new_strict(location)
+    return bool(str(location.normalized_name or "").strip())
 
 
 def _intra_strict_group_ambiguous(
@@ -849,7 +822,7 @@ def substrate_may_materialize_canonical_after_recall(location: SubstrateLocation
     return _should_materialize_when_no_canonical_match(location)
 
 
-def decide_location_canonical_persist_plan(
+def _decide_location_identity_plan(
     session: Session,
     *,
     stylebook_id: int,
@@ -857,48 +830,37 @@ def decide_location_canonical_persist_plan(
     location: SubstrateLocation,
     entry: dict[str, Any],
 ) -> CanonicalPersistPlan:
-    """Decide how persistence should treat Stylebook canonicalization for this substrate row.
+    """Decide canonical identity without treating missing geography as a conflict.
 
     ``entry`` carries PlaceExtract extras (e.g. ``address_place_kind``) for address deferral rules.
     """
-    if _should_defer(places_bucket=places_bucket, location=location, entry=entry):
-        lt = (location.location_type or "").strip().lower()
-        kind = _address_place_kind_from_entry(entry)
-        if is_address_like_location_type(lt) and kind == ADDRESS_PLACE_KIND_PRIVATE_RESIDENCE:
-            return CanonicalPersistPlan(
-                decision=CanonicalPersistDecision.DEFER,
-                resolution_reasons=(
-                    {
-                        "code": "private_place_or_residence",
-                        "message": "Private place or residence",
-                        "location_type": location.location_type,
-                        "places_bucket": places_bucket,
-                        "substrate_status": str(location.status or ""),
-                    },
-                ),
-            )
-        if lt == "span":
-            return CanonicalPersistPlan(
-                decision=CanonicalPersistDecision.DEFER,
-                resolution_reasons=(
-                    {
-                        "code": "road_span_not_canonicalized",
-                        "message": (
-                            "Road spans are not auto-canonicalized; "
-                            "defer for manual review or linking."
-                        ),
-                        "location_type": location.location_type,
-                        "places_bucket": places_bucket,
-                        "substrate_status": str(location.status or ""),
-                    },
-                ),
-            )
+    if _is_private_place_or_residence(location, entry):
         return CanonicalPersistPlan(
             decision=CanonicalPersistDecision.DEFER,
-            resolution_reasons=defer_reason_payload(
-                places_bucket=places_bucket,
-                location=location,
-                entry=entry,
+            resolution_reasons=(
+                {
+                    "code": "private_place_or_residence",
+                    "message": "Private place or residence",
+                    "location_type": location.location_type,
+                    "places_bucket": places_bucket,
+                    "substrate_status": str(location.status or ""),
+                },
+            ),
+        )
+    if (location.location_type or "").strip().lower() == "span":
+        return CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.DEFER,
+            resolution_reasons=(
+                {
+                    "code": "road_span_not_canonicalized",
+                    "message": (
+                        "Road spans are not auto-canonicalized; "
+                        "defer for manual review or linking."
+                    ),
+                    "location_type": location.location_type,
+                    "places_bucket": places_bucket,
+                    "substrate_status": str(location.status or ""),
+                },
             ),
         )
 
@@ -1144,6 +1106,56 @@ def decide_location_canonical_persist_plan(
     )
 
 
+def _geocode_quality_warning_payload(
+    *,
+    places_bucket: str,
+    location: SubstrateLocation,
+    entry: dict[str, Any] | None,
+) -> tuple[dict[str, Any], ...]:
+    status = str(location.status or "").strip().lower()
+    if places_bucket != "needs_review" and status not in {"needs_review", "failed"}:
+        return ()
+    warning = dict(
+        defer_reason_payload(
+            places_bucket=places_bucket,
+            location=location,
+            entry=entry,
+        )[0]
+    )
+    warning["code"] = "geocode_quality_warning"
+    return (warning,)
+
+
+def decide_location_canonical_persist_plan(
+    session: Session,
+    *,
+    stylebook_id: int,
+    places_bucket: str,
+    location: SubstrateLocation,
+    entry: dict[str, Any],
+) -> CanonicalPersistPlan:
+    """Decide identity, preserving geocode concerns as non-blocking review warnings."""
+    plan = _decide_location_identity_plan(
+        session,
+        stylebook_id=stylebook_id,
+        places_bucket=places_bucket,
+        location=location,
+        entry=entry,
+    )
+    warnings = _geocode_quality_warning_payload(
+        places_bucket=places_bucket,
+        location=location,
+        entry=entry,
+    )
+    if not warnings:
+        return plan
+    return CanonicalPersistPlan(
+        decision=plan.decision,
+        existing_canonical_id=plan.existing_canonical_id,
+        resolution_reasons=warnings + plan.resolution_reasons,
+    )
+
+
 def plan_has_ambiguous_canonical_match(plan: CanonicalPersistPlan) -> bool:
     """True when rules deferred with an ambiguous fuzzy recall (LLM adjudication hook)."""
     for r in plan.resolution_reasons:
@@ -1162,9 +1174,6 @@ def plan_requires_llm_canonical_adjudication(
     """True when AI-assisted mode should run LLM adjudication."""
     if plan_has_ambiguous_canonical_match(plan):
         return True
-    lt = (location.location_type or "").strip().lower()
-    if lt != "political_district":
-        return False
     if plan.decision != CanonicalPersistDecision.LINK_EXISTING:
         return False
     for r in plan.resolution_reasons:

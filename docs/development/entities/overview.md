@@ -52,18 +52,20 @@ Canonical policy uses the shared `CanonicalPersistPlan` contract:
 - `MATERIALIZE_NEW` creates a canonical when policy allows it.
 - `DEFER` records review reasons and leaves the substrate row in the queue.
 
-Rules are type-specific. Location identity includes resolved geography and
-jurisdiction constraints. Person identity uses normalized name and affiliation;
-title is not part of the substrate identity fingerprint. Organization policy uses
-its own name and organization signals. Projects may use rules-only or AI-assisted
-canonical adjudication; model-assisted links must still satisfy the shared
-confidence threshold.
+Rules are type-specific. Location identity uses names, types, and available
+geography and jurisdiction constraints; absent geography is neutral rather than a
+conflict. Person identity uses normalized name and affiliation; title is not part
+of the substrate identity fingerprint. Organization policy uses its own name and
+organization signals. Projects may use rules-only or AI-assisted canonical
+adjudication; model-assisted links must still satisfy the shared confidence
+threshold.
 
 PlaceExtract and GeocodeAgent preserve one terminal row for every extracted
 location. Explicit country, subdivision, postal, and address components constrain
 resolver acceptance. A rejected or review-required result retains its reason and
-audit context but not provider identity, geometry, H3, or cache eligibility, and it
-cannot create a canonical.
+audit context but not provider identity, geometry, H3, or cache eligibility. It
+can still link to an existing canonical, or recommend a geography-free canonical
+for editorial acceptance; automatic ingest does not create that canonical.
 Recognized countries use ISO identity without requiring geometry; unknown country
 labels never inherit a domestic default. Address displays must preserve the
 structured house number and street, and article-level reconciliation keeps

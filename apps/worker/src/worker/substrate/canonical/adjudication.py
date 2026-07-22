@@ -62,26 +62,19 @@ def _recall_context_for_adjudication(
     plan: CanonicalPersistPlan,
     location: SubstrateLocation,
 ) -> dict[str, Any] | None:
-    """Return recall context for ambiguous matches or forced ``political_district`` adjudication."""
+    """Return the closed recall set for ambiguous or fuzzy-match adjudication."""
+    _ = location
     for r in plan.resolution_reasons:
         if not isinstance(r, dict):
             continue
-        if str(r.get("code") or "") == "ambiguous_canonical_match":
+        if str(r.get("code") or "") in {
+            "ambiguous_canonical_match",
+            "ambiguous_exact_canonical_match",
+            "linked_fuzzy_autolink",
+        }:
             ids = r.get("recall_canonical_ids")
             if isinstance(ids, list) and ids:
                 return r
-    lt = (location.location_type or "").strip().lower()
-    if lt == "political_district" and plan.decision == CanonicalPersistDecision.LINK_EXISTING:
-        for r in plan.resolution_reasons:
-            if not isinstance(r, dict):
-                continue
-            if str(r.get("code") or "") == "linked_fuzzy_autolink":
-                ids = r.get("recall_canonical_ids")
-                if isinstance(ids, list) and ids:
-                    return {
-                        "recall_canonical_ids": list(ids),
-                        "code": "linked_fuzzy_autolink",
-                    }
     return None
 
 
@@ -171,8 +164,9 @@ def prepare_location_adjudication(
 
     lines = "\n".join(
         f"- id={cid} label={label!r} location_type={lt!r} district_key={dk!r} "
-        f"district_kind={kind!r} district_number={num!r}"
-        for cid, label, lt, dk, kind, num, _fa, _gt in candidates
+        f"district_kind={kind!r} district_number={num!r} formatted_address={fa!r} "
+        f"geometry_type={gt!r}"
+        for cid, label, lt, dk, kind, num, fa, gt in candidates
     )
     floor = ADJUDICATION_LINK_MIN_CONFIDENCE
     district_block = ""
@@ -212,7 +206,10 @@ def prepare_location_adjudication(
         "only appears as geographic context in the suffix (e.g. a restaurant inside a park).\n"
         f"{district_rules}"
         "- When any candidate is only a rough geographic association, choose decision="
-        "\"no_match\" or \"uncertain\". Prefer that over a stretched link.\n"
+        '"no_match" or "uncertain". Prefer that over a stretched link.\n'
+        "- Missing coordinates or a missing formatted address are unknown evidence, not a "
+        "conflict. Do not reject an otherwise definitive same-place identity only because "
+        "geography is absent.\n"
         f"- Use confidence {floor} or higher only for definitive same-place identity you would "
         f"publish in a catalog; otherwise use confidence below {floor} "
         f"(the system will not link).\n\n"

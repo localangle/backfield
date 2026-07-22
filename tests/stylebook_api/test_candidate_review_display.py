@@ -80,3 +80,19 @@ def test_deferred_policy_needs_review_line() -> None:
     assert format_candidate_review_lines(raw) == [
         "Flagged during geocoding — confirm before linking in Stylebook",
     ]
+
+
+def test_geocode_quality_warning_is_visible_beside_recommendation() -> None:
+    raw = [
+        {
+            "code": "geocode_quality_warning",
+            "message": "Flagged during geocoding — confirm before linking in Stylebook",
+        },
+        {
+            "code": "canonical_suggestion",
+            "suggested_action": "link_existing",
+        },
+    ]
+    assert format_candidate_review_lines(raw) == [
+        "Flagged during geocoding — confirm before linking in Stylebook",
+    ]
