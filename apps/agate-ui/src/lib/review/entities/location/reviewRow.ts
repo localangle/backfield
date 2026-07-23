@@ -56,6 +56,7 @@ export interface MergedRowStylebookLink {
   label: string
   has_geometry: boolean
   geometry_differs: boolean
+  geometry: Record<string, unknown> | null
 }
 
 export function getMergedRowPersistedLocationId(row: Record<string, unknown>): number | null {
@@ -107,6 +108,10 @@ export function getMergedRowStylebookLink(row: Record<string, unknown>): MergedR
     label,
     has_geometry: o.has_geometry === true,
     geometry_differs: o.geometry_differs === true,
+    geometry:
+      o.geometry && typeof o.geometry === 'object' && !Array.isArray(o.geometry)
+        ? (o.geometry as Record<string, unknown>)
+        : null,
   }
 }
 

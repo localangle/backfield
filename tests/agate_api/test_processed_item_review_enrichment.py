@@ -142,6 +142,7 @@ def test_enrich_merged_locations_attaches_persisted_and_stylebook_link() -> None
         assert link["label"] == "City Hall"
         assert link["has_geometry"] is True
         assert link["geometry_differs"] is True
+        assert link["geometry"] == canon_geom
         geom = out[0]["location"]["geocode"]["result"]["geometry"]
         assert geom["coordinates"] == [-93.1, 45.1]
         assert out[0]["location"]["role_in_story"] == "Scene of the council vote"

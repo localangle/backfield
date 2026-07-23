@@ -636,3 +636,72 @@ def test_person_extract_pipeline_persist_to_substrate() -> None:
         assert "official" in natures
         assert "witness" in natures
         assert "suspect" in natures
+
+
+def test_dispose_orphan_person_linked_to_non_default_stylebook() -> None:
+    """Orphan dispose must unlink using the canonical's stylebook, not org default."""
+    from backfield_entities.entities.person.types import person_identity_fingerprint
+    from worker.substrate.entities.person.mentions import (
+        dispose_orphan_substrates_after_retired_mentions,
+    )
+
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session,
+            org_slug="org-dispose-person",
+            project_slug="proj-dispose-person",
+        )
+        project = session.get(BackfieldProject, project_id)
+        assert project is not None
+        default_sb = session.exec(
+            select(Stylebook).where(
+                Stylebook.organization_id == project.organization_id,
+                Stylebook.is_default == True,  # noqa: E712
+            )
+        ).one()
+        pinned_sb = Stylebook(
+            organization_id=int(project.organization_id),
+            slug="pinned-people",
+            name="Pinned People Stylebook",
+            is_default=False,
+        )
+        session.add(pinned_sb)
+        session.commit()
+        session.refresh(pinned_sb)
+        assert int(pinned_sb.id) != int(default_sb.id)
+
+        canon = StylebookPersonCanonical(
+            stylebook_id=int(pinned_sb.id),
+            label="Jane Smith",
+            slug="jane-smith-pinned",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+
+        person = SubstratePerson(
+            project_id=project_id,
+            name="Jane Smith",
+            normalized_name="jane smith",
+            sort_key="smith",
+            identity_fingerprint=person_identity_fingerprint(normalized_name="jane smith"),
+            stylebook_person_canonical_id=str(canon.id),
+            canonical_link_status="linked",
+        )
+        session.add(person)
+        session.commit()
+        session.refresh(person)
+        pid = int(person.id)
+
+        disposed = dispose_orphan_substrates_after_retired_mentions(
+            session,
+            project_id=project_id,
+            person_ids={pid},
+        )
+        session.commit()
+        assert disposed == 1
+        assert session.get(SubstratePerson, pid) is None

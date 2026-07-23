@@ -48,6 +48,10 @@ Locations additionally support:
 - article-scoped removal;
 - explicit adoption of saved geometry by a linked canonical.
 
+For read-only review display, a fully linked canonical's Stylebook geometry takes precedence over
+the run's saved geography. The original run geometry remains unchanged for audit, editing, and
+explicit adoption into the Stylebook.
+
 Saved entity create, update, occurrence, geometry, link, and delete operations are owned by Stylebook API. Agate review keeps its overlay in step with those persisted edits.
 
 ## Article fields and metadata

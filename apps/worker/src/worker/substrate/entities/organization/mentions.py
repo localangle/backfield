@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from backfield_db import (
+    StylebookOrganizationCanonical,
     SubstrateOrganization,
     SubstrateOrganizationMention,
     SubstrateOrganizationMentionOccurrence,
@@ -15,7 +16,6 @@ from backfield_entities.canonical.link import (
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_UNLINKED,
 )
-from backfield_entities.catalog.resolve import resolve_stylebook_id_for_project_id
 from backfield_entities.editorial_text import normalize_editorial_prose
 from backfield_entities.entities.organization.persist import unlink_substrate_from_canonical
 from backfield_entities.entities.organization.review import (
@@ -214,16 +214,13 @@ def _dispose_orphan_substrate_without_requeue(
         and organization.stylebook_organization_canonical_id is not None
     ):
         cid = organization.stylebook_organization_canonical_id
-        try:
-            stylebook_id = resolve_stylebook_id_for_project_id(
-                session, int(organization.project_id)
-            )
-        except LookupError:
-            stylebook_id = None
-        if stylebook_id is not None:
+        # Use the linked canonical's stylebook (may differ from org default / workspace).
+        canon = session.get(StylebookOrganizationCanonical, str(cid))
+        sb_id = int(canon.stylebook_id) if canon is not None else 0
+        if canon is not None and sb_id > 0:
             unlink_substrate_from_canonical(
                 session,
-                stylebook_id=int(stylebook_id),
+                stylebook_id=sb_id,
                 organization=organization,
                 provenance=provenance,
                 requeue_after_unlink=False,
@@ -236,7 +233,7 @@ def _dispose_orphan_substrate_without_requeue(
                     "code": "removed_from_story",
                     "previous_canonical_id": str(cid),
                     "provenance": provenance,
-                    "note": "stylebook_missing",
+                    "note": "canonical_row_missing",
                 }
             ]
             session.add(organization)

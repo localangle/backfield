@@ -23,7 +23,11 @@ Project, flow, and run access is checked against the resource's project. Organiz
 `/projects` owns project creation, listing, detail, updates, deletion, statistics, tracked AI cost, and encrypted project secrets.
 
 - List responses are filtered to visible projects.
-- Project creation and workspace assignment validate organization and workspace access.
+- When `workspace_id` is provided, the project inherits that workspace's `organization_id`.
+  Session users must belong to that organization; members need workspace membership, and
+  org admins may assign any workspace in their org. API keys cannot create projects.
+- When `workspace_id` is omitted (legacy / service / scripts), session creates use the
+  session's organization; service tokens fall back to the seeded `default` organization.
 - Secret responses contain metadata, never secret values.
 - Project responses expose the assigned workspace and effective workspace Stylebook context when available.
 
