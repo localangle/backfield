@@ -5,6 +5,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from backfield_db import BackfieldProject
+from backfield_entities.catalog.resolve import STYLEBOOK_SLUG_NOT_IN_ORG
 from backfield_entities.public.organizations import (
     PublicOrganizationSearchParams,
     PublicOrganizationSort,
@@ -28,13 +29,22 @@ def parse_organization_id(organization_id: str) -> str:
 def resolve_public_organizations_scope(
     session: Session,
     project: BackfieldProject,
+    *,
+    stylebook_slug: str | None = None,
 ) -> tuple[int, int]:
     try:
-        stylebook_id = resolve_public_stylebook_id(session, project)
+        stylebook_id = resolve_public_stylebook_id(
+            session, project, stylebook_slug=stylebook_slug
+        )
     except LookupError as exc:
+        detail = (
+            "Stylebook not found"
+            if str(exc) == STYLEBOOK_SLUG_NOT_IN_ORG
+            else "Stylebook not found for project"
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Stylebook not found for project",
+            detail=detail,
         ) from exc
     return stylebook_id, int(project.id)  # type: ignore[arg-type]
 

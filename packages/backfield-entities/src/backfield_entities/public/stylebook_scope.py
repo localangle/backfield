@@ -14,9 +14,20 @@ from sqlmodel import Session, col, select
 from backfield_entities.catalog.resolve import resolve_effective_stylebook_id_for_project
 
 
-def resolve_public_stylebook_id(session: Session, project: BackfieldProject) -> int:
-    """Effective Stylebook catalog id for a public API project."""
-    return resolve_effective_stylebook_id_for_project(session, project)
+def resolve_public_stylebook_id(
+    session: Session,
+    project: BackfieldProject,
+    *,
+    stylebook_slug: str | None = None,
+) -> int:
+    """Effective Stylebook catalog id for a public API project.
+
+    When ``stylebook_slug`` is set, resolve that catalog within the project's
+    organization. Otherwise use the organization default.
+    """
+    return resolve_effective_stylebook_id_for_project(
+        session, project, stylebook_slug=stylebook_slug
+    )
 
 
 def stylebook_slugs_by_id(session: Session, stylebook_ids: set[int]) -> dict[int, str]:

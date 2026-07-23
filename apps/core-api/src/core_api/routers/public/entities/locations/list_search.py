@@ -14,6 +14,7 @@ from core_api.routers.public.entities.locations.helpers import (
     resolve_public_locations_scope,
 )
 from core_api.routers.public.schemas import PaginatedResponse, PaginationOut
+from core_api.routers.public.stylebook_query import StylebookSlugQuery
 
 router = APIRouter()
 
@@ -22,6 +23,7 @@ def _search_locations(
     *,
     session: Session,
     project: BackfieldProject,
+    stylebook_slug: str | None,
     q: str | None,
     location_type: str | None,
     nature: str | None,
@@ -30,7 +32,9 @@ def _search_locations(
     limit: int,
     offset: int,
 ) -> PaginatedResponse[PublicLocationOut]:
-    stylebook_id, project_id = resolve_public_locations_scope(session, project)
+    stylebook_id, project_id = resolve_public_locations_scope(
+        session, project, stylebook_slug=stylebook_slug
+    )
     params = build_location_search_params(
         q=q,
         location_type=location_type,
@@ -56,6 +60,7 @@ def _search_locations(
 def list_project_locations(
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
+    stylebook_slug: StylebookSlugQuery = None,
     q: str | None = Query(None, description="Search label or formatted address"),
     location_type: str | None = Query(None),
     nature: str | None = Query(
@@ -74,6 +79,7 @@ def list_project_locations(
     return _search_locations(
         session=session,
         project=project,
+        stylebook_slug=stylebook_slug,
         q=q,
         location_type=location_type,
         nature=nature,
@@ -88,6 +94,7 @@ def list_project_locations(
 def search_project_locations(
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
+    stylebook_slug: StylebookSlugQuery = None,
     q: str | None = Query(None, description="Search label or formatted address"),
     location_type: str | None = Query(None),
     nature: str | None = Query(
@@ -106,6 +113,7 @@ def search_project_locations(
     return _search_locations(
         session=session,
         project=project,
+        stylebook_slug=stylebook_slug,
         q=q,
         location_type=location_type,
         nature=nature,

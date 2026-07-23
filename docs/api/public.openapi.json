@@ -8723,6 +8723,24 @@
             }
           },
           {
+            "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+            "in": "query",
+            "name": "stylebook_slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+              "title": "Stylebook Slug"
+            }
+          },
+          {
             "description": "Search label or formatted address",
             "in": "query",
             "name": "q",
@@ -9036,6 +9054,24 @@
             "schema": {
               "title": "Project Slug",
               "type": "string"
+            }
+          },
+          {
+            "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+            "in": "query",
+            "name": "stylebook_slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+              "title": "Stylebook Slug"
             }
           },
           {
@@ -9412,6 +9448,24 @@
             }
           },
           {
+            "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+            "in": "query",
+            "name": "stylebook_slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+              "title": "Stylebook Slug"
+            }
+          },
+          {
             "description": "Search label or formatted address",
             "in": "query",
             "name": "q",
@@ -9725,6 +9779,24 @@
             "schema": {
               "title": "Project Slug",
               "type": "string"
+            }
+          },
+          {
+            "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+            "in": "query",
+            "name": "stylebook_slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+              "title": "Stylebook Slug"
             }
           }
         ],
@@ -12377,6 +12449,24 @@
             }
           },
           {
+            "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+            "in": "query",
+            "name": "stylebook_slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+              "title": "Stylebook Slug"
+            }
+          },
+          {
             "description": "Search organization name",
             "in": "query",
             "name": "q",
@@ -12693,6 +12783,24 @@
             }
           },
           {
+            "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+            "in": "query",
+            "name": "stylebook_slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+              "title": "Stylebook Slug"
+            }
+          },
+          {
             "description": "Search organization name",
             "in": "query",
             "name": "q",
@@ -13006,6 +13114,24 @@
             "schema": {
               "title": "Project Slug",
               "type": "string"
+            }
+          },
+          {
+            "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+            "in": "query",
+            "name": "stylebook_slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+              "title": "Stylebook Slug"
             }
           }
         ],
@@ -14739,6 +14865,24 @@
             }
           },
           {
+            "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+            "in": "query",
+            "name": "stylebook_slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+              "title": "Stylebook Slug"
+            }
+          },
+          {
             "description": "Search name, title, or affiliation",
             "in": "query",
             "name": "q",
@@ -15107,6 +15251,24 @@
             }
           },
           {
+            "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+            "in": "query",
+            "name": "stylebook_slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+              "title": "Stylebook Slug"
+            }
+          },
+          {
             "description": "Search name, title, or affiliation",
             "in": "query",
             "name": "q",
@@ -15472,6 +15634,24 @@
             "schema": {
               "title": "Project Slug",
               "type": "string"
+            }
+          },
+          {
+            "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+            "in": "query",
+            "name": "stylebook_slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional Stylebook catalog slug within the project's organization. Omit to use the organization's default Stylebook.",
+              "title": "Stylebook Slug"
             }
           }
         ],

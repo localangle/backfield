@@ -20,6 +20,7 @@ from core_api.routers.public.articles.helpers import parse_bbox
 from core_api.routers.public.deps import get_public_project
 from core_api.routers.public.entities.locations.helpers import resolve_public_locations_scope
 from core_api.routers.public.schemas import PaginationOut
+from core_api.routers.public.stylebook_query import StylebookSlugQuery
 
 router = APIRouter()
 
@@ -34,6 +35,7 @@ class PublicLocationGeoSearchResponse(BaseModel):
 def search_project_locations_by_geo(
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
+    stylebook_slug: StylebookSlugQuery = None,
     center_lng: float | None = Query(None, description="Center longitude for radius search"),
     center_lat: float | None = Query(None, description="Center latitude for radius search"),
     radius_miles: float | None = Query(
@@ -105,7 +107,9 @@ def search_project_locations_by_geo(
         )
         search_mode = "point"
 
-    stylebook_id, project_id = resolve_public_locations_scope(session, project)
+    stylebook_id, project_id = resolve_public_locations_scope(
+        session, project, stylebook_slug=stylebook_slug
+    )
     items, total = search_public_locations_by_geo(
         session,
         stylebook_id=stylebook_id,

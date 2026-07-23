@@ -123,6 +123,14 @@ repeatable `meta` grammar plus `author`, `external_source`, and repeatable
 `pagination` envelope, default to 25 items (maximum 100), and accept
 `to_entity_type` and `nature`.
 
+People, organizations, and locations **list**, **search**, and **types** routes
+(and locations **geo-search**) accept an optional `stylebook_slug` query
+parameter. When omitted, catalog queries use the organization's default
+Stylebook. When set, the slug must name a Stylebook in the project's
+organization; unknown or foreign slugs return `404` with
+`error.code=not_found`. Mention evidence still scopes to the authenticated
+project; only the catalog (canonical) scope changes.
+
 ## Run trigger and polling
 
 1. `POST /public/v1/projects/{project_slug}/runs` with a body that includes

@@ -13,6 +13,7 @@ from backfield_db import (
     BackfieldOrganization,
     BackfieldProject,
     BackfieldWorkspace,
+    Stylebook,
     StylebookConnection,
     StylebookLocationCanonical,
     StylebookOrganizationCanonical,
@@ -1548,6 +1549,91 @@ def test_public_organization_not_found(public_client: TestClient) -> None:
         headers=headers,
     )
     assert r.status_code == 404
+
+
+def test_public_entity_search_stylebook_slug_override(public_client: TestClient) -> None:
+    engine = public_client.test_engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        org = session.exec(
+            select(BackfieldOrganization).where(BackfieldOrganization.slug == "default")
+        ).one()
+        oid = int(org.id)
+        alt = Stylebook(
+            organization_id=oid,
+            slug="mnn-stylebook",
+            name="MNN Stylebook",
+            is_default=False,
+        )
+        session.add(alt)
+        session.flush()
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=int(alt.id),
+                label="MNN Newsroom",
+                slug="mnn-newsroom",
+                organization_type="media",
+            )
+        )
+        foreign_org = BackfieldOrganization(name="Other Org", slug="other-org")
+        session.add(foreign_org)
+        session.flush()
+        session.add(
+            Stylebook(
+                organization_id=int(foreign_org.id),
+                slug="foreign-stylebook",
+                name="Foreign Stylebook",
+                is_default=True,
+            )
+        )
+        session.commit()
+
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+
+    defaulted = public_client.get(
+        "/public/v1/projects/general/organizations/search",
+        headers=headers,
+        params={"q": "Council"},
+    )
+    assert defaulted.status_code == 200
+    assert defaulted.json()["pagination"]["total"] == 1
+    assert defaulted.json()["items"][0]["stylebook_slug"] == "default"
+
+    overridden = public_client.get(
+        "/public/v1/projects/general/organizations/search",
+        headers=headers,
+        params={"q": "Newsroom", "stylebook_slug": "mnn-stylebook"},
+    )
+    assert overridden.status_code == 200
+    body = overridden.json()
+    assert body["pagination"]["total"] == 1
+    assert body["items"][0]["label"] == "MNN Newsroom"
+    assert body["items"][0]["stylebook_slug"] == "mnn-stylebook"
+
+    types = public_client.get(
+        "/public/v1/projects/general/organizations/types",
+        headers=headers,
+        params={"stylebook_slug": "mnn-stylebook"},
+    )
+    assert types.status_code == 200
+    assert "media" in types.json()["types"]
+
+    missing = public_client.get(
+        "/public/v1/projects/general/organizations/search",
+        headers=headers,
+        params={"stylebook_slug": "does-not-exist"},
+    )
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "not_found"
+    assert missing.json()["error"]["message"] == "Stylebook not found"
+
+    foreign = public_client.get(
+        "/public/v1/projects/general/organizations/search",
+        headers=headers,
+        params={"stylebook_slug": "foreign-stylebook"},
+    )
+    assert foreign.status_code == 404
+    assert foreign.json()["error"]["message"] == "Stylebook not found"
 
 
 def test_public_locations_list_search_and_geo(public_client: TestClient) -> None:

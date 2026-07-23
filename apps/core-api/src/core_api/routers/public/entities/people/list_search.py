@@ -14,6 +14,7 @@ from core_api.routers.public.entities.people.helpers import (
     resolve_public_people_scope,
 )
 from core_api.routers.public.schemas import PaginatedResponse, PaginationOut
+from core_api.routers.public.stylebook_query import StylebookSlugQuery
 
 router = APIRouter()
 
@@ -22,6 +23,7 @@ def _search_people(
     *,
     session: Session,
     project: BackfieldProject,
+    stylebook_slug: str | None,
     q: str | None,
     person_type: str | None,
     public_figure: bool | None,
@@ -33,7 +35,9 @@ def _search_people(
     limit: int,
     offset: int,
 ) -> PaginatedResponse[PublicPersonOut]:
-    stylebook_id, project_id = resolve_public_people_scope(session, project)
+    stylebook_id, project_id = resolve_public_people_scope(
+        session, project, stylebook_slug=stylebook_slug
+    )
     params = build_person_search_params(
         q=q,
         person_type=person_type,
@@ -62,6 +66,7 @@ def _search_people(
 def list_project_people(
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
+    stylebook_slug: StylebookSlugQuery = None,
     q: str | None = Query(None, description="Search name, title, or affiliation"),
     person_type: str | None = Query(None),
     public_figure: bool | None = Query(None),
@@ -86,6 +91,7 @@ def list_project_people(
     return _search_people(
         session=session,
         project=project,
+        stylebook_slug=stylebook_slug,
         q=q,
         person_type=person_type,
         public_figure=public_figure,
@@ -103,6 +109,7 @@ def list_project_people(
 def search_project_people(
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
+    stylebook_slug: StylebookSlugQuery = None,
     q: str | None = Query(None, description="Search name, title, or affiliation"),
     person_type: str | None = Query(None),
     public_figure: bool | None = Query(None),
@@ -127,6 +134,7 @@ def search_project_people(
     return _search_people(
         session=session,
         project=project,
+        stylebook_slug=stylebook_slug,
         q=q,
         person_type=person_type,
         public_figure=public_figure,
