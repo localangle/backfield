@@ -28,6 +28,9 @@ blocks remain developer-tool-specific accents. The endpoint navigator groups and
 operations to match the Backfield API docs nav (Projects, Metadata, Articles, Mentions, People,
 Locations, Organizations, Other) and displays paths relative to
 `/public/v1/projects/{project_slug}`; request construction still uses the exact OpenAPI path.
+Response bodies keep Polygon and MultiPolygon coordinate objects collapsed by default, with
+geometry type and position count in the summary; expanding restores the full JSON, and copying
+always uses the unchanged response body.
 Every endpoint uses the same schema-first parameter UX: fields are organized into Project,
 Resource, Search, Area, Filters, Sort and page, Response details, and Request options sections as
 needed. Paired controls align consistently; types, defaults, required fields, and numeric limits

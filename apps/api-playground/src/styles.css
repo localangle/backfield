@@ -1287,6 +1287,40 @@ pre {
   white-space: pre-wrap;
 }
 
+.collapsible-response-body {
+  max-width: 100%;
+  overflow: auto;
+  border-radius: var(--radius);
+  background: #111827;
+  color: #f8fafc;
+  padding: 16px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.75rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.response-geometry {
+  margin: 0;
+}
+
+.response-geometry summary {
+  cursor: pointer;
+  color: #bfdbfe;
+  white-space: pre-wrap;
+}
+
+.response-geometry summary:hover {
+  color: #dbeafe;
+}
+
+.response-geometry pre {
+  margin-top: 8px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  background: #0b1220;
+}
+
 .response-heading {
   display: flex;
   align-items: center;
