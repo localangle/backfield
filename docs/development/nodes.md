@@ -146,8 +146,14 @@ This exception does **not** loosen Stylebook/cache linking sanity.
 
 Place geocoding passes extracted `components.address` into Pelias structured
 queries (venue name remains in free-text search). Router `no_web_search` skips
-*upfront* Brave/DuckDuckGo when a street line is already present; Place may still
-run web search as a **fallback** after inconclusive Pelias.
+*upfront* address discovery when a street line is already present; Place may
+still run the same discovery waterfall as a **fallback** after inconclusive
+Pelias. The waterfall tries Brave Web Search first, then Brave Place Search,
+then DuckDuckGo. A provider stops the waterfall only when its evidence yields a
+complete physical address. For US addressable buildings, a street corridor
+without a house number is incomplete and advances to the next provider.
+Resolved and review rows retain a sanitized audit of provider, result count,
+outcome, and selected source; raw snippets and URLs are not persisted.
 
 ### Extract prompts
 

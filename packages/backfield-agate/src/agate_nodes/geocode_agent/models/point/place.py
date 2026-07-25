@@ -1,9 +1,10 @@
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from agate_utils.geocoding.geocoding_types import GeocodingResult
 from agate_utils.geocoding.nominatim import geocode_address
@@ -15,7 +16,12 @@ from agate_utils.geocoding.pelias import (
     geocode_structured_candidates,
 )
 from agate_utils.llm import call_llm
-from agate_utils.search import SearchResponse, brave_place_search, search_web_duckduckgo
+from agate_utils.search import (
+    SearchResponse,
+    brave_place_search,
+    brave_web_search,
+    search_web_duckduckgo,
+)
 
 from ...llm_auth import has_llm_auth
 from ...poi_evidence import (
@@ -26,6 +32,19 @@ from ...poi_evidence import (
 from .address import Address
 
 logger = logging.getLogger(__name__)
+
+
+class ExtractedAddress(BaseModel):
+    """Typed result from address-evidence adjudication."""
+
+    address_found: bool
+    street: str | None = None
+    city: str | None = None
+    state: str | None = None
+    zipcode: str | None = None
+    country: str | None = None
+    evidence_indexes: list[int] = Field(default_factory=list)
+
 
 ########## PLACE MODEL ##########
 
@@ -49,6 +68,8 @@ class Place(Address):
         self._failure_reason: Optional[str] = None
         self._web_search_used: bool = False
         self._web_search_fallback_used: bool = False
+        self._address_search_attempts: list[dict[str, Any]] = []
+        self._address_source: str | None = None
 
     def _geocode_hints_prompt_value(self) -> str:
         raw = (self._geocode_hints or "").strip()
@@ -167,96 +188,74 @@ class Place(Address):
             query_parts.append(self.state_abbr)
         return ", ".join(query_parts)
 
-    def _search_for_address(
+    def _country_code_for_search(self) -> str | None:
+        country = str(self.country or "").strip().upper()
+        if country in {"US", "USA", "UNITED STATES"}:
+            return "US"
+        return country if len(country) == 2 else None
+
+    def _record_address_search_attempt(
         self,
-        brave_search_api_key: Optional[str],
-        original_text: str,
-        openai_api_key: str,
+        provider: str,
+        response: SearchResponse | None,
+        outcome: str,
+    ) -> None:
+        result_count = len(response.results) if response is not None else 0
+        self._address_search_attempts.append(
+            {
+                "provider": provider,
+                "result_count": result_count,
+                "outcome": outcome,
+            }
+        )
+        logger.info(
+            "Geocode address search provider=%s place=%r result_count=%d outcome=%s",
+            provider,
+            self.name,
+            result_count,
+            outcome,
+        )
+
+    def _complete_extracted_address(
+        self,
+        extracted: ExtractedAddress,
         *,
-        allow_web_search: bool = True,
-    ) -> Optional[SearchResponse]:
-        if not allow_web_search:
-            logger.info("Web search disabled for place '%s'; skipping Brave and DuckDuckGo", self.name)
+        result_count: int,
+    ) -> ExtractedAddress | None:
+        if not extracted.address_found:
             return None
 
-        query = self._generate_search_query(original_text, openai_api_key)
-        location_hint = None
-        if self.city or self.state_abbr or self.country:
-            parts = [p for p in (self.city, self.state_abbr, self.country) if p]
-            location_hint = " ".join(parts).strip() or None
+        street = str(extracted.street or "").strip()
+        city = str(extracted.city or self.city or "").strip()
+        state = str(extracted.state or self.state_abbr or "").strip()
+        country = str(extracted.country or self.country or "").strip()
+        country_upper = country.upper()
+        if not street or not city or not country:
+            return None
+        if country_upper in {"US", "USA", "UNITED STATES"} and not re.search(
+            r"\b\d+[A-Za-z]?\b", street
+        ):
+            return None
 
-        if brave_search_api_key:
-            try:
-                logger.info(
-                    "Geocode place search engine=brave_place_search "
-                    "place=%r query=%r location_hint=%r",
-                    self.name,
-                    query,
-                    location_hint,
-                )
-                response = brave_place_search(
-                    brave_search_api_key,
-                    q=query,
-                    location=location_hint,
-                    count=10,
-                )
-                if response.success and response.results:
-                    logger.info(
-                        "Geocode place search engine=brave_place_search "
-                        "place=%r result_count=%d",
-                        self.name,
-                        len(response.results),
-                    )
-                    return response
-                logger.info(
-                    "Geocode place search engine=brave_place_search "
-                    "place=%r returned no results; falling back to duckduckgo query=%r",
-                    self.name,
-                    query,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Geocode place search engine=brave_place_search "
-                    "place=%r failed: %s; falling back to duckduckgo",
-                    self.name,
-                    exc,
-                )
-
-        try:
-            logger.info(
-                "Geocode place search engine=duckduckgo place=%r query=%r",
-                self.name,
-                query,
-            )
-            response = search_web_duckduckgo(query, max_results=10, timeout=15.0)
-            if response.success and response.results:
-                logger.info(
-                    "Geocode place search engine=duckduckgo "
-                    "place=%r result_count=%d",
-                    self.name,
-                    len(response.results),
-                )
-                return response
-            logger.warning(
-                "Geocode place search engine=duckduckgo "
-                "place=%r returned no results query=%r",
-                self.name,
-                query,
-            )
-        except Exception as exc:
-            logger.error(
-                "Geocode place search engine=duckduckgo place=%r failed: %s",
-                self.name,
-                exc,
-            )
-        return None
+        evidence_indexes = [
+            index for index in extracted.evidence_indexes if 0 <= index < result_count
+        ]
+        return extracted.model_copy(
+            update={
+                "street": street,
+                "city": city,
+                "state": state or None,
+                "country": country,
+                "evidence_indexes": evidence_indexes,
+            }
+        )
 
     def _extract_and_parse_address(
         self,
         search_query: str,
         search_results: SearchResponse,
         openai_api_key: str,
-    ) -> Optional[Dict[str, str]]:
+    ) -> ExtractedAddress | None:
         try:
             prompt_path = Path(__file__).parent.parent.parent / "prompts" / "extract_best_address.md"
             template = prompt_path.read_text(encoding="utf-8")
@@ -266,8 +265,13 @@ class Place(Address):
 
         try:
             formatted_results = [
-                {"title": result.title, "url": result.url, "snippet": result.snippet}
-                for result in search_results.results
+                {
+                    "index": index,
+                    "title": result.title,
+                    "url": result.url,
+                    "snippet": result.snippet,
+                }
+                for index, result in enumerate(search_results.results)
             ]
             prompt = template.format(
                 original_text=self._original_text or "",
@@ -282,8 +286,11 @@ class Place(Address):
                 force_json=True,
                 model_config_id=self._geographic_reasoning_model_config_id(),
             )
-            address_data = json.loads(result)
-            return address_data if address_data.get("address_found") else None
+            extracted = ExtractedAddress.model_validate_json(result)
+            return self._complete_extracted_address(
+                extracted,
+                result_count=len(search_results.results),
+            )
         except Exception as exc:
             logger.error("Error extracting address for %s: %s", self.name, exc)
             return None
@@ -436,6 +443,39 @@ class Place(Address):
     def _apply_discovered_address(self, address_data: Dict[str, str]) -> None:
         self._prep = lambda: self._update_prep_with_address(address_data)
 
+    def _consider_address_search_response(
+        self,
+        *,
+        provider: str,
+        response: SearchResponse,
+        openai_api_key: str,
+    ) -> bool:
+        if not response.success:
+            self._record_address_search_attempt(provider, response, "error")
+            return False
+        if not response.results:
+            self._record_address_search_attempt(provider, response, "empty")
+            return False
+
+        extracted = self._extract_and_parse_address(
+            response.query,
+            response,
+            openai_api_key,
+        )
+        if extracted is None:
+            self._record_address_search_attempt(
+                provider,
+                response,
+                "no_usable_address",
+            )
+            return False
+
+        self._record_address_search_attempt(provider, response, "complete_address")
+        self._address_source = provider
+        address_data = extracted.model_dump(exclude_none=True, exclude={"evidence_indexes"})
+        self._apply_discovered_address(address_data)
+        return True
+
     async def _try_web_search_address_discovery(
         self,
         *,
@@ -443,27 +483,62 @@ class Place(Address):
         openai_api_key: str,
         is_fallback: bool,
     ) -> bool:
-        """Run Brave/DDG address discovery; return True when prep was updated."""
-        search_response = self._search_for_address(
-            brave_search_api_key,
-            self._original_text or "",
-            openai_api_key,
-            allow_web_search=True,
-        )
+        """Run Web → Place → DDG discovery; stop at a complete address."""
         self._web_search_used = True
         if is_fallback:
             self._web_search_fallback_used = True
-        if not search_response:
+
+        query = self._generate_search_query(self._original_text or "", openai_api_key)
+        location_parts = [part for part in (self.city, self.state_abbr, self.country) if part]
+        location_hint = " ".join(location_parts).strip() or None
+
+        if brave_search_api_key:
+            try:
+                web_response = brave_web_search(
+                    brave_search_api_key,
+                    q=query,
+                    count=10,
+                    country=self._country_code_for_search(),
+                    search_lang="en",
+                )
+                if self._consider_address_search_response(
+                    provider="brave_web",
+                    response=web_response,
+                    openai_api_key=openai_api_key,
+                ):
+                    return True
+            except Exception as exc:
+                logger.warning("Brave web search failed for place %s: %s", self.name, exc)
+                self._record_address_search_attempt("brave_web", None, "error")
+
+            try:
+                place_response = brave_place_search(
+                    brave_search_api_key,
+                    q=query,
+                    location=location_hint,
+                    count=10,
+                )
+                if self._consider_address_search_response(
+                    provider="brave_place",
+                    response=place_response,
+                    openai_api_key=openai_api_key,
+                ):
+                    return True
+            except Exception as exc:
+                logger.warning("Brave place search failed for place %s: %s", self.name, exc)
+                self._record_address_search_attempt("brave_place", None, "error")
+
+        try:
+            ddg_response = search_web_duckduckgo(query, max_results=10, timeout=15.0)
+            return self._consider_address_search_response(
+                provider="duckduckgo",
+                response=ddg_response,
+                openai_api_key=openai_api_key,
+            )
+        except Exception as exc:
+            logger.warning("DuckDuckGo search failed for place %s: %s", self.name, exc)
+            self._record_address_search_attempt("duckduckgo", None, "error")
             return False
-        address_data = self._extract_and_parse_address(
-            search_response.query,
-            search_response,
-            openai_api_key,
-        )
-        if not address_data:
-            return False
-        self._apply_discovered_address(address_data)
-        return True
 
     ########## PUBLIC METHODS ##########
 

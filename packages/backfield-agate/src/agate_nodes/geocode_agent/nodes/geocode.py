@@ -692,15 +692,22 @@ async def orchestrate_external_geocode(state: AgentState) -> AgentState:
         state["geocoding_result"] = result
         state["geocoding_model"] = model
 
-        if isinstance(model, Place) and getattr(model, "_web_search_fallback_used", False):
-            audit = state.get("router_audit")
-            if isinstance(audit, dict):
+        if isinstance(model, Place):
+            search_audit: dict[str, Any] = {}
+            search_attempts = getattr(model, "_address_search_attempts", None)
+            if search_attempts:
+                search_audit["search_attempts"] = search_attempts
+            address_source = getattr(model, "_address_source", None)
+            if address_source:
+                search_audit["address_source"] = address_source
+            if getattr(model, "_web_search_fallback_used", False):
+                search_audit["web_search_fallback_used"] = True
+            if search_audit:
+                audit = state.get("router_audit")
                 state["router_audit"] = {
-                    **audit,
-                    "web_search_fallback_used": True,
+                    **(audit if isinstance(audit, dict) else {}),
+                    **search_audit,
                 }
-            else:
-                state["router_audit"] = {"web_search_fallback_used": True}
 
         if isinstance(model, Place) and hasattr(model, "_failure_reason") and model._failure_reason:
             state["geocoding_failure_reason"] = model._failure_reason
