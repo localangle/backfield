@@ -20,6 +20,7 @@ import asyncio
 import csv
 import json
 import os
+import random
 import re
 import subprocess
 import sys
@@ -230,24 +231,33 @@ def _sample_cases(
     candidates: list[dict[str, Any]],
     *,
     per_bucket: int,
+    seed: int | None = None,
 ) -> list[dict[str, Any]]:
     by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for case in candidates:
         key = (str(case["type"]), str(case["prior_bucket"]))
         by_key.setdefault(key, []).append(case)
 
+    rng = random.Random(seed) if seed is not None else None
     ordered: list[dict[str, Any]] = []
     for loc_type in _TARGET_TYPES:
         for bucket in ("prior_fail", "prior_success"):
-            rows = sorted(
-                by_key.get((loc_type, bucket), []),
-                key=lambda c: (int(c["item_id"]), str(c["location"]).lower()),
-            )
+            rows = list(by_key.get((loc_type, bucket), []))
+            if rng is not None:
+                rng.shuffle(rows)
+            else:
+                rows.sort(key=lambda c: (int(c["item_id"]), str(c["location"]).lower()))
             ordered.extend(rows[:per_bucket])
     return ordered
 
 
-def build_corpus(corpus_path: Path, *, per_bucket: int, min_item_id: int) -> list[dict[str, Any]]:
+def build_corpus(
+    corpus_path: Path,
+    *,
+    per_bucket: int,
+    min_item_id: int,
+    seed: int | None = None,
+) -> list[dict[str, Any]]:
     csv.field_size_limit(10**9)
     raw = _psql(
         "COPY ("
@@ -285,13 +295,14 @@ def build_corpus(corpus_path: Path, *, per_bucket: int, min_item_id: int) -> lis
             if case is not None:
                 candidates.append(case)
 
-    ordered = _sample_cases(candidates, per_bucket=per_bucket)
+    ordered = _sample_cases(candidates, per_bucket=per_bucket, seed=seed)
     corpus_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "built_at": datetime.now(UTC).isoformat(),
         "case_count": len(ordered),
         "per_bucket": per_bucket,
         "min_item_id": min_item_id,
+        "seed": seed,
         "types": list(_TARGET_TYPES),
         "cases": ordered,
     }
@@ -592,6 +603,12 @@ def main() -> int:
         help="Only sample processed items at or above this id",
     )
     parser.add_argument("--limit", type=int, default=None, help="Optional case cap for debugging")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="If set, randomly sample within each type/bucket using this seed",
+    )
     args = parser.parse_args()
 
     do_build = args.build or not args.corpus.exists()
@@ -606,6 +623,7 @@ def main() -> int:
             args.corpus.resolve(),
             per_bucket=args.per_bucket,
             min_item_id=args.min_item_id,
+            seed=args.seed,
         )
     if do_run:
         return asyncio.run(
