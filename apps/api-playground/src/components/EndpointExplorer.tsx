@@ -35,6 +35,7 @@ import {
   type PlaygroundResponse,
 } from "../lib/request"
 import { cellResolution } from "../lib/mapSelection"
+import { CollapsibleResponseBody } from "./CollapsibleResponseBody"
 
 const GeoAreaMap = lazy(() => import("./GeoAreaMap"))
 const H3CellMap = lazy(() => import("./H3CellMap"))
@@ -668,7 +669,7 @@ export default function EndpointExplorer({
               <h4>Body</h4>
               <CopyButton label="Copy response body" value={response.body} />
             </div>
-            <pre>{response.body || "Empty response body"}</pre>
+            <CollapsibleResponseBody body={response.body} />
           </div>
         </section>
       )}

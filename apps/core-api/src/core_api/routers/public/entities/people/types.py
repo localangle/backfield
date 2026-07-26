@@ -11,6 +11,7 @@ from sqlmodel import Session
 from core_api.deps import get_session
 from core_api.routers.public.deps import get_public_project
 from core_api.routers.public.entities.people.helpers import resolve_public_people_scope
+from core_api.routers.public.stylebook_query import StylebookSlugQuery
 
 router = APIRouter()
 
@@ -23,8 +24,11 @@ class PublicPersonTypesOut(BaseModel):
 def list_project_person_types(
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
+    stylebook_slug: StylebookSlugQuery = None,
 ) -> PublicPersonTypesOut:
     """Return distinct person type values for filter dropdowns."""
-    stylebook_id, _project_id = resolve_public_people_scope(session, project)
+    stylebook_id, _project_id = resolve_public_people_scope(
+        session, project, stylebook_slug=stylebook_slug
+    )
     types = list_public_person_type_values(session, stylebook_id=stylebook_id)
     return PublicPersonTypesOut(types=types)

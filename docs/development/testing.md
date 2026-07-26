@@ -77,6 +77,20 @@ uv run python -u tests/smoke/place_geocode_smoke.py
 uv run python -u tests/smoke/smoke_people_stack.py --via-agate-api
 ```
 
+The place-geocode smoke exercises live provider credentials. For named,
+addressable places, confirm the audit shows the expected Brave Web → Brave
+Place → DuckDuckGo progression and that a provider is selected only after a
+complete address is found. Use the focused unit fixtures for deterministic
+address assertions; do not rely on changing live search rankings in `make test`.
+
+For an on-demand local regression over prior Needs-review and successful
+`place`, `street_road`, `natural`, and `address` rows (gitignored
+corpus/results under `tests/smoke/artifacts/`):
+
+```bash
+uv run python -u tests/smoke/geocode_ondemand.py --build --run
+```
+
 The handoff and extract lanes need credentials for their configured model. For local runs, configure
 them through **Settings → AI models**; trusted CI may inject provider keys into a temporary root
 `.env` as an unattended fallback. The deterministic fast, editorial, import/export, and S3 batch

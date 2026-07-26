@@ -7,7 +7,10 @@ from agate_utils.geocoding.pelias import (
     geocode_search_candidates as pelias_search_candidates,
     geocode_structured_candidates as pelias_structured_candidates,
 )
-from agate_utils.geocoding.geocodio import geocode_search as geocodio_search
+from agate_utils.geocoding.geocodio import (
+    geocode_search as geocodio_search,
+    is_acceptable_geocodio_accuracy,
+)
 from agate_utils.geocoding.nominatim import geocode_address
 from agate_utils.llm import call_llm
 from ..base import Location
@@ -402,7 +405,14 @@ class Area(Location):
                         api_key=geocodio_api_key,
                         placetype=self._get_placetype()
                     )
-                    if result:
+                    conf = (
+                        result.result.confidence
+                        if result and result.result is not None
+                        else None
+                    )
+                    if result and is_acceptable_geocodio_accuracy(
+                        conf if isinstance(conf, dict) else None
+                    ):
                         if self._is_clear_match(result):
                             logger.info(f"Geocodio success for {self.name} (rules-based)")
                             self.geocoding_result = result

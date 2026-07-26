@@ -21,6 +21,7 @@ import {
   applyAnchorPatchFragment,
   applyGeometryToPlaceRow,
   buildVerificationLeafletCollections,
+  extractEffectiveGeometryFromReviewRow,
   extractGeometryFromPlace,
   isPolygonGeometry,
   stripSelectedVerificationPolygonsForEdit,
@@ -267,8 +268,7 @@ export function ProcessedItemVerificationSection({
   const mapFocusBounds = useMemo(() => {
     if (!selectedAnchor) return null
     const row = displayMergedRows.find((r) => getMergedRowAnchor(r) === selectedAnchor)
-    const loc = row?.location as Record<string, unknown> | undefined
-    return leafletBoundsFromGeometry(extractGeometryFromPlace(loc ?? null))
+    return leafletBoundsFromGeometry(extractEffectiveGeometryFromReviewRow(row))
   }, [displayMergedRows, selectedAnchor])
 
   const cancelGeometryEdit = useCallback(() => {
@@ -432,8 +432,7 @@ export function ProcessedItemVerificationSection({
       return geometryDraft
     }
     const row = displayMergedRows.find((r) => getMergedRowAnchor(r) === selectedAnchor)
-    const loc = row?.location as Record<string, unknown> | undefined
-    return extractGeometryFromPlace(loc ?? null)
+    return extractEffectiveGeometryFromReviewRow(row)
   }, [displayMergedRows, selectedAnchor, geometryEditing, geometryDraft])
 
   const hideSelectedPolygonForRectangleEdit = useMemo(() => {

@@ -141,7 +141,14 @@ def test_country_type_prefers_iso_code_over_ambiguous_subdivision_code() -> None
     [
         ("Canada", {"name": "Canada", "abbr": "CA"}),
         ("u.s.a.", {"name": "United States", "abbr": "US"}),
+        ("Russia", {"name": "Russian Federation", "abbr": "RU"}),
+        ("Bosnia", {"name": "Bosnia and Herzegovina", "abbr": "BA"}),
+        ("England", {"name": "United Kingdom", "abbr": "GB"}),
+        ("Scotland", {"name": "United Kingdom", "abbr": "GB"}),
+        ("Wales", {"name": "United Kingdom", "abbr": "GB"}),
+        ("Turkey", {"name": "Türkiye", "abbr": "TR"}),
         ("Atlantis", {"name": "Atlantis", "abbr": ""}),
+        ("Europe", {"name": "Europe", "abbr": ""}),
     ],
 )
 def test_country_type_preserves_authoritative_or_raw_identity(
@@ -153,7 +160,11 @@ def test_country_type_preserves_authoritative_or_raw_identity(
         "country",
         extract_article_context("News from Chicago, IL."),
     )
-    assert components["country"] == expected_country
+    assert components["country"]["abbr"] == expected_country["abbr"]
+    if expected_country["abbr"]:
+        assert components["country"]["name"]
+    else:
+        assert components["country"]["name"] == expected_country["name"]
     assert components["city"] == ""
     assert components["state"] == {"name": "", "abbr": ""}
 

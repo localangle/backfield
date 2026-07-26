@@ -4,10 +4,12 @@ import {
   applyAnchorPatchFragment,
   buildGeocodePatchForGeometry,
   buildVerificationLeafletCollections,
+  extractEffectiveGeometryFromReviewRow,
   extractGeometryFromPlace,
   stripSelectedVerificationPolygonsForEdit,
   getGeocodedPlaceDisplay,
   getGeocodingSourceLabel,
+  getReviewRowGeocodingSourceLabel,
   getPlaceEditorialDetail,
   placeEditorialDetailHasContent,
   isGeocodedPlace,
@@ -329,6 +331,63 @@ describe('validateGeometryObject', () => {
 
   it('accepts valid point', () => {
     expect(validateGeometryObject({ type: 'Point', coordinates: [-90, 44] })).toBeNull()
+  })
+})
+
+describe('linked Stylebook geometry display', () => {
+  const runGeometry = {
+    type: 'Polygon',
+    coordinates: [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]],
+  }
+  const canonicalGeometry = {
+    type: 'MultiPolygon',
+    coordinates: [[[[10, 10], [12, 10], [12, 12], [10, 12], [10, 10]]]],
+  }
+  const linkedRow = {
+    anchor: 'ward-4',
+    stylebook_location_canonical_id: 'canon-ward-4',
+    stylebook_link: {
+      label: 'Fourth Ward',
+      has_geometry: true,
+      geometry_differs: true,
+      geometry: canonicalGeometry,
+    },
+    location: {
+      description: 'Ward 4',
+      geocode: {
+        geocode_type: 'region_llm',
+        result: { geometry: runGeometry },
+      },
+    },
+  }
+
+  it('prefers linked canonical geometry and labels it Stylebook', () => {
+    expect(extractEffectiveGeometryFromReviewRow(linkedRow)).toEqual(canonicalGeometry)
+    expect(getReviewRowGeocodingSourceLabel(linkedRow)).toBe('Stylebook')
+    expect(getGeocodingSourceLabel(linkedRow.location)).toBe('Estimated area')
+  })
+
+  it('draws canonical geometry outside edit mode and the run geometry while editing', () => {
+    const viewing = buildVerificationLeafletCollections({
+      mergedRows: [linkedRow],
+      baselineByAnchor: new Map(),
+      selectedAnchor: 'ward-4',
+    })
+    expect(viewing.polygons.features).toHaveLength(1)
+    expect(
+      (viewing.polygons.features[0] as { geometry?: Record<string, unknown> }).geometry,
+    ).toEqual(canonicalGeometry)
+
+    const editing = buildVerificationLeafletCollections({
+      mergedRows: [linkedRow],
+      baselineByAnchor: new Map(),
+      selectedAnchor: 'ward-4',
+      geometryEditing: true,
+    })
+    expect(editing.polygons.features).toHaveLength(1)
+    expect(
+      (editing.polygons.features[0] as { geometry?: Record<string, unknown> }).geometry,
+    ).toEqual(runGeometry)
   })
 })
 

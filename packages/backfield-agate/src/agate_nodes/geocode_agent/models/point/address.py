@@ -5,8 +5,10 @@ from pathlib import Path
 from typing import Any
 
 from agate_utils.geocoding.geocoding_types import GeocodingResult
-from agate_utils.geocoding.geocodio import geocode_search as geocodio_search
-from agate_utils.geocoding.nominatim import geocode_address
+from agate_utils.geocoding.geocodio import (
+    geocode_search as geocodio_search,
+    is_acceptable_geocodio_accuracy,
+)
 from agate_utils.geocoding.pelias import (
     geocode_search as pelias_search,
 )
@@ -324,22 +326,22 @@ class Address(Point):
         if geocodio_api_key:
             try:
                 result = geocodio_search(query=full_address, api_key=geocodio_api_key)
-                if self._acceptable_result(result):
+                conf = (
+                    result.result.confidence
+                    if result and result.result is not None
+                    else None
+                )
+                if (
+                    self._acceptable_result(result)
+                    and is_acceptable_geocodio_accuracy(
+                        conf if isinstance(conf, dict) else None
+                    )
+                ):
                     logger.info("Geocodio success for %s", self.name)
                     self.geocoding_result = result
                     return result
             except Exception as exc:
                 logger.warning("Geocodio failed for %s: %s", self.name, exc)
-
-        # Nominatim fallback
-        try:
-            result = geocode_address(address=full_address, user_agent="agate/1.0")
-            if self._acceptable_result(result):
-                logger.info("Nominatim success for %s", self.name)
-                self.geocoding_result = result
-                return result
-        except Exception as exc:
-            logger.warning("Nominatim failed for %s: %s", self.name, exc)
 
         logger.warning("All geocoding services failed for %s", self.name)
         return None

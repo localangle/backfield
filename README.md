@@ -110,7 +110,7 @@ For optimal performance, Backfield relies on several external services and APIs 
 - **Your LLMs of choice**: Backfield supports any model in the [LiteLLM ecosystem](https://models.litellm.ai/).
 - **[Geocode Earth](https://geocode.earth/):** A great geocoder, based on open source technology, with permissive data retention rules. Has a generous free tier.
 - **[Geocodio](https://www.geocod.io/)**: Another permissive geocoder that is used as a fallback and for some special geocoding cases. Also comes with a free tier. For both geocoders, [Nominatim](https://nominatim.org/) is used as a fallback.
-- **[Brave Search API](https://brave.com/search/api/)**: Used to look up details that enhance the accuracy of geocoding. No free tier, but Duck Duck Go is used as a fallback and is free.
+- **[Brave Search API](https://brave.com/search/api/)**: Web Search discovers address evidence for named places; Place Search is the structured fallback. DuckDuckGo is used when neither Brave source yields a complete address.
 - **[AWS S3](https://aws.amazon.com/pm/serv-s3)**: Used for S3 Input and Output
 
 All of these services are optional, but they greatly enhance performance.

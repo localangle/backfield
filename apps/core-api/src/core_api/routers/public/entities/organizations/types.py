@@ -13,6 +13,7 @@ from core_api.routers.public.deps import get_public_project
 from core_api.routers.public.entities.organizations.helpers import (
     resolve_public_organizations_scope,
 )
+from core_api.routers.public.stylebook_query import StylebookSlugQuery
 
 router = APIRouter()
 
@@ -25,8 +26,11 @@ class PublicOrganizationTypesOut(BaseModel):
 def list_project_organization_types(
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
+    stylebook_slug: StylebookSlugQuery = None,
 ) -> PublicOrganizationTypesOut:
     """Return distinct organization type values for filter dropdowns."""
-    stylebook_id, _project_id = resolve_public_organizations_scope(session, project)
+    stylebook_id, _project_id = resolve_public_organizations_scope(
+        session, project, stylebook_slug=stylebook_slug
+    )
     types = list_public_organization_type_values(session, stylebook_id=stylebook_id)
     return PublicOrganizationTypesOut(types=types)

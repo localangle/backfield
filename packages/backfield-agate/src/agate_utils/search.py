@@ -1,10 +1,10 @@
-# tools/search.py
+import logging
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import requests
-import logging
-from typing import Any, List, Mapping, Optional, Sequence
-from pydantic import BaseModel, Field
 from duckduckgo_search import DDGS
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +21,12 @@ class SearchResult(BaseModel):
 class SearchResponse(BaseModel):
     """Response from a search operation."""
     success: bool = Field(description="Whether the search was successful")
-    results: List[SearchResult] = Field(default_factory=list, description="List of search results")
+    results: list[SearchResult] = Field(
+        default_factory=list,
+        description="List of search results",
+    )
     query: str = Field(description="The original search query")
-    error: Optional[str] = Field(default=None, description="Error message if search failed")
+    error: str | None = Field(default=None, description="Error message if search failed")
 
 
 def _row_to_search_result(row: Mapping[str, Any], rank: int) -> SearchResult:
@@ -49,6 +52,48 @@ def search_response_from_rows(query: str, rows: Sequence[Mapping[str, Any]]) -> 
     """Build SearchResponse from normalized rows (Flowbuilder-friendly; JSON-serializable)."""
     results = [_row_to_search_result(r, i) for i, r in enumerate(rows)]
     return SearchResponse(success=True, results=results, query=query)
+
+
+def _postal_address_text(value: Any) -> str:
+    """Return a compact address string from a Brave postal-address object."""
+    if not isinstance(value, Mapping):
+        return ""
+    display = str(value.get("displayAddress") or "").strip()
+    if display:
+        return display
+    parts = [
+        value.get("streetAddress"),
+        value.get("addressLocality"),
+        value.get("addressRegion"),
+        value.get("postalCode"),
+        value.get("country"),
+    ]
+    return ", ".join(str(part).strip() for part in parts if str(part or "").strip())
+
+
+def _brave_result_row(item: Mapping[str, Any]) -> dict[str, Any]:
+    """Normalize one Brave result while retaining address-bearing evidence."""
+    evidence: list[str] = []
+    description = str(item.get("description") or "").strip()
+    if description:
+        evidence.append(description)
+    for snippet in item.get("extra_snippets") or []:
+        text = str(snippet or "").strip()
+        if text and text not in evidence:
+            evidence.append(text)
+
+    postal = _postal_address_text(item.get("postal_address"))
+    location = item.get("location")
+    if isinstance(location, Mapping):
+        postal = _postal_address_text(location.get("postal_address")) or postal
+    if postal and postal not in evidence:
+        evidence.append(f"Postal address: {postal}")
+
+    return {
+        "title": item.get("title") or "",
+        "description": "\n".join(evidence)[:4000],
+        "url": item.get("url") or "",
+    }
 
 
 ########## BRAVE LLM CONTEXT ##########
@@ -232,6 +277,112 @@ def brave_llm_context(
     return search_response_from_rows(q, rows)
 
 
+def brave_web_search_raw(
+    api_key: str,
+    *,
+    q: str,
+    count: int = 10,
+    country: str | None = None,
+    search_lang: str | None = None,
+    timeout: float = 30.0,
+    **kwargs: Any,
+) -> dict | None:
+    """Call Brave Web Search and return its full response."""
+    try:
+        if not api_key:
+            logger.error("Brave API key not provided for web search")
+            return None
+        query = str(q or "").strip()
+        if not query:
+            logger.error("Empty query for Brave web search")
+            return None
+
+        url = "https://api.search.brave.com/res/v1/web/search"
+        headers = {
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip",
+            "X-Subscription-Token": api_key,
+        }
+        params: dict[str, Any] = {
+            "q": query[:400],
+            "count": max(1, min(count, 20)),
+            "result_filter": "web,locations,infobox",
+            "extra_snippets": True,
+            "text_decorations": False,
+            **kwargs,
+        }
+        if country:
+            params["country"] = country
+        if search_lang:
+            params["search_lang"] = search_lang
+
+        response = requests.get(url, headers=headers, params=params, timeout=timeout)
+        response.raise_for_status()
+        return response.json()
+    except Exception as exc:
+        logger.error("Brave web search request failed: %s", exc)
+        return None
+
+
+def brave_web_search(
+    api_key: str,
+    *,
+    q: str,
+    count: int = 10,
+    country: str | None = None,
+    search_lang: str | None = None,
+    timeout: float = 30.0,
+    **kwargs: Any,
+) -> SearchResponse:
+    """Return address-bearing Brave Web Search evidence as ``SearchResponse``."""
+    query = str(q or "").strip()
+    if not query:
+        return SearchResponse(success=False, error="Empty query", results=[], query=q)
+    if not api_key:
+        return SearchResponse(
+            success=False,
+            error="Brave API key not provided",
+            results=[],
+            query=query,
+        )
+
+    raw = brave_web_search_raw(
+        api_key,
+        q=query,
+        count=count,
+        country=country,
+        search_lang=search_lang,
+        timeout=timeout,
+        **kwargs,
+    )
+    if not raw:
+        return SearchResponse(
+            success=False,
+            error="Brave web search request failed",
+            results=[],
+            query=query,
+        )
+
+    rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    result_groups = [
+        (raw.get("web") or {}).get("results") or [],
+        (raw.get("locations") or {}).get("results") or [],
+        (raw.get("infobox") or {}).get("results") or [],
+    ]
+    for items in result_groups:
+        for item in items:
+            if not isinstance(item, Mapping):
+                continue
+            row = _brave_result_row(item)
+            identity = (str(row["title"]), str(row["url"]))
+            if identity in seen:
+                continue
+            seen.add(identity)
+            rows.append(row)
+    return search_response_from_rows(query, rows)
+
+
 def brave_place_search_raw(
     api_key: str,
     *,
@@ -337,9 +488,12 @@ def brave_place_search(
         timeout=timeout,
         **kwargs,
     )
-    query_label = (q or "").strip() or (location or "").strip() or (
-        f"{latitude},{longitude}" if latitude is not None and longitude is not None else "place search"
+    coordinates = (
+        f"{latitude},{longitude}"
+        if latitude is not None and longitude is not None
+        else "place search"
     )
+    query_label = (q or "").strip() or (location or "").strip() or coordinates
     if not raw:
         return SearchResponse(
             success=False,
@@ -352,13 +506,7 @@ def brave_place_search(
     for item in results_list:
         if not isinstance(item, dict):
             continue
-        addr = (item.get("postal_address") or {}) if isinstance(item.get("postal_address"), dict) else {}
-        snippet = str(item.get("description") or "").strip() or str(addr.get("displayAddress") or "").strip()
-        rows.append({
-            "title": item.get("title") or "",
-            "description": snippet[:2000],
-            "url": item.get("url") or "",
-        })
+        rows.append(_brave_result_row(item))
     return search_response_from_rows(query_label, rows)
 
 
@@ -368,7 +516,7 @@ def brave_place_search(
 def search_web_duckduckgo(
     query: str,
     max_results: int = 10,
-    timeout: Optional[float] = 15.0,
+    timeout: float | None = 15.0,
 ) -> SearchResponse:
     """
     Web search via DuckDuckGo (no API key). Returns SearchResponse for agents and Flowbuilder nodes.
@@ -395,7 +543,7 @@ def search_web_duckduckgo(
     to = int(timeout) if timeout is not None else 10
 
     rows: list[dict[str, Any]] = []
-    last_err: Optional[str] = None
+    last_err: str | None = None
 
     try:
         with DDGS(timeout=to) as ddgs:

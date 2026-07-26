@@ -1,4 +1,4 @@
-import asyncio, logging, json
+import asyncio, logging, json, re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from pydantic import Field
@@ -54,32 +54,146 @@ class NaturalPlace(Area):
         logger.info("Prepared natural place query: %s", query)
         return prep_data
 
-    def _build_query(self) -> str:
+    def _feature_name(self) -> str:
         if self.place_is_natural and self.place_name:
-            parts = [self.place_name.strip()]
-            if self.state_abbr:
-                abbr = self.state_abbr.strip() if isinstance(self.state_abbr, str) else self.state_abbr
-                if abbr:
-                    parts.append(abbr)
-            return ", ".join(part for part in parts if part)
+            return str(self.place_name).strip()
+        return str(self.name or "").strip()
 
-        normalized = self.name.strip() if isinstance(self.name, str) else ""
-        parts: List[str] = [normalized] if normalized else []
+    def _build_query(self) -> str:
+        """Bare feature name for Nominatim ``layer=natural`` (state filters applied later)."""
+        return self._feature_name()
 
+    def _build_qualified_query(self) -> str:
+        """Fallback query with state/country context when bare search is empty."""
+        parts: List[str] = []
+        name = self._feature_name()
+        if name:
+            parts.append(name)
+        if self.state_abbr:
+            abbr = self.state_abbr.strip() if isinstance(self.state_abbr, str) else self.state_abbr
+            if abbr:
+                parts.append(str(abbr))
+        elif self.state:
+            state = self.state.strip() if isinstance(self.state, str) else self.state
+            if state:
+                parts.append(str(state))
         if self.country:
             country = self.country.strip() if isinstance(self.country, str) else self.country
-            if country and (not normalized or country.lower() not in normalized.lower()):
-                parts.append(country)
+            if country and all(str(country).lower() not in p.lower() for p in parts):
+                parts.append(str(country))
+        return ", ".join(parts)
 
-        deduped: List[str] = []
-        seen = set()
-        for part in parts:
-            normalized_part = part.strip() if isinstance(part, str) else part
-            if normalized_part and normalized_part.lower() not in seen:
-                deduped.append(normalized_part)
-                seen.add(normalized_part.lower())
+    def _candidate_matches_state(self, candidate: Dict[str, Any]) -> bool:
+        expected = str(self.state_abbr or "").strip().upper()
+        raw_state = str(self.state or "").strip()
+        # Harness/production sometimes pass the abbr into ``state``; treat 2-letter
+        # tokens as abbreviations only (never as substring name matches).
+        if len(raw_state) == 2 and raw_state.isalpha():
+            expected = expected or raw_state.upper()
+            expected_name = ""
+        else:
+            expected_name = raw_state.lower()
 
-        return ", ".join(deduped)
+        # ``US`` is a country, not a state abbr — ignore it as a state filter.
+        if expected in {"US", "USA"}:
+            expected = ""
+
+        address = candidate.get("address") if isinstance(candidate.get("address"), dict) else {}
+        display = str(candidate.get("display_name") or "")
+        display_upper = display.upper()
+        display_lower = display.lower()
+
+        country_code = str(address.get("country_code") or "").strip().lower()
+        country_name = str(address.get("country") or "").strip().lower()
+        requested_country = str(self.country or "").strip().upper()
+        if requested_country in {"US", "USA", "UNITED STATES"} or (
+            not requested_country and (expected or expected_name)
+        ):
+            if country_code and country_code not in {"us", "usa"}:
+                return False
+            if any(
+                tok in display_lower
+                for tok in (
+                    "french polynesia",
+                    "canada",
+                    "mexico",
+                    "australia",
+                    "united kingdom",
+                    "ontario,",
+                )
+            ) and "united states" not in display_lower:
+                return False
+            if country_name and any(
+                tok in country_name
+                for tok in ("canada", "france", "mexico", "australia", "polynesia")
+            ):
+                return False
+
+        if not expected and not expected_name:
+            return True
+
+        # Reject clear foreign hits when a US state was requested.
+        if expected and any(
+            token in display_lower
+            for token in (
+                "french polynesia",
+                "canada",
+                "mexico",
+                "france,",
+                "australia",
+                "united kingdom",
+                "ontario",
+            )
+        ):
+            if expected not in display_upper and (
+                not expected_name or expected_name not in display_lower
+            ):
+                return False
+
+        state_code = str(address.get("ISO3166-2-lvl4") or "").strip().upper()
+        if expected and state_code.endswith(f"-{expected}"):
+            return True
+        state_name = str(
+            address.get("state") or address.get("province") or address.get("region") or ""
+        ).strip().lower()
+        if expected_name and state_name and (
+            expected_name == state_name or expected_name in state_name
+        ):
+            return True
+        if expected and (
+            f", {expected}," in display_upper
+            or display_upper.endswith(f", {expected}")
+            or f", {expected} " in display_upper
+        ):
+            return True
+        # Full state name only as a whole-word-ish presence in display (min length 3).
+        if expected_name and len(expected_name) >= 3 and expected_name in display_lower:
+            return True
+        return False
+
+    def _candidate_name_plausible(self, candidate: Dict[str, Any]) -> bool:
+        """Require the feature name to appear in the candidate's primary label."""
+        feature = str(self._feature_name() or self.name or "").strip().lower()
+        if not feature:
+            return True
+        tokens = [t for t in re.sub(r"[^a-z0-9]+", " ", feature).split() if len(t) > 1]
+        if not tokens:
+            return True
+        display = str(candidate.get("display_name") or "").lower()
+        namedetails = candidate.get("namedetails") if isinstance(candidate.get("namedetails"), dict) else {}
+        primary = display.split(",")[0].strip()
+        names = " ".join(str(v) for v in namedetails.values()).lower() if namedetails else ""
+        haystack = f"{primary} {names}"
+        # Require all significant tokens (drop generic geographic words when longer names).
+        generic = {"river", "lake", "mountain", "mountains", "mount", "mt", "sea", "bay", "creek"}
+        required = [t for t in tokens if t not in generic] or tokens
+        return all(t in haystack for t in required)
+
+    def _filter_candidates_by_state(
+        self, candidates: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        filtered = [c for c in candidates if self._candidate_matches_state(c)]
+        return [c for c in filtered if self._candidate_name_plausible(c)]
 
     async def _search_nominatim(self, query: str, limit: int) -> List[Dict[str, Any]]:
         geocoder = NominatimGeocoder(user_agent=self._USER_AGENT)
@@ -98,6 +212,43 @@ class NaturalPlace(Area):
         results = await asyncio.to_thread(_run_search)
         logger.info("NaturalPlace Nominatim returned %d candidate(s)", len(results))
         return results
+
+    async def _search_candidates(self, limit: int) -> tuple[List[Dict[str, Any]], str]:
+        bare = self._build_query()
+        candidates = await self._search_nominatim(query=bare, limit=limit) if bare else []
+        query_used = bare
+        filtered = self._filter_candidates_by_state(candidates)
+        if filtered:
+            return filtered, query_used
+
+        qualified = self._build_qualified_query()
+        if qualified and qualified != bare:
+            candidates = await self._search_nominatim(query=qualified, limit=limit)
+            query_used = qualified
+            filtered = self._filter_candidates_by_state(candidates)
+            if filtered:
+                return filtered, query_used
+
+        # Last resort: unqualified search without the natural layer filter.
+        if bare:
+            geocoder = NominatimGeocoder(user_agent=self._USER_AGENT)
+
+            def _run_unlayered() -> List[Dict[str, Any]]:
+                return geocoder.search_raw(
+                    query=bare,
+                    limit=limit,
+                    addressdetails=True,
+                    extratags=True,
+                    namedetails=True,
+                    dedupe=1,
+                )
+
+            candidates = await asyncio.to_thread(_run_unlayered)
+            filtered = self._filter_candidates_by_state(candidates)
+            if filtered:
+                return filtered, bare
+
+        return [], query_used
 
     def _choose_candidate_with_llm(
         self,
@@ -223,9 +374,10 @@ class NaturalPlace(Area):
             logger.error("NaturalPlace fallback prompt missing: %s", exc)
             return None
 
-        prompt = template.format(
-            location_str=self.name,
-            additional_prompting=context or "No additional context provided.",
+        # Avoid str.format — the prompt embeds a JSON schema with braces.
+        prompt = template.replace("{location_str}", str(self.name or "")).replace(
+            "{additional_prompting}",
+            context or "No additional context provided.",
         )
 
         try:
@@ -242,7 +394,8 @@ class NaturalPlace(Area):
             return None
 
         raw_bbox = payload.get("bounding_box") or payload.get("bbox")
-        bbox = self._parse_bounding_box(raw_bbox)
+        # Prompt schema is [min_latitude, min_longitude, max_latitude, max_longitude].
+        bbox = self._parse_llm_bounding_box(raw_bbox)
         if not bbox or not self._is_valid_bbox(bbox):
             logger.warning(
                 "NaturalPlace fallback produced invalid bounding box for '%s': %s (payload=%s)",
@@ -252,8 +405,7 @@ class NaturalPlace(Area):
             )
             return None
 
-        south, west, north, east = bbox
-        min_lat, min_lon, max_lat, max_lon = south, west, north, east
+        min_lat, min_lon, max_lat, max_lon = bbox
         west, south, east, north = min_lon, min_lat, max_lon, max_lat
 
         try:
@@ -284,6 +436,26 @@ class NaturalPlace(Area):
         )
 
         return result
+
+    def _parse_llm_bounding_box(self, bbox: Any) -> Optional[List[float]]:
+        """Parse LLM bbox as [min_lat, min_lon, max_lat, max_lon]."""
+        if bbox is None:
+            return None
+        try:
+            if isinstance(bbox, dict):
+                alt_keys = ["min_latitude", "min_longitude", "max_latitude", "max_longitude"]
+                if all(key in bbox for key in alt_keys):
+                    return [
+                        float(bbox["min_latitude"]),
+                        float(bbox["min_longitude"]),
+                        float(bbox["max_latitude"]),
+                        float(bbox["max_longitude"]),
+                    ]
+            elif isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+                return [float(value) for value in bbox]
+        except (TypeError, ValueError):
+            return None
+        return None
 
     def _parse_bounding_box(self, bbox: Any) -> Optional[List[float]]:
         if bbox is None:
@@ -400,14 +572,14 @@ class NaturalPlace(Area):
         **_: Dict[str, Any],
     ) -> Optional[GeocodingResult]:
         prep_data = self._prep()
-        query = prep_data["nominatim"]["query"]
         limit = prep_data["nominatim"]["limit"]
 
         try:
-            candidates = await self._search_nominatim(query=query, limit=limit)
+            candidates, query = await self._search_candidates(limit=limit)
         except Exception as exc:  # pragma: no cover - network/IO guarded
             logger.error("NaturalPlace Nominatim search failed for %s: %s", self.name, exc)
             candidates = []
+            query = prep_data["nominatim"]["query"]
 
         if candidates:
             chosen = self._choose_candidate_with_llm(

@@ -314,6 +314,7 @@ def _attach_location_identity(
                 "label": str(canon.label),
                 "has_geometry": canon_geom is not None,
                 "geometry_differs": geometry_differs_from_canonical(saved_geom, canon_geom),
+                "geometry": copy.deepcopy(canon_geom),
             }
     link_status = str(location.canonical_link_status or "")
     if link_status:

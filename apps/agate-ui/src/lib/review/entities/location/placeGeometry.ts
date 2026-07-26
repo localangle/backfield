@@ -312,6 +312,48 @@ export function getGeocodingSourceLabel(
   return humanizeGeocodeTypeToken(geocodeType) || null
 }
 
+/** Curated canonical geometry for a fully linked review row, when available. */
+export function extractStylebookGeometryFromReviewRow(
+  row: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (!row || typeof row !== 'object') return null
+  const canonicalId = row.stylebook_location_canonical_id
+  if (typeof canonicalId !== 'string' || !canonicalId.trim()) return null
+  const link = row.stylebook_link
+  if (!link || typeof link !== 'object' || Array.isArray(link)) return null
+  const geometry = (link as Record<string, unknown>).geometry
+  if (!geometry || typeof geometry !== 'object' || Array.isArray(geometry)) return null
+  const type = (geometry as Record<string, unknown>).type
+  if (type !== 'Point' && type !== 'Polygon' && type !== 'MultiPolygon') return null
+  return geometry as Record<string, unknown>
+}
+
+/** Effective read-only geography: linked Stylebook geometry wins over run output. */
+export function extractEffectiveGeometryFromReviewRow(
+  row: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  const stylebookGeometry = extractStylebookGeometryFromReviewRow(row)
+  if (stylebookGeometry) return stylebookGeometry
+  const location = row?.location
+  return extractGeometryFromPlace(
+    location && typeof location === 'object' && !Array.isArray(location)
+      ? (location as Record<string, unknown>)
+      : null,
+  )
+}
+
+export function getReviewRowGeocodingSourceLabel(
+  row: Record<string, unknown> | null | undefined,
+): string | null {
+  if (extractStylebookGeometryFromReviewRow(row)) return 'Stylebook'
+  const location = row?.location
+  return getGeocodingSourceLabel(
+    location && typeof location === 'object' && !Array.isArray(location)
+      ? (location as Record<string, unknown>)
+      : null,
+  )
+}
+
 /** True when the place row has geocoder output (geometry or a formatted line). */
 export function isGeocodedPlace(place: Record<string, unknown> | null | undefined): boolean {
   if (!place || typeof place !== 'object') return false
@@ -899,12 +941,17 @@ export function buildVerificationLeafletCollections(params: {
       continue
     }
     const label = typeof loc.description === 'string' ? loc.description : anchor
-    const gMerged = extractGeometryFromPlace(loc)
+    const linked =
+      extractStylebookGeometryFromReviewRow(row) !== null ||
+      isLocationLinkedToStylebookCanonical(loc)
+    const editingThisPlace = params.geometryEditing === true && params.selectedAnchor === anchor
+    const showingDraft = editingThisPlace || params.unsavedGeometryOverlay === true
+    const gMerged = showingDraft
+      ? extractGeometryFromPlace(loc)
+      : extractEffectiveGeometryFromReviewRow(row)
     if (!gMerged) continue
     const base = params.baselineByAnchor.get(anchor)
     const gBase = base ? extractGeometryFromPlace(base) : null
-    const linked = isLocationLinkedToStylebookCanonical(loc)
-    const editingThisPlace = params.geometryEditing === true && params.selectedAnchor === anchor
     if (
       linked &&
       !editingThisPlace &&

@@ -806,3 +806,78 @@ def test_persist_organizations_with_semantic_indexing_creates_semantic_docs() ->
         assert len(docs) == 2
         assert all(doc.embedding_status == SEMANTIC_EMBEDDING_STATUS_PENDING for doc in docs)
         assert all("Chicago City Hall" in doc.search_text for doc in docs)
+
+
+def test_dispose_orphan_organization_linked_to_non_default_stylebook() -> None:
+    """Orphan dispose must unlink using the canonical's stylebook, not org default."""
+    from backfield_entities.entities.organization.types import (
+        organization_identity_fingerprint,
+    )
+    from worker.substrate.entities.organization.mentions import (
+        dispose_orphan_substrates_after_retired_mentions,
+    )
+
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session,
+            org_slug="org-dispose-org",
+            project_slug="proj-dispose-org",
+        )
+        project = session.get(BackfieldProject, project_id)
+        assert project is not None
+        default_sb = session.exec(
+            select(Stylebook).where(
+                Stylebook.organization_id == project.organization_id,
+                Stylebook.is_default == True,  # noqa: E712
+            )
+        ).one()
+        pinned_sb = Stylebook(
+            organization_id=int(project.organization_id),
+            slug="pinned-orgs",
+            name="Pinned Orgs Stylebook",
+            is_default=False,
+        )
+        session.add(pinned_sb)
+        session.commit()
+        session.refresh(pinned_sb)
+        assert int(pinned_sb.id) != int(default_sb.id)
+
+        canon = StylebookOrganizationCanonical(
+            stylebook_id=int(pinned_sb.id),
+            label="Chicago City Hall",
+            slug="chicago-city-hall-pinned",
+            organization_type="government",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+
+        organization = SubstrateOrganization(
+            project_id=project_id,
+            name="Chicago City Hall",
+            normalized_name="chicago city hall",
+            organization_type="government",
+            identity_fingerprint=organization_identity_fingerprint(
+                normalized_name="chicago city hall",
+                organization_type="government",
+            ),
+            stylebook_organization_canonical_id=str(canon.id),
+            canonical_link_status="linked",
+        )
+        session.add(organization)
+        session.commit()
+        session.refresh(organization)
+        oid = int(organization.id)
+
+        disposed = dispose_orphan_substrates_after_retired_mentions(
+            session,
+            project_id=project_id,
+            organization_ids={oid},
+        )
+        session.commit()
+        assert disposed == 1
+        assert session.get(SubstrateOrganization, oid) is None

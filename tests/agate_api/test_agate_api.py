@@ -2322,3 +2322,148 @@ def test_create_project_session_org_admin_may_use_any_org_workspace(tmp_path) ->
         assert r.json().get("slug") == "admin-ws"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_create_project_in_non_default_org_workspace(tmp_path) -> None:
+    """Creating under a non-default org workspace persists that org and workspace."""
+    database_path = tmp_path / "agate-ws-nondefault.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        default_org = BackfieldOrganization(name="Backfield", slug="default")
+        other_org = BackfieldOrganization(name="Other Org", slug="other-org")
+        s.add(default_org)
+        s.add(other_org)
+        s.commit()
+        s.refresh(default_org)
+        s.refresh(other_org)
+        other_oid = int(other_org.id)
+        sb = ensure_default_stylebook_for_organization(s, other_oid)
+        sb_id = int(sb.id)  # type: ignore[arg-type]
+        ws = BackfieldWorkspace(
+            organization_id=other_oid,
+            stylebook_id=sb_id,
+            name="Other Workspace",
+            slug="other-ws",
+        )
+        s.add(ws)
+        s.commit()
+        s.refresh(ws)
+        wid = int(ws.id)  # type: ignore[arg-type]
+        user = BackfieldUser(email="other-admin@example.com", password_hash="unused")
+        s.add(user)
+        s.commit()
+        s.refresh(user)
+        uid = int(user.id)  # type: ignore[arg-type]
+        s.add(
+            BackfieldOrganizationMembership(
+                user_id=uid,
+                organization_id=other_oid,
+                role="org_admin",
+            )
+        )
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    try:
+        token = create_session_token(
+            user_id=uid,
+            email="other-admin@example.com",
+            projects=[],
+            organization_id=other_oid,
+            org_role="org_admin",
+        )
+        c = TestClient(app, cookies={"session": token})
+        r = c.post(
+            "/projects",
+            json={"name": "Other Proj", "slug": "other-proj", "workspace_id": wid},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        pid = int(body["id"])
+        assert body.get("workspace_id") == wid
+        assert body.get("organization_id") == other_oid
+        with Session(engine) as s:
+            p = s.get(BackfieldProject, pid)
+            assert p is not None
+            assert p.workspace_id == wid
+            assert int(p.organization_id) == other_oid
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_project_session_wrong_org_workspace_forbidden(tmp_path) -> None:
+    """Session for org A cannot create a project in org B's workspace."""
+    database_path = tmp_path / "agate-ws-cross-org.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        org_a = BackfieldOrganization(name="Org A", slug="org-a")
+        org_b = BackfieldOrganization(name="Org B", slug="org-b")
+        s.add(org_a)
+        s.add(org_b)
+        s.commit()
+        s.refresh(org_a)
+        s.refresh(org_b)
+        oid_a = int(org_a.id)
+        oid_b = int(org_b.id)
+        sb_b = ensure_default_stylebook_for_organization(s, oid_b)
+        sb_b_id = int(sb_b.id)  # type: ignore[arg-type]
+        ws_b = BackfieldWorkspace(
+            organization_id=oid_b,
+            stylebook_id=sb_b_id,
+            name="Org B Workspace",
+            slug="org-b-ws",
+        )
+        s.add(ws_b)
+        s.commit()
+        s.refresh(ws_b)
+        wid_b = int(ws_b.id)  # type: ignore[arg-type]
+        user = BackfieldUser(email="org-a-admin@example.com", password_hash="unused")
+        s.add(user)
+        s.commit()
+        s.refresh(user)
+        uid = int(user.id)  # type: ignore[arg-type]
+        s.add(
+            BackfieldOrganizationMembership(
+                user_id=uid,
+                organization_id=oid_a,
+                role="org_admin",
+            )
+        )
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    try:
+        token = create_session_token(
+            user_id=uid,
+            email="org-a-admin@example.com",
+            projects=[],
+            organization_id=oid_a,
+            org_role="org_admin",
+        )
+        c = TestClient(app, cookies={"session": token})
+        denied = c.post(
+            "/projects",
+            json={"name": "Cross", "slug": "cross-org", "workspace_id": wid_b},
+        )
+        assert denied.status_code == 403
+        assert "organization" in denied.json().get("detail", "").lower()
+    finally:
+        app.dependency_overrides.clear()

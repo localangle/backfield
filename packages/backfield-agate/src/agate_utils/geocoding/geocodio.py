@@ -20,6 +20,16 @@ def _geocodio_result_id(raw_data: Dict[str, Any]) -> Optional[str]:
     return f"geocodio:{key_str}"
 
 
+_ACCEPTABLE_ACCURACY_TYPES: frozenset[str] = frozenset(
+    {
+        "rooftop",
+        "point",
+        "range_interpolation",
+        "intersection",
+    }
+)
+
+
 def is_valid_intersection_result(raw_data: dict) -> bool:
     """
     Check if a Geocodio result is a valid intersection.
@@ -35,6 +45,28 @@ def is_valid_intersection_result(raw_data: dict) -> bool:
     
     # Valid ONLY if it's an intersection (not street_center)
     return accuracy_type == "intersection" and accuracy_score >= 0.8
+
+
+def is_acceptable_geocodio_accuracy(
+    raw_data: dict | None,
+    *,
+    min_accuracy: float = 0.8,
+) -> bool:
+    """True when Geocodio accuracy_type/score are precise enough to auto-accept.
+
+    Rejects coarse types such as ``place`` (city centroid), ``street_center``,
+    ``nearest_rooftop_match``, and ``postal_code``.
+    """
+    if not isinstance(raw_data, dict):
+        return False
+    accuracy_type = str(raw_data.get("accuracy_type") or "").strip().lower()
+    if accuracy_type not in _ACCEPTABLE_ACCURACY_TYPES:
+        return False
+    try:
+        accuracy_score = float(raw_data.get("accuracy") or 0)
+    except (TypeError, ValueError):
+        return False
+    return accuracy_score >= min_accuracy
 
 
 def geocode_search(
