@@ -83,11 +83,12 @@ Place → DuckDuckGo progression and that a provider is selected only after a
 complete address is found. Use the focused unit fixtures for deterministic
 address assertions; do not rely on changing live search rankings in `make test`.
 
-For an on-demand local regression over prior Needs-review and successful place
-rows (gitignored corpus/results under `tests/smoke/artifacts/`):
+For an on-demand local regression over prior Needs-review and successful
+`place`, `street_road`, `natural`, and `address` rows (gitignored
+corpus/results under `tests/smoke/artifacts/`):
 
 ```bash
-uv run python -u tests/smoke/place_geocode_ondemand.py --build --run
+uv run python -u tests/smoke/geocode_ondemand.py --build --run
 ```
 
 The handoff and extract lanes need credentials for their configured model. For local runs, configure

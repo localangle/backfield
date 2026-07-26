@@ -187,6 +187,42 @@ def test_geocodio_city_accuracy_for_neighborhood() -> None:
     )
 
 
+def test_pelias_postalcode_is_city_or_coarser_for_address() -> None:
+    gr = _gr(
+        geocoder="pelias_structured",
+        label="65201, Columbia, MO, USA",
+        confidence={"pelias_layer": "postalcode"},
+    )
+    assert (
+        _geocode_city_level_fallback_qa(
+            "address",
+            "65201, Columbia, MO, USA",
+            {"address": "100 Main St", "city": "Columbia"},
+            gr,
+            location_text="100 Main St, Columbia, MO",
+        )
+        is True
+    )
+
+
+def test_geocodio_street_center_is_coarse_for_address() -> None:
+    gr = _gr(
+        geocoder="geocodio_search",
+        label="Broadway, Columbia, MO",
+        confidence={"accuracy_type": "street_center"},
+    )
+    assert (
+        _geocode_city_level_fallback_qa(
+            "address",
+            "Broadway, Columbia, MO",
+            {"address": "99999 Broadway", "city": "Columbia"},
+            gr,
+            location_text="99999 Broadway, Columbia, MO",
+        )
+        is True
+    )
+
+
 def test_rejected_geocode_identity_is_audit_only() -> None:
     rejected = _point_entry_without_geometry(
         {

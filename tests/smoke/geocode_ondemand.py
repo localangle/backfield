@@ -76,6 +76,48 @@ def _state_abbr(components: dict[str, Any]) -> str | None:
     return None
 
 
+def _state_name(components: dict[str, Any]) -> str | None:
+    state_info = components.get("state")
+    if isinstance(state_info, dict):
+        return str(state_info.get("name") or "").strip() or None
+    return None
+
+
+def _parse_location_jurisdiction(
+    location: str,
+    *,
+    city: str | None,
+    state_abbr: str | None,
+    country: str,
+) -> tuple[str | None, str | None, str | None, str]:
+    """Fill city/state/country from a comma-separated location label."""
+    from agate_nodes.place_extract.location_utils import US_STATE_ABBR_BY_NAME, US_STATES
+
+    parts = [part.strip() for part in location.split(",") if part.strip()]
+    state_name: str | None = None
+    if not parts:
+        return city, state_abbr, state_name, country
+
+    tail = parts[-1]
+    tail_upper = tail.upper()
+    if tail_upper in {"US", "USA", "UNITED STATES"}:
+        country = country or "US"
+        parts = parts[:-1]
+    elif tail_upper in US_STATES:
+        # Prefer the label's state over a stale extract abbr.
+        state_abbr = tail_upper
+        state_name = US_STATES[tail_upper]
+        parts = parts[:-1]
+    elif tail.lower() in US_STATE_ABBR_BY_NAME:
+        state_abbr = US_STATE_ABBR_BY_NAME[tail.lower()]
+        state_name = tail
+        parts = parts[:-1]
+
+    if not city and len(parts) >= 2:
+        city = parts[-1]
+    return city, state_abbr, state_name, country
+
+
 def _country_code(components: dict[str, Any], *, default: str = "US") -> str:
     country_info = components.get("country")
     if isinstance(country_info, dict):
@@ -138,20 +180,17 @@ def _case_from_entry(
 
     city = str(components.get("city") or "").strip() or None
     state_abbr = _state_abbr(components)
+    state_name = _state_name(components)
     country = _country_code(components, default="US" if loc_type != "natural" else "")
     street = str(components.get("address") or "").strip() or None
 
-    if not city or not state_abbr:
-        parts = [part.strip() for part in location.split(",") if part.strip()]
-        if len(parts) >= 3:
-            city = city or parts[-2]
-            state_abbr = state_abbr or parts[-1]
-        elif len(parts) == 2:
-            maybe = parts[-1]
-            if len(maybe) <= 2:
-                state_abbr = state_abbr or maybe
-            else:
-                city = city or maybe
+    city, state_abbr, parsed_state_name, country = _parse_location_jurisdiction(
+        location, city=city, state_abbr=state_abbr, country=country or ""
+    )
+    state_name = state_name or parsed_state_name
+    if state_abbr in {"US", "USA"}:
+        country = country or "US"
+        state_abbr = None
 
     geo = entry.get("geocode") if isinstance(entry.get("geocode"), dict) else {}
     result = geo.get("result") if isinstance(geo.get("result"), dict) else {}
@@ -169,6 +208,7 @@ def _case_from_entry(
         "name": name,
         "city": city,
         "state_abbr": state_abbr,
+        "state_name": state_name,
         "country": country or None,
         "street_address": street,
         "components": components,
@@ -350,20 +390,22 @@ def _build_model(case: dict[str, Any]) -> Any:
         from agate_nodes.geocode_agent.models.area.natural import NaturalPlace
 
         place_info = components.get("place") if isinstance(components.get("place"), dict) else {}
-        return NaturalPlace(
-            name=name,
-            city=city,
-            state=state_abbr,
-            state_abbr=state_abbr,
-            country=country or None,
-            place_name=str(place_info.get("name") or name),
-            place_is_natural=bool(case.get("place_is_natural") or place_info.get("natural")),
-            additional_context=(
+        natural_kwargs: dict[str, Any] = {
+            "name": name,
+            "city": city,
+            "state": case.get("state_name") or None,
+            "state_abbr": state_abbr if state_abbr not in {"US", "USA"} else None,
+            "place_name": str(place_info.get("name") or name),
+            "place_is_natural": bool(case.get("place_is_natural") or place_info.get("natural")),
+            "additional_context": (
                 f"Original text: {original_text}\nGeocode hints: {hints}"
                 if original_text or hints
                 else None
             ),
-        )
+        }
+        if country or state_abbr in {"US", "USA"}:
+            natural_kwargs["country"] = country or "US"
+        return NaturalPlace(**natural_kwargs)
 
     raise ValueError(f"Unsupported type: {loc_type}")
 

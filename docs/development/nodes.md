@@ -145,15 +145,21 @@ mismatches still go to `needs_review` with `geocode_component_mismatch`.
 This exception does **not** loosen Stylebook/cache linking sanity.
 
 Place geocoding passes extracted `components.address` into Pelias structured
-queries (venue name remains in free-text search). Router `no_web_search` skips
-*upfront* address discovery when a street line is already present; Place may
-still run the same discovery waterfall as a **fallback** after inconclusive
-Pelias. The waterfall tries Brave Web Search first, then Brave Place Search,
-then DuckDuckGo. A provider stops the waterfall only when its evidence yields a
-complete physical address. For US addressable buildings, a street corridor
-without a house number is incomplete and advances to the next provider.
-Resolved and review rows retain a sanitized audit of provider, result count,
-outcome, and selected source; raw snippets and URLs are not persisted.
+queries (venue name remains in free-text search). Before the web-search
+waterfall, Place runs a Pelias `layers=venue` name probe and accepts only a
+uniquely decisive venue under the same POI evidence rules. Router
+`no_web_search` skips *upfront* address discovery when a street line is already
+present; Place may still run the same discovery waterfall as a **fallback**
+after inconclusive Pelias. The waterfall tries Brave Web Search first, then
+Brave Place Search, then DuckDuckGo. A provider stops the waterfall only when
+its evidence yields a complete physical address. For US addressable buildings,
+a street corridor without a house number is incomplete and advances to the next
+provider. Resolved and review rows retain a sanitized audit of provider, result
+count, outcome, and selected source; raw snippets and URLs are not persisted.
+
+`street_road` geocoding tries Pelias `layers=street` first, unions accepted
+segment bboxes from Pelias metadata (city/state and street-name head gates),
+then falls back to the Nominatim + LLM bounding-box path.
 
 ### Extract prompts
 

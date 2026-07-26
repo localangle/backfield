@@ -20,6 +20,7 @@ from _helpers import (
     assert_object,
     capture_smoke_snapshot,
     cleanup_snapshot_delta,
+    default_stylebook_for_org,
     delete_smoke_run,
     ensure_health,
     http_error_detail,
@@ -180,6 +181,7 @@ def _assert_stylebook_persistence_visible(
     *,
     article_id: int,
     project_slug: str,
+    stylebook_slug: str,
     stylebook_headers: dict[str, str],
 ) -> None:
     with smoke_db_session() as session:
@@ -222,7 +224,7 @@ def _assert_stylebook_persistence_visible(
     ) as stylebook:
         linked_substrates = assert_object(
             stylebook.get(
-                f"/v1/stylebooks/default/canonical-locations/{canonical_id}/linked-substrates",
+                f"/v1/stylebooks/{stylebook_slug}/canonical-locations/{canonical_id}/linked-substrates",
                 params={"project": project_slug},
             ),
             "linked substrates",
@@ -239,7 +241,7 @@ def _assert_stylebook_persistence_visible(
 
         mentions = assert_object(
             stylebook.get(
-                f"/v1/stylebooks/default/canonical-locations/{canonical_id}/mentions",
+                f"/v1/stylebooks/{stylebook_slug}/canonical-locations/{canonical_id}/mentions",
                 params={"project": project_slug},
             ),
             "canonical mentions",
@@ -342,6 +344,8 @@ def run_service_bearer_flow() -> int:
             _assert_stylebook_persistence_visible(
                 article_id=int(stylebook_output["article_id"]),
                 project_slug=SMOKE_PROJECT_SLUG,
+                stylebook_slug=os.environ.get("SMOKE_STYLEBOOK_SLUG", "mnn-stylebook").strip()
+                or "mnn-stylebook",
                 stylebook_headers=agate_headers,
             )
 
@@ -379,6 +383,12 @@ def run_session_flow() -> int:
     )
     project_id = ctx.project_id
     cookie_header = session_cookie_headers(ctx.session_token)
+    stylebook = default_stylebook_for_org(
+        stylebook_base=STYLEBOOK_API_BASE,
+        session_token=ctx.session_token,
+        organization_id=ctx.organization_id,
+    )
+    stylebook_slug = str(stylebook["slug"])
     run_id: str | None = None
     before_snapshot: SmokeDataSnapshot | None = None
     ensure_health(
@@ -429,6 +439,7 @@ def run_session_flow() -> int:
             _assert_stylebook_persistence_visible(
                 article_id=int(stylebook_output["article_id"]),
                 project_slug=ctx.project_slug,
+                stylebook_slug=stylebook_slug,
                 stylebook_headers=cookie_header,
             )
 

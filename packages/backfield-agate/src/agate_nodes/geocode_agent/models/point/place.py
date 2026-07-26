@@ -7,8 +7,10 @@ from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field
 
 from agate_utils.geocoding.geocoding_types import GeocodingResult
-from agate_utils.geocoding.nominatim import geocode_address
-from agate_utils.geocoding.geocodio import geocode_search as geocodio_search
+from agate_utils.geocoding.geocodio import (
+    geocode_search as geocodio_search,
+    is_acceptable_geocodio_accuracy,
+)
 from agate_utils.geocoding.pelias import (
     geocode_search as pelias_search,
     geocode_search_candidates,
@@ -440,6 +442,46 @@ class Place(Address):
 
         return None
 
+    async def _geocode_pelias_venue(
+        self,
+        *,
+        pelias_api_key: str | None,
+        openai_api_key: str | None,
+    ) -> GeocodingResult | None:
+        """Name-only Pelias venue probe gated by uniquely decisive evidence."""
+        if not pelias_api_key:
+            return None
+        # Prefer venue identity when extract already has no street line.
+        if str(self.street_address or "").strip():
+            return None
+
+        parts = [self.name]
+        if self.city:
+            parts.append(self.city)
+        if self.state_abbr:
+            parts.append(self.state_abbr)
+        text = ", ".join(parts)
+        pelias_bias = self._pelias_search_bias_kwargs()
+        try:
+            candidates = await geocode_search_candidates(
+                text=text,
+                api_key=pelias_api_key,
+                size=5,
+                layers="venue",
+                **pelias_bias,
+            )
+        except Exception as exc:
+            logger.warning("Pelias venue probe failed for place %s: %s", self.name, exc)
+            return None
+
+        selected = self._select_from_candidates(candidates, text, openai_api_key)
+        if selected is None:
+            return None
+        logger.info("Pelias venue decisive success for place %s", self.name)
+        self.geocoding_result = selected
+        self._address_source = self._address_source or "pelias_venue"
+        return selected
+
     def _apply_discovered_address(self, address_data: Dict[str, str]) -> None:
         self._prep = lambda: self._update_prep_with_address(address_data)
 
@@ -589,12 +631,19 @@ class Place(Address):
             if address_data:
                 self._apply_discovered_address(address_data)
 
-        elif addressability == "addressable" and allow_web_search:
-            await self._try_web_search_address_discovery(
-                brave_search_api_key=brave_search_api_key,
+        elif addressability == "addressable":
+            venue_hit = await self._geocode_pelias_venue(
+                pelias_api_key=pelias_api_key,
                 openai_api_key=openai_key,
-                is_fallback=False,
             )
+            if venue_hit is not None:
+                return venue_hit
+            if allow_web_search:
+                await self._try_web_search_address_discovery(
+                    brave_search_api_key=brave_search_api_key,
+                    openai_api_key=openai_key,
+                    is_fallback=False,
+                )
 
         result = await self._geocode_pelias_decisive(
             pelias_api_key=pelias_api_key,
@@ -623,8 +672,8 @@ class Place(Address):
                 if result is not None:
                     return result
 
-        # Geocodio / Nominatim last resorts: keep only when the label carries the
-        # extracted house number (non-Pelias providers lack structured POI fields).
+        # Geocodio last resort: keep only when the label carries the extracted
+        # house number and Geocodio reports a precise accuracy type.
         try:
             prep_data = self._prep()
         except Exception as exc:
@@ -646,31 +695,25 @@ class Place(Address):
         if geocodio_api_key:
             try:
                 result = geocodio_search(query=full_address, api_key=geocodio_api_key)
+                conf = (
+                    result.result.confidence
+                    if result and result.result is not None
+                    else None
+                )
                 if (
                     result
                     and self._is_good_point_result(result)
                     and result.result is not None
                     and _label_has_requested_number(str(result.result.processed_str or ""))
+                    and is_acceptable_geocodio_accuracy(
+                        conf if isinstance(conf, dict) else None
+                    )
                 ):
                     logger.info("Geocodio success for place %s", self.name)
                     self.geocoding_result = result
                     return result
             except Exception as exc:
                 logger.warning("Geocodio failed for place %s: %s", self.name, exc)
-
-        try:
-            result = geocode_address(address=full_address, user_agent="agate/1.0")
-            if (
-                result
-                and self._is_good_point_result(result)
-                and result.result is not None
-                and _label_has_requested_number(str(result.result.processed_str or ""))
-            ):
-                logger.info("Nominatim success for place %s", self.name)
-                self.geocoding_result = result
-                return result
-        except Exception as exc:
-            logger.warning("Nominatim failed for place %s: %s", self.name, exc)
 
         logger.warning("All geocoding services failed for place %s", self.name)
         return None
