@@ -595,60 +595,31 @@ def delete_canonical_location(
 ) -> dict[str, Any]:
     # NOTE: deletion affects all projects referencing this canonical; keep admin-only for now.
     from backfield_auth.gate import require_org_admin
+    from backfield_entities.entities.location.delete import (
+        delete_location_canonical_and_requeue,
+    )
 
     sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
     require_org_admin(session, auth, int(sb.organization_id))
 
-    canon = session.get(StylebookLocationCanonical, canonical_id)
-    if canon is None or int(canon.stylebook_id) != int(sb.id):
-        raise HTTPException(status_code=404, detail="Canonical location not found")
-
-    # Unlink substrate rows across all projects in org for safety.
-    pid_rows = session.exec(
-        select(BackfieldProject.id).where(
-            BackfieldProject.organization_id == int(sb.organization_id)
+    try:
+        result = delete_location_canonical_and_requeue(
+            session,
+            stylebook_id=int(sb.id),
+            organization_id=int(sb.organization_id),
+            canonical_id=canonical_id,
+            actor_user_id=_created_by_user_id(auth),
+            source="manual_ui",
         )
-    ).all()
-    project_ids = [int(r) for r in pid_rows if r is not None]
-    linked = session.exec(
-        select(SubstrateLocation).where(
-            col(SubstrateLocation.project_id).in_(project_ids),
-            SubstrateLocation.stylebook_location_canonical_id == str(canon.id),
-        )
-    ).all()
-    from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
-
-    for loc in linked:
-        loc.stylebook_location_canonical_id = None
-        loc.canonical_link_status = CANONICAL_LINK_PENDING
-        loc.canonical_review_reasons_json = [
-            {
-                "code": "reset_pending_after_canonical_deleted",
-                "deleted_canonical_id": str(canon.id),
-            }
-        ]
-        session.add(loc)
-
-    log_stylebook_activity_safe(
-        session,
-        stylebook_id=int(sb.id),
-        actor_type="user",
-        actor_user_id=_created_by_user_id(auth),
-        source="manual_ui",
-        event_type=EVENT_CANONICAL_DELETED,
-        entity_type="location",
-        entity_id=str(canon.id),
-        entity_label=str(canon.label),
-        payload_json={"unlinked_substrate_count": len(linked)},
-    )
-    session.delete(canon)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     session.commit()
     return {
         "message": "deleted",
-        "id": str(canon.id),
-        "unlinked_substrate_count": len(linked),
+        "id": result.canonical_id,
+        "unlinked_substrate_count": result.unlinked_substrate_count,
     }
 
 

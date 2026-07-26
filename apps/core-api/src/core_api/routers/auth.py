@@ -38,8 +38,10 @@ class ChangePasswordBody(NewPasswordBody):
 
 def _session_cookie_settings() -> dict[str, str | int | bool | None]:
     is_production = os.getenv("ENVIRONMENT") == "production"
-    if is_production:
-        domain = (os.getenv("SESSION_COOKIE_DOMAIN") or "").strip() or None
+    domain = (os.getenv("SESSION_COOKIE_DOMAIN") or "").strip() or None
+    # Deployed multi-host tenants set SESSION_COOKIE_DOMAIN so Agate/Stylebook
+    # share one session. Honor Domain whenever configured (not only production).
+    if is_production or domain:
         return {
             "httponly": True,
             "secure": True,
