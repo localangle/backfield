@@ -41,6 +41,7 @@ _PELIAS_CITY_OR_COARSER_LAYERS: frozenset[str] = frozenset(
         "macrocounty",
         "macroregion",
         "ocean",
+        "postalcode",
         "region",
     }
 )
@@ -53,9 +54,20 @@ _PELIAS_FINER_THAN_LOCALITY: frozenset[str] = frozenset(
         "macrohood",
         "neighbourhood",
         "neighborhood",
-        "postalcode",
         "street",
         "venue",
+    }
+)
+
+_GEOCODIO_COARSE_ACCURACY_TYPES: frozenset[str] = frozenset(
+    {
+        "city",
+        "county",
+        "state",
+        "place",
+        "street_center",
+        "nearest_street",
+        "postal_code",
     }
 )
 
@@ -170,7 +182,7 @@ def _geocode_city_level_fallback_qa(
                 return True
         if geo.startswith("geocodio"):
             acc = str(conf.get("accuracy_type") or "").strip().lower()
-            if acc in ("city", "county", "state") and not _label_contains_token(label_cf, token):
+            if acc in _GEOCODIO_COARSE_ACCURACY_TYPES and not _label_contains_token(label_cf, token):
                 return True
         return False
 
@@ -196,7 +208,7 @@ def _geocode_city_level_fallback_qa(
                 return True
         if geo.startswith("geocodio"):
             acc = str(conf.get("accuracy_type") or "").strip().lower()
-            if acc in ("city", "county", "state"):
+            if acc in _GEOCODIO_COARSE_ACCURACY_TYPES:
                 return True
         return False
 
@@ -216,7 +228,7 @@ def _geocode_city_level_fallback_qa(
             return True
     if geo.startswith("geocodio"):
         acc = str(conf.get("accuracy_type") or "").strip().lower()
-        if acc in ("city", "county", "state") and not _label_contains_token(label_cf, token):
+        if acc in _GEOCODIO_COARSE_ACCURACY_TYPES and not _label_contains_token(label_cf, token):
             return True
     return False
 
@@ -717,6 +729,21 @@ async def consolidate_node(state: AgentState) -> AgentState:
     # Organize by location type
     components_for_qa = state.get("location_components") or {}
     comps_dict = components_for_qa if isinstance(components_for_qa, dict) else {}
+
+    def _mark_discovered_place_unverified(entry: dict[str, Any]) -> None:
+        """Flag places resolved from web-discovered streets (any provider)."""
+        if location_type != "place":
+            return
+        audit = state.get("router_audit")
+        if not isinstance(audit, dict) or not audit.get("address_source"):
+            return
+        if str(comps_dict.get("address") or "").strip():
+            return
+        entry["address_verification"] = "unverified"
+        entry.setdefault("geocode_qa_code", "poi_identity_match")
+
+    _mark_discovered_place_unverified(location_entry)
+
     if not explicit_location_components_match_labels(
         components=comps_dict,
         location_text=location_text,
