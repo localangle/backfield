@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from backfield_db import (
     BackfieldProject,
     StylebookLocationCanonical,
     SubstrateLocation,
 )
+from sqlmodel import Session, col, select
+
 from backfield_entities.activity import (
     EVENT_CANONICAL_DELETED,
     log_stylebook_activity_safe,
 )
 from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
-from sqlmodel import Session, col, select
 
 
 @dataclass(frozen=True)

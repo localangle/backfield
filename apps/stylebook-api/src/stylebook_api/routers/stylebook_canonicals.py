@@ -15,7 +15,6 @@ from backfield_db import (
 )
 from backfield_entities.activity import (
     EVENT_CANONICAL_CREATED,
-    EVENT_CANONICAL_DELETED,
     EVENT_CANONICAL_UPDATED,
     log_stylebook_activity_safe,
 )

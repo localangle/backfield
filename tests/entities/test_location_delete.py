@@ -17,7 +17,7 @@ from backfield_entities.entities.location.delete import (
     delete_location_canonical_and_requeue,
 )
 from sqlalchemy.engine import Engine
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine
 
 
 def _engine(tmp_path) -> Engine:
