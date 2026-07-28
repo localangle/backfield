@@ -104,6 +104,10 @@ Legacy workspaces without a resolvable **`workspace.stylebook_id`** still surfac
 - Node metadata and optional node UI live in `packages/backfield-agate/src/agate_nodes`.
 - `apps/agate-ui/scripts/sync-nodes.js` copies node UI from `packages/backfield-agate/src/agate_nodes/*/ui/` into `apps/agate-ui/src/nodes/` and generates the frontend registry. Edit node panels in the package tree, not the synced app copies. Adding net-new nodes: [`NODES.md`](NODES.md) and `.cursor/skills/add-agate-node/SKILL.md`.
 
+## Observability
+
+Application metrics and correlated structured logs for Backfield Cloud are defined in [`OBSERVABILITY.md`](OBSERVABILITY.md). The app emits CloudWatch EMF on stderr; dashboards, alarms, and collector scheduling live in **backfield-cloud**.
+
 ## Design guidance
 
 - Keep business logic near its owning layer.

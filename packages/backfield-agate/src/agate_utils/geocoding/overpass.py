@@ -657,10 +657,7 @@ async def find_intersection_coordinates(
         road_2, lat, lon, openai_api_key, radius, alternates=alt_map.get(road_2, [])
     )
 
-    logger.info(f"Generated query for road 1 ({road_1}):")
-    logger.info(query1)
-    logger.info(f"Generated query for road 2 ({road_2}):")
-    logger.info(query2)
+    logger.info("Generated Overpass queries for two roads")
     
     # Collect queries for meta output
     queries = [query1, query2]

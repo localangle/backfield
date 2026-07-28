@@ -95,7 +95,7 @@ Each app ships [`.env.production`](../apps/agate-ui/.env.production) defaults lo
 
 ## Runtime contracts
 
-- Structured logs: all HTTP APIs and the worker emit **JSON lines** to stderr with shared fields (`service`, `environment`, `version`, `git_sha`, `request_id`, `client`, `run_id`, `job_id`, `event`, …). APIs log one `http_request` line per request (health/version paths excluded); Celery tasks log `task_start` / `task_end`. Set `BACKFIELD_ENV` or `ENVIRONMENT` (default `development`). Implementation: `packages/backfield-auth` (`structured_logging`, `request_logging_middleware`, worker `celery_logging` hooks).
+- Structured logs: all HTTP APIs and the worker emit **JSON lines** to stderr with shared fields (`service`, `environment`, `version`, `git_sha`, `request_id`, `client` from `BACKFIELD_CLIENT`, `request_client` for HTTP callers, `run_id`, `job_id`, `item_id`, `event`, `severity`, …). APIs log one `http_request` line per request (health/version paths excluded); Celery tasks log `task_start` / `task_end`. Set `BACKFIELD_ENV` or `ENVIRONMENT` (default `development`). Implementation: `packages/backfield-auth` + `packages/backfield-observability`. CloudWatch EMF metrics and the read-only queue/run collector: see [`OBSERVABILITY.md`](OBSERVABILITY.md).
 
 - Agate worker queue: `agate`
 - Worker task names:
@@ -115,6 +115,7 @@ Each app ships [`.env.production`](../apps/agate-ui/.env.production) defaults lo
 ## Environment variables
 
 - `BACKFIELD_ENV` / `ENVIRONMENT`: deployment label included on every structured log line (default **`development`** in local Compose).
+- `BACKFIELD_CLIENT`: trusted deployment client slug for logs and CloudWatch metric dimensions. Required when application metrics are enabled; injected by backfield-cloud (never from `X-Client-ID` or org/project rows). Local default may be unset (metrics are skipped).
 - `BACKFIELD_HTTP_PATH_PREFIX`: optional URL path prefix stripped by API apps before routing (e.g. `/api/agate` or `/api/stylebook` when CloudFront forwards the full path). Unset in local Compose; Vite strips the prefix in the browser proxy instead.
 
 ### Runtime configuration surface (production)

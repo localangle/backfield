@@ -15,6 +15,7 @@ RUN apt-get update \
 FROM base AS builder
 
 COPY packages/backfield-db /app/packages/backfield-db
+COPY packages/backfield-observability /app/packages/backfield-observability
 COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-agate /app/packages/backfield-agate
 COPY packages/backfield-entities /app/packages/backfield-entities
@@ -23,6 +24,7 @@ COPY packages/backfield-cli /app/packages/backfield-cli
 COPY apps/agate-api /app/apps/agate-api
 
 RUN uv pip install --system /app/packages/backfield-db \
+    && uv pip install --system /app/packages/backfield-observability \
     && uv pip install --system /app/packages/backfield-ai \
     && uv pip install --system /app/packages/backfield-entities \
     && uv pip install --system /app/packages/backfield-agate \
@@ -63,6 +65,7 @@ CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
 FROM base AS dev
 
 COPY packages/backfield-db /app/packages/backfield-db
+COPY packages/backfield-observability /app/packages/backfield-observability
 COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-agate /app/packages/backfield-agate
 COPY packages/backfield-entities /app/packages/backfield-entities
@@ -71,6 +74,7 @@ COPY packages/backfield-cli /app/packages/backfield-cli
 COPY apps/agate-api /app/apps/agate-api
 
 RUN pip install --no-cache-dir -e /app/packages/backfield-db \
+    && pip install --no-cache-dir -e /app/packages/backfield-observability \
     && pip install --no-cache-dir -e /app/packages/backfield-ai \
     && pip install --no-cache-dir -e /app/packages/backfield-entities \
     && pip install --no-cache-dir -e /app/packages/backfield-agate \

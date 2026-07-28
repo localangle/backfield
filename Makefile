@@ -7,7 +7,7 @@ GIT_SHA ?= unknown
 BUILD_TIME ?= unknown
 DOCKER_BAKE_ENV := APP_VERSION=$(APP_VERSION) GIT_SHA=$(GIT_SHA) BUILD_TIME=$(BUILD_TIME)
 
-.PHONY: help up up-detached down logs migrate reset-db clear-entity-data docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full docker-build-prod-apis docker-build-prod-agate-api docker-build-prod-core-api docker-build-prod-stylebook-api docker-build-prod-worker test test-unit test-integration lint format bootstrap install-cli-shim install-user-cli uninstall-user-cli smoke smoke-auth smoke-agate-basic smoke-stylebook-basic smoke-agate-stylebook-handoff smoke-worker-async smoke-stylebook-editorial smoke-s3-batch smoke-stylebook-import-export smoke-fast smoke-runtime smoke-slower smoke-place-geocode smoke-place-geocode-stack smoke-people smoke-people-stack smoke-organizations smoke-organizations-stack smoke-article-metadata smoke-article-metadata-stack smoke-custom-extract smoke-custom-extract-stack smoke-parallel-graph smoke-parallel-graph-stack agate-ui-build stylebook-ui-build ui-build
+.PHONY: help up up-detached down logs migrate reset-db clear-entity-data docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full docker-build-prod-apis docker-build-prod-agate-api docker-build-prod-core-api docker-build-prod-stylebook-api docker-build-prod-worker test test-unit test-integration lint format bootstrap install-cli-shim install-user-cli uninstall-user-cli smoke smoke-auth smoke-agate-basic smoke-stylebook-basic smoke-agate-stylebook-handoff smoke-worker-async smoke-observability smoke-stylebook-editorial smoke-s3-batch smoke-stylebook-import-export smoke-fast smoke-runtime smoke-slower smoke-place-geocode smoke-place-geocode-stack smoke-people smoke-people-stack smoke-organizations smoke-organizations-stack smoke-article-metadata smoke-article-metadata-stack smoke-custom-extract smoke-custom-extract-stack smoke-parallel-graph smoke-parallel-graph-stack agate-ui-build stylebook-ui-build ui-build
 
 help:
 	@echo "Backfield"
@@ -38,6 +38,7 @@ help:
 	@echo "  make smoke-fast  - Auth + basic Agate + basic Stylebook smoke bundle"
 	@echo "  make smoke-runtime - Handoff + worker lifecycle smoke bundle"
 	@echo "  make smoke-slower - Editorial + import + S3 batch smoke bundle"
+	@echo "  make smoke-observability - EMF + success/failure run correlation smoke"
 	@echo "  make smoke-place-geocode - In-process PlaceExtract + GeocodeAgent corpus (not CI)"
 	@echo "  make smoke-place-geocode-stack - Same script --via-agate-api (enqueue one graph run)"
 	@echo "  make smoke-people - In-process PersonExtract + DBOutput demo (not CI)"
@@ -151,7 +152,7 @@ docker-build-prod-worker:
 test: test-unit test-integration
 
 test-unit:
-	uv run pytest packages/backfield-agate/tests packages/backfield-auth/tests packages/backfield-db/tests packages/backfield-cli/tests -q
+	uv run pytest packages/backfield-agate/tests packages/backfield-auth/tests packages/backfield-db/tests packages/backfield-cli/tests packages/backfield-observability/tests -q
 
 test-integration:
 	uv run pytest tests -q
@@ -178,6 +179,9 @@ smoke-agate-stylebook-handoff:
 
 smoke-worker-async:
 	uv run python -u tests/smoke/smoke_worker_async.py
+
+smoke-observability:
+	uv run python -u tests/smoke/smoke_observability.py
 
 smoke-stylebook-editorial:
 	uv run python -u tests/smoke/smoke_stylebook_editorial.py

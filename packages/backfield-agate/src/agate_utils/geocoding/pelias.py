@@ -38,13 +38,48 @@ async def _pelias_get(
     client: httpx.AsyncClient, url: str, params: dict[str, Any]
 ) -> httpx.Response:
     """GET with one retry on transient connect/read/pool timeouts."""
+    import time
+
+    from backfield_observability.external import emit_external_request
+
     transient = (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.PoolTimeout)
+    started = time.perf_counter()
     try:
-        return await client.get(url, params=params)
-    except transient as first:
-        logger.warning("Pelias %s, retrying once", type(first).__name__)
-        await asyncio.sleep(0.75)
-        return await client.get(url, params=params)
+        try:
+            response = await client.get(url, params=params)
+        except transient as first:
+            logger.warning("Pelias %s, retrying once", type(first).__name__)
+            emit_external_request(
+                operation="geocoding",
+                duration_seconds=time.perf_counter() - started,
+                failed=True,
+                provider="pelias",
+                error_type=type(first).__name__,
+                outcome="retry",
+            )
+            await asyncio.sleep(0.75)
+            started = time.perf_counter()
+            response = await client.get(url, params=params)
+        failed = response.status_code >= 400
+        emit_external_request(
+            operation="geocoding",
+            duration_seconds=time.perf_counter() - started,
+            failed=failed,
+            provider="pelias",
+            error_type=f"http_{response.status_code}" if failed else None,
+            outcome="failure" if failed else "success",
+        )
+        return response
+    except Exception as exc:
+        emit_external_request(
+            operation="geocoding",
+            duration_seconds=time.perf_counter() - started,
+            failed=True,
+            provider="pelias",
+            error_type=type(exc).__name__,
+            outcome="exception",
+        )
+        raise
 
 
 def _pelias_http_error_suffix(exc: Exception) -> str:
@@ -67,14 +102,13 @@ def _pelias_http_error_suffix(exc: Exception) -> str:
 
 
 def _log_pelias_exception(operation: str, exc: Exception, *, detail: str = "") -> None:
-    """Log type + repr + httpx context so empty-message exceptions remain diagnosable."""
-    detail_part = f" {detail}" if detail else ""
+    """Log type + httpx context without customer query text."""
+    del detail  # intentionally unused — avoid logging customer-derived location text
     logger.error(
-        "Pelias %s failed:%s %s: %r%s",
+        "Pelias %s failed: %s: %s%s",
         operation,
-        detail_part,
         type(exc).__name__,
-        exc,
+        type(exc).__name__,
         _pelias_http_error_suffix(exc),
         exc_info=True,
     )
@@ -215,7 +249,7 @@ async def geocode_search(
         if api_key:
             params["api_key"] = api_key
         
-        logger.info(f"Pelias search geocoding: {text}")
+        logger.info("Pelias search geocoding request")
         
         async with httpx.AsyncClient(timeout=_PELIAS_HTTP_TIMEOUT) as client:
             response = await _pelias_get(client, url, params)
@@ -224,13 +258,13 @@ async def geocode_search(
         
         features = data.get("features", [])
         if not features:
-            logger.warning(f"No results found for: {text}")
+            logger.warning("No Pelias search results")
             return None
 
         return _pelias_search_feature_to_result(text, features[0])
 
     except Exception as e:
-        _log_pelias_exception("search geocoding", e, detail=f"text={text!r}")
+        _log_pelias_exception("search geocoding", e)
         return None
 
 
@@ -257,7 +291,7 @@ async def geocode_search_candidates(
         if api_key:
             params["api_key"] = api_key
 
-        logger.info("Pelias search candidates: %s", text)
+        logger.info("Pelias search candidates request")
 
         async with httpx.AsyncClient(timeout=_PELIAS_HTTP_TIMEOUT) as client:
             response = await _pelias_get(client, url, params)
@@ -271,10 +305,10 @@ async def geocode_search_candidates(
             if mapped is not None:
                 out.append(mapped)
         if not out:
-            logger.warning("No mappable Pelias search candidates for: %s", text)
+            logger.warning("No mappable Pelias search candidates")
         return out
     except Exception as e:
-        _log_pelias_exception("search candidates", e, detail=f"text={text!r}")
+        _log_pelias_exception("search candidates", e)
         return []
 
 

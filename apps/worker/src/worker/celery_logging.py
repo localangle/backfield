@@ -24,11 +24,22 @@ _RUN_ID_TASKS = frozenset(
     }
 )
 
+_ITEM_ID_TASKS = frozenset({"worker.tasks.execute_processed_item"})
+
 _CONTEXT_RESETS: dict[str, LogContextReset] = {}
 
 
 def _infer_run_id(task_name: str | None, args: tuple[object, ...]) -> str | None:
     if task_name in _RUN_ID_TASKS and args:
+        # finalize_s3_parent_run(header_results, run_id)
+        if task_name == "worker.tasks.finalize_s3_parent_run" and len(args) >= 2:
+            return str(args[1])
+        return str(args[0])
+    return None
+
+
+def _infer_item_id(task_name: str | None, args: tuple[object, ...]) -> str | None:
+    if task_name in _ITEM_ID_TASKS and args:
         return str(args[0])
     return None
 
@@ -45,7 +56,8 @@ def _log_task_prerun(
     configure_structured_logging("worker")
     task_name = task.name if task is not None else None
     run_id = _infer_run_id(task_name, tuple(args or ()))
-    reset = bind_log_context(job_id=task_id, run_id=run_id)
+    item_id = _infer_item_id(task_name, tuple(args or ()))
+    reset = bind_log_context(job_id=task_id, run_id=run_id, item_id=item_id)
     if task_id:
         _CONTEXT_RESETS[task_id] = reset
     log_event(logger, "task_start", task=task_name)
@@ -74,11 +86,12 @@ def _log_task_failure(
     **_: object,
 ) -> None:
     task_name = sender.name if sender is not None else None
+    error_type = type(exception).__name__ if exception is not None else None
     log_event(
         logger,
         "task_failure",
         level=logging.ERROR,
         task=task_name,
         job_id=task_id,
-        error=str(exception) if exception is not None else None,
+        error_type=error_type,
     )

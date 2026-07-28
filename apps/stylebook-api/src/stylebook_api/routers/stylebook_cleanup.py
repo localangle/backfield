@@ -76,6 +76,7 @@ from backfield_entities.quality.types import (
     CleanupLocationGeographyIssueRow,
     CleanupNameMismatchIssueRow,
 )
+from backfield_observability.celery_publish import register_publish_timestamp_hook
 from celery import Celery
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -107,6 +108,7 @@ celery_app = Celery(
     broker=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
     backend=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
 )
+register_publish_timestamp_hook()
 
 
 def _celery_queue() -> str:

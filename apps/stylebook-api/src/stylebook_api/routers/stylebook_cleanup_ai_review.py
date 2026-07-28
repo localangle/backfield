@@ -27,6 +27,7 @@ from backfield_entities.entities.organization.merge import merge_organization_ca
 from backfield_entities.entities.person.merge import merge_person_canonical_into
 from backfield_entities.quality.checks import cleanup_check_by_id
 from backfield_entities.quality.dismissals import dismiss_pair
+from backfield_observability.celery_publish import register_publish_timestamp_hook
 from celery import Celery
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -44,6 +45,7 @@ celery_app = Celery(
     broker=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
     backend=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
 )
+register_publish_timestamp_hook()
 
 
 def _celery_queue() -> str:

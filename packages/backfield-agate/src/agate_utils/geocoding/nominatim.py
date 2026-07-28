@@ -6,27 +6,25 @@ using the geopy library. Nominatim is a free, open-source geocoding service
 that uses OpenStreetMap data.
 """
 
-import time
 import logging
 import threading
-from typing import Dict, List, Optional, Tuple, Union, Any
+import time
+from typing import Any
 
 import requests
+from geopy.exc import GeocoderQuotaExceeded, GeocoderServiceError, GeocoderTimedOut
 from geopy.geocoders import Nominatim
-from geopy.exc import GeocoderTimedOut, GeocoderServiceError, GeocoderQuotaExceeded
 from geopy.location import Location
 
 from .geocoding_types import (
-    GeocodingError,
-    GeocodingErrorTypes,
     GeocodingResult,
     GeocodingResultData,
     GeometryPoint,
     GeometryPolygon,
     bbox_west_south_east_north_to_polygon_coordinates,
 )
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+
+# Logging uses the process root JSON formatter; do not call basicConfig here.
 logger = logging.getLogger(__name__)
 
 
@@ -56,7 +54,7 @@ class NominatimGeocoder:
         self.user_agent = user_agent
         self.timeout = timeout
         self._lock = threading.Lock()
-        self._geocoder: Optional[Nominatim] = None
+        self._geocoder: Nominatim | None = None
         self.rate_limit = rate_limit
         self.last_request_time = 0.0
         
@@ -76,7 +74,7 @@ class NominatimGeocoder:
                 self._geocoder = Nominatim(user_agent=self.user_agent, timeout=self.timeout)
             return self._geocoder
     
-    def _extract_address_components(self, location: Location) -> Dict[str, Optional[str]]:
+    def _extract_address_components(self, location: Location) -> dict[str, str | None]:
         """
         Extract standardized address components from a geopy Location object.
         
@@ -98,7 +96,7 @@ class NominatimGeocoder:
             'raw_data': raw_data
         }
     
-    def _location_to_result(self, location: Location, input_str: str, _placetype: Optional[str] = None) -> GeocodingResult:
+    def _location_to_result(self, location: Location, input_str: str, _placetype: str | None = None) -> GeocodingResult:
         """
         Convert a geopy Location object to a standardized GeocodingResult.
         
@@ -155,11 +153,11 @@ class NominatimGeocoder:
         self,
         query: str,
         exactly_one: bool = True,
-        country_codes: Optional[List[str]] = None,
-        viewbox: Optional[Tuple[float, float, float, float]] = None,
+        country_codes: list[str] | None = None,
+        viewbox: tuple[float, float, float, float] | None = None,
         bounded: bool = False,
-        placetype: Optional[str] = None
-    ) -> Union[GeocodingResult, List[GeocodingResult], None]:
+        placetype: str | None = None
+    ) -> GeocodingResult | list[GeocodingResult] | None:
         """
         Geocode an address or place name to coordinates.
         
@@ -176,7 +174,7 @@ class NominatimGeocoder:
         self._enforce_rate_limit()
         
         try:
-            logger.info(f"Geocoding query: {query}")
+            logger.info("Nominatim geocode request")
             
             # Prepare geocoding parameters
             geocode_params = {
@@ -194,10 +192,9 @@ class NominatimGeocoder:
             # Perform geocoding
             geocoder = self._get_geocoder()
             results = geocoder.geocode(query, **geocode_params)
-            print(f"Nominatim results: {results}")
             
             if not results:
-                logger.warning(f"No results found for query: {query}")
+                logger.warning("No Nominatim results")
                 return None
             
             # Convert results to standardized format
@@ -207,16 +204,16 @@ class NominatimGeocoder:
                 return [self._location_to_result(location, query, placetype) for location in results]
                 
         except GeocoderTimedOut:
-            logger.error(f"Geocoding timeout for query: {query}")
+            logger.error("Nominatim geocode timeout")
             return None
         except GeocoderServiceError as e:
-            logger.error(f"Geocoding service error for query '{query}': {e}")
+            logger.error("Nominatim geocode service error: %s", type(e).__name__)
             return None
         except GeocoderQuotaExceeded:
-            logger.error(f"Geocoding quota exceeded for query: {query}")
+            logger.error("Nominatim geocode quota exceeded")
             return None
         except Exception as e:
-            logger.error(f"Unexpected error geocoding query '{query}': {e}")
+            logger.error("Unexpected Nominatim geocode error: %s", type(e).__name__)
             return None
     
     def search_raw(
@@ -227,9 +224,9 @@ class NominatimGeocoder:
         extratags: bool = True,
         namedetails: bool = True,
         language: str = "en",
-        layer: Optional[str] = None,
-        dedupe: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
+        layer: str | None = None,
+        dedupe: int | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Retrieve raw Nominatim search results for a query.
         
@@ -246,7 +243,7 @@ class NominatimGeocoder:
         """
         self._enforce_rate_limit()
         try:
-            logger.info(f"Searching Nominatim for: {query}")
+            logger.info("Nominatim search request")
             params = {
                 "q": query,
                 "format": "jsonv2",
@@ -270,21 +267,21 @@ class NominatimGeocoder:
             response.raise_for_status()
             results = response.json()
             if not isinstance(results, list):
-                logger.warning("Unexpected Nominatim response format for query: %s", query)
+                logger.warning("Unexpected Nominatim response format")
                 return []
-            logger.info("Nominatim search returned %d raw result(s) for %s", len(results), query)
+            logger.info("Nominatim search returned %d raw result(s)", len(results))
             return results
         except requests.Timeout:
-            logger.error(f"Nominatim search timeout for query: {query}")
+            logger.error("Nominatim search timeout")
             return []
         except requests.HTTPError as e:
-            logger.error(f"Nominatim HTTP error for query '{query}': {e}")
+            logger.error("Nominatim HTTP error: %s", type(e).__name__)
             return []
         except requests.RequestException as e:
-            logger.error(f"Nominatim request error for query '{query}': {e}")
+            logger.error("Nominatim request error: %s", type(e).__name__)
             return []
         except Exception as e:
-            logger.error(f"Unexpected error during Nominatim search for '{query}': {e}")
+            logger.error("Unexpected Nominatim search error: %s", type(e).__name__)
             return []
     
 
@@ -293,9 +290,9 @@ class NominatimGeocoder:
 def geocode_address(
     address: str,
     user_agent: str = "agate/1.0",
-    country_codes: Optional[List[str]] = None,
-    placetype: Optional[str] = None
-) -> Optional[GeocodingResult]:
+    country_codes: list[str] | None = None,
+    placetype: str | None = None
+) -> GeocodingResult | None:
     """
     Convenience function to geocode a single address.
     
@@ -318,7 +315,7 @@ def search_places(
     addressdetails: bool = True,
     extratags: bool = True,
     namedetails: bool = True,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Convenience function to perform a raw Nominatim search and return result dictionaries.
     """
@@ -336,7 +333,7 @@ def geocode_address_raw(
     address: str,
     user_agent: str = "agate/1.0",
     limit: int = 20
-) -> Optional[str]:
+) -> str | None:
     """
     Convenience function to geocode an address and return raw JSON data as string.
     
@@ -358,7 +355,7 @@ def geocode_address_raw(
         locations = geolocator.geocode(address, limit=limit, exactly_one=False)
         
         if not locations:
-            logger.warning(f"No results found for: {address}")
+            logger.warning("No Nominatim results for address lookup")
             return None
         
         # Combine raw data from all results
@@ -368,16 +365,16 @@ def geocode_address_raw(
                 raw_results.append(location.raw)
         
         if not raw_results:
-            logger.warning(f"No raw data found in results for: {address}")
+            logger.warning("No raw data in Nominatim results")
             return None
         
         # Convert to JSON string
         import json
         json_string = json.dumps(raw_results, indent=2)
         
-        logger.info(f"Found {len(raw_results)} raw results for: {address}")
+        logger.info("Nominatim address lookup returned %d raw result(s)", len(raw_results))
         return json_string
         
     except Exception as e:
-        logger.error(f"Error geocoding address '{address}': {e}")
+        logger.error("Error geocoding address: %s", type(e).__name__)
         return None

@@ -63,6 +63,12 @@ from backfield_entities.ingest.custom_record.persist import (
 from backfield_entities.ingest.semantic_indexing.processed_item import (
     build_processed_item_semantic_indexing_summary,
 )
+from backfield_observability.celery_publish import register_publish_timestamp_hook
+from backfield_observability.lifecycle import (
+    api_identity,
+    emit_item_terminal,
+    emit_run_terminal,
+)
 from celery import Celery
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
@@ -81,6 +87,7 @@ celery_app = Celery(
     broker=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
     backend=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
 )
+register_publish_timestamp_hook()
 
 
 def _celery_queue() -> str:
@@ -2550,23 +2557,43 @@ def cancel_run(
         session.exec(select(AgateProcessedItem).where(AgateProcessedItem.run_id == run_id)).all()
     )
     now = datetime.now(UTC)
+    identity = api_identity("agate-api")
+    item_transitions: list[tuple[AgateProcessedItem, str]] = []
     for item in items:
-        if item.status == "pending":
-            item.status = "failed"
-            item.error_message = _RUN_CANCELLED_MESSAGE
-            item.updated_at = now
-            session.add(item)
-        elif item.status == "running":
-            item.status = "failed"
-            item.error_message = _RUN_CANCELLED_MESSAGE + " (was running)"
-            item.updated_at = now
-            session.add(item)
+        if item.status not in ("pending", "running"):
+            continue
+        previous = item.status
+        item.status = "failed"
+        item.error_message = (
+            _RUN_CANCELLED_MESSAGE
+            if previous == "pending"
+            else _RUN_CANCELLED_MESSAGE + " (was running)"
+        )
+        item.updated_at = now
+        session.add(item)
+        item_transitions.append((item, previous))
 
+    previous_run = r.status
     r.status = "failed"
     r.error_message = _RUN_CANCELLED_MESSAGE
     r.updated_at = now
     session.add(r)
     session.commit()
+    for item, previous in item_transitions:
+        emit_item_terminal(
+            previous_status=previous,
+            new_status="failed",
+            identity=identity,
+            started_at=item.started_at,
+            finished_at=now,
+            correlation={"run_id": run_id, "item_id": str(item.id)},
+        )
+    emit_run_terminal(
+        previous_status=previous_run,
+        new_status="failed",
+        identity=identity,
+        correlation={"run_id": run_id},
+    )
     session.refresh(r)
     return _serialize_run(session, r)
 

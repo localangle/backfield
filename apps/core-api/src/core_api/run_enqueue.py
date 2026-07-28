@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from backfield_observability.celery_publish import register_publish_timestamp_hook
 from celery import Celery
 
 celery_app = Celery(
@@ -12,6 +13,7 @@ celery_app = Celery(
     broker=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
     backend=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
 )
+register_publish_timestamp_hook()
 
 
 def celery_queue() -> str:

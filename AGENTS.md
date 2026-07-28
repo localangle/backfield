@@ -13,6 +13,7 @@ Use this file as the entry point for working in this repository. Keep it short, 
 - `packages/backfield-agate`: Agate graph types, executor, node definitions (including `src/agate_nodes/*/ui/` — the **source of truth** for synced Agate UI node panels), vendored PlaceExtract/GeocodeAgent runtime, and geocoding/LLM utilities.
 - `packages/backfield-ui`: Shared shell components and `@backfield/ui/nodeOutputs` (executor output-key helpers for TS panels).
 - `packages/backfield-auth`: Shared session cookies and service Bearer token dependencies for FastAPI apps.
+- `packages/backfield-observability`: Runtime identity, CloudWatch EMF metric emission, and shared observability helpers.
 - `packages/backfield-db`: SQLModel models, crypto helpers, engine/session helpers, and Alembic migrations.
 - `packages/backfield-entities`: Entity domain helpers shared by worker, stylebook-api, core-api, and agate-runtime. Layout: `catalog/` (Stylebook rows + resolve), `registry/` (entity type slugs), `canonical/` + `entities/` (matching + per-type policy/persist), `ingest/` (DBOutput settings, geocode cache, semantic indexing).
 - `infra/docker-compose.yml`: Local multi-service stack.
@@ -39,6 +40,7 @@ Use this file as the entry point for working in this repository. Keep it short, 
 - `docs/FRONTEND.md`: Agate UI conventions, node sync flow, and API client usage.
 - `docs/DATABASE.md`: schema ownership, prefixes, migrations, and indexing expectations.
 - `docs/OPERATIONS.md`: compose lifecycle, env vars, queue names, and troubleshooting.
+- `docs/OBSERVABILITY.md`: application metrics / EMF contract with backfield-cloud.
 - `docs/TESTING.md`: validation ladder and when to run which checks.
 
 ## Engineering posture

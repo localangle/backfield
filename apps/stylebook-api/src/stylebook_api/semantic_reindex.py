@@ -7,6 +7,7 @@ import os
 from backfield_entities.ingest.semantic_indexing.contracts import SemanticBuilderEntityType
 from backfield_entities.ingest.semantic_indexing.reindex import semantic_reindex_scopes_for_entity
 from backfield_entities.ingest.semantic_indexing.reindex_contract import SEMANTIC_REINDEX_TASK_NAME
+from backfield_observability.celery_publish import register_publish_timestamp_hook
 from celery import Celery
 from sqlmodel import Session
 
@@ -15,6 +16,7 @@ celery_app = Celery(
     broker=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
     backend=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
 )
+register_publish_timestamp_hook()
 
 
 def _celery_queue() -> str:

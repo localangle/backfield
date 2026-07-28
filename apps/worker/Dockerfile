@@ -15,6 +15,7 @@ RUN apt-get update \
 FROM base AS builder
 
 COPY packages/backfield-db /app/packages/backfield-db
+COPY packages/backfield-observability /app/packages/backfield-observability
 COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-auth /app/packages/backfield-auth
 COPY packages/backfield-agate /app/packages/backfield-agate
@@ -22,6 +23,7 @@ COPY packages/backfield-entities /app/packages/backfield-entities
 COPY apps/worker /app/apps/worker
 
 RUN uv pip install --system /app/packages/backfield-db \
+    && uv pip install --system /app/packages/backfield-observability \
     && uv pip install --system /app/packages/backfield-ai \
     && uv pip install --system /app/packages/backfield-auth \
     && uv pip install --system /app/packages/backfield-entities \
@@ -57,6 +59,7 @@ ENTRYPOINT ["/usr/local/bin/backfield-worker-entrypoint.sh"]
 FROM base AS dev
 
 COPY packages/backfield-db /app/packages/backfield-db
+COPY packages/backfield-observability /app/packages/backfield-observability
 COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-auth /app/packages/backfield-auth
 COPY packages/backfield-agate /app/packages/backfield-agate
@@ -64,6 +67,7 @@ COPY packages/backfield-entities /app/packages/backfield-entities
 COPY apps/worker /app/apps/worker
 
 RUN pip install --no-cache-dir -e /app/packages/backfield-db \
+    && pip install --no-cache-dir -e /app/packages/backfield-observability \
     && pip install --no-cache-dir -e /app/packages/backfield-ai \
     && pip install --no-cache-dir -e /app/packages/backfield-auth \
     && pip install --no-cache-dir -e /app/packages/backfield-entities \

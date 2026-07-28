@@ -12,6 +12,7 @@ members = [
     "backfield-cli",
     "backfield-db",
     "backfield-entities",
+    "backfield-observability",
     "backfield-workspace",
     "core-api",
     "stylebook-api",
@@ -55,6 +56,7 @@ dependencies = [
     { name = "backfield-ai" },
     { name = "backfield-db" },
     { name = "backfield-entities" },
+    { name = "backfield-observability" },
     { name = "boto3" },
     { name = "duckduckgo-search" },
     { name = "geopy" },
@@ -76,6 +78,7 @@ requires-dist = [
     { name = "backfield-ai", editable = "packages/backfield-ai" },
     { name = "backfield-db", editable = "packages/backfield-db" },
     { name = "backfield-entities", editable = "packages/backfield-entities" },
+    { name = "backfield-observability", editable = "packages/backfield-observability" },
     { name = "boto3", specifier = ">=1.34.0" },
     { name = "duckduckgo-search", specifier = ">=7.0.0" },
     { name = "geopy", specifier = ">=2.4.0" },
@@ -342,6 +345,7 @@ version = "0.1.0"
 source = { editable = "packages/backfield-ai" }
 dependencies = [
     { name = "backfield-db" },
+    { name = "backfield-observability" },
     { name = "litellm" },
     { name = "pydantic" },
 ]
@@ -349,6 +353,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "backfield-db", editable = "packages/backfield-db" },
+    { name = "backfield-observability", editable = "packages/backfield-observability" },
     { name = "litellm", specifier = ">=1.55.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
 ]
@@ -359,6 +364,7 @@ version = "0.1.0"
 source = { editable = "packages/backfield-auth" }
 dependencies = [
     { name = "backfield-db" },
+    { name = "backfield-observability" },
     { name = "fastapi" },
     { name = "itsdangerous" },
     { name = "redis" },
@@ -367,6 +373,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "backfield-db", editable = "packages/backfield-db" },
+    { name = "backfield-observability", editable = "packages/backfield-observability" },
     { name = "fastapi", specifier = ">=0.109.0" },
     { name = "itsdangerous", specifier = ">=2.1.0" },
     { name = "redis", specifier = ">=5.0.0" },
@@ -440,6 +447,11 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "sqlmodel", specifier = ">=0.0.16" },
 ]
+
+[[package]]
+name = "backfield-observability"
+version = "0.1.0"
+source = { editable = "packages/backfield-observability" }
 
 [[package]]
 name = "backfield-workspace"

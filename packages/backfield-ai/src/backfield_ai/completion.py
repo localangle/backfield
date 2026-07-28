@@ -257,7 +257,20 @@ def completion_text_sync(
         kwargs["response_format"] = {"type": "json_object"}
 
     t0 = time.perf_counter()
-    resp = litellm.completion(**kwargs)
+    try:
+        resp = litellm.completion(**kwargs)
+    except Exception as exc:
+        from backfield_observability.external import emit_external_request
+
+        emit_external_request(
+            operation="llm",
+            duration_seconds=time.perf_counter() - t0,
+            failed=True,
+            provider="litellm",
+            error_type=type(exc).__name__,
+            outcome="exception",
+        )
+        raise
 
     choice = resp.choices[0]
     msg = choice.message
@@ -303,6 +316,16 @@ def completion_text_sync(
                 finish = getattr(choice, "finish_reason", None)
 
     latency_ms = int((time.perf_counter() - t0) * 1000)
+
+    from backfield_observability.external import emit_external_request
+
+    emit_external_request(
+        operation="llm",
+        duration_seconds=latency_ms / 1000.0,
+        failed=False,
+        provider="litellm",
+        outcome="success",
+    )
 
     if force_json_response and text == "":
         prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)

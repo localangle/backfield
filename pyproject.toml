@@ -22,6 +22,7 @@ members = [
     "packages/backfield-entities",
     "packages/backfield-agate",
     "packages/backfield-db",
+    "packages/backfield-observability",
     "apps/agate-api",
     "apps/worker",
     "apps/stylebook-api",
@@ -35,16 +36,18 @@ backfield-cli = { workspace = true }
 agate-runtime = { workspace = true }
 backfield-db = { workspace = true }
 backfield-entities = { workspace = true }
+backfield-observability = { workspace = true }
 core-api = { workspace = true }
 
 [tool.pytest.ini_options]
-testpaths = ["packages/backfield-agate/tests", "packages/backfield-auth/tests", "packages/backfield-db/tests", "packages/backfield-cli/tests", "tests"]
+testpaths = ["packages/backfield-agate/tests", "packages/backfield-auth/tests", "packages/backfield-db/tests", "packages/backfield-cli/tests", "packages/backfield-observability/tests", "tests"]
 pythonpath = [
     "packages/backfield-ai/src",
     "packages/backfield-auth/src",
     "packages/backfield-agate/src",
     "packages/backfield-db/src",
     "packages/backfield-entities/src",
+    "packages/backfield-observability/src",
     "apps/agate-api/src",
     "apps/worker/src",
     "apps/stylebook-api/src",

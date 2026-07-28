@@ -43,6 +43,7 @@
   Aggregate bundles:
   - `make smoke-fast`: `smoke-auth`, `smoke-agate-basic`, `smoke-stylebook-basic`
   - `make smoke-runtime`: `make smoke`, `make smoke-worker-async`
+  - `make smoke-observability`: local EMF emission (+ live success/failure runs when `SMOKE_EMAIL`/`SMOKE_PASSWORD` are set)
   - `make smoke-slower`: `make smoke-stylebook-editorial`, `make smoke-stylebook-import-export`, `make smoke-s3-batch`
   Shared knobs: `SMOKE_EMAIL`, `SMOKE_PASSWORD`, `SMOKE_WORKSPACE_SLUG`, `SMOKE_PROJECT_SLUG`, `SMOKE_POLL_TIMEOUT_SECONDS`, `SMOKE_POLL_INTERVAL_SECONDS`. DB-writing live lanes clean up their temporary graphs, runs, canonicals, and substrate rows by default; set `SMOKE_KEEP_DATA=1` when you want to inspect the artifacts after a smoke run. `SMOKE_BOOTSTRAP=1` still creates the first Core user for empty local DBs before the handoff smoke logs in.
 4. **Manual UI pass**

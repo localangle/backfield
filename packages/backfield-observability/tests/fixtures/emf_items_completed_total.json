@@ -1,0 +1,30 @@
+{
+  "_aws": {
+    "CloudWatchMetrics": [
+      {
+        "Namespace": "Backfield/Application",
+        "Dimensions": [
+          ["Client", "Environment", "Service"]
+        ],
+        "Metrics": [
+          {"Name": "items_completed_total", "Unit": "Count"}
+        ]
+      }
+    ]
+  },
+  "Client": "canary",
+  "Environment": "staging",
+  "Service": "worker",
+  "items_completed_total": 1.0,
+  "event": "cloudwatch_emf",
+  "metric_name": "items_completed_total",
+  "metric_kind": "counter",
+  "service": "worker",
+  "environment": "staging",
+  "version": "main-abc123-amd64",
+  "git_sha": "abc123",
+  "client": "canary",
+  "severity": "info",
+  "level": "info",
+  "message": "metric items_completed_total"
+}

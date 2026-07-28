@@ -41,6 +41,7 @@ from backfield_ai.tracking_context import (
     reset_llm_tracking_context,
     set_llm_tracking_current_node,
 )
+from backfield_auth.log_context import bind_log_context
 from backfield_db import (
     AgateGraph,
     AgateNodeTiming,
@@ -79,6 +80,8 @@ from backfield_entities.quality.finders.duplicate_organizations import (
     duplicate_organization_cluster_ids,
 )
 from backfield_entities.quality.finders.duplicate_people import duplicate_person_cluster_ids
+from backfield_observability.celery_publish import register_publish_timestamp_hook
+from backfield_observability.lifecycle import emit_worker_lost
 from celery import Celery, chord, group
 from celery.exceptions import Reject
 from sqlalchemy import delete
@@ -97,6 +100,14 @@ from worker.substrate.candidates.ai_review import run_candidate_ai_review
 from worker.substrate.cleanup.ai_review import (
     load_cluster_members,
     run_cleanup_review_clusters,
+)
+from worker.terminal_transitions import (
+    apply_item_terminal_status,
+    commit_item_terminal,
+    commit_run_terminal,
+    emit_item_terminal_after_commit,
+    emit_run_terminal_after_commit,
+    is_cancelled_message,
 )
 
 logger = logging.getLogger(__name__)
@@ -139,16 +150,24 @@ def _reap_stale_running_items(
     items: list[AgateProcessedItem],
     *,
     now: datetime | None = None,
-) -> None:
-    """Mark zombie ``running`` rows terminal so batch runs can finalize after worker loss."""
+) -> list[tuple[AgateProcessedItem, str]]:
+    """Mark zombie ``running`` rows terminal so batch runs can finalize after worker loss.
+
+    Returns ``(item, previous_status)`` pairs for post-commit metric emission.
+    """
     now = now or datetime.now(UTC)
+    reaped: list[tuple[AgateProcessedItem, str]] = []
     for row in items:
         if not _is_stale_running_item(row, now=now):
             continue
+        previous = row.status
         row.status = "failed"
         row.error_message = _STALE_RUNNING_MESSAGE
         row.updated_at = now
         session.add(row)
+        reaped.append((row, previous))
+        emit_worker_lost()
+    return reaped
 
 
 def _reap_stale_running_items_for_run(
@@ -170,8 +189,8 @@ def _reap_stale_running_items_for_run(
     stale_rows = [row for row in rows if _is_stale_running_item(row, now=now)]
     if not stale_rows:
         return 0
-    _reap_stale_running_items(session, stale_rows, now=now)
-    return len(stale_rows)
+    reaped = _reap_stale_running_items(session, stale_rows, now=now)
+    return len(reaped)
 
 
 def _item_blocks_run_finalization(item: AgateProcessedItem) -> bool:
@@ -282,6 +301,7 @@ celery_app = Celery(
 )
 celery_app.conf.task_acks_late = True
 celery_app.conf.task_reject_on_worker_lost = True
+register_publish_timestamp_hook()
 
 
 def _register_worker_process_hooks() -> None:
@@ -465,15 +485,27 @@ def _finalize_s3_parent_run(session: Session, run_id: str) -> None:
     run = session.get(AgateRun, run_id)
     if not run:
         return
+    # Preserve user cancellation and other terminal outcomes; do not overwrite.
+    if run.status not in ("pending", "running") or is_cancelled_message(run.error_message):
+        return
     items = list(
         session.exec(select(AgateProcessedItem).where(AgateProcessedItem.run_id == run_id)).all()
     )
-    _reap_stale_running_items(session, items)
+    reaped = _reap_stale_running_items(session, items)
     session.commit()
+    for item, previous in reaped:
+        emit_item_terminal_after_commit(item, previous_status=previous)
     items = list(
         session.exec(select(AgateProcessedItem).where(AgateProcessedItem.run_id == run_id)).all()
     )
     if any(_item_blocks_run_finalization(row) for row in items):
+        return
+    run = session.get(AgateRun, run_id)
+    if (
+        not run
+        or run.status not in ("pending", "running")
+        or is_cancelled_message(run.error_message)
+    ):
         return
     failed = [row for row in items if row.status == "failed"]
     base: dict[str, Any] = {}
@@ -491,6 +523,7 @@ def _finalize_s3_parent_run(session: Session, run_id: str) -> None:
         }
         for row in items
     ]
+    previous_status = run.status
     run.result_json = json.dumps(base)
     if failed:
         run.status = "failed"
@@ -501,6 +534,7 @@ def _finalize_s3_parent_run(session: Session, run_id: str) -> None:
     run.updated_at = datetime.now(UTC)
     session.add(run)
     session.commit()
+    emit_run_terminal_after_commit(run, previous_status=previous_status)
 
 
 @celery_app.task(name="worker.tasks.execute_agate_run")
@@ -512,11 +546,13 @@ def execute_agate_run(run_id: str) -> None:
             return
         graph = session.get(AgateGraph, run.graph_id)
         if not graph:
-            run.status = "failed"
-            run.error_message = "Graph not found"
-            run.updated_at = datetime.now(UTC)
-            session.add(run)
-            session.commit()
+            commit_run_terminal(
+                session,
+                run,
+                previous_status=run.status,
+                new_status="failed",
+                error_message="Graph not found",
+            )
             return
 
         if run.status != "pending":
@@ -596,24 +632,36 @@ def execute_agate_run(run_id: str) -> None:
             return
         try:
             if run_error is not None:
-                if run.error_message == _RUN_CANCELLED_MESSAGE:
+                if is_cancelled_message(run.error_message):
                     return
-                run.status = "failed"
-                run.error_message = run_error
-                run.result_json = None
+                commit_run_terminal(
+                    session,
+                    run,
+                    previous_status=run.status,
+                    new_status="failed",
+                    error_message=run_error,
+                    result_json=None,
+                )
             else:
                 if replace_geography and not _graph_has_db_output(spec) and run.id is not None:
                     clear_replace_article_geography_flags(session, run_id=str(run.id))
-                run.status = "succeeded"
-                run.result_json = json.dumps(outputs)
-                run.error_message = None
+                commit_run_terminal(
+                    session,
+                    run,
+                    previous_status=run.status,
+                    new_status="succeeded",
+                    error_message=None,
+                    result_json=json.dumps(outputs),
+                )
         except Exception as e:
-            run.status = "failed"
-            run.error_message = str(e)
-            run.result_json = None
-        run.updated_at = datetime.now(UTC)
-        session.add(run)
-        session.commit()
+            commit_run_terminal(
+                session,
+                run,
+                previous_status=run.status,
+                new_status="failed",
+                error_message=str(e),
+                result_json=None,
+            )
 
 
 @celery_app.task(name="worker.tasks.execute_s3_batch_setup")
@@ -625,11 +673,13 @@ def execute_s3_batch_setup(run_id: str) -> None:
             return
         graph = session.get(AgateGraph, run.graph_id)
         if not graph:
-            run.status = "failed"
-            run.error_message = "Graph not found"
-            run.updated_at = datetime.now(UTC)
-            session.add(run)
-            session.commit()
+            commit_run_terminal(
+                session,
+                run,
+                previous_status=run.status,
+                new_status="failed",
+                error_message="Graph not found",
+            )
             return
 
         if run.status != "pending":
@@ -672,8 +722,6 @@ def execute_s3_batch_setup(run_id: str) -> None:
             if not keys:
                 run = session.get(AgateRun, run_id)
                 if run:
-                    run.status = "failed"
-                    run.error_message = f"No JSON objects found under s3://{bucket}/{prefix or ''}"
                     run.result_json = merge_run_result_payload(
                         run.result_json,
                         s3_batch={
@@ -683,9 +731,15 @@ def execute_s3_batch_setup(run_id: str) -> None:
                             "valid_executed": 0,
                         },
                     )
-                    run.updated_at = datetime.now(UTC)
                     session.add(run)
-                    session.commit()
+                    session.flush()
+                    commit_run_terminal(
+                        session,
+                        run,
+                        previous_status=run.status,
+                        new_status="failed",
+                        error_message=f"No JSON objects found under s3://{bucket}/{prefix or ''}",
+                    )
                 return
 
             with _env_overlay(overlay):
@@ -764,14 +818,16 @@ def execute_s3_batch_setup(run_id: str) -> None:
             if not pending:
                 run = session.get(AgateRun, run_id)
                 if run:
-                    run.status = "failed"
-                    run.error_message = (
-                        "No valid JSON files with a non-empty top-level "
-                        "'text' field under the prefix."
+                    commit_run_terminal(
+                        session,
+                        run,
+                        previous_status=run.status,
+                        new_status="failed",
+                        error_message=(
+                            "No valid JSON files with a non-empty top-level "
+                            "'text' field under the prefix."
+                        ),
                     )
-                    run.updated_at = datetime.now(UTC)
-                    session.add(run)
-                    session.commit()
                 return
 
             # Queue all ``execute_processed_item`` tasks and return immediately. A ``chord``
@@ -797,11 +853,13 @@ def execute_s3_batch_setup(run_id: str) -> None:
             with Session(engine) as session3:
                 run_fail = session3.get(AgateRun, run_id)
                 if run_fail:
-                    run_fail.status = "failed"
-                    run_fail.error_message = str(e)
-                    run_fail.updated_at = datetime.now(UTC)
-                    session3.add(run_fail)
-                    session3.commit()
+                    commit_run_terminal(
+                        session3,
+                        run_fail,
+                        previous_status=run_fail.status,
+                        new_status="failed",
+                        error_message=str(e),
+                    )
 
 
 @celery_app.task(name="worker.tasks.execute_run_replay_setup")
@@ -966,20 +1024,27 @@ def _execute_processed_item_impl(item_id: int) -> None:
                 return
             run = session.get(AgateRun, item.run_id)
             if not run:
-                item.status = "failed"
-                item.error_message = "Parent run not found"
-                item.updated_at = datetime.now(UTC)
-                session.add(item)
-                session.commit()
+                commit_item_terminal(
+                    session,
+                    item,
+                    previous_status=item.status,
+                    new_status="failed",
+                    error_message="Parent run not found",
+                    clear_result=True,
+                )
                 return
             graph = session.get(AgateGraph, run.graph_id)
             if not graph:
-                item.status = "failed"
-                item.error_message = "Graph not found"
-                item.updated_at = datetime.now(UTC)
-                session.add(item)
-                session.commit()
+                commit_item_terminal(
+                    session,
+                    item,
+                    previous_status=item.status,
+                    new_status="failed",
+                    error_message="Graph not found",
+                    clear_result=True,
+                )
                 return
+            bind_log_context(run_id=str(run.id), item_id=str(item.id))
             spec = GraphSpec.model_validate_json(
                 resolve_run_graph_spec_json(
                     run_result_json=run.result_json,
@@ -1063,13 +1128,14 @@ def _execute_processed_item_impl(item_id: int) -> None:
         with Session(engine) as session:
             item = session.get(AgateProcessedItem, item_id)
             if item:
-                item.status = "failed"
-                item.error_message = str(e)
-                item.result_json = None
-                item.substrate_article_id = None
-                item.updated_at = datetime.now(UTC)
-                session.add(item)
-                session.commit()
+                commit_item_terminal(
+                    session,
+                    item,
+                    previous_status=item.status,
+                    new_status="failed",
+                    error_message=str(e),
+                    clear_result=True,
+                )
                 _finalize_s3_parent_run(session, item.run_id)
         return
 
@@ -1115,27 +1181,36 @@ def _execute_processed_item_impl(item_id: int) -> None:
             timings=node_timings,
             session=session,
         )
+        previous_status = item.status
         if item_error is None:
-            item.status = "succeeded"
-            item.result_json = json.dumps(outputs)
-            item.substrate_article_id = resolve_substrate_article_id_for_processed_item(
+            substrate_article_id = resolve_substrate_article_id_for_processed_item(
                 outputs=outputs
             )
-            item.error_message = None
-        else:
-            item.status = "failed"
-            item.error_message = item_error
-            item.result_json = None
-            item.substrate_article_id = None
-        if replace_geography and not has_db_output and run_id_str:
-            clear_replace_article_geography_flags(
+            applied = apply_item_terminal_status(
                 session,
-                run_id=run_id_str,
-                processed_item_id=iid,
+                item,
+                new_status="succeeded",
+                error_message=None,
+                result_json=json.dumps(outputs),
+                substrate_article_id=substrate_article_id,
             )
-        item.updated_at = datetime.now(UTC)
-        session.add(item)
-        session.commit()
+        else:
+            applied = apply_item_terminal_status(
+                session,
+                item,
+                new_status="failed",
+                error_message=item_error,
+                clear_result=True,
+            )
+        if applied:
+            if replace_geography and not has_db_output and run_id_str:
+                clear_replace_article_geography_flags(
+                    session,
+                    run_id=run_id_str,
+                    processed_item_id=iid,
+                )
+            session.commit()
+            emit_item_terminal_after_commit(item, previous_status=previous_status)
         _finalize_s3_parent_run(session, item.run_id)
 
 
