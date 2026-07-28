@@ -29,6 +29,14 @@ def captured_commands(monkeypatch):
     return commands
 
 
+@pytest.fixture
+def ready_stack(monkeypatch):
+    monkeypatch.setattr(stack_cmd, "wait_for_api_readiness", lambda _root: None)
+    printed: list[str] = []
+    monkeypatch.setattr(stack_cmd, "print_ready", lambda email: printed.append(email))
+    return printed
+
+
 def _compose_prefix(repo_root: Path) -> list[str]:
     return [
         "docker",
@@ -40,11 +48,12 @@ def _compose_prefix(repo_root: Path) -> list[str]:
     ]
 
 
-def test_up_foreground_builds(monkeypatch, tmp_path, captured_commands) -> None:
+def test_up_defaults_to_detached(monkeypatch, tmp_path, captured_commands, ready_stack) -> None:
     repo_root = _make_repo(tmp_path)
     monkeypatch.chdir(repo_root)
     assert main(["up"]) == 0
-    assert captured_commands == [_compose_prefix(repo_root) + ["up", "--build"]]
+    assert captured_commands == [_compose_prefix(repo_root) + ["up", "-d", "--build"]]
+    assert ready_stack == [stack_cmd.DEFAULT_ADMIN_EMAIL]
 
 
 def test_up_keyboard_interrupt_exits_cleanly(monkeypatch, tmp_path) -> None:
@@ -55,21 +64,48 @@ def test_up_keyboard_interrupt_exits_cleanly(monkeypatch, tmp_path) -> None:
         raise KeyboardInterrupt
 
     monkeypatch.setattr(stack_cmd.subprocess, "run", _interrupt)
-    assert main(["up"]) == 130
+    assert main(["up", "--foreground"]) == 130
 
 
-def test_up_detached(monkeypatch, tmp_path, captured_commands) -> None:
+def test_up_detached_flag(monkeypatch, tmp_path, captured_commands, ready_stack) -> None:
     repo_root = _make_repo(tmp_path)
     monkeypatch.chdir(repo_root)
     assert main(["up", "--detached"]) == 0
     assert captured_commands == [_compose_prefix(repo_root) + ["up", "-d", "--build"]]
+    assert ready_stack == [stack_cmd.DEFAULT_ADMIN_EMAIL]
 
 
-def test_up_no_build(monkeypatch, tmp_path, captured_commands) -> None:
+def test_up_foreground(monkeypatch, tmp_path, captured_commands, ready_stack) -> None:
+    repo_root = _make_repo(tmp_path)
+    monkeypatch.chdir(repo_root)
+    assert main(["up", "--foreground"]) == 0
+    assert captured_commands == [_compose_prefix(repo_root) + ["up", "--build"]]
+    assert ready_stack == []
+
+
+def test_up_no_build(monkeypatch, tmp_path, captured_commands, ready_stack) -> None:
     repo_root = _make_repo(tmp_path)
     monkeypatch.chdir(repo_root)
     assert main(["up", "--no-build"]) == 0
-    assert captured_commands == [_compose_prefix(repo_root) + ["up"]]
+    assert captured_commands == [_compose_prefix(repo_root) + ["up", "-d"]]
+    assert ready_stack == [stack_cmd.DEFAULT_ADMIN_EMAIL]
+
+
+def test_up_readiness_timeout_returns_error(
+    monkeypatch, tmp_path, captured_commands
+) -> None:
+    repo_root = _make_repo(tmp_path)
+    monkeypatch.chdir(repo_root)
+
+    def _timeout(_root: Path) -> None:
+        raise TimeoutError("Timed out waiting for API readiness")
+
+    monkeypatch.setattr(stack_cmd, "wait_for_api_readiness", _timeout)
+    printed: list[str] = []
+    monkeypatch.setattr(stack_cmd, "print_ready", lambda email: printed.append(email))
+
+    assert main(["up"]) == 1
+    assert printed == []
 
 
 def test_down(monkeypatch, tmp_path, captured_commands) -> None:

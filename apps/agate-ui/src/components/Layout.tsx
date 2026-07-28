@@ -9,7 +9,7 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const navigate = useNavigate()
-  const { username, logout, isOrgAdmin } = useAuth()
+  const { username, logout } = useAuth()
 
   return (
     <div className="min-h-screen bg-background">
@@ -25,7 +25,6 @@ export default function Layout({ children }: LayoutProps) {
             {username ? (
               <UserAccountMenu
                 userLabel={username}
-                isOrgAdmin={isOrgAdmin}
                 onChangePassword={() => navigate("/account/password")}
                 onLogout={() => void logout()}
               />

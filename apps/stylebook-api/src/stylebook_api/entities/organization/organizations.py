@@ -27,6 +27,7 @@ from backfield_entities.entities.organization.types import (
 from backfield_entities.ingest.semantic_indexing.cleanup import (
     delete_semantic_documents_for_organization,
 )
+from backfield_entities.occurrence_spans import find_proven_occurrence_span
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.sql.elements import ColumnElement
@@ -298,9 +299,11 @@ def create_organization_from_article_evidence(
     article_text = str(article.text or "")
     if body.end_char > len(article_text):
         raise HTTPException(status_code=400, detail="source selection is outside the article")
-    selected_text = article_text[body.start_char : body.end_char]
-    if selected_text != quote_text:
-        raise HTTPException(status_code=400, detail="source selection does not match the article")
+    occurrence_span = find_proven_occurrence_span(
+        article_text=article_text,
+        evidence_texts=(quote_text, mention_text),
+        proposed_span=(body.start_char, body.end_char),
+    )
 
     organization_type = _manual_organization_type(
         body.organization_type.strip() if body.organization_type else None
@@ -359,8 +362,8 @@ def create_organization_from_article_evidence(
         source_details_json={"source": "agate_review_add_organization", "run_id": run_id},
         mention_text=mention_text,
         quote_text=quote_text,
-        start_char=body.start_char,
-        end_char=body.end_char,
+        start_char=occurrence_span[0] if occurrence_span else None,
+        end_char=occurrence_span[1] if occurrence_span else None,
         occurrence_order=0,
         labels_json=[],
         suppressed=False,

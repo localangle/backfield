@@ -12,6 +12,11 @@ export {
 } from "./ShellSidebar"
 export { cn } from "./cn"
 export {
+  resolveUiOrigin,
+  swapUiHostname,
+  type UiApp,
+} from "./siblingUiOrigin"
+export {
   LeafletMap,
   photonExtentToLeafletLatLngBounds,
   type LeafletMapProps,

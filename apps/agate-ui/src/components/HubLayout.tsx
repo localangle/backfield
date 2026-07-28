@@ -11,7 +11,7 @@ interface HubLayoutProps {
 
 export default function HubLayout({ children }: HubLayoutProps) {
   const navigate = useNavigate()
-  const { username, logout, isOrgAdmin } = useAuth()
+  const { username, logout } = useAuth()
 
   return (
     <div className="h-dvh min-h-0 bg-background flex flex-col overflow-hidden">
@@ -27,7 +27,6 @@ export default function HubLayout({ children }: HubLayoutProps) {
             {username ? (
               <UserAccountMenu
                 userLabel={username}
-                isOrgAdmin={isOrgAdmin}
                 onChangePassword={() => navigate("/account/password")}
                 onLogout={() => void logout()}
               />

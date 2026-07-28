@@ -64,11 +64,7 @@ from backfield_entities.ingest.semantic_indexing.processed_item import (
     build_processed_item_semantic_indexing_summary,
 )
 from backfield_observability.celery_publish import register_publish_timestamp_hook
-from backfield_observability.lifecycle import (
-    api_identity,
-    emit_item_terminal,
-    emit_run_terminal,
-)
+from backfield_observability.lifecycle import api_identity, emit_item_terminal, emit_run_terminal
 from celery import Celery
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
@@ -268,23 +264,27 @@ class ProcessedItemDetailOut(BaseModel):
     overlay_version: int = 0
     #: Materialized model output + overlay for export; ``null`` when no review content saved.
     reviewed_output: dict[str, Any] | None = None
-    #: Single merged lane: model + user places with provenance (see ``docs/API.md``).
+    #: Single merged lane: model + user places with provenance.
+    #: See ``docs/api/processed-item-review.md``.
     merged_locations: list[dict[str, Any]] = Field(default_factory=list)
-    #: Single merged lane: model + user people with provenance (see ``docs/API.md``).
+    #: Single merged lane: model + user people with provenance.
+    #: See ``docs/api/processed-item-review.md``.
     merged_people: list[dict[str, Any]] = Field(default_factory=list)
-    #: Single merged lane: model + user organizations with provenance (see ``docs/API.md``).
+    #: Single merged lane: model + user organizations with provenance.
+    #: See ``docs/api/processed-item-review.md``.
     merged_organizations: list[dict[str, Any]] = Field(default_factory=list)
     #: Overlay patches whose anchor no longer exists in current model output.
     stale_overlay_entries: list[dict[str, Any]] = Field(default_factory=list)
     stale_people_overlay_entries: list[dict[str, Any]] = Field(default_factory=list)
     stale_organizations_overlay_entries: list[dict[str, Any]] = Field(default_factory=list)
-    #: Resolved article body/headline for the item (see ``docs/API.md``).
+    #: Resolved article body/headline for the item (see ``docs/api/processed-item-review.md``).
     article_context: ArticleContextOut
-    #: Semantic search indexing status from Backfield Output (see ``docs/API.md``).
+    #: Semantic search indexing status from Backfield Output.
+    #: See ``docs/api/processed-item-review.md``.
     semantic_indexing: ProcessedItemSemanticIndexingOut
-    #: Article-level text embedding from Embed Text (see ``docs/API.md``).
+    #: Article-level text embedding from Embed Text (see ``docs/api/processed-item-review.md``).
     article_embedding: ProcessedItemArticleEmbeddingOut
-    #: Persisted article metadata tags for Meta review (see ``docs/API.md``).
+    #: Persisted article metadata tags for Meta review (see ``docs/api/processed-item-review.md``).
     article_meta: list[ProcessedItemArticleMetaRowOut] = Field(default_factory=list)
     #: Automatic Stylebook connections status from Backfield Output.
     connections: ProcessedItemConnectionsOut
@@ -2449,7 +2449,7 @@ def sync_run_processed_item_s3_output(
 
 
 def _serialize_run(session: Session, r: AgateRun) -> RunOut:
-    """Build ``RunOut`` for ``GET /runs/{id}`` and ``POST /runs/{id}/cancel`` responses."""
+    """Build the complete ``RunOut`` response for ``GET /runs/{id}``."""
     pid = _graph_project_id(session, r.graph_id)
     result = None
     if r.result_json:
@@ -2527,15 +2527,39 @@ def _serialize_run_status(session: Session, r: AgateRun) -> RunStatusOut:
     )
 
 
-@router.post("/{run_id}/cancel", response_model=RunOut)
+def _cancel_processed_items(session: Session, run_id: str, *, now: datetime) -> int:
+    """Fail pending/running items in one bounded update without hydrating payload columns."""
+    result = session.execute(
+        update(AgateProcessedItem)
+        .where(
+            AgateProcessedItem.run_id == run_id,
+            col(AgateProcessedItem.status).in_(("pending", "running")),
+        )
+        .values(
+            status="failed",
+            error_message=case(
+                (
+                    AgateProcessedItem.status == "running",
+                    _RUN_CANCELLED_MESSAGE + " (was running)",
+                ),
+                else_=_RUN_CANCELLED_MESSAGE,
+            ),
+            updated_at=now,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    return int(result.rowcount or 0)
+
+
+@router.post("/{run_id}/cancel", response_model=RunStatusOut)
 def cancel_run(
     run_id: str,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
-):
+) -> RunStatusOut:
     """Mark a pending or running run as stopped and fail in-flight batch items.
 
-    Workers respect the updated row so graph execution can exit before writing success.
+    Repeated cancellation returns the same compact terminal status.
     """
     r = session.get(AgateRun, run_id)
     if not r:
@@ -2544,6 +2568,14 @@ def cancel_run(
     if pid:
         require_project_access(session, auth, pid)
 
+    r = session.exec(
+        select(AgateRun)
+        .where(AgateRun.id == run_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).one()
+    if r.status == "failed" and r.error_message == _RUN_CANCELLED_MESSAGE:
+        return _serialize_run_status(session, r)
     if r.status not in ("pending", "running"):
         raise HTTPException(
             400,
@@ -2553,49 +2585,32 @@ def cancel_run(
             ),
         )
 
-    items = list(
-        session.exec(select(AgateProcessedItem).where(AgateProcessedItem.run_id == run_id)).all()
-    )
     now = datetime.now(UTC)
-    identity = api_identity("agate-api")
-    item_transitions: list[tuple[AgateProcessedItem, str]] = []
-    for item in items:
-        if item.status not in ("pending", "running"):
-            continue
-        previous = item.status
-        item.status = "failed"
-        item.error_message = (
-            _RUN_CANCELLED_MESSAGE
-            if previous == "pending"
-            else _RUN_CANCELLED_MESSAGE + " (was running)"
-        )
-        item.updated_at = now
-        session.add(item)
-        item_transitions.append((item, previous))
-
-    previous_run = r.status
+    previous_status = r.status
+    cancelled_items = _cancel_processed_items(session, run_id, now=now)
     r.status = "failed"
     r.error_message = _RUN_CANCELLED_MESSAGE
     r.updated_at = now
     session.add(r)
     session.commit()
-    for item, previous in item_transitions:
+    identity = api_identity("agate-api")
+    for _ in range(cancelled_items):
         emit_item_terminal(
-            previous_status=previous,
+            previous_status="running",
             new_status="failed",
             identity=identity,
-            started_at=item.started_at,
+            started_at=None,
             finished_at=now,
-            correlation={"run_id": run_id, "item_id": str(item.id)},
+            correlation={"run_id": run_id},
         )
     emit_run_terminal(
-        previous_status=previous_run,
+        previous_status=previous_status,
         new_status="failed",
         identity=identity,
         correlation={"run_id": run_id},
     )
     session.refresh(r)
-    return _serialize_run(session, r)
+    return _serialize_run_status(session, r)
 
 
 @router.get("/{run_id}/status", response_model=RunStatusOut)

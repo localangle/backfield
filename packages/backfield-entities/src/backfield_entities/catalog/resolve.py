@@ -1,20 +1,21 @@
-"""Resolve effective Stylebook from Agate project context.
+"""Resolve the effective Stylebook from project context.
 
-Catalog resolution (**Issue 7** bridge):
+Catalog resolution:
 
 1. **Explicit catalog id** — ``catalog_stylebook_id`` from caller; row must exist in project's org.
 2. **Slug** — non-empty ``stylebook_slug`` in that org (rename redirects apply).
-3. **Workspace** — ``workspace.stylebook_id`` (see ``resolve_stylebook_id_for_project_id``).
+3. **Organization default** — default Stylebook, then first Stylebook by id.
 
 **Surfaces**
 
-* Stylebook HTTP: slug query → workspace (**2 → 3**). No integer override on routes yet.
+* Stylebook HTTP: slug query → organization default (**2 → 3**).
 
 * Worker **DBOutput**: ``resolve_effective_stylebook_id`` delegates here; node ``stylebook_id``
   maps to ``catalog_stylebook_id`` (**1 → 3**).
 
-* Worker **GeocodeAgent** DB cache: catalog id **only** from node params when cache is on —
-  **no** workspace fallback there.
+* Worker **GeocodeAgent** DB cache: project-scoped fingerprint lookup works without a catalog id;
+  canonical lookup, adjudication, and materialization use only the node's catalog id, with no
+  organization-default fallback.
 
 If step **3** fails, ``LookupError`` is raised; DBOutput persistence may catch it and skip
 catalog-backed canonicalization.
@@ -56,7 +57,7 @@ def resolve_effective_stylebook_id_for_project(
 ) -> int:
     """Effective catalog row id for the project.
 
-    Precedence: ``catalog_stylebook_id`` → ``stylebook_slug`` → workspace catalog.
+    Precedence: ``catalog_stylebook_id`` → ``stylebook_slug`` → organization default.
 
     Raises ``ValueError`` when ``catalog_stylebook_id`` is invalid or wrong organization.
 

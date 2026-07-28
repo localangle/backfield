@@ -1,0 +1,13 @@
+# Gitleaks config for Backfield CI (`secret-scan` job).
+# Extends default rules; allowlist fake credentials in automated tests.
+
+title = "Backfield"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test doubles and fixture credentials are not real secrets"
+paths = [
+  '''(^|/)tests/''',
+]

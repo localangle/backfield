@@ -338,5 +338,5 @@ export function resolveEvidenceSpanInArticle(
     const first = multi.ranges[0]!
     return { kind: 'range', start: first.start, end: first.end }
   }
-  return { kind: 'none', reason: multi.reason }
+  return { kind: 'none', reason: multi.kind === 'none' ? multi.reason : 'no_evidence' }
 }

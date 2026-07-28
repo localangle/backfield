@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import stat
 import subprocess
@@ -11,7 +12,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_TOOLING_PACKAGES = ("backfield-cli", "backfield-db")
+# Packages on the `import backfield_cli.main` chain (editable .pth can go stale).
+_TOOLING_PACKAGES = ("backfield-cli", "backfield-auth", "backfield-db")
 
 # Keep in sync with scripts/backfield (cli_entrypoint_works).
 CLI_ENTRYPOINT_PROBE = "import backfield_cli.main"
@@ -82,12 +84,15 @@ def _repair_cli_import(repo_root: Path, *, quiet: bool) -> None:
             "Run `make bootstrap` from the repo root."
         )
 
+    # Prefer this checkout's .venv when a different VIRTUAL_ENV is active.
+    env = {key: value for key, value in os.environ.items() if key != "VIRTUAL_ENV"}
+
     base_cmd = ["uv", "sync", "--all-packages"]
     if quiet:
         base_cmd.append("--quiet")
 
     logger.info("Repairing workspace Python tooling (uv sync --all-packages)...")
-    subprocess.run(base_cmd, cwd=repo_root, check=True)
+    subprocess.run(base_cmd, cwd=repo_root, check=True, env=env)
 
     if cli_runtime_works(repo_root):
         return
@@ -96,13 +101,21 @@ def _repair_cli_import(repo_root: Path, *, quiet: bool) -> None:
         *base_cmd,
         *[arg for pkg in _TOOLING_PACKAGES for arg in ("--reinstall-package", pkg)],
     ]
-    logger.info("Reinstalling backfield-cli and backfield-db...")
-    subprocess.run(reinstall_cmd, cwd=repo_root, check=True)
+    logger.info("Reinstalling %s...", ", ".join(_TOOLING_PACKAGES))
+    subprocess.run(reinstall_cmd, cwd=repo_root, check=True, env=env)
+
+    if cli_runtime_works(repo_root):
+        return
+
+    logger.info("Editable installs still broken; reinstalling the full workspace...")
+    full_reinstall = [*base_cmd, "--reinstall"]
+    subprocess.run(full_reinstall, cwd=repo_root, check=True, env=env)
 
     if not cli_runtime_works(repo_root):
         raise RuntimeError(
             "Could not repair the Backfield CLI in .venv. "
-            "Run `make bootstrap` from the repo root and retry."
+            "Run `make bootstrap` (or `uv sync --all-packages --reinstall`) "
+            f"from {repo_root} and retry."
         )
 
 

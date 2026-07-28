@@ -68,6 +68,7 @@ def test_root_makefile_declares_ui_build_targets() -> None:
     makefile = _read(_REPO_ROOT / "Makefile")
     assert "agate-ui-build:" in makefile
     assert "stylebook-ui-build:" in makefile
+    assert "api-playground-build:" in makefile
     assert "ui-build:" in makefile
 
 

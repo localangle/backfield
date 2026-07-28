@@ -6,12 +6,16 @@ import argparse
 import logging
 import subprocess
 import sys
+from contextlib import nullcontext
 
-from backfield_cli.console import CONSOLE
+from rich.status import Status
+
+from backfield_cli.console import CONSOLE, DEFAULT_ADMIN_EMAIL, is_interactive, print_ready
 from backfield_cli.stack import (
     ComposeContext,
     compose_command_for_context,
     resolve_compose_context,
+    wait_for_api_readiness,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,14 +42,23 @@ def _add_compose_file_arg(parser: argparse.ArgumentParser) -> None:
 
 
 def _register_up(subparsers) -> None:
-    parser = subparsers.add_parser("up", help="Start the local stack")
+    parser = subparsers.add_parser("up", help="Start the local stack in the background")
     _add_compose_file_arg(parser)
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--detached",
         "-d",
+        dest="detached",
         action="store_true",
-        help="Run in the background (docker compose up -d)",
+        help="Run in the background (default)",
     )
+    mode.add_argument(
+        "--foreground",
+        dest="detached",
+        action="store_false",
+        help="Attach to Compose logs in the foreground",
+    )
+    parser.set_defaults(detached=True)
     parser.add_argument(
         "--no-build",
         action="store_true",
@@ -141,7 +154,27 @@ def _run_up(args: argparse.Namespace) -> int:
         compose_args.append("-d")
     if not args.no_build:
         compose_args.append("--build")
-    return _run_compose(context, *compose_args)
+    code = _run_compose(context, *compose_args)
+    if code != 0 or not args.detached:
+        return code
+
+    interactive = is_interactive()
+    readiness_context: Status | nullcontext
+    if interactive:
+        readiness_context = CONSOLE.status(
+            "[bold cyan]Waiting for APIs to become ready...[/]"
+        )
+    else:
+        readiness_context = nullcontext()
+    try:
+        with readiness_context:
+            wait_for_api_readiness(context.repo_root)
+    except TimeoutError as exc:
+        CONSOLE.print(f"[red]{exc}[/red]")
+        return 1
+
+    print_ready(DEFAULT_ADMIN_EMAIL)
+    return 0
 
 
 def _run_down(args: argparse.Namespace) -> int:

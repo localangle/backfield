@@ -107,31 +107,6 @@ def list_project_person_mentions(
         None,
         description="Filter by publication/outlet name (exact match)",
     ),
-    source: str | None = Query(
-        None,
-        description="Alias for external_source",
-        deprecated=True,
-    ),
-    section: str | None = Query(
-        None,
-        description="Include mentions in articles with this subject metadata category",
-    ),
-    meta_type: str | None = Query(
-        None,
-        description="Include mentions in articles with this metadata type",
-    ),
-    meta_category: str | None = Query(
-        None,
-        description="With meta_type, include mentions in articles with this metadata category",
-    ),
-    exclude_meta_type: str | None = Query(
-        None,
-        description="Exclude mentions in articles with a metadata row of this type",
-    ),
-    exclude_meta_category: str | None = Query(
-        None,
-        description="With exclude_meta_type, exclude mentions in articles with this category",
-    ),
     meta: list[str] = Query(default=[], description=META_PARAM_DESCRIPTION),
     pub_date_from: str | None = Query(None),
     pub_date_to: str | None = Query(None),
@@ -145,16 +120,15 @@ def list_project_person_mentions(
     """Return paginated mention evidence for a canonical person in this project."""
     stylebook_id, project_id = resolve_public_people_scope(session, project)
     parsed_id = parse_person_id(person_id)
-    outlet = external_source or source
     params = build_entity_mention_list_params(
         nature=nature,
         author=author,
-        external_source=outlet,
-        section=section,
-        meta_type=meta_type,
-        meta_category=meta_category,
-        exclude_meta_type=exclude_meta_type,
-        exclude_meta_category=exclude_meta_category,
+        external_source=external_source,
+        section=None,
+        meta_type=None,
+        meta_category=None,
+        exclude_meta_type=None,
+        exclude_meta_category=None,
         meta_clauses=parse_meta_clauses(meta),
         pub_date_from=parse_optional_date(pub_date_from, param_name="pub_date_from"),
         pub_date_to=parse_optional_date(pub_date_to, param_name="pub_date_to"),

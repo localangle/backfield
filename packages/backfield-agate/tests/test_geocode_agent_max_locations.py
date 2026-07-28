@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+from unittest.mock import patch
+
 from agate_nodes.geocode_agent.location_limits import (
     location_needs_review_entry,
     split_locations_for_geocoding,
@@ -53,7 +56,91 @@ def test_location_needs_review_entry_shape() -> None:
     entry = location_needs_review_entry(
         _location("Warren Township High School, Gurnee, IL"),
         "Skipped: exceeded maxLocations limit (200)",
+        "max_locations_exceeded",
     )
     assert entry["original_text"] == "Warren Township High School, Gurnee, IL"
     assert entry["location"]["full"] == "Warren Township High School, Gurnee, IL"
     assert "maxLocations" in entry["error"]
+    assert entry["reason_code"] == "max_locations_exceeded"
+
+
+def test_pipeline_accounts_for_country_unsupported_error_and_empty_results() -> None:
+    _warm_geocode_import_graph()
+    from agate_nodes.geocode_agent.node import (
+        GeocodeAgentInput,
+        GeocodeAgentParams,
+        run_geocode_agent_pipeline,
+    )
+    from agate_runtime.context import AgateEnvContext
+
+    components = {
+        "country": {"name": "Canada", "abbr": "CA"},
+        "state": {"name": "", "abbr": ""},
+        "postal_code": "",
+    }
+    rows = [
+        {
+            "original_text": "Canada",
+            "location": {"full": "Canada", "type": "country", "components": components},
+        },
+        {
+            "original_text": "Unsupported",
+            "location": {"full": "Unsupported", "type": "planet", "components": components},
+        },
+        {
+            "original_text": "Error Place",
+            "location": {"full": "Error Place", "type": "place", "components": components},
+        },
+        {
+            "original_text": "Empty Place",
+            "location": {"full": "Empty Place", "type": "place", "components": components},
+        },
+    ]
+
+    async def fake_geocode(**kwargs: object) -> dict[str, object]:
+        location_text = str(kwargs["location_text"])
+        if location_text == "Error Place":
+            raise RuntimeError("provider failed")
+        if location_text == "Empty Place":
+            return {"places": {"areas": {}, "points": [], "needs_review": []}}
+        return {
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [{"location": "Canada", "type": "country"}],
+                },
+                "points": [],
+                "needs_review": [],
+            }
+        }
+
+    async def run_pipeline() -> dict[str, object]:
+        with patch(
+            "agate_nodes.geocode_agent.node.run_advanced_geocoding_agent",
+            side_effect=fake_geocode,
+        ):
+            output = await run_geocode_agent_pipeline(
+                GeocodeAgentInput.model_validate({"locations": rows}),
+                GeocodeAgentParams(),
+                AgateEnvContext(),
+            )
+        return output.model_dump()
+
+    output = asyncio.run(run_pipeline())
+    places = output["places"]
+    assert places["areas"]["other"] == [{"location": "Canada", "type": "country"}]
+    reviews = places["needs_review"]
+    assert {entry["reason_code"] for entry in reviews} == {
+        "unsupported_location_type",
+        "geocoding_error",
+        "empty_geocoding_result",
+    }
+    by_full = {entry["location"]["full"]: entry for entry in reviews}
+    for full in ("Unsupported", "Error Place", "Empty Place"):
+        assert by_full[full]["original_text"] == full
+        assert by_full[full]["location"]["type"]
+        assert by_full[full]["location"]["components"] == components

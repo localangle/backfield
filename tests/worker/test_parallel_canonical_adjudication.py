@@ -269,7 +269,11 @@ def test_parallel_person_adjudication_matches_serial_outcomes(monkeypatch) -> No
     def _deterministic_reject(prompt: str, **_kwargs: Any) -> str:
         if "Candidates" not in prompt:
             return '{"variant_names": []}'
-        return '{"canonical_id": null, "confidence": 0.2, "rationale": "unsure"}'
+        return (
+            '{"decision": "no_match", "canonical_id": null, "confidence": 0.2, '
+            '"same_identity": false, "conflicting_identity_evidence": true, '
+            '"rationale": "unsure"}'
+        )
 
     def _outcome_signature(
         rows: list[tuple[str | None, str | None]],
@@ -305,7 +309,11 @@ def test_parallel_person_adjudication_faster_than_serial(monkeypatch) -> None:
         time.sleep(0.06)
         with lock:
             active -= 1
-        return '{"canonical_id": null, "confidence": 0.0, "rationale": "unsure"}'
+        return (
+            '{"decision": "no_match", "canonical_id": null, "confidence": 0.0, '
+            '"same_identity": false, "conflicting_identity_evidence": true, '
+            '"rationale": "unsure"}'
+        )
 
     monkeypatch.setattr(
         "worker.substrate.entities.person.adjudication.call_llm",

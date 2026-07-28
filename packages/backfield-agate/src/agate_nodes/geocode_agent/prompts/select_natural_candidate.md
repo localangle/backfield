@@ -1,4 +1,4 @@
-You are selecting the most relevant geocoding result for a natural place such as a lake, mountain, river, forest, or park.
+You are selecting the most relevant geocoding result for a natural geographic feature such as a lake, mountain, river, or forest — not a managed visit destination like a zoo, plaza, or named park venue.
 
 Given this search query: "{location}"{context_part}
 

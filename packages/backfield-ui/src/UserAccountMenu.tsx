@@ -6,27 +6,15 @@ import { cn } from "./cn"
 export interface UserAccountMenuProps {
   /** Shown in tooltip / aria; typically the user email. */
   userLabel?: string
-  isOrgAdmin: boolean
-  /** When omitted, the “Change password” item is hidden (e.g. Stylebook UI without that route). */
-  onChangePassword?: () => void
+  onChangePassword: () => void
   onLogout: () => void
-  /** When set and `isOrgAdmin`, shows “Manage users”. */
-  onManageUsers?: () => void
-  /** When set and `isOrgAdmin`, shows “Manage stylebooks”. */
-  onManageCatalogs?: () => void
-  /** When set and `isOrgAdmin`, shows “AI models”. */
-  onAiModelsSettings?: () => void
   className?: string
 }
 
 export function UserAccountMenu({
   userLabel,
-  isOrgAdmin,
   onChangePassword,
   onLogout,
-  onManageUsers,
-  onManageCatalogs,
-  onAiModelsSettings,
   className,
 }: UserAccountMenuProps) {
   return (
@@ -58,55 +46,16 @@ export function UserAccountMenu({
               {userLabel}
             </div>
           ) : null}
-          {onChangePassword ? (
-            <DropdownMenu.Item
-              className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
-              onSelect={(e: Event) => {
-                e.preventDefault()
-                onChangePassword()
-              }}
-            >
-              Change password
-            </DropdownMenu.Item>
-          ) : null}
-          {isOrgAdmin && onManageUsers ? (
-            <DropdownMenu.Item
-              className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
-              onSelect={(e: Event) => {
-                e.preventDefault()
-                onManageUsers()
-              }}
-            >
-              Manage users
-            </DropdownMenu.Item>
-          ) : null}
-          {isOrgAdmin && onManageCatalogs ? (
-            <DropdownMenu.Item
-              className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
-              onSelect={(e: Event) => {
-                e.preventDefault()
-                onManageCatalogs()
-              }}
-            >
-              Manage stylebooks
-            </DropdownMenu.Item>
-          ) : null}
-          {isOrgAdmin && onAiModelsSettings ? (
-            <DropdownMenu.Item
-              className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
-              onSelect={(e: Event) => {
-                e.preventDefault()
-                onAiModelsSettings()
-              }}
-            >
-              AI models
-            </DropdownMenu.Item>
-          ) : null}
-          {onChangePassword ||
-          (isOrgAdmin &&
-            (onManageUsers || onManageCatalogs || onAiModelsSettings)) ? (
-            <DropdownMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
-          ) : null}
+          <DropdownMenu.Item
+            className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+            onSelect={(e: Event) => {
+              e.preventDefault()
+              onChangePassword()
+            }}
+          >
+            Change password
+          </DropdownMenu.Item>
+          <DropdownMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
           <DropdownMenu.Item
             className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
             onSelect={(e: Event) => {

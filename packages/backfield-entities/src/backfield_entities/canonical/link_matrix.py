@@ -43,7 +43,7 @@ def strict_type_group(location_type: str | None) -> frozenset[str] | None:
 # Includes macro-region vs municipality (city/town↔region_city), region vs linear corridors,
 # linear vs municipality, POI vs neighborhood/macro-region, neighborhood vs macro-region,
 # POI/point vs municipality (city/town/village), and POI/point vs street_road
-# (see docs/ARCHITECTURE.md ingest policy).
+# (see docs/architecture/canonicalization.md).
 _DENY_AUTOLINK_TYPE_PAIRS: frozenset[frozenset[str]] = frozenset(
     {
         frozenset({"city", "county"}),

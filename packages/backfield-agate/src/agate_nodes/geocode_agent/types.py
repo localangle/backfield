@@ -31,6 +31,7 @@ class AgentState(TypedDict, total=False):
     geocoding_result: Optional[GeocodingResult]
     geocoding_model: Optional[Any]  # The model instance used for geocoding
     geocoding_failure_reason: Optional[str]  # Reason for geocoding failure (e.g., "not addressable", "non-point geometry")
+    country_terminal_identity: Optional[dict[str, str | None]]
     pelias_api_key: Optional[str]
     geocodio_api_key: Optional[str]
     openai_api_key: Optional[str]

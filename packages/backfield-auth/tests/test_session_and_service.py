@@ -25,6 +25,7 @@ def test_session_token_roundtrip(monkeypatch):
     import backfield_auth.session_tokens as s
 
     importlib.reload(s)
+    s._session_serializer.cache_clear()
     tok = s.create_session_token(
         user_id=1,
         email="alice@example.com",

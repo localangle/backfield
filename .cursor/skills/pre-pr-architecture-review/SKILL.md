@@ -20,7 +20,7 @@ Check that the change still fits the repo's intended shape: package boundaries, 
 
 ## How to run the review
 
-1. Read the relevant source-of-truth docs first (`AGENTS.md`, `docs/ARCHITECTURE.md`, plus API/DB/FRONTEND/OPERATIONS as needed).
+1. Read the relevant source-of-truth docs first (`AGENTS.md`, `docs/README.md`, and the focused architecture, API, development, or operations pages for the affected layers).
 2. Inspect the diff and map it to affected layers.
 3. Compare to existing repo conventions.
 4. Identify architectural mismatches, missing doc updates, hidden coupling, or misplaced ownership.

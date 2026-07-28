@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import re
+
 from backfield_entities.text.match_normalize import (
     alias_lookup_keys,
     match_fold_key,
     normalize_match_text,
 )
+
+# Strip punctuation so initials like ``C.J.`` fold to the same key as ``CJ``.
+_PERSON_KEY_PUNCT_RE = re.compile(r"[^a-z0-9\s]+")
+_PERSON_KEY_WS_RE = re.compile(r"\s+")
 
 PERSON_NATURE_VALUES: tuple[str, ...] = (
     "subject",
@@ -63,8 +69,16 @@ def normalize_person_text(value: str | None) -> str:
 
 
 def person_match_key(value: str | None) -> str:
-    """Accent-insensitive key for person-name equality (display text unchanged elsewhere)."""
-    return match_fold_key(value)
+    """Accent- and punctuation-insensitive key for person-name equality.
+
+    Display text is unchanged elsewhere. Periods and other non-alphanumerics are
+    removed so ``C.J. Stroud`` and ``CJ Stroud`` share a key.
+    """
+    folded = match_fold_key(value)
+    if not folded:
+        return ""
+    stripped = _PERSON_KEY_PUNCT_RE.sub("", folded)
+    return _PERSON_KEY_WS_RE.sub(" ", stripped).strip()
 
 
 def person_names_match(a: str | None, b: str | None) -> bool:
@@ -91,8 +105,16 @@ def normalize_person_type(value: str | None) -> str | None:
 
 
 def person_alias_lookup_keys(value: str | None) -> tuple[str, ...]:
-    """Stored ``normalized_alias`` variants for recall and exact alias lookup."""
-    return alias_lookup_keys(value)
+    """Stored ``normalized_alias`` variants for recall and exact alias lookup.
+
+    Includes literal + accent-folded forms plus the punctuation-stripped
+    ``person_match_key`` so dotted initials hit both stored shapes.
+    """
+    keys = list(alias_lookup_keys(value))
+    folded = person_match_key(value)
+    if folded and folded not in keys:
+        keys.append(folded)
+    return tuple(keys)
 
 
 def normalize_person_sort_key(value: str | None) -> str | None:

@@ -20,7 +20,10 @@ from sqlmodel import Session, col, select
 
 from worker.substrate.common import _WS_RE, _utcnow
 from worker.substrate.entities.location.span import _find_mention_span
-from worker.substrate.entities.location.upsert import _display_name_for_place_entry
+from worker.substrate.entities.location.upsert import (
+    _display_name_for_place_entry,
+    _raw_entry_id_for_source_details,
+)
 
 # Primary editorial role (PlaceExtract `nature`). Extras: `nature_secondary_tags` in extraction JSON
 # → `SubstrateLocationMention.nature_secondary_tags_json`.
@@ -219,6 +222,14 @@ def _upsert_mention_and_occurrence(
     if role_str is None:
         role_str = description_str
 
+    raw_entry_id = _raw_entry_id_for_source_details(
+        entry,
+        display_name=_display_name_for_place_entry(entry),
+    )
+    mention_source_details: dict[str, Any] = {"run_id": run_id, "graph_id": graph_id}
+    if raw_entry_id is not None and str(raw_entry_id).strip():
+        mention_source_details["raw_entry_id"] = str(raw_entry_id).strip()
+
     nature_str = _normalize_nature_primary(entry)
     secondary_tags = _parse_nature_secondary_tags(entry)
 
@@ -248,7 +259,7 @@ def _upsert_mention_and_occurrence(
             needs_review=bool(needs_review),
             review_data_json=review_data,
             source_kind="agate_geocode",
-            source_details_json={"run_id": run_id, "graph_id": graph_id},
+            source_details_json=mention_source_details,
             edited=False,
         )
         session.add(mention)
@@ -257,6 +268,10 @@ def _upsert_mention_and_occurrence(
         if preserve_editor_changes and not bool(mention.deleted) and (
             bool(mention.edited) or bool(mention.added)
         ):
+            mention.source_details_json = mention_source_details
+            mention.updated_at = now
+            session.add(mention)
+            session.flush()
             return
         mention.deleted = False
         mention.role_in_story = role_str or mention.role_in_story
@@ -265,7 +280,7 @@ def _upsert_mention_and_occurrence(
         mention.needs_review = bool(needs_review)
         mention.review_data_json = review_data or mention.review_data_json
         mention.source_kind = "agate_geocode"
-        mention.source_details_json = {"run_id": run_id, "graph_id": graph_id}
+        mention.source_details_json = mention_source_details
         mention.updated_at = now
         session.add(mention)
         session.flush()

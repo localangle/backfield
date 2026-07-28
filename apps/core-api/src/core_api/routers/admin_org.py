@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 
+from backfield_auth.identity import CreateUserCredentials, OrgRole
 from backfield_db import (
     BackfieldOrganization,
     BackfieldOrganizationMembership,
@@ -17,7 +18,7 @@ from backfield_db import (
 )
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
 from core_api.authz import require_org_admin
@@ -51,11 +52,8 @@ def _allocate_workspace_slug(session: Session, org_id: int, name: str) -> str:
         n += 1
 
 
-class UserCreateBody(BaseModel):
-    email: str
-    password: str
-    display_name: str | None = None
-    role: str = "member"
+class UserCreateBody(CreateUserCredentials):
+    pass
 
 
 class ProjectMembershipOut(BaseModel):
@@ -88,8 +86,8 @@ class ProjectSummaryOut(BaseModel):
 
 
 class UserPatchBody(BaseModel):
-    display_name: str | None = None
-    role: str | None = None
+    display_name: str | None = Field(default=None, max_length=200)
+    role: OrgRole | None = None
 
 
 class MembershipRow(BaseModel):
@@ -545,7 +543,7 @@ def create_user(
     auth: dict = Depends(get_auth),
 ):
     require_org_admin(session, auth, org_id)
-    email = body.email.strip().lower()
+    email = body.email
     existing = session.exec(select(BackfieldUser).where(BackfieldUser.email == email)).first()
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -560,7 +558,7 @@ def create_user(
         BackfieldOrganizationMembership(
             user_id=int(user.id),
             organization_id=org_id,
-            role=body.role if body.role in ("org_admin", "member") else "member",
+            role=body.role,
         )
     )
     session.commit()
@@ -613,7 +611,7 @@ def patch_user(
         )
 
     if body.role is not None:
-        new_role = body.role if body.role in ("org_admin", "member") else mem.role
+        new_role = body.role
         if str(mem.role) == "org_admin" and new_role == "member":
             if _is_only_active_org_admin(session, org_id, user_id):
                 raise HTTPException(

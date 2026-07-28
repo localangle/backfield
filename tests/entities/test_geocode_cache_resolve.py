@@ -811,3 +811,100 @@ def test_address_tier1_blocks_city_canonical_even_with_exact_alias() -> None:
             components={"address": "500 N. Franklin St.", "state": {"abbr": "IL"}},
         )
     assert hit is None
+
+
+def test_tier1_ignores_substrate_ingest_alias_poison() -> None:
+    """Machine-written aliases must not produce tier-1 exact geocode hits."""
+    gj = {
+        "type": "Polygon",
+        "coordinates": [
+            [[-87.7, 41.9], [-87.65, 41.9], [-87.65, 41.93], [-87.7, 41.93], [-87.7, 41.9]]
+        ],
+    }
+    engine = _engine()
+    with Session(engine) as session:
+        pid, sb_id, _ = _seed_org_sb_project(session)
+        bucktown = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Bucktown, Chicago, IL",
+            slug="bucktown-chicago-il",
+            location_type="neighborhood",
+            status="active",
+            geometry_json=gj,
+            geometry_type="Polygon",
+        )
+        session.add(bucktown)
+        session.commit()
+        session.refresh(bucktown)
+        cid = str(bucktown.id)
+        poisoned = normalize_substrate_cache_query("Uptown, Chicago, IL")
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=cid,
+                alias_text="Uptown, Chicago, IL",
+                normalized_alias=poisoned,
+                provenance="substrate_ingest",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        hit = try_resolve_geocode_cache(
+            session,
+            project_id=pid,
+            stylebook_id=sb_id,
+            location_text="Uptown, Chicago, IL",
+            location_type="neighborhood",
+            components={"neighborhood": "Uptown", "city": "Chicago"},
+        )
+    assert hit is None
+
+
+def test_tier1_allows_editorial_alias_for_neighborhood() -> None:
+    gj = {
+        "type": "Polygon",
+        "coordinates": [
+            [[-87.7, 41.9], [-87.65, 41.9], [-87.65, 41.93], [-87.7, 41.93], [-87.7, 41.9]]
+        ],
+    }
+    engine = _engine()
+    with Session(engine) as session:
+        pid, sb_id, _ = _seed_org_sb_project(session)
+        uptown = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Uptown, Chicago, IL",
+            slug="uptown-chicago-il",
+            location_type="neighborhood",
+            status="active",
+            geometry_json=gj,
+            geometry_type="Polygon",
+            formatted_address="Uptown, Chicago, IL",
+        )
+        session.add(uptown)
+        session.commit()
+        session.refresh(uptown)
+        cid = str(uptown.id)
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=cid,
+                alias_text="Uptown, Chicago, IL",
+                normalized_alias=normalize_substrate_cache_query("Uptown, Chicago, IL"),
+                provenance="stylebook_ui_accept",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        hit = try_resolve_geocode_cache(
+            session,
+            project_id=pid,
+            stylebook_id=sb_id,
+            location_text="Uptown, Chicago, IL",
+            location_type="neighborhood",
+            components={"neighborhood": "Uptown", "city": "Chicago"},
+        )
+    assert hit is not None
+    assert hit.get("id") == cid
+    conf = hit.get("confidence")
+    assert isinstance(conf, dict)
+    assert conf.get("canonical_id") == cid

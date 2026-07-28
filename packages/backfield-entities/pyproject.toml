@@ -1,8 +1,12 @@
 [project]
 name = "backfield-entities"
 version = "0.1.0"
-description = "Entity domain helpers (catalog, canonical matching, ingest bridge)"
+description = "Entity domain helpers (catalog, canonical matching, ingest bridge; monorepo-internal)"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+classifiers = [
+    "Private :: Do Not Upload",
+]
 dependencies = [
     "h3>=4.3.1",
     "number-parser>=0.3.2,<0.4",
@@ -10,6 +14,10 @@ dependencies = [
     "sqlmodel>=0.0.16",
     "backfield-db",
 ]
+
+[project.urls]
+Homepage = "https://github.com/localangle/backfield"
+Repository = "https://github.com/localangle/backfield"
 
 [build-system]
 requires = ["hatchling"]

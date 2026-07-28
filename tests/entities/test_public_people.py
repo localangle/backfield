@@ -306,13 +306,14 @@ def test_list_public_entity_connections_for_person() -> None:
         )
         session.commit()
 
-        connections = list_public_entity_connections(
+        connections, total = list_public_entity_connections(
             session,
             project_id=project_id,
             stylebook_id=stylebook_id,
             entity_type="person",
             entity_id=mayor_id,
         )
+        assert total == 1
         assert len(connections) == 1
         assert connections[0].nature == "works_at"
         assert connections[0].to_entity_id == location_id

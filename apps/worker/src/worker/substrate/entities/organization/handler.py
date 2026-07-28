@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from backfield_db import SubstrateOrganization, SubstrateOrganizationMention
-from backfield_entities.canonical.link import CANONICAL_LINK_UNLINKED
+from backfield_entities.canonical.link import CANONICAL_LINK_PENDING, CANONICAL_LINK_UNLINKED
+from backfield_entities.canonical.link_commit_gate import sync_link_commit_blocked
 from backfield_entities.canonical.plan_types import CanonicalPersistPlan
 from backfield_entities.entities.organization.persist import (
     apply_canonical_persist_plan,
@@ -183,7 +184,7 @@ class OrganizationPersistHandler:
             )
 
         policy = ctx.policy
-        if not organizations:
+        if not organizations and policy != "replace":
             return HandlerPersistResult(
                 summary=DomainReconciliationSummary(policy=policy, domain="organizations"),
                 retired_mentions=0,
@@ -240,24 +241,45 @@ class OrganizationPersistHandler:
                 ctx.stylebook_id is not None
                 and organization.stylebook_organization_canonical_id is not None
             ):
-                refresh_aliases_for_linked_organization(
+                veto = sync_link_commit_blocked(
                     session,
+                    entity_type="organization",
+                    substrate_row=organization,
+                    canonical_id=str(organization.stylebook_organization_canonical_id),
                     stylebook_id=ctx.stylebook_id,
-                    organization=organization,
-                    provenance="substrate_ingest",
                 )
-                _upsert_mention_and_occurrence(
-                    session,
-                    article_id=int(ctx.article_id),
-                    organization_id=int(organization.id),  # type: ignore[arg-type]
-                    article_text=ctx.article_text,
-                    entry=entry,
-                    run_id=ctx.run_id,
-                    graph_id=ctx.graph_id,
-                    bucket=bucket,
-                    preserve_editor_changes=policy == "smart_merge",
+                if veto is None:
+                    refresh_aliases_for_linked_organization(
+                        session,
+                        stylebook_id=ctx.stylebook_id,
+                        organization=organization,
+                        provenance="substrate_ingest",
+                    )
+                    _upsert_mention_and_occurrence(
+                        session,
+                        article_id=int(ctx.article_id),
+                        organization_id=int(organization.id),  # type: ignore[arg-type]
+                        article_text=ctx.article_text,
+                        entry=entry,
+                        run_id=ctx.run_id,
+                        graph_id=ctx.graph_id,
+                        bucket=bucket,
+                        preserve_editor_changes=policy == "smart_merge",
+                    )
+                    continue
+                logger.warning(
+                    "Linked organization id=%s fails commit gate (%s); "
+                    "clearing FK and re-planning",
+                    organization.id,
+                    veto,
                 )
-            elif ctx.stylebook_id is not None:
+                organization.stylebook_organization_canonical_id = None
+                organization.canonical_link_status = CANONICAL_LINK_PENDING
+                session.add(organization)
+            if (
+                ctx.stylebook_id is not None
+                and organization.stylebook_organization_canonical_id is None
+            ):
                 plan = decide_organization_canonical_persist_plan(
                     session,
                     stylebook_id=ctx.stylebook_id,
@@ -457,6 +479,8 @@ class OrganizationPersistHandler:
                     item.plan,
                     prepared=item.prepared,
                     llm_data=llm_data,
+                    session=session,
+                    stylebook_id=int(ctx.stylebook_id),
                 )
                 _apply_organization_plan_and_mention(
                     session,
@@ -469,12 +493,18 @@ class OrganizationPersistHandler:
 
         retired_mentions = 0
         substrates_disposed = 0
-        if policy == "smart_merge" and touched_organization_ids:
-            retired_mentions, retired_organization_ids = retire_stale_article_mentions_for_rerun(
-                session,
-                article_id=int(ctx.article_id),
-                touched_organization_ids=touched_organization_ids,
+        should_retire_stale = policy == "replace" or (
+            policy == "smart_merge" and bool(touched_organization_ids)
+        )
+        if should_retire_stale:
+            retired_mentions, retired_organization_ids, retirement_preserved = (
+                retire_stale_article_mentions_for_rerun(
+                    session,
+                    article_id=int(ctx.article_id),
+                    touched_organization_ids=touched_organization_ids,
+                )
             )
+            preserved += retirement_preserved
             if retired_organization_ids:
                 substrates_disposed = dispose_orphan_substrates_after_retired_mentions(
                     session,

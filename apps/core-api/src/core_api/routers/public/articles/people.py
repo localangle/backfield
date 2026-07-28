@@ -27,6 +27,10 @@ def list_project_article_people(
         None,
         description="Filter to mentions with this editorial nature (e.g. subject, official)",
     ),
+    quote: bool | None = Query(
+        None,
+        description="When true, return only mentions with quoted evidence",
+    ),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> PaginatedResponse[PublicArticlePersonOut]:
@@ -36,6 +40,7 @@ def list_project_article_people(
         session,
         article_id=article_id,
         nature=nature,
+        quotes_only=quote is True,
         limit=limit,
         offset=offset,
     )

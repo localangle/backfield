@@ -2,8 +2,10 @@ import logging
 from typing import Optional, Dict, Any
 from agate_utils.geocoding.geocoding_types import GeocodingResult
 from agate_utils.geocoding.pelias import geocode_search as pelias_search
-from agate_utils.geocoding.geocodio import geocode_search as geocodio_search
-from agate_utils.geocoding.nominatim import geocode_address
+from agate_utils.geocoding.geocodio import (
+    geocode_search as geocodio_search,
+    is_acceptable_geocodio_accuracy,
+)
 
 from ..base import Location
 
@@ -52,20 +54,22 @@ class Point(Location):
         if geocodio_api_key:
             try:
                 result = geocodio_search(query=prep_data["text"], api_key=geocodio_api_key)
-                if result and self._is_good_point_result(result):
+                conf = (
+                    result.result.confidence
+                    if result and result.result is not None
+                    else None
+                )
+                if (
+                    result
+                    and self._is_good_point_result(result)
+                    and is_acceptable_geocodio_accuracy(
+                        conf if isinstance(conf, dict) else None
+                    )
+                ):
                     logger.info("Geocodio success for %s", self.name)
                     return result
             except Exception as exc:
                 logger.warning("Geocodio failed for %s: %s", self.name, exc)
-
-        # Fall back to Nominatim
-        try:
-            result = geocode_address(address=prep_data["text"], user_agent="agate/1.0")
-            if result and self._is_good_point_result(result):
-                logger.info("Nominatim success for %s", self.name)
-                return result
-        except Exception as exc:
-            logger.warning("Nominatim failed for %s: %s", self.name, exc)
 
         logger.warning("All geocoding services failed for %s", self.name)
         return None

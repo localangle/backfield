@@ -8,9 +8,8 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError
-
 from agate_utils.llm import call_llm
+from pydantic import BaseModel, Field, ValidationError
 
 from ..llm_auth import has_llm_auth
 from ..types import AgentState
@@ -37,6 +36,7 @@ _STRUCTURAL_LOCATION_TYPES: frozenset[str] = frozenset(
         "span",
         "intersection_road",
         "intersection_highway",
+        "country",
     }
 )
 
@@ -73,7 +73,15 @@ def _router_audit_log(payload: dict) -> None:
 
 async def route_strategy_node(state: AgentState) -> AgentState:
     """After ``resolve_cache_or_miss``: LLM-picks strategy, or skip on cache hit."""
-    if state.get("geocoding_result") is not None:
+    # Unresolved countries, or countries that already have geometry / skipped external.
+    country_dispatch_complete = state.get("geocoding_failure_reason") == "country_identity_unresolved" or (
+        state.get("country_terminal_identity") is not None
+        and (
+            state.get("geocoding_result") is not None
+            or bool(state.get("skip_external_geocode"))
+        )
+    )
+    if state.get("geocoding_result") is not None or country_dispatch_complete:
         state["router_audit"] = None
         state.pop("allow_web_search", None)
         return state

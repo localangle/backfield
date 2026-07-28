@@ -30,6 +30,10 @@ def list_project_article_organizations(
         None,
         description="Filter to mentions with this editorial nature (e.g. actor, subject)",
     ),
+    quote: bool | None = Query(
+        None,
+        description="When true, return only mentions with quoted evidence",
+    ),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> PaginatedResponse[PublicArticleOrganizationOut]:
@@ -39,6 +43,7 @@ def list_project_article_organizations(
         session,
         article_id=article_id,
         nature=nature,
+        quotes_only=quote is True,
         limit=limit,
         offset=offset,
     )

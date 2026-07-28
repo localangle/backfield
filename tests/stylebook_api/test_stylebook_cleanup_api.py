@@ -302,6 +302,53 @@ def test_list_cleanup_checks_single_check_id(cleanup_client: tuple[TestClient, E
     assert body["total_open"] == 1
 
 
+def test_list_cleanup_checks_preserves_last_succeeded_while_active(
+    cleanup_client: tuple[TestClient, Engine],
+) -> None:
+    """Active queued/running runs must not erase the last succeeded ran_at/count."""
+    from datetime import UTC, datetime, timedelta
+
+    from backfield_entities.quality.check_runs import cleanup_algorithm_version
+
+    client, engine = cleanup_client
+    _run_cleanup_check(client, "duplicate-locations")
+    r = client.get("/v1/stylebooks/default/cleanup/checks?check_id=duplicate-locations")
+    assert r.status_code == 200
+    succeeded = r.json()["checks"][0]
+    assert succeeded["status"] == "succeeded"
+    assert succeeded["count"] == 2
+    assert succeeded["completed_at"] is not None
+    assert succeeded["ran_at"] == succeeded["completed_at"]
+
+    with Session(engine) as session:
+        prior = session.get(StylebookCleanupCheckRun, succeeded["run_id"])
+        assert prior is not None
+        session.add(
+            StylebookCleanupCheckRun(
+                stylebook_id=prior.stylebook_id,
+                check_id=prior.check_id,
+                status="running",
+                scope_hash=prior.scope_hash,
+                scope_json=prior.scope_json,
+                algorithm_version=cleanup_algorithm_version(prior.check_id),
+                candidate_count=0,
+                started_at=datetime.now(UTC),
+                created_at=datetime.now(UTC) + timedelta(seconds=1),
+                updated_at=datetime.now(UTC) + timedelta(seconds=1),
+            )
+        )
+        session.commit()
+
+    r = client.get("/v1/stylebooks/default/cleanup/checks?check_id=duplicate-locations")
+    assert r.status_code == 200
+    active = r.json()["checks"][0]
+    assert active["status"] == "running"
+    assert active["count"] == succeeded["count"]
+    assert active["completed_at"] == succeeded["completed_at"]
+    assert active["ran_at"] == succeeded["ran_at"]
+    assert active["run_id"] != succeeded["run_id"]
+
+
 def test_start_cleanup_check_run_is_idempotent_while_active(
     cleanup_client: tuple[TestClient, Engine],
     monkeypatch: pytest.MonkeyPatch,

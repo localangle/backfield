@@ -4,7 +4,7 @@ import { getNodeOutputById } from '@backfield/ui/nodeOutputs'
 
 interface GatherPanelProps {
   node: { id: string; data?: Record<string, unknown> }
-  currentRun?: { node_outputs?: Record<string, unknown> }
+  currentRun?: { node_outputs?: Record<string, unknown> | null } | null
 }
 
 export default function GatherPanel({ node, currentRun }: GatherPanelProps) {

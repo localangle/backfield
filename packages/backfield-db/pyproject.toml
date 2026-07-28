@@ -1,8 +1,12 @@
 [project]
 name = "backfield-db"
 version = "0.1.0"
-description = "Backfield SQLModel models and Alembic migrations"
+description = "Backfield SQLModel models and Alembic migrations (monorepo-internal)"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+classifiers = [
+    "Private :: Do Not Upload",
+]
 dependencies = [
     "sqlmodel>=0.0.14",
     "sqlalchemy>=2.0.0",
@@ -14,6 +18,10 @@ dependencies = [
     "passlib[bcrypt]>=1.7.4",
     "bcrypt>=4.0.0,<5",
 ]
+
+[project.urls]
+Homepage = "https://github.com/localangle/backfield"
+Repository = "https://github.com/localangle/backfield"
 
 [build-system]
 requires = ["hatchling"]

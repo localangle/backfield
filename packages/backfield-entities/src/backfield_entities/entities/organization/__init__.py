@@ -41,6 +41,7 @@ from backfield_entities.entities.organization.recall import (
     retrieve_organization_canonical_candidates,
 )
 from backfield_entities.entities.organization.types import (
+    GENERATED_ACRONYM_PROVENANCE,
     ORGANIZATION_NATURE_VALUES,
     ORGANIZATION_TYPE_VALUES,
     normalize_organization_text,
@@ -56,6 +57,7 @@ from backfield_entities.entities.organization.types import (
 
 __all__ = [
     "AMBIGUOUS_ORGANIZATION_CANONICAL_MATCH",
+    "GENERATED_ACRONYM_PROVENANCE",
     "ORGANIZATION_MATERIALIZE_NEW_CODE",
     "ORGANIZATION_CATALOG_EDITORIAL_PROVENANCES",
     "ORGANIZATION_NATURE_VALUES",

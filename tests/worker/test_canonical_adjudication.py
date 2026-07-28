@@ -25,6 +25,22 @@ from worker.substrate.entities.person.adjudication import (
 )
 
 
+def _adj_json_link(canonical_id: str, confidence: float, rationale: str) -> str:
+    return (
+        f'{{"decision": "link_existing", "canonical_id": "{canonical_id}", '
+        f'"confidence": {confidence}, "same_identity": true, '
+        f'"conflicting_identity_evidence": false, "rationale": "{rationale}"}}'
+    )
+
+
+def _adj_json_reject(confidence: float, rationale: str, *, decision: str = "no_match") -> str:
+    return (
+        f'{{"decision": "{decision}", "canonical_id": null, '
+        f'"confidence": {confidence}, "same_identity": false, '
+        f'"conflicting_identity_evidence": true, "rationale": "{rationale}"}}'
+    )
+
+
 def _bootstrap(session: Session) -> tuple[int, int]:
     org = BackfieldOrganization(name="O", slug="o-adj")
     session.add(org)
@@ -109,8 +125,7 @@ def test_adjudicate_ambiguous_upgrades_when_llm_confident(monkeypatch) -> None:
 
         def _fake_llm(*_a, **_k) -> str:
             return (
-                f'{{"canonical_id": "{id1}", "confidence": 0.92, '
-                f'"rationale": "Name matches Alpha."}}'
+                _adj_json_link(id1, 0.92, "Name matches Alpha.")
             )
 
         monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
@@ -177,8 +192,7 @@ def test_adjudicate_ambiguous_materialize_when_llm_rejects_link(monkeypatch) -> 
 
         def _fake_llm(*_a, **_k) -> str:
             return (
-                '{"canonical_id": null, "confidence": 0.15, '
-                '"rationale": "AR vs TX; no fit."}'
+                _adj_json_reject(0.15, "AR vs TX; no fit.")
             )
 
         monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
@@ -242,8 +256,7 @@ def test_adjudicate_ambiguous_person_materialize_when_llm_rejects_link(monkeypat
 
         def _fake_llm(*_a, **_k) -> str:
             return (
-                '{"canonical_id": null, "confidence": 0.33, '
-                '"rationale": "None match Greg Abbott, Governor of Texas."}'
+                _adj_json_reject(0.33, "None match Greg Abbott, Governor of Texas.")
             )
 
         monkeypatch.setattr(
@@ -313,8 +326,7 @@ def test_adjudicate_ambiguous_person_athlete_materializes_on_llm_reject(monkeypa
 
         def _fake_llm(*_a, **_k) -> str:
             return (
-                '{"canonical_id": null, "confidence": 0.4, '
-                '"rationale": "Different team but likely same athlete."}'
+                _adj_json_reject(0.4, "Different team but likely same athlete.")
             )
 
         monkeypatch.setattr(
@@ -436,7 +448,7 @@ def test_adjudicate_ambiguous_person_stays_deferred_when_flag_review(monkeypatch
         )
 
         def _fake_llm(*_a, **_k) -> str:
-            return '{"canonical_id": null, "confidence": 0.1, "rationale": "No match."}'
+            return _adj_json_reject(0.1, "No match.")
 
         monkeypatch.setattr(
             "worker.substrate.entities.person.adjudication.call_llm",
@@ -499,8 +511,7 @@ def test_adjudicate_rejects_link_when_confidence_below_floor(monkeypatch) -> Non
 
         def _fake_llm(*_a, **_k) -> str:
             return (
-                f'{{"canonical_id": "{id1}", "confidence": 0.85, '
-                f'"rationale": "Probably the same POI."}}'
+                _adj_json_link(id1, 0.85, "Probably the same POI.")
             )
 
         monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
@@ -563,8 +574,7 @@ def test_adjudicate_accepts_link_at_exact_min_confidence(monkeypatch) -> None:
 
         def _fake_llm(*_a, **_k) -> str:
             return (
-                f'{{"canonical_id": "{id1}", "confidence": {ADJUDICATION_LINK_MIN_CONFIDENCE}, '
-                f'"rationale": "Exact label match."}}'
+                _adj_json_link(id1, ADJUDICATION_LINK_MIN_CONFIDENCE, "Exact label match.")
             )
 
         monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
@@ -630,8 +640,7 @@ def test_adjudicate_rejects_llm_choice_when_link_pair_denied(monkeypatch) -> Non
 
         def _fake_llm(*_a, **_k) -> str:
             return (
-                f'{{"canonical_id": "{cid}", "confidence": 0.95, '
-                f'"rationale": "Name overlap."}}'
+                _adj_json_link(cid, 0.95, "Name overlap.")
             )
 
         monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
@@ -701,8 +710,7 @@ def test_adjudicate_rejects_llm_choice_when_content_sanity_blocks(monkeypatch) -
 
         def _fake_llm(*_a, **_k) -> str:
             return (
-                f'{{"canonical_id": "{park_id}", "confidence": 0.92, '
-                f'"rationale": "Substrate mentions Jackson Park."}}'
+                _adj_json_link(park_id, 0.92, "Substrate mentions Jackson Park.")
             )
 
         monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
@@ -779,8 +787,7 @@ def test_adjudicate_political_district_fuzzy_plan_runs_llm(monkeypatch) -> None:
             assert "District identity key" in prompt
             assert "US-WARD-IL-8" in prompt
             return (
-                f'{{"canonical_id": "{id1}", "confidence": 0.95, '
-                f'"rationale": "Same ward number and city."}}'
+                _adj_json_link(id1, 0.95, "Same ward number and city.")
             )
 
         monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
@@ -852,8 +859,7 @@ def test_adjudicate_political_district_coerces_when_district_key_mismatch(monkey
 
         def _fake_llm(*_a, **_k) -> str:
             return (
-                f'{{"canonical_id": "{id1}", "confidence": 0.95, '
-                f'"rationale": "LLM wrongly picks nearby ward."}}'
+                _adj_json_link(id1, 0.95, "LLM wrongly picks nearby ward.")
             )
 
         monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
@@ -926,8 +932,7 @@ def test_adjudicate_political_district_coerces_when_district_kind_conflicts(monk
 
         def _fake_llm(*_a, **_k) -> str:
             return (
-                f'{{"canonical_id": "{id1}", "confidence": 0.95, '
-                f'"rationale": "Name matches Congressional District 13."}}'
+                _adj_json_link(id1, 0.95, "Name matches Congressional District 13.")
             )
 
         monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)

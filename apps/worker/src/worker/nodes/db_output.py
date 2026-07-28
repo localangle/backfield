@@ -219,9 +219,9 @@ def _persist_db_output_in_session(
     elif retired_mentions or substrates_disposed:
         parts: list[str] = []
         if retired_mentions:
-            parts.append(f"retired {retired_mentions} superseded place link(s)")
+            parts.append(f"retired {retired_mentions} superseded entity association(s)")
         if substrates_disposed:
-            parts.append(f"removed {substrates_disposed} orphan saved place(s)")
+            parts.append(f"removed {substrates_disposed} orphan saved entity record(s)")
         message += f"; {', '.join(parts)} from a prior ingest of this story"
 
     return {

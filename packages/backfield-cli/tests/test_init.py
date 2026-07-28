@@ -87,7 +87,7 @@ def test_run_init_non_interactive_orchestration(monkeypatch, tmp_path) -> None:
     config = InitConfig.model_validate(
         {
             "admin_email": "admin@example.com",
-            "admin_password": "pw-test",
+            "admin_password": "pw-test-99",
             "org_name": "Acme News",
             "stylebook_name": "Acme Stylebook",
         }
@@ -122,7 +122,7 @@ def test_run_init_skip_stack(monkeypatch, tmp_path) -> None:
     config = InitConfig.model_validate(
         {
             "admin_email": "admin@example.com",
-            "admin_password": "pw-test",
+            "admin_password": "pw-test-99",
             "skip_stack": True,
         }
     )
@@ -139,7 +139,7 @@ def test_backfield_init_cli_non_interactive(monkeypatch, tmp_path, capsys) -> No
         json.dumps(
             {
                 "admin_email": "admin@example.com",
-                "admin_password": "pw-test",
+                "admin_password": "pw-test-99",
                 "skip_stack": True,
             }
         ),
@@ -192,7 +192,7 @@ def test_run_init_does_not_open_browser_when_not_interactive(monkeypatch, tmp_pa
     config = InitConfig.model_validate(
         {
             "admin_email": "admin@example.com",
-            "admin_password": "pw-test",
+            "admin_password": "pw-test-99",
             "skip_stack": True,
         }
     )
@@ -215,7 +215,7 @@ def test_run_init_opens_browser_when_interactive(monkeypatch, tmp_path) -> None:
     config = InitConfig.model_validate(
         {
             "admin_email": "admin@example.com",
-            "admin_password": "pw-test",
+            "admin_password": "pw-test-99",
             "skip_stack": True,
         }
     )
@@ -237,7 +237,7 @@ def test_run_init_respects_open_browser_false(monkeypatch, tmp_path) -> None:
     config = InitConfig.model_validate(
         {
             "admin_email": "admin@example.com",
-            "admin_password": "pw-test",
+            "admin_password": "pw-test-99",
             "skip_stack": True,
             "open_browser": False,
         }
@@ -259,7 +259,7 @@ def test_resolve_open_browser_honors_no_browser_flag() -> None:
     config = InitConfig.model_validate(
         {
             "admin_email": "admin@example.com",
-            "admin_password": "pw-test",
+            "admin_password": "pw-test-99",
         }
     )
     assert _resolve_open_browser(config, no_browser_flag=True) is False
@@ -275,7 +275,7 @@ def test_backfield_init_cli_no_browser(monkeypatch, tmp_path) -> None:
         json.dumps(
             {
                 "admin_email": "admin@example.com",
-                "admin_password": "pw-test",
+                "admin_password": "pw-test-99",
                 "skip_stack": True,
             }
         ),

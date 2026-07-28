@@ -8,7 +8,7 @@ import {
 
 describe("candidateQueueSimilarity", () => {
   it("normalizes labels for comparison", () => {
-    expect(normalizeLabelForCompare("  Ronald  Acuña ")).toBe("ronald acuña")
+    expect(normalizeLabelForCompare("  Ronald  Acuña ")).toBe("ronald acuna")
   })
 
   it("groups duplicate create-new suggestions by normalized name", () => {

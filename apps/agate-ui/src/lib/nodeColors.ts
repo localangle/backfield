@@ -52,7 +52,18 @@ export const workTypes = new Set(['WorksExtract'])
 export const formattingTypes = new Set(['LLMFormat'])
 export const controlTypes = new Set(['ArraySplitter', 'ArrayGather', 'Gather'])
 
-type MetadataCategory = 'input' | 'enrichment' | 'extraction' | 'organization' | 'output' | 'filter' | 'review' | 'formatting' | 'control'
+type MetadataCategory =
+  | 'input'
+  | 'enrichment'
+  | 'extraction'
+  | 'organization'
+  | 'output'
+  | 'filter'
+  | 'review'
+  | 'formatting'
+  | 'control'
+  | 'work'
+  | 'embedding'
 export type NodeCategory = 'input' | 'enrichment' | 'output' | 'filter' | 'geography' | 'formatting' | 'control' | 'people' | 'organization' | 'work' | 'image' | 'text'
 
 /**

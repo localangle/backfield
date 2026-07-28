@@ -63,10 +63,8 @@ export {
   updateCandidateNote,
 } from "@/lib/stylebook-api/candidates"
 export {
-  type AgentType,
   type EntityTypeStats,
   type Stats,
-  getAgentTypes,
   getStats,
 } from "@/lib/stylebook-api/stats-stub"
 export {

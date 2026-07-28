@@ -6,6 +6,12 @@ import copy
 import re
 from typing import Any
 
+from api.processed_item.entities.review_identity import (
+    add_unique_index,
+    is_safe_legacy_raw_entry_id,
+    ordered_row_keys,
+    source_raw_entry_id,
+)
 from api.processed_item.mention_occurrences import (
     build_mention_occurrences_for_row,
 )
@@ -34,28 +40,17 @@ def _optional_text(value: Any) -> str | None:
     return None
 
 
-def _identity_keys(person: Any, anchor: Any) -> set[str]:
-    keys: set[str] = set()
-    if isinstance(anchor, str) and anchor.strip():
-        keys.add(anchor.strip())
+def _person_fingerprint(person: Any) -> str | None:
     if not isinstance(person, dict):
-        return keys
-    for field in ("id", "mention_id"):
-        raw = person.get(field)
-        if raw is None or raw == "":
-            continue
-        value = str(raw).strip()
-        if value:
-            keys.add(value)
+        return None
     name = person.get("name")
     affiliation = _optional_text(person.get("affiliation"))
     if isinstance(name, str) and name.strip():
-        fp = person_identity_fingerprint(
+        return person_identity_fingerprint(
             normalized_name=_normalize_name(name),
             affiliation=affiliation,
         )
-        keys.add(f"fingerprint:{fp}")
-    return keys
+    return None
 
 
 def _apply_mention_editorial_to_person(
@@ -114,34 +109,14 @@ def _load_mentions_by_person_for_article(
     return {int(m.person_id): m for m in rows}
 
 
-def _index_substrate_people(
-    people: list[SubstratePerson],
-    *,
-    run_id: str,
-) -> dict[str, SubstratePerson]:
-    by_key: dict[str, SubstratePerson] = {}
-    for person in people:
-        details = person.source_details_json if isinstance(person.source_details_json, dict) else {}
-        if str(details.get("run_id") or "") != run_id:
-            continue
-        raw_entry_id = details.get("raw_entry_id")
-        if raw_entry_id is not None and raw_entry_id != "":
-            by_key[str(raw_entry_id)] = person
-        fp = person.identity_fingerprint
-        if isinstance(fp, str) and fp.strip():
-            by_key[f"fingerprint:{fp.strip()}"] = person
-    return by_key
-
-
 def _load_substrate_people_for_review(
     session: Session,
     *,
     project_id: int,
-    run_id: str,
     article_id: int | None,
-) -> dict[str, SubstratePerson]:
+) -> list[SubstratePerson]:
     if project_id <= 0:
-        return {}
+        return []
     person_ids: list[int] = []
     if article_id is not None:
         mentions = session.exec(
@@ -152,18 +127,18 @@ def _load_substrate_people_for_review(
         ).all()
         person_ids = [int(m.person_id) for m in mentions]
         if not person_ids:
-            return {}
+            return []
         rows = session.exec(
             select(SubstratePerson).where(
                 col(SubstratePerson.id).in_(person_ids),
                 SubstratePerson.project_id == project_id,
             )
         ).all()
-        return _index_substrate_people(list(rows), run_id=run_id)
+        return list(rows)
 
     # Without a persisted article scope, do not fan in run-wide substrate rows (batch runs
     # would otherwise bleed entities from sibling items onto failed or in-flight items).
-    return {}
+    return []
 
 
 def _load_canonicals_by_id(
@@ -194,14 +169,50 @@ def _load_stylebook_slugs_by_id(
     return out
 
 
-def _pick_substrate_for_keys(
-    by_key: dict[str, SubstratePerson], keys: set[str]
+def _pick_unclaimed_person(
+    index: dict[str, SubstratePerson | None],
+    keys: list[str],
+    claimed_ids: set[int],
 ) -> SubstratePerson | None:
     for key in keys:
-        hit = by_key.get(key)
-        if hit is not None:
+        hit = index.get(key)
+        if hit is not None and hit.id is not None and int(hit.id) not in claimed_ids:
             return hit
     return None
+
+
+def _build_person_indexes(
+    people: list[SubstratePerson],
+    *,
+    mentions_by_person: dict[int, SubstratePersonMention],
+    run_id: str,
+) -> tuple[
+    dict[str, SubstratePerson | None],
+    dict[str, SubstratePerson | None],
+    dict[str, SubstratePerson | None],
+]:
+    article_anchor_index: dict[str, SubstratePerson | None] = {}
+    fingerprint_index: dict[str, SubstratePerson | None] = {}
+    legacy_anchor_index: dict[str, SubstratePerson | None] = {}
+    for person in people:
+        if person.id is None:
+            continue
+        mention = mentions_by_person.get(int(person.id))
+        article_anchor = source_raw_entry_id(
+            mention.source_details_json if mention is not None else None,
+            run_id=run_id,
+        )
+        add_unique_index(article_anchor_index, key=article_anchor, entity=person)
+        fingerprint = (
+            person.identity_fingerprint.strip()
+            if isinstance(person.identity_fingerprint, str)
+            else ""
+        )
+        add_unique_index(fingerprint_index, key=fingerprint or None, entity=person)
+        legacy_anchor = source_raw_entry_id(person.source_details_json, run_id=run_id)
+        if legacy_anchor and is_safe_legacy_raw_entry_id(legacy_anchor):
+            add_unique_index(legacy_anchor_index, key=legacy_anchor, entity=person)
+    return article_anchor_index, fingerprint_index, legacy_anchor_index
 
 
 def _person_payload_from_substrate(person: SubstratePerson) -> dict[str, Any]:
@@ -216,6 +227,45 @@ def _person_payload_from_substrate(person: SubstratePerson) -> dict[str, Any]:
     }
 
 
+def _attach_person_identity(
+    out: dict[str, Any],
+    *,
+    person: SubstratePerson,
+    canons: dict[str, StylebookPersonCanonical],
+    stylebook_slugs: dict[int, str],
+) -> None:
+    if person.id is None:
+        return
+    out["persisted_person_id"] = int(person.id)
+    cid = person.stylebook_person_canonical_id
+    if cid and str(person.canonical_link_status) == CANONICAL_LINK_LINKED:
+        canon = canons.get(str(cid))
+        out["stylebook_person_canonical_id"] = str(cid)
+        if canon is not None:
+            sb_slug = stylebook_slugs.get(int(canon.stylebook_id))
+            if sb_slug:
+                out["stylebook_slug"] = sb_slug
+            out["stylebook_link"] = {"label": str(canon.label)}
+    link_status = str(person.canonical_link_status or "")
+    if link_status:
+        out["canonical_link_status"] = link_status
+
+
+def _appended_person_anchor(
+    person: SubstratePerson,
+    mention: SubstratePersonMention | None,
+) -> str:
+    article_anchor = source_raw_entry_id(
+        mention.source_details_json if mention is not None else None
+    )
+    if article_anchor:
+        return article_anchor
+    legacy_anchor = source_raw_entry_id(person.source_details_json)
+    if legacy_anchor and is_safe_legacy_raw_entry_id(legacy_anchor):
+        return legacy_anchor
+    return f"user_person:{int(person.id)}"
+
+
 def enrich_merged_people_for_review(
     session: Session,
     *,
@@ -225,8 +275,8 @@ def enrich_merged_people_for_review(
     merged_people: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Attach persisted person identity and Stylebook link summary to merged people rows."""
-    by_key = _load_substrate_people_for_review(
-        session, project_id=project_id, run_id=run_id, article_id=article_id
+    people = _load_substrate_people_for_review(
+        session, project_id=project_id, article_id=article_id
     )
     mentions_by_person = _load_mentions_by_person_for_article(
         session, article_id=article_id
@@ -235,57 +285,62 @@ def enrich_merged_people_for_review(
     occurrences_by_mention_id = _load_occurrences_by_mention_id(
         session, mention_ids=mention_ids
     )
-    if not by_key:
+    if not people:
         return merged_people
 
     canonical_ids: set[str] = set()
-    for person in by_key.values():
+    for person in people:
         cid = person.stylebook_person_canonical_id
         if cid and str(person.canonical_link_status) == CANONICAL_LINK_LINKED:
             canonical_ids.add(str(cid))
     canons = _load_canonicals_by_id(session, canonical_ids)
     stylebook_ids = {int(c.stylebook_id) for c in canons.values()}
     stylebook_slugs = _load_stylebook_slugs_by_id(session, stylebook_ids)
+    article_anchor_index, fingerprint_index, legacy_anchor_index = _build_person_indexes(
+        people,
+        mentions_by_person=mentions_by_person,
+        run_id=run_id,
+    )
 
     enriched: list[dict[str, Any]] = []
     matched_person_ids: set[int] = set()
     for row in merged_people:
         out = copy.deepcopy(row)
         person_payload = out.get("person")
-        keys = _identity_keys(person_payload, out.get("anchor"))
-        substrate = _pick_substrate_for_keys(by_key, keys)
+        keys = ordered_row_keys(person_payload, out.get("anchor"))
+        substrate = _pick_unclaimed_person(
+            article_anchor_index,
+            keys,
+            matched_person_ids,
+        )
+        if substrate is None:
+            fingerprint = _person_fingerprint(person_payload)
+            substrate = _pick_unclaimed_person(
+                fingerprint_index,
+                [fingerprint] if fingerprint else [],
+                matched_person_ids,
+            )
+        if substrate is None:
+            safe_legacy_keys = [key for key in keys if is_safe_legacy_raw_entry_id(key)]
+            substrate = _pick_unclaimed_person(
+                legacy_anchor_index,
+                safe_legacy_keys,
+                matched_person_ids,
+            )
         if substrate is None or substrate.id is None:
             enriched.append(out)
             continue
 
         mention = mentions_by_person.get(int(substrate.id))
         matched_person_ids.add(int(substrate.id))
-        has_active_story_mention = article_id is None or mention is not None
-        if has_active_story_mention:
-            out["persisted_person_id"] = int(substrate.id)
-        cid = substrate.stylebook_person_canonical_id
-        if (
-            has_active_story_mention
-            and cid
-            and str(substrate.canonical_link_status) == CANONICAL_LINK_LINKED
-        ):
-            canon = canons.get(str(cid))
-            out["stylebook_person_canonical_id"] = str(cid)
-            if canon is not None:
-                sb_slug = stylebook_slugs.get(int(canon.stylebook_id))
-                if sb_slug:
-                    out["stylebook_slug"] = sb_slug
-                out["stylebook_link"] = {
-                    "label": str(canon.label),
-                }
-
-        link_status = str(substrate.canonical_link_status or "")
-        if has_active_story_mention and link_status:
-            out["canonical_link_status"] = link_status
+        _attach_person_identity(
+            out,
+            person=substrate,
+            canons=canons,
+            stylebook_slugs=stylebook_slugs,
+        )
 
         if isinstance(person_payload, dict):
-            if mention is None:
-                mention = mentions_by_person.get(int(substrate.id))
             if mention is not None:
                 person_payload = _apply_mention_editorial_to_person(person_payload, mention)
             db_rows: list[SubstratePersonMentionOccurrence] | None = None
@@ -300,10 +355,8 @@ def enrich_merged_people_for_review(
             out["mention_occurrences"] = mention_occurrences
         enriched.append(out)
 
-    for raw_entry_id, substrate in by_key.items():
+    for substrate in people:
         if substrate.id is None or int(substrate.id) in matched_person_ids:
-            continue
-        if raw_entry_id.startswith("fingerprint:"):
             continue
         mention = mentions_by_person.get(int(substrate.id))
         if article_id is not None and mention is None:
@@ -319,16 +372,20 @@ def enrich_merged_people_for_review(
             overlay_patch=None,
             db_rows=db_rows,
         )
-        enriched.append(
-            {
-                "anchor": raw_entry_id,
-                "source": "user",
-                "node_id": None,
-                "index_in_node": None,
-                "stale": False,
-                "person": person_payload,
-                "mention_occurrences": mention_occurrences,
-                "persisted_person_id": int(substrate.id),
-            }
+        appended = {
+            "anchor": _appended_person_anchor(substrate, mention),
+            "source": "user",
+            "node_id": None,
+            "index_in_node": None,
+            "stale": False,
+            "person": person_payload,
+            "mention_occurrences": mention_occurrences,
+        }
+        _attach_person_identity(
+            appended,
+            person=substrate,
+            canons=canons,
+            stylebook_slugs=stylebook_slugs,
         )
+        enriched.append(appended)
     return enriched

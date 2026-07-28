@@ -7,7 +7,7 @@ description: Review and implement Backfield database changes. Use when editing S
 
 ## Quick Start
 
-1. Read `docs/DATABASE.md` and `docs/OPERATIONS.md`.
+1. Read `docs/architecture/database.md`, `docs/operations/migrations.md`, and the relevant runtime-configuration or deployment section.
 2. Inspect the owning models in `packages/backfield-db`.
 3. Check affected API and worker call sites for naming or contract drift.
 4. Treat indexing decisions as part of the change, not an afterthought.

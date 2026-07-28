@@ -17,6 +17,7 @@ from core_api.routers.public.entities.organizations.helpers import (
     resolve_public_organizations_scope,
 )
 from core_api.routers.public.schemas import PaginatedResponse, PaginationOut
+from core_api.routers.public.stylebook_query import StylebookSlugQuery
 
 router = APIRouter()
 
@@ -25,6 +26,7 @@ def _search_organizations(
     *,
     session: Session,
     project: BackfieldProject,
+    stylebook_slug: str | None,
     q: str | None,
     organization_type: str | None,
     nature: str | None,
@@ -33,7 +35,9 @@ def _search_organizations(
     limit: int,
     offset: int,
 ) -> PaginatedResponse[PublicOrganizationOut]:
-    stylebook_id, project_id = resolve_public_organizations_scope(session, project)
+    stylebook_id, project_id = resolve_public_organizations_scope(
+        session, project, stylebook_slug=stylebook_slug
+    )
     params = build_organization_search_params(
         q=q,
         organization_type=organization_type,
@@ -59,6 +63,7 @@ def _search_organizations(
 def list_project_organizations(
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
+    stylebook_slug: StylebookSlugQuery = None,
     q: str | None = Query(None, description="Search organization name"),
     organization_type: str | None = Query(None),
     nature: str | None = Query(
@@ -77,6 +82,7 @@ def list_project_organizations(
     return _search_organizations(
         session=session,
         project=project,
+        stylebook_slug=stylebook_slug,
         q=q,
         organization_type=organization_type,
         nature=nature,
@@ -91,6 +97,7 @@ def list_project_organizations(
 def search_project_organizations(
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
+    stylebook_slug: StylebookSlugQuery = None,
     q: str | None = Query(None, description="Search organization name"),
     organization_type: str | None = Query(None),
     nature: str | None = Query(
@@ -109,6 +116,7 @@ def search_project_organizations(
     return _search_organizations(
         session=session,
         project=project,
+        stylebook_slug=stylebook_slug,
         q=q,
         organization_type=organization_type,
         nature=nature,

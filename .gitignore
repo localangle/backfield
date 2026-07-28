@@ -11,8 +11,11 @@ dist/
 *.egg-info/
 node_modules/
 .env
-.env.local
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+*.sqlite
+*.sqlite3
 apps/*/src/**/nodes/registry.ts
-
-# Optional large local SQLite files in geocoding data (not used by default; see geocoding/data/README.md)
-packages/backfield-agate/src/agate_utils/geocoding/data/*.db

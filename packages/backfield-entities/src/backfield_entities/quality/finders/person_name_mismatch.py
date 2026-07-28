@@ -8,13 +8,13 @@ from backfield_db import (
 )
 from sqlmodel import Session, col, select
 
+from backfield_entities.canonical.editorial_aliases import load_person_editorial_alias_keys
 from backfield_entities.canonical.link import CANONICAL_LINK_LINKED
 from backfield_entities.entities.person.name_mismatch import person_link_is_obvious_mismatch
 from backfield_entities.quality.dismissals import load_dismissed_keys
 from backfield_entities.quality.finders._name_mismatch_common import (
     PERSON_NAME_MISMATCH_CHECK_ID,
     CanonicalMismatchAgg,
-    load_person_editorial_alias_keys,
     organization_project_ids,
 )
 from backfield_entities.quality.types import CleanupNameMismatchIssueRow

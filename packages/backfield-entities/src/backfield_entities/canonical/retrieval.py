@@ -195,8 +195,13 @@ def load_canonical_match_features(
     session: Session,
     *,
     canonical_ids: list[str],
+    trusted_alias_only: bool = False,
 ) -> dict[str, tuple[StylebookLocationCanonical, tuple[str, ...]]]:
-    """Map canonical id → (row, normalized_aliases including label as alias-like string)."""
+    """Map canonical id → (row, normalized_aliases).
+
+    When ``trusted_alias_only`` is True, exclude ``substrate_ingest`` aliases so
+    machine-written aliases cannot alone drive autolink-tier string scores.
+    """
     if not canonical_ids:
         return {}
     canon_rows = session.exec(
@@ -206,12 +211,13 @@ def load_canonical_match_features(
     for c in canon_rows:
         if c.id is not None:
             by_id[str(c.id)] = c
-    alias_rows = session.exec(
-        select(StylebookLocationAlias).where(
-            col(StylebookLocationAlias.location_canonical_id).in_(canonical_ids),
-            StylebookLocationAlias.suppressed == False,  # noqa: E712
-        )
-    ).all()
+    alias_filters = [
+        col(StylebookLocationAlias.location_canonical_id).in_(canonical_ids),
+        StylebookLocationAlias.suppressed == False,  # noqa: E712
+    ]
+    if trusted_alias_only:
+        alias_filters.append(StylebookLocationAlias.provenance != "substrate_ingest")
+    alias_rows = session.exec(select(StylebookLocationAlias).where(*alias_filters)).all()
     aliases_by_canon: dict[str, list[str]] = {cid: [] for cid in canonical_ids}
     for a in alias_rows:
         if a.location_canonical_id is None:

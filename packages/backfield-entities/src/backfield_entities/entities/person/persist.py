@@ -510,6 +510,27 @@ def apply_canonical_persist_plan(
     if plan.decision == CanonicalPersistDecision.LINK_EXISTING:
         if plan.existing_canonical_id is None:
             return
+        if provenance == "substrate_ingest":
+            from backfield_entities.canonical.link_commit_gate import gate_or_coerce_link_plan
+
+            gated = gate_or_coerce_link_plan(
+                session,
+                plan,
+                entity_type="person",
+                substrate_row=person,
+                stylebook_id=stylebook_id,
+            )
+            if gated.decision != CanonicalPersistDecision.LINK_EXISTING:
+                apply_canonical_persist_plan(
+                    session,
+                    stylebook_id=stylebook_id,
+                    person=person,
+                    plan=gated,
+                    people_bucket=people_bucket,
+                    provenance=provenance,
+                    auto_apply_canonicalization=auto_apply_canonicalization,
+                )
+                return
         link_to_existing_canonical(
             session,
             stylebook_id=stylebook_id,

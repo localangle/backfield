@@ -129,7 +129,7 @@ export function ProcessedItemMetaVerificationSection({
       return
     }
 
-    let metaType = addPreset
+    let metaType: string = addPreset
     let promptPreset: string | undefined = addPreset
     if (addPreset === 'custom') {
       metaType = addCustomType.trim().toLowerCase().replace(/-/g, '_')
@@ -155,7 +155,7 @@ export function ProcessedItemMetaVerificationSection({
           category,
           prompt_preset: promptPreset,
         },
-        item.overlay_version,
+        item.overlay_version ?? 0,
       )
       onItemUpdated(updated)
       showMessage('Tag added.')
@@ -199,7 +199,7 @@ export function ProcessedItemMetaVerificationSection({
           runId,
           item.id,
           row.id,
-          item.overlay_version,
+          item.overlay_version ?? 0,
         )
         onItemUpdated(updated)
         showMessage('Tag removed.')
@@ -231,7 +231,7 @@ export function ProcessedItemMetaVerificationSection({
           item.id,
           row.id,
           category,
-          item.overlay_version,
+          item.overlay_version ?? 0,
         )
         onItemUpdated(updated)
         showMessage('Category updated.')

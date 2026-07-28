@@ -11,9 +11,14 @@ from backfield_db import (
     BackfieldProject,
     BackfieldWorkspace,
     Stylebook,
+    StylebookActivity,
     StylebookBundleJob,
+    StylebookCleanupDismissal,
+    StylebookLocationCanonical,
     StylebookSlugRedirect,
+    SubstrateLocation,
 )
+from backfield_entities.canonical.link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from backfield_entities.catalog.graph_stylebook_refs import (
     STYLEBOOK_NODE_PARAM_KEY,
@@ -27,6 +32,8 @@ from backfield_entities.catalog.stylebook_library import (
     resolve_stylebook_by_slug,
     set_org_default_stylebook,
 )
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine, select
 
 
@@ -244,6 +251,115 @@ def test_delete_stylebook_removes_referencing_bundle_jobs() -> None:
         assert session.get(Stylebook, bid) is None
         remaining_jobs = session.exec(select(StylebookBundleJob)).all()
         assert len(remaining_jobs) == 0
+
+
+def _fk_engine() -> Engine:
+    """SQLite engine with foreign keys enabled (Postgres-parity for delete guards)."""
+    engine = create_engine("sqlite://", echo=False)
+
+    @event.listens_for(engine, "connect")
+    def _enable_fk(dbapi_connection, connection_record) -> None:  # noqa: ANN001
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    SQLModel.metadata.create_all(engine)
+    return engine
+
+
+def test_delete_stylebook_clears_activity_and_cleanup_rows() -> None:
+    """Activity/cleanup FKs are not ON DELETE CASCADE; delete must clear them first."""
+    engine = _fk_engine()
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="O", slug="o-act")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        oid = int(org.id)  # type: ignore[arg-type]
+        create_stylebook(session, organization_id=oid, name="A", is_default=True)
+        b = create_stylebook(session, organization_id=oid, name="B", is_default=False)
+        session.commit()
+        session.refresh(b)
+        bid = int(b.id)  # type: ignore[arg-type]
+
+        session.add(
+            StylebookActivity(
+                stylebook_id=bid,
+                actor_type="system",
+                source="test",
+                event_type="canonical_created",
+                entity_type="location",
+                entity_id=str(uuid.uuid4()),
+                entity_label="Test Place",
+            )
+        )
+        session.add(
+            StylebookCleanupDismissal(
+                stylebook_id=bid,
+                check_id="duplicate_locations",
+                pair_key="a|b",
+            )
+        )
+        session.commit()
+
+        delete_stylebook(session, bid)
+        session.commit()
+
+        assert session.get(Stylebook, bid) is None
+        assert session.exec(select(StylebookActivity)).all() == []
+        assert session.exec(select(StylebookCleanupDismissal)).all() == []
+
+
+def test_delete_stylebook_resets_linked_substrate_to_pending() -> None:
+    """Linked substrate rows must not remain ``linked`` after the catalog is deleted."""
+    engine = _fk_engine()
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="O", slug="o-sub")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        oid = int(org.id)  # type: ignore[arg-type]
+        create_stylebook(session, organization_id=oid, name="A", is_default=True)
+        b = create_stylebook(session, organization_id=oid, name="B", is_default=False)
+        session.commit()
+        session.refresh(b)
+        bid = int(b.id)  # type: ignore[arg-type]
+
+        canon_id = str(uuid.uuid4())
+        session.add(
+            StylebookLocationCanonical(
+                id=canon_id,
+                stylebook_id=bid,
+                label="Jay Pritzker Pavilion, Chicago, IL",
+                slug="jay-pritzker-pavilion-chicago-il",
+                status="active",
+            )
+        )
+        proj = BackfieldProject(organization_id=oid, name="P", slug="p-sub")
+        session.add(proj)
+        session.commit()
+        session.refresh(proj)
+        loc = SubstrateLocation(
+            project_id=int(proj.id),  # type: ignore[arg-type]
+            name="Jay Pritzker Pavilion, Chicago, IL",
+            normalized_name="jay pritzker pavilion chicago il",
+            stylebook_location_canonical_id=canon_id,
+            canonical_link_status=CANONICAL_LINK_LINKED,
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+        lid = int(loc.id)  # type: ignore[arg-type]
+
+        delete_stylebook(session, bid)
+        session.commit()
+
+        assert session.get(Stylebook, bid) is None
+        assert session.get(StylebookLocationCanonical, canon_id) is None
+        remaining = session.get(SubstrateLocation, lid)
+        assert remaining is not None
+        assert remaining.stylebook_location_canonical_id is None
+        assert remaining.canonical_link_status == CANONICAL_LINK_PENDING
 
 
 def test_delete_default_with_replacement() -> None:

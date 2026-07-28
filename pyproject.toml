@@ -1,9 +1,13 @@
 [project]
 name = "backfield-workspace"
 version = "0.1.0"
-description = "Backfield monorepo (Agate + Stylebook)"
+description = "Backfield monorepo (Agate + Stylebook); internal workspace, not published to PyPI"
 requires-python = ">=3.11"
 readme = "README.md"
+license = "Apache-2.0"
+classifiers = [
+    "Private :: Do Not Upload",
+]
 dependencies = [
     "httpx>=0.27.0",
     "pytest>=8.0",
@@ -13,6 +17,10 @@ dependencies = [
     "backfield-cli",
     "backfield-db",
 ]
+
+[project.urls]
+Homepage = "https://github.com/localangle/backfield"
+Repository = "https://github.com/localangle/backfield"
 
 [tool.uv.workspace]
 members = [

@@ -13,6 +13,7 @@ from backfield_entities.canonical.plan_types import CanonicalPersistDecision
 from backfield_entities.entities.person.persist import upsert_alias_for_canonical_text
 from backfield_entities.entities.person.policy import (
     decide_person_canonical_persist_plan,
+    find_existing_person_canonical_id_by_strong_identity,
     person_strong_identity_matches_canonical,
 )
 from backfield_entities.entities.person.recall import (
@@ -97,6 +98,40 @@ def test_person_strong_identity_ignores_title() -> None:
             affiliation="City of Chicago",
         )
         assert person_strong_identity_matches_canonical(person, canon)
+
+
+def test_strong_identity_ignores_inactive_duplicate_canonical() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed(session)
+        active = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="Jane Doe",
+            slug="active-jane-doe",
+            affiliation="City of Chicago",
+            status="active",
+        )
+        inactive = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="Jane Doe",
+            slug="inactive-jane-doe",
+            affiliation="City of Chicago",
+            status="inactive",
+        )
+        session.add_all((active, inactive))
+        session.commit()
+        person = SubstratePerson(
+            project_id=pid,
+            name="Jane Doe",
+            normalized_name="jane doe",
+            affiliation="City of Chicago",
+        )
+
+        assert find_existing_person_canonical_id_by_strong_identity(
+            session,
+            stylebook_id=sb_id,
+            person=person,
+        ) == str(active.id)
 
 
 def test_recall_caps_at_default_limit() -> None:

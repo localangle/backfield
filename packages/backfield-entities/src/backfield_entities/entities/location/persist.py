@@ -29,6 +29,7 @@ from backfield_entities.canonical.slug import (
 )
 from backfield_entities.entities.location.policy import plan_has_ambiguous_canonical_match
 from backfield_entities.entities.location.recall import location_alias_lookup_keys
+from backfield_entities.entities.location.types import is_address_like_location_type
 from backfield_entities.geo.h3_index import apply_h3_fields
 from backfield_entities.text.match_normalize import normalize_match_text
 
@@ -155,6 +156,20 @@ def refresh_aliases_for_linked_location(
     canon = session.get(StylebookLocationCanonical, canon_id)
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         return
+    if provenance == "substrate_ingest":
+        # Linked rows can outlive the decision that set their FK; revalidate before
+        # refreshing machine aliases so stale links cannot poison future exact recall.
+        from backfield_entities.canonical.link_commit_gate import sync_link_commit_blocked
+
+        veto = sync_link_commit_blocked(
+            session,
+            entity_type="location",
+            substrate_row=location,
+            canonical_id=canon_id,
+            stylebook_id=stylebook_id,
+        )
+        if veto is not None:
+            return
     _upsert_alias_for_canonical(
         session,
         canon_id=canon_id,
@@ -178,6 +193,19 @@ def link_to_existing_canonical(
     canon = session.get(StylebookLocationCanonical, canonical_id)
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         return
+    if provenance == "substrate_ingest":
+        # This is the final write boundary; callers may arrive from rules, cache, or LLM.
+        from backfield_entities.canonical.link_commit_gate import sync_link_commit_blocked
+
+        veto = sync_link_commit_blocked(
+            session,
+            entity_type="location",
+            substrate_row=location,
+            canonical_id=str(canonical_id),
+            stylebook_id=stylebook_id,
+        )
+        if veto is not None:
+            return
     location.stylebook_location_canonical_id = str(canon.id)
     location.canonical_link_status = CANONICAL_LINK_LINKED
     location.canonical_review_reasons_json = (
@@ -256,6 +284,13 @@ def materialize_new_canonical_and_link(
     """Create a new canonical, set FK + ``linked``, upsert alias."""
     if location.id is None:
         return
+    source_details = (
+        location.source_details_json if isinstance(location.source_details_json, dict) else {}
+    )
+    if str(location.status or "").strip().lower() in {"failed", "needs_review"} or str(
+        source_details.get("places_bucket") or ""
+    ).strip().lower() == "needs_review":
+        raise ValueError("rejected or review-required geocode cannot materialize a canonical")
     gj = location.geometry_json
     lt = (location.location_type or "").strip().lower() or None
     fa = (location.formatted_address or "").strip() or None
@@ -432,7 +467,13 @@ def apply_candidate_ai_review_recommendation(
     reasons = [
         r
         for r in reasons
-        if str(r.get("code") or "") not in ("canonical_suggestion", "canonical_adjudication")
+        if str(r.get("code") or "")
+        not in (
+            "canonical_suggestion",
+            "canonical_adjudication",
+            "deferred_policy",
+            "geocode_quality_warning",
+        )
     ]
     for r in plan.resolution_reasons:
         if isinstance(r, dict):
@@ -447,6 +488,21 @@ def apply_candidate_ai_review_recommendation(
     location.canonical_review_reasons_json = reasons
     session.add(location)
     return has_suggestion
+
+
+def materialization_requires_editorial_review(
+    location: SubstrateLocation,
+    *,
+    places_bucket: str,
+) -> bool:
+    """True when a create recommendation must not be auto-applied."""
+    status = str(location.status or "").strip().lower()
+    return (
+        places_bucket == "needs_review"
+        or status in {"needs_review", "failed"}
+        or is_address_like_location_type(location.location_type)
+        or location.geometry_json is None
+    )
 
 
 def apply_canonical_persist_plan(
@@ -467,6 +523,19 @@ def apply_canonical_persist_plan(
     extra = _canonical_suggestion_from_rules_plan(plan)
     if extra is not None and not has_suggestion:
         reasons.append(extra)
+    if (
+        plan.decision == CanonicalPersistDecision.MATERIALIZE_NEW
+        and auto_apply_canonicalization
+        and materialization_requires_editorial_review(location, places_bucket=places_bucket)
+    ):
+        apply_canonical_persist_plan_review_only(
+            session,
+            stylebook_id=stylebook_id,
+            location=location,
+            plan=plan,
+            places_bucket=places_bucket,
+        )
+        return
     if plan.decision == CanonicalPersistDecision.DEFER:
         if auto_apply_canonicalization and _resolution_includes_private_place_or_residence(plan):
             location.canonical_link_status = CANONICAL_LINK_WAIVED
@@ -478,6 +547,27 @@ def apply_canonical_persist_plan(
     if plan.decision == CanonicalPersistDecision.LINK_EXISTING:
         if plan.existing_canonical_id is None:
             return
+        if provenance == "substrate_ingest":
+            from backfield_entities.canonical.link_commit_gate import gate_or_coerce_link_plan
+
+            gated = gate_or_coerce_link_plan(
+                session,
+                plan,
+                entity_type="location",
+                substrate_row=location,
+                stylebook_id=stylebook_id,
+            )
+            if gated.decision != CanonicalPersistDecision.LINK_EXISTING:
+                apply_canonical_persist_plan(
+                    session,
+                    stylebook_id=stylebook_id,
+                    location=location,
+                    plan=gated,
+                    places_bucket=places_bucket,
+                    provenance=provenance,
+                    auto_apply_canonicalization=auto_apply_canonicalization,
+                )
+                return
         link_to_existing_canonical(
             session,
             stylebook_id=stylebook_id,

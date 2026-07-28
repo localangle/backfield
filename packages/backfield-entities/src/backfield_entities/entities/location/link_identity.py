@@ -124,6 +124,59 @@ def _strip_leading_the(head: str) -> str:
     return head
 
 
+# Geographic feature words stripped when comparing place proper-name heads.
+_LOCATION_FEATURE_WORDS: frozenset[str] = frozenset(
+    {
+        "river",
+        "lake",
+        "creek",
+        "stream",
+        "bay",
+        "beach",
+        "park",
+        "forest",
+        "grove",
+        "trail",
+        "bridge",
+        "bridges",
+        "dam",
+        "canal",
+        "island",
+        "mountain",
+        "mountains",
+        "hills",
+        "valley",
+        "road",
+        "street",
+        "avenue",
+        "boulevard",
+        "highway",
+    }
+)
+
+
+def _place_proper_head(text: str) -> str | None:
+    """Leading proper-name token of the first comma segment, ignoring feature words."""
+    head = _strip_leading_the(_first_segment_key(text))
+    if not head:
+        return None
+    for token in head.split():
+        if len(token) >= 2 and token not in _LOCATION_FEATURE_WORDS:
+            return token
+    return None
+
+
+def location_place_heads_conflict(substrate_name: str, canonical_label: str) -> bool:
+    """True when leading place proper names disagree (e.g. DuPage River vs Illinois River)."""
+    if location_names_share_obvious_identity(substrate_name, canonical_label):
+        return False
+    sub_head = _place_proper_head(substrate_name)
+    canon_head = _place_proper_head(canonical_label)
+    if not sub_head or not canon_head:
+        return False
+    return sub_head != canon_head
+
+
 def location_names_share_obvious_identity(
     substrate_name: str,
     canonical_label: str,
@@ -237,6 +290,15 @@ def location_link_is_obvious_mismatch(
         return False
 
     location_text = str(substrate_name or "").strip()
+    # Political districts use number/kind identity (and often ordinal vs numeral
+    # wording); place-head conflict is too brittle there (Eighth Ward vs Ward 8).
+    s_lt = (substrate_location_type or "").strip().lower()
+    c_lt = (canonical_location_type or "").strip().lower()
+    if "political_district" not in (s_lt, c_lt) and location_place_heads_conflict(
+        location_text, canonical_label
+    ):
+        return True
+
     if cache_hit_sane_for_substrate(
         substrate_location_type=substrate_location_type,
         location_text=location_text,

@@ -47,7 +47,7 @@ def test_backfield_seed_subcommand_delegates(monkeypatch, capsys) -> None:
                 "--admin-email",
                 "admin@example.com",
                 "--admin-password",
-                "pw-test",
+                "pw-test-99",
                 "--json",
             ]
         )

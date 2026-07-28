@@ -14,11 +14,9 @@ description: Keep Backfield repository docs in sync with code and workflows. Use
 
 ## Source-Of-Truth Map
 
-- `docs/ARCHITECTURE.md`: package boundaries and runtime flow
-- `docs/NODES.md`: Agate pipeline node profiles, layers, review tiers, checklists
-- `docs/API.md`: route and orchestration behavior
-- `docs/FRONTEND.md`: UI patterns and node sync flow (panel design; links to NODES.md for end-to-end node work)
-- `docs/DATABASE.md`: schema, migrations, indexing
-- `docs/OPERATIONS.md`: compose, env vars, troubleshooting
-- `docs/TESTING.md`: validation ladder and smoke flow
-- `docs/AGENTIC.md`: agentic orientation, per-task-type checklists, and planning guidance
+- `docs/README.md`: complete documentation index
+- `docs/architecture/`: boundaries, runtime, database, and canonicalization
+- `docs/api/`: Agate, Core, Stylebook, processed-item review, and public API contracts
+- `docs/development/`: local setup, testing, nodes, entities, and frontend conventions
+- `docs/operations/`: runtime configuration, migrations, deployment, and troubleshooting
+- `AGENTS.md`: repository workflow, engineering posture, validation, planning, and reviews

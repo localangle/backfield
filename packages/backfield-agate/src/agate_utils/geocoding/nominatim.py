@@ -115,9 +115,9 @@ class NominatimGeocoder:
         # Determine geometry type based on available data
         boundingbox = raw_data.get('boundingbox')
         if boundingbox and len(boundingbox) == 4:
-            # Create Polygon geometry from bounding box [west, south, east, north]
+            # Nominatim returns [south, north, west, east]; convert to [west, south, east, north].
             try:
-                west, south, east, north = map(float, boundingbox)
+                south, north, west, east = map(float, boundingbox)
                 geometry = GeometryPolygon(
                     coordinates=bbox_west_south_east_north_to_polygon_coordinates(
                         [west, south, east, north]

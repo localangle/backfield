@@ -5,6 +5,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from backfield_entities.canonical.jurisdiction import (
+    jurisdiction_from_components,
+    parse_jurisdiction_from_formatted_address,
+)
 from backfield_entities.canonical.link_matrix import (
     autolink_container_to_fine_denied,
     link_pair_allowed,
@@ -38,11 +42,30 @@ _INTERSECTION_SUBSTRATE_TYPES: frozenset[str] = frozenset(
 )
 _STREET_SUBSTRATE_TYPES: frozenset[str] = frozenset({"street_road"})
 _POI_LIKE_CANONICAL_TYPES: frozenset[str] = frozenset({"place", "point", "neighborhood"})
+# Exclude political_district: number/kind identity is authoritative; ordinal vs
+# numeral heads (Eighth Ward vs Ward 8) are too brittle for a string head gate.
+_ADMIN_PROPER_HEAD_TYPES: frozenset[str] = frozenset(
+    {
+        "neighborhood",
+        "city",
+        "town",
+        "village",
+        "county",
+        "community_area",
+        "borough",
+        "suburb",
+        "district",
+        "ward",
+        "region_city",
+    }
+)
 
 _HOUSE_NUMBER_RE = re.compile(r"\d")
+_HOUSE_NUMBER_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9])(\d+[A-Za-z]?)(?![A-Za-z0-9])")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 _INTERSECTION_AND_RE = re.compile(r"\s+(?:and|&)\s+", re.IGNORECASE)
 _DIRECTION_PREFIX = frozenset({"n", "north", "s", "south", "e", "east", "w", "west"})
+_NAMED_POI_TYPES: frozenset[str] = frozenset({"place", "point", "natural"})
 
 
 def autolink_fine_substrate_to_container_canonical_denied(
@@ -137,6 +160,135 @@ def _label_contains_token(label: str, token: str) -> bool:
 def _compare_key(text: str) -> str:
     """Loose key for substring checks (drops punctuation differences in street lines)."""
     return _NON_ALNUM_RE.sub(" ", (text or "").strip().lower()).strip()
+
+
+def _identity_head_key(text: str) -> str:
+    """Comparable first-segment key retaining every identity-bearing token."""
+    head = _compare_key(normalize_substrate_cache_query(str(text or "").split(",")[0]))
+    tokens = head.split()
+    if len(tokens) > 1 and tokens[0] == "the":
+        tokens = tokens[1:]
+    return " ".join(tokens)
+
+
+def named_location_heads_compatible(left: str, right: str) -> bool:
+    """Accept punctuation/spacing variants without collapsing parent and child POIs."""
+    left_head = _identity_head_key(left)
+    right_head = _identity_head_key(right)
+    if not left_head or not right_head:
+        return False
+    if left_head == right_head:
+        return True
+    return left_head.replace(" ", "") == right_head.replace(" ", "")
+
+
+def canonical_location_self_consistency_blocked(
+    *,
+    status: str | None,
+    location_type: str | None,
+    label: str,
+    formatted_address: str | None,
+    country_code: str | None,
+    subdivision_code: str | None,
+    geometry_type: str | None,
+    geometry_json: dict[str, Any] | None,
+) -> bool:
+    """True when a canonical contradicts its own lifecycle, jurisdiction, or geometry."""
+    if (status or "").strip().lower() != "active":
+        return True
+
+    declared_geometry = (geometry_type or "").strip().lower()
+    payload_geometry = (
+        str(geometry_json.get("type") or "").strip().lower()
+        if isinstance(geometry_json, dict)
+        else ""
+    )
+    if declared_geometry and payload_geometry and declared_geometry != payload_geometry:
+        return True
+
+    address_country, address_subdivision = parse_jurisdiction_from_formatted_address(
+        formatted_address
+    )
+    declared_country = (country_code or "").strip().upper()[:2] or None
+    declared_subdivision = (subdivision_code or "").strip().upper()[:2] or None
+    if declared_country and address_country and declared_country != address_country:
+        return True
+    if declared_subdivision and address_subdivision and declared_subdivision != address_subdivision:
+        return True
+
+    canonical_type = (location_type or "").strip().lower()
+    address_head = _identity_head_key(str(formatted_address or ""))
+    # A digit-leading formatted address is a street address, not a competing POI name.
+    if (
+        canonical_type in _NAMED_POI_TYPES
+        and address_head
+        and not address_head[0].isdigit()
+        and not named_location_heads_compatible(label, str(formatted_address))
+    ):
+        return True
+    return False
+
+
+def substrate_canonical_jurisdiction_compatible(
+    *,
+    components: dict[str, Any] | None,
+    canonical_country_code: str | None,
+    canonical_subdivision_code: str | None,
+) -> bool:
+    """Require agreement whenever both substrate and canonical declare a jurisdiction."""
+    substrate_country, substrate_subdivision, _city = jurisdiction_from_components(
+        components if isinstance(components, dict) else {}
+    )
+    canonical_country = (canonical_country_code or "").strip().upper()[:2] or None
+    canonical_subdivision = (canonical_subdivision_code or "").strip().upper()[:2] or None
+    if substrate_country and canonical_country and substrate_country != canonical_country:
+        return False
+    if (
+        substrate_subdivision
+        and canonical_subdivision
+        and substrate_subdivision != canonical_subdivision
+    ):
+        return False
+    return True
+
+
+def explicit_location_components_match_labels(
+    *,
+    components: dict[str, Any] | None,
+    location_text: str,
+    match_label: str,
+    match_formatted_address: str | None = None,
+) -> bool:
+    """Require explicit jurisdiction, postal, and house-number evidence to agree."""
+    comps = components if isinstance(components, dict) else {}
+    labels = " ".join((str(match_label or ""), str(match_formatted_address or "")))
+    expected_country, expected_subdivision, _city = jurisdiction_from_components(comps)
+    resolved_country, resolved_subdivision = parse_jurisdiction_from_formatted_address(labels)
+    if expected_country and resolved_country and expected_country != resolved_country:
+        return False
+    if (
+        expected_subdivision
+        and resolved_subdivision
+        and expected_subdivision != resolved_subdivision
+    ):
+        return False
+
+    postal = str(comps.get("postal_code") or "").strip()
+    if postal:
+        expected_postal = _compare_key(postal).replace(" ", "")
+        resolved_blob = _compare_key(labels).replace(" ", "")
+        if expected_postal and expected_postal not in resolved_blob:
+            return False
+
+    explicit_address = str(comps.get("address") or "").strip()
+    requested_number = _HOUSE_NUMBER_TOKEN_RE.search(explicit_address)
+    if explicit_address and requested_number is not None:
+        candidate_numbers = {
+            value.lower() for value in _HOUSE_NUMBER_TOKEN_RE.findall(labels)
+        }
+        if requested_number.group(1).lower() not in candidate_numbers:
+            return False
+    return True
 
 
 def _leading_address_fragment(addr_line: str, *, max_len: int = 24) -> str:
@@ -266,6 +418,13 @@ def cache_hit_sane_for_substrate(
         str(match_formatted_address or ""),
     )
     label_blob = " ".join(labels)
+    if not explicit_location_components_match_labels(
+        components=components,
+        location_text=location_text,
+        match_label=match_label,
+        match_formatted_address=match_formatted_address,
+    ):
+        return False
 
     if substrate_lt == "address":
         addr_line = address_line_from_components(components, location_text)
@@ -323,9 +482,26 @@ def cache_hit_sane_for_substrate(
             if canon_lt in _POI_TOKEN_STRICT_CONTAINER_TYPES:
                 if len(_meaningful_place_name_tokens(token)) < 2:
                     return True
-            if not _label_contains_token(label_blob, token):
+            if canon_lt in _NAMED_POI_TYPES:
+                if not named_location_heads_compatible(location_text, match_label):
+                    return False
+            elif not _label_contains_token(label_blob, token):
                 return False
         return True
+
+    if (
+        substrate_lt in _ADMIN_PROPER_HEAD_TYPES
+        and (canon_lt is None or canon_lt in _ADMIN_PROPER_HEAD_TYPES)
+    ):
+        # Neighborhood/admin identity lives in the leading placename. Block
+        # Bucktown↔Uptown-style hits even when a poisoned alias or shared city/state
+        # tail would otherwise score as an exact match.
+        sub_head = _street_name_head_tokens(location_text)
+        if sub_head:
+            for raw in labels:
+                if _street_heads_compatible(sub_head, _street_name_head_tokens(raw)):
+                    return True
+            return False
 
     return True
 

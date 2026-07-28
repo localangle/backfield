@@ -51,8 +51,12 @@ interface OrganizationExtractData {
 }
 
 function OrganizationExtractNode({ data, selected }: NodeProps<OrganizationExtractData>) {
-  const requiredUpstreamNodes = nodeMetadata?.requiredUpstreamNodes || []
-  const dependencyHelperText = nodeMetadata?.dependencyHelperText || ''
+  const meta = nodeMetadata as {
+    requiredUpstreamNodes?: string[]
+    dependencyHelperText?: string
+  }
+  const requiredUpstreamNodes = meta.requiredUpstreamNodes || []
+  const dependencyHelperText = meta.dependencyHelperText || ''
   const icon = getNodeIcon('OrganizationExtract', 'h-4 w-4')
   const bgColor = getNodeBgColor('OrganizationExtract')
 

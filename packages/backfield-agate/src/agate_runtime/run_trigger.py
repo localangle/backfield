@@ -25,6 +25,12 @@ _INGRESS_NODE_TYPES: frozenset[str] = frozenset({"TextInput", "JSONInput", "S3In
 class TriggerRunResult:
     run: AgateRun
     processed_item: AgateProcessedItem | None = None
+    enqueue_task_name: str | None = None
+    enqueue_args: list[Any] | None = None
+
+    def enqueue(self, enqueue_task: Callable[[str, list[Any]], None]) -> None:
+        if self.enqueue_task_name is not None and self.enqueue_args is not None:
+            enqueue_task(self.enqueue_task_name, self.enqueue_args)
 
 
 def find_public_ingress_node(spec: GraphSpec) -> NodeConfig:
@@ -150,12 +156,17 @@ def trigger_agate_run(
     inputs: dict[str, Any] | None = None,
     replace_article_geography_on_persist: bool = False,
     enqueue: Callable[[str, list[Any]], None],
+    commit: bool = True,
 ) -> TriggerRunResult:
     """Create a run, pin the effective graph spec, and enqueue the appropriate worker task."""
     spec = GraphSpec.model_validate_json(graph.spec_json)
     effective = apply_inputs_to_spec(spec, inputs)
     effective_json = effective.model_dump_json()
     is_s3_batch = graph_spec_json_contains_s3_input(effective_json)
+    input_doc: dict[str, Any] | None = None
+    source_file: str | None = None
+    if not is_s3_batch:
+        input_doc, source_file = build_single_item_input_from_graph_spec_json(effective_json)
 
     run = AgateRun(
         graph_id=graph.id,
@@ -163,24 +174,27 @@ def trigger_agate_run(
         replace_article_geography_on_persist=replace_article_geography_on_persist,
     )
     session.add(run)
-    session.commit()
+    session.flush()
     session.refresh(run)
 
     if is_s3_batch:
         run.result_json = merge_run_result_payload(None, graph_spec_json=effective_json)
         run.updated_at = datetime.now(UTC)
         session.add(run)
-        session.commit()
+        if commit:
+            session.commit()
+        else:
+            session.flush()
         session.refresh(run)
-        enqueue("worker.tasks.execute_s3_batch_setup", [run.id])
-        return TriggerRunResult(run=run, processed_item=None)
-
-    try:
-        input_doc, source_file = build_single_item_input_from_graph_spec_json(effective_json)
-    except ValueError:
-        session.delete(run)
-        session.commit()
-        raise
+        result = TriggerRunResult(
+            run=run,
+            processed_item=None,
+            enqueue_task_name="worker.tasks.execute_s3_batch_setup",
+            enqueue_args=[run.id],
+        )
+        if commit:
+            result.enqueue(enqueue)
+        return result
 
     item = AgateProcessedItem(
         run_id=run.id,
@@ -193,12 +207,22 @@ def trigger_agate_run(
     run.result_json = merge_run_result_payload(None, graph_spec_json=effective_json)
     run.updated_at = datetime.now(UTC)
     session.add(run)
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     session.refresh(item)
     session.refresh(run)
 
     if item.id is None:
         raise RuntimeError("Processed item id missing after save")
 
-    enqueue("worker.tasks.execute_processed_item", [int(item.id)])
-    return TriggerRunResult(run=run, processed_item=item)
+    result = TriggerRunResult(
+        run=run,
+        processed_item=item,
+        enqueue_task_name="worker.tasks.execute_processed_item",
+        enqueue_args=[int(item.id)],
+    )
+    if commit:
+        result.enqueue(enqueue)
+    return result

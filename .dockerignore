@@ -3,7 +3,10 @@
 .git
 .venv
 .env
-.env.local
+.env.*
+!.env.example
+*.pem
+*.key
 **/__pycache__
 **/*.py[cod]
 **/.pytest_cache
@@ -12,6 +15,3 @@
 **/node_modules
 **/dist
 **/*.egg-info
-
-# Optional large local *.db under geocoding data (excluded so image builds do not copy them).
-packages/backfield-agate/src/agate_utils/geocoding/data/*.db

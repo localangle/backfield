@@ -9,7 +9,9 @@ from sqlmodel import Session, col, select
 
 from backfield_entities.public.article_geo_search import group_and_page_articles_by_mention_pairs
 from backfield_entities.public.articles import (
+    ArticleMetaClause,
     PublicArticleOut,
+    _apply_public_article_list_filters,
     _article_to_public_out,
     _meta_rows_for_articles,
 )
@@ -25,6 +27,9 @@ def collect_mention_article_pairs(
     canonical_id: str,
     project_id: int,
     nature: str | None = None,
+    meta_clauses: tuple[ArticleMetaClause, ...] = (),
+    author: str | None = None,
+    external_source: str | None = None,
     pub_date_from: date | None = None,
     pub_date_to: date | None = None,
 ) -> list[tuple[int, int]]:
@@ -38,17 +43,24 @@ def collect_mention_article_pairs(
     nature_value = (nature or "").strip()
     if nature_value:
         filters.append(mention_model.nature == nature_value)
-    if pub_date_from is not None:
-        filters.append(col(SubstrateArticle.pub_date) >= pub_date_from)
-    if pub_date_to is not None:
-        filters.append(col(SubstrateArticle.pub_date) <= pub_date_to)
-
-    rows = session.exec(
+    stmt = (
         select(mention_model.id, mention_model.article_id)
         .join(SubstrateArticle, SubstrateArticle.id == mention_model.article_id)
         .join(entity_model, entity_model.id == mention_entity_fk)
         .where(*filters)
-    ).all()
+    )
+    stmt = _apply_public_article_list_filters(
+        stmt,
+        meta_type=None,
+        meta_category=None,
+        meta_clauses=meta_clauses,
+        author=author,
+        external_source=external_source,
+        has_mentions=None,
+        pub_date_from=pub_date_from,
+        pub_date_to=pub_date_to,
+    )
+    rows = session.exec(stmt).all()
     return [
         (int(mention_id), int(article_id))
         for mention_id, article_id in rows

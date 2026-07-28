@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import os
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextvars import copy_context
 from datetime import UTC, datetime
@@ -45,6 +45,12 @@ from worker.substrate.canonical.llm_call_policy import (
     ADJUDICATION_LLM_TIMEOUT_S,
 )
 from worker.substrate.canonical.parallel_llm import canonical_adjudication_max_concurrent
+from worker.substrate.cleanup.cleanup_llm_auth import (
+    call_llm_kwargs_from_overlay,
+    is_llm_auth_error,
+)
+
+logger = logging.getLogger(__name__)
 
 _MAX_MENTION_TEXT_LEN = 120
 
@@ -434,7 +440,15 @@ def run_cluster_partition_llm(
     prompt: str,
     model: str,
     model_config_id: str | None,
+    api_key_overlay: dict[str, str],
 ) -> dict[str, Any] | None:
+    """Call the partition LLM. Auth/config errors raise; malformed JSON returns None."""
+    key_kwargs = call_llm_kwargs_from_overlay(api_key_overlay)
+    if not key_kwargs:
+        raise ValueError(
+            "No provider credentials configured for this organization. "
+            "Add AI credentials in organization settings before running this review."
+        )
     try:
         raw = call_llm(
             prompt,
@@ -443,11 +457,12 @@ def run_cluster_partition_llm(
             temperature=0.0,
             max_retries=ADJUDICATION_LLM_MAX_RETRIES,
             timeout=ADJUDICATION_LLM_TIMEOUT_S,
-            openai_api_key=os.getenv("OPENAI_API_KEY"),
             model_config_id=model_config_id,
+            **key_kwargs,
         )
         data = json.loads(raw)
-    except Exception:
+    except json.JSONDecodeError:
+        logger.warning("cleanup AI review LLM returned non-JSON for model=%s", model)
         return None
     if not isinstance(data, dict):
         return None
@@ -460,16 +475,28 @@ def propose_for_cluster(
     members: list[CleanupClusterMember],
     model: str,
     model_config_id: str | None,
+    api_key_overlay: dict[str, str],
 ) -> list[CleanupAiProposalDraft]:
     if len(members) < 2:
         return []
     cluster_id = cluster_id_for_member_ids([member.id for member in members])
     prompt = build_cluster_partition_prompt(check_id=check_id, members=members)
-    llm_data = run_cluster_partition_llm(
-        prompt=prompt,
-        model=model,
-        model_config_id=model_config_id,
-    )
+    try:
+        llm_data = run_cluster_partition_llm(
+            prompt=prompt,
+            model=model,
+            model_config_id=model_config_id,
+            api_key_overlay=api_key_overlay,
+        )
+    except Exception as exc:
+        if is_llm_auth_error(exc):
+            raise
+        logger.exception(
+            "cleanup AI review cluster LLM failed check_id=%s cluster_id=%s",
+            check_id,
+            cluster_id,
+        )
+        return []
     valid_ids = {member.id for member in members}
     groups = parse_cluster_partition_response(llm_data, valid_member_ids=valid_ids)
     if groups is None:
@@ -576,6 +603,7 @@ def run_cleanup_review_clusters(
     members_by_cluster: list[list[CleanupClusterMember]],
     model: str,
     model_config_id: str | None,
+    api_key_overlay: dict[str, str],
 ) -> None:
     """Run cluster LLM calls in parallel and persist progress after each cluster finishes."""
     if _cleanup_ai_review_is_cancelled(engine, review_id):
@@ -596,6 +624,7 @@ def run_cleanup_review_clusters(
             members=members,
             model=model,
             model_config_id=model_config_id,
+            api_key_overlay=api_key_overlay,
         )
 
     if max_workers <= 1 or len(members_by_cluster) <= 1:

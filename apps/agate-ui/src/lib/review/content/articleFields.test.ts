@@ -10,7 +10,7 @@ describe('processedItemArticleFields', () => {
       input: { publication: 'Input Pub', headline: 'Input title' },
       output: { publication: 'Output Pub', author: 'Jane' },
       overlay: { article: { publication: 'Overlay Pub', headline: 'Overlay head' } },
-    } as ProcessedItem
+    } as unknown as ProcessedItem
     const fields = readArticleFieldsFromProcessedItem(item)
     expect(fields.publication).toBe('Overlay Pub')
     expect(fields.headline).toBe('Overlay head')
@@ -33,7 +33,7 @@ describe('processedItemArticleFields', () => {
           success: true,
         },
       },
-    } as ProcessedItem
+    } as unknown as ProcessedItem
     const fields = readArticleFieldsFromProcessedItem(item)
     expect(fields.headline).toBe('JSON headline')
     expect(fields.publication).toBe('JSON pub')

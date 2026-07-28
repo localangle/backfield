@@ -30,7 +30,8 @@ Rules for compact output:
   3. nature — short nature code (see legend below)
   4. address_place_kind — short kind code for street-level types; use "" for all other types
   5. description — one brief sentence on the location's role in the story
-  6. geocode_hints — concise disambiguation/context for downstream geocoding; use "" when not needed
+  6. geocode_hints — geographic disambiguation for geocoding/search (street, neighborhood,
+     nearby landmark, which branch); never story synopsis; use "" when location is already unique
   7. evidence_anchor — the shortest useful verbatim phrase copied from the article that justifies
      this location. This can differ from `location` when the output is normalized (`1400 block of
      West Argyle Street` for `1400 W Argyle St, Chicago, IL`; `Ald. Jessie Fuentes (26th)` for

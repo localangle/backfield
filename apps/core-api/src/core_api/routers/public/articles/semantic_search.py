@@ -31,22 +31,6 @@ router = APIRouter()
 
 class PublicArticleSemanticSearchIn(BaseModel):
     query: str = Field(min_length=1, description="Natural-language search text")
-    meta_type: str | None = Field(
-        default=None,
-        description="Include articles with a metadata row of this type",
-    )
-    meta_category: str | None = Field(
-        default=None,
-        description="With meta_type, include articles with this metadata category",
-    )
-    exclude_meta_type: str | None = Field(
-        default=None,
-        description="Exclude articles with a metadata row of this type",
-    )
-    exclude_meta_category: str | None = Field(
-        default=None,
-        description="With exclude_meta_type, exclude articles with this metadata category",
-    )
     meta: list[str] = Field(default_factory=list, description=META_PARAM_DESCRIPTION)
     pub_date_from: str | None = None
     pub_date_to: str | None = None
@@ -105,10 +89,6 @@ def search_project_articles_semantic(
         raise _embedding_http_error(exc) from exc
 
     params = PublicArticleSemanticSearchParams(
-        meta_type=body.meta_type,
-        meta_category=body.meta_category,
-        exclude_meta_type=body.exclude_meta_type,
-        exclude_meta_category=body.exclude_meta_category,
         meta_clauses=parse_meta_clauses(body.meta),
         pub_date_from=parse_optional_date(body.pub_date_from, param_name="pub_date_from"),
         pub_date_to=parse_optional_date(body.pub_date_to, param_name="pub_date_to"),

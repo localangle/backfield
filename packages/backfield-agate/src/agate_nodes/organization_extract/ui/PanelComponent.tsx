@@ -187,7 +187,7 @@ export default function OrganizationExtractPanel({
     node.id,
     nodeOutputLookupSpec ?? undefined,
   )
-  const latestData = nodeOutput || null
+  const latestData = (nodeOutput as { organizations?: unknown[] } | null | undefined) || null
 
   return (
     <>

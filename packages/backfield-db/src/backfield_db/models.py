@@ -1,4 +1,4 @@
-"""ORM models — table prefixes per owning app (see docs/DATABASE.md)."""
+"""ORM models — table prefixes per owning app (see docs/architecture/database.md)."""
 
 from __future__ import annotations
 
@@ -140,6 +140,69 @@ class BackfieldProject(SQLModel, table=True):
     updated_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
+
+
+class BackfieldPublicIdempotencyRecord(SQLModel, table=True):
+    """Short-lived public API request identity without retaining request payloads."""
+
+    __tablename__ = "backfield_public_idempotency_record"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "operation",
+            "idempotency_key",
+            name="uq_backfield_public_idempotency_scope",
+        ),
+        Index("ix_backfield_public_idempotency_expires", "expires_at"),
+        Index("ix_backfield_public_idempotency_run", "run_id"),
+        Index(
+            "ix_backfield_public_idempotency_enqueue_state",
+            "enqueue_state",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("backfield_project.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    operation: str = Field(sa_column=Column(Text, nullable=False))
+    idempotency_key: str = Field(sa_column=Column(Text, nullable=False))
+    request_hash: str = Field(sa_column=Column(Text, nullable=False))
+    run_id: str | None = Field(
+        default=None,
+        sa_column=Column(
+            Text,
+            ForeignKey("agate_run.id", ondelete="CASCADE"),
+            nullable=True,
+        ),
+    )
+    enqueue_task_name: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    enqueue_args_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    enqueue_state: str = Field(
+        default="pending",
+        sa_column=Column(Text, nullable=False, server_default="pending"),
+    )
+    enqueue_claimed_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    enqueued_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    enqueue_attempt_count: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False, server_default="0"),
+    )
+    enqueue_last_error: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
 
 
 class BackfieldProjectMembership(SQLModel, table=True):
@@ -2031,9 +2094,12 @@ class AgateProcessedItem(SQLModel, table=True):
     """Per-S3-object execution unit for S3Input batch runs (parent ``agate_run``)."""
 
     __tablename__ = "agate_processed_item"
+    __table_args__ = (
+        Index("ix_agate_processed_item_run_status", "run_id", "status"),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
-    run_id: str = Field(foreign_key="agate_run.id", index=True)
+    run_id: str = Field(foreign_key="agate_run.id")
     source_file: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     input_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     status: str = Field(

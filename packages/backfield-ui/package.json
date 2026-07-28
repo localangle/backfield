@@ -1,6 +1,7 @@
 {
   "name": "@backfield/ui",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "sideEffects": [
     "**/*.css"
@@ -10,9 +11,15 @@
   "exports": {
     ".": "./src/index.ts",
     "./nodeOutputs": "./src/nodeOutputs.ts",
+    "./siblingUiOrigin": "./src/siblingUiOrigin.ts",
     "./LeafletMap": "./src/LeafletMap.tsx",
     "./GeometryEditLeafletMap": "./src/GeometryEditLeafletMap.tsx",
-    "./axisAlignedRectangle": "./src/axisAlignedRectangle.ts"
+    "./axisAlignedRectangle": "./src/axisAlignedRectangle.ts",
+    "./ShellSidebar": "./src/ShellSidebar.tsx",
+    "./UserAccountMenu": "./src/UserAccountMenu.tsx",
+    "./AgateProductMark": "./src/AgateProductMark.tsx",
+    "./StylebookProductMark": "./src/StylebookProductMark.tsx",
+    "./cn": "./src/cn.ts"
   },
   "scripts": {
     "test": "vitest run"

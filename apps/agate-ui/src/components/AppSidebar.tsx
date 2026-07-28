@@ -5,6 +5,7 @@ import {
   ChevronRight,
   HelpCircle,
   Settings,
+  TerminalSquare,
 } from 'lucide-react'
 import { AgateProductMark, ShellSidebar, StylebookProductMark } from '@backfield/ui'
 import { Button } from '@/components/ui/button'
@@ -13,7 +14,7 @@ import { listProjects, type Project } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
 import { hasWorkspaceAccess } from '@/lib/workspace-access'
-import { helpHref, stylebookShellHref } from '@/lib/platformUrls'
+import { helpHref, playgroundHref, stylebookShellHref } from '@/lib/platformUrls'
 import {
   listStylebookCatalogs,
   type StylebookCatalogRow,
@@ -276,11 +277,9 @@ export default function AppSidebar() {
 
               {(expanded ? workspaceRows : []).map((ws) => {
                 const workspaceExpanded = expandedWorkspaceSlugs.has(ws.slug)
-                const wsContainsActiveProject = ws.projects.some(
-                  (p) => p.slug === activeProjectSlug,
-                )
-                const wsHighlighted =
-                  activeWorkspaceSlug === ws.slug || wsContainsActiveProject
+                // Highlight only the exact destination. A selected project
+                // should not also make its parent workspace look selected.
+                const wsHighlighted = activeWorkspaceSlug === ws.slug
                 const projectsSorted = [...ws.projects].sort((a, b) =>
                   a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
                 )
@@ -387,6 +386,14 @@ export default function AppSidebar() {
             </div>
 
             <div className="border-t border-border/50 pt-2 shrink-0 space-y-1">
+              <a
+                href={playgroundHref()}
+                className={hubLinkClass}
+                title={!expanded ? 'API Playground' : undefined}
+              >
+                <TerminalSquare className="h-5 w-5 shrink-0" aria-hidden />
+                {expanded ? <span>API Playground</span> : null}
+              </a>
               {isOrgAdmin ? (
                 <NavLink
                   to="/settings"

@@ -2,10 +2,36 @@
 
 from __future__ import annotations
 
-from backfield_db import BackfieldWorkspace, Stylebook, StylebookBundleJob, StylebookSlugRedirect
+from backfield_db import (
+    BackfieldWorkspace,
+    Stylebook,
+    StylebookActivity,
+    StylebookBundleJob,
+    StylebookCandidateAiReview,
+    StylebookCleanupAiProposal,
+    StylebookCleanupAiReview,
+    StylebookCleanupCheckResult,
+    StylebookCleanupCheckRun,
+    StylebookCleanupDismissal,
+    StylebookLocationAlias,
+    StylebookLocationCanonical,
+    StylebookLocationMeta,
+    StylebookMembership,
+    StylebookOrganizationAlias,
+    StylebookOrganizationCanonical,
+    StylebookOrganizationMeta,
+    StylebookPersonAlias,
+    StylebookPersonCanonical,
+    StylebookPersonMeta,
+    StylebookSlugRedirect,
+    SubstrateLocation,
+    SubstrateOrganization,
+    SubstratePerson,
+)
 from sqlalchemy import delete, or_, update
 from sqlmodel import Session, col, select
 
+from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
 from backfield_entities.catalog.graph_stylebook_refs import reassign_stylebook_refs_in_org_graphs
 from backfield_entities.catalog.stylebook_record_slug import allocate_unique_stylebook_slug
 
@@ -208,6 +234,195 @@ def set_org_default_stylebook(
     return target
 
 
+def _reset_substrate_links_for_stylebook_delete(
+    session: Session,
+    *,
+    stylebook_id: int,
+) -> None:
+    """Clear substrate FKs/status before canonicals cascade-delete with the stylebook.
+
+    Postgres sets canonical FKs to NULL on cascade, but would leave ``canonical_link_status``
+    as ``linked``. Reset both sides explicitly for a consistent pending review state.
+    """
+    reason = [
+        {
+            "code": "reset_pending_after_stylebook_deleted",
+            "deleted_stylebook_id": int(stylebook_id),
+        }
+    ]
+    location_ids = list(
+        session.exec(
+            select(StylebookLocationCanonical.id).where(
+                StylebookLocationCanonical.stylebook_id == stylebook_id
+            )
+        ).all()
+    )
+    if location_ids:
+        session.exec(
+            update(SubstrateLocation)
+            .where(col(SubstrateLocation.stylebook_location_canonical_id).in_(location_ids))
+            .values(
+                stylebook_location_canonical_id=None,
+                canonical_link_status=CANONICAL_LINK_PENDING,
+                canonical_review_reasons_json=reason,
+            )
+        )
+    person_ids = list(
+        session.exec(
+            select(StylebookPersonCanonical.id).where(
+                StylebookPersonCanonical.stylebook_id == stylebook_id
+            )
+        ).all()
+    )
+    if person_ids:
+        session.exec(
+            update(SubstratePerson)
+            .where(col(SubstratePerson.stylebook_person_canonical_id).in_(person_ids))
+            .values(
+                stylebook_person_canonical_id=None,
+                canonical_link_status=CANONICAL_LINK_PENDING,
+                canonical_review_reasons_json=reason,
+            )
+        )
+    organization_ids = list(
+        session.exec(
+            select(StylebookOrganizationCanonical.id).where(
+                StylebookOrganizationCanonical.stylebook_id == stylebook_id
+            )
+        ).all()
+    )
+    if organization_ids:
+        session.exec(
+            update(SubstrateOrganization)
+            .where(
+                col(SubstrateOrganization.stylebook_organization_canonical_id).in_(
+                    organization_ids
+                )
+            )
+            .values(
+                stylebook_organization_canonical_id=None,
+                canonical_link_status=CANONICAL_LINK_PENDING,
+                canonical_review_reasons_json=reason,
+            )
+        )
+
+
+def _clear_stylebook_fk_dependents(session: Session, *, stylebook_id: int) -> None:
+    """Remove child rows whose FKs to ``stylebook`` are not ``ON DELETE CASCADE``.
+
+    Membership and slug redirects cascade in Postgres. Activity, bundle jobs, cleanup
+    workflow tables, and candidate AI reviews do not and must be cleared first.
+    """
+    sid = int(stylebook_id)
+    # Child-before-parent: proposals → reviews; results → runs.
+    session.exec(
+        delete(StylebookCleanupAiProposal).where(StylebookCleanupAiProposal.stylebook_id == sid)
+    )
+    session.exec(
+        delete(StylebookCleanupAiReview).where(StylebookCleanupAiReview.stylebook_id == sid)
+    )
+    session.exec(
+        delete(StylebookCleanupCheckResult).where(StylebookCleanupCheckResult.stylebook_id == sid)
+    )
+    session.exec(
+        delete(StylebookCleanupCheckRun).where(StylebookCleanupCheckRun.stylebook_id == sid)
+    )
+    session.exec(
+        delete(StylebookCleanupDismissal).where(StylebookCleanupDismissal.stylebook_id == sid)
+    )
+    session.exec(
+        delete(StylebookCandidateAiReview).where(StylebookCandidateAiReview.stylebook_id == sid)
+    )
+    session.exec(delete(StylebookActivity).where(StylebookActivity.stylebook_id == sid))
+    session.exec(
+        delete(StylebookBundleJob).where(
+            or_(
+                StylebookBundleJob.source_stylebook_id == sid,
+                StylebookBundleJob.result_stylebook_id == sid,
+            )
+        )
+    )
+    # Cascaded in Postgres migrations; deleted explicitly for SQLite FK parity.
+    session.exec(delete(StylebookMembership).where(StylebookMembership.stylebook_id == sid))
+    session.exec(delete(StylebookSlugRedirect).where(StylebookSlugRedirect.stylebook_id == sid))
+
+
+def _delete_stylebook_canonical_trees(session: Session, *, stylebook_id: int) -> None:
+    """Delete canonicals (and alias/meta children) for this stylebook.
+
+    Postgres cascades canonicals from ``stylebook``; aliases/meta cascade from
+    canonicals. Explicit deletes keep SQLite FK tests and both engines aligned.
+    """
+    sid = int(stylebook_id)
+    location_ids = list(
+        session.exec(
+            select(StylebookLocationCanonical.id).where(
+                StylebookLocationCanonical.stylebook_id == sid
+            )
+        ).all()
+    )
+    if location_ids:
+        session.exec(
+            delete(StylebookLocationAlias).where(
+                col(StylebookLocationAlias.location_canonical_id).in_(location_ids)
+            )
+        )
+        session.exec(
+            delete(StylebookLocationMeta).where(
+                col(StylebookLocationMeta.stylebook_location_canonical_id).in_(location_ids)
+            )
+        )
+        session.exec(
+            delete(StylebookLocationCanonical).where(StylebookLocationCanonical.stylebook_id == sid)
+        )
+
+    person_ids = list(
+        session.exec(
+            select(StylebookPersonCanonical.id).where(StylebookPersonCanonical.stylebook_id == sid)
+        ).all()
+    )
+    if person_ids:
+        session.exec(
+            delete(StylebookPersonAlias).where(
+                col(StylebookPersonAlias.person_canonical_id).in_(person_ids)
+            )
+        )
+        session.exec(
+            delete(StylebookPersonMeta).where(
+                col(StylebookPersonMeta.stylebook_person_canonical_id).in_(person_ids)
+            )
+        )
+        session.exec(
+            delete(StylebookPersonCanonical).where(StylebookPersonCanonical.stylebook_id == sid)
+        )
+
+    organization_ids = list(
+        session.exec(
+            select(StylebookOrganizationCanonical.id).where(
+                StylebookOrganizationCanonical.stylebook_id == sid
+            )
+        ).all()
+    )
+    if organization_ids:
+        session.exec(
+            delete(StylebookOrganizationAlias).where(
+                col(StylebookOrganizationAlias.organization_canonical_id).in_(organization_ids)
+            )
+        )
+        session.exec(
+            delete(StylebookOrganizationMeta).where(
+                col(StylebookOrganizationMeta.stylebook_organization_canonical_id).in_(
+                    organization_ids
+                )
+            )
+        )
+        session.exec(
+            delete(StylebookOrganizationCanonical).where(
+                StylebookOrganizationCanonical.stylebook_id == sid
+            )
+        )
+
+
 def delete_stylebook(
     session: Session,
     stylebook_id: int,
@@ -219,6 +434,10 @@ def delete_stylebook(
     Workspaces still referencing this stylebook are repointed to the org default (or the
     replacement default when deleting the current default). Deleting the current default
     requires ``replacement_default_id`` for another book in the same org.
+
+    Non-cascading dependents (activity, bundle jobs, cleanup/candidate review rows) are
+    removed first. Linked substrate rows are reset to pending, then canonical trees are
+    deleted before the catalog row itself.
     """
     book = session.get(Stylebook, stylebook_id)
     if book is None:
@@ -266,15 +485,9 @@ def delete_stylebook(
         to_stylebook_id=int(reassign_target_id),
     )
 
-    # Async bundle jobs reference this stylebook; remove them so FK does not block delete.
-    session.exec(
-        delete(StylebookBundleJob).where(
-            or_(
-                StylebookBundleJob.source_stylebook_id == stylebook_id,
-                StylebookBundleJob.result_stylebook_id == stylebook_id,
-            )
-        )
-    )
+    _reset_substrate_links_for_stylebook_delete(session, stylebook_id=int(stylebook_id))
+    _clear_stylebook_fk_dependents(session, stylebook_id=int(stylebook_id))
+    _delete_stylebook_canonical_trees(session, stylebook_id=int(stylebook_id))
     session.flush()
 
     session.delete(book)

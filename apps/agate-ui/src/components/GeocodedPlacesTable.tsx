@@ -11,9 +11,9 @@ import {
 } from '@/components/ui/table'
 import {
   getGeocodedPlaceDisplay,
-  getGeocodingSourceLabel,
+  getReviewRowGeocodingSourceLabel,
   getPlaceEditorialDetail,
-  extractGeometryFromPlace,
+  extractEffectiveGeometryFromReviewRow,
   placeEditorialDetailHasContent,
 } from '@/lib/review/entities/location/placeGeometry'
 import { mentionNatureBadgeClass, mentionNatureDisplayLabel } from '@/lib/placeMentionNature'
@@ -120,8 +120,8 @@ export function GeocodedPlacesTable({
             const address = display.formattedAddress || '—'
             const linked = isMergedRowLinkedToStylebook(row)
             const showAdopt = shouldShowAdoptForStylebook(row)
-            const geocodingSourceLabel = loc ? getGeocodingSourceLabel(loc) : null
-            const needsGeography = !extractGeometryFromPlace(loc)
+            const geocodingSourceLabel = getReviewRowGeocodingSourceLabel(row)
+            const needsGeography = !extractEffectiveGeometryFromReviewRow(row)
             const typeLabel = display.type.trim()
               ? placeExtractTypeLabel(display.type)
               : '—'

@@ -212,7 +212,7 @@ export default function NodePanel({
                   <PanelComponent
                     node={selectedNode}
                     onChange={onTextChange}
-                    currentRun={currentRun}
+                    currentRun={currentRun ?? undefined}
                     editMode={editMode}
                     setNodes={setNodes}
                     graphContext={graphContext ?? undefined}

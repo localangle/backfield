@@ -124,7 +124,7 @@ const OUTPUT_PREVIEW_ROW_LIMIT = 8
 
 interface CustomExtractPanelProps {
   node: { id: string; data?: Record<string, unknown> }
-  currentRun?: { node_outputs?: Record<string, unknown> }
+  currentRun?: { node_outputs?: Record<string, unknown> | null } | null
   editMode?: boolean
   setNodes?: (nodes: unknown) => void
   graphContext?: GraphPanelContext

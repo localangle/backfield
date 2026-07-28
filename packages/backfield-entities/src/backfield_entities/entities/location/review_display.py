@@ -8,6 +8,9 @@ _GEOCODE_QA_MESSAGES: dict[str, str] = {
     "geocode_region_mismatch": "Map region does not match the place named in the story",
     "geocode_city_level_fallback": "Map pin may be too broad — confirm the exact location",
     "geocode_admin_level_mismatch": "Map result does not match this type of place",
+    "geocode_subnational_mismatch": (
+        "Map state or country does not match the place named in the story"
+    ),
     "geocode_country_mismatch": (
         "Place extraction disagrees with the geocoded address on country — confirm before linking"
     ),

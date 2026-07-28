@@ -20,11 +20,11 @@ Do not invent new shapes — match the reference check's structure, naming, and 
 
 **Read first (in order):**
 
-1. [`quality/checks.py`](../../packages/backfield-entities/src/backfield_entities/quality/checks.py)
+1. [`quality/checks.py`](../../../packages/backfield-entities/src/backfield_entities/quality/checks.py)
    — the registry; its module docstring is the canonical "add a check" recipe and the
    **single source of truth** for which checks exist and how counts are computed.
 2. The **reference check** for your kind (see table below) — finder + API route + frontend.
-3. [`docs/FRONTEND.md`](../../docs/FRONTEND.md) → **Stylebook home tabs** — hub UX and copy.
+3. [`docs/development/frontend/stylebook.md`](../../../docs/development/frontend/stylebook.md) → **Stylebook Review** — hub UX and copy.
 
 **Not this skill:** adding a brand-new canonical **entity type** (a new `etc.` beyond
 location/person/organization). That is a much larger job — use
@@ -145,7 +145,7 @@ If you changed live cross-service behavior (rare for a read-only check):
 make smoke
 ```
 
-Update [`docs/FRONTEND.md`](../../docs/FRONTEND.md) (Stylebook home tabs) via
+Update [`docs/development/frontend/stylebook.md`](../../../docs/development/frontend/stylebook.md) (**Stylebook Review**) via
 [`update-repo-docs`](../update-repo-docs/SKILL.md) when the hub's check list changes.
 
 ---

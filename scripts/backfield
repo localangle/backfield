@@ -21,6 +21,11 @@ find_repo_root() {
 # Probe string must match host_tooling.CLI_ENTRYPOINT_PROBE in backfield-cli.
 CLI_ENTRYPOINT_PROBE='import backfield_cli.main'
 
+cli_entrypoint_error() {
+  # Print the import failure (if any) so repair messaging is actionable.
+  "$VENV_PY" -c "$CLI_ENTRYPOINT_PROBE" 2>&1 >/dev/null || true
+}
+
 cli_entrypoint_works() {
   "$VENV_PY" -c "$CLI_ENTRYPOINT_PROBE" >/dev/null 2>&1
 }
@@ -39,12 +44,21 @@ repair_python_cli() {
     echo "error: uv is not on PATH. Install uv, then run 'make bootstrap' from the repo root." >&2
     exit 1
   fi
-  uv sync --all-packages --quiet
+  # Prefer this checkout's .venv even if a different VIRTUAL_ENV is active
+  # (e.g. apps/backfield venv while working in a Desktop clone).
+  unset VIRTUAL_ENV
+  uv sync --all-packages
   if ! cli_entrypoint_works; then
+    # Editable installs can look "audited" while their .pth entries are stale.
+    # Reinstall the CLI import chain used by the entrypoint probe.
     uv sync --all-packages \
       --reinstall-package backfield-cli \
-      --reinstall-package backfield-db \
-      --quiet
+      --reinstall-package backfield-auth \
+      --reinstall-package backfield-db
+  fi
+  if ! cli_entrypoint_works; then
+    echo "Editable installs still broken; reinstalling the full workspace environment..." >&2
+    uv sync --all-packages --reinstall
   fi
   install_cli_shim_if_needed
 }
@@ -65,10 +79,14 @@ if [[ ! -x "$VENV_PY" ]]; then
 fi
 
 if ! cli_entrypoint_works; then
+  echo "CLI entrypoint import failed:" >&2
+  cli_entrypoint_error >&2 || true
   repair_python_cli
   if ! cli_entrypoint_works; then
-    echo "error: could not repair the Backfield CLI in .venv." >&2
-    echo "Run 'make bootstrap' from the repo root, then retry." >&2
+    echo "error: could not repair the Backfield CLI in .venv at $ROOT." >&2
+    echo "Last import error:" >&2
+    cli_entrypoint_error >&2 || true
+    echo "Run 'make bootstrap' (or 'uv sync --all-packages --reinstall') from $ROOT, then retry." >&2
     exit 1
   fi
 else

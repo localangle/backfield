@@ -251,20 +251,12 @@ def login_session_context(
     password: str,
     workspace_slug: str,
     project_slug: str,
-    bootstrap_first_user: bool = False,
 ) -> SessionContext:
+    """Log in to Core API. Seed the first admin with `backfield seed` before calling."""
     with httpx.Client(base_url=core_base, timeout=30.0) as core:
         core_health = assert_object(core.get("/health"), "Core health")
         if core_health.get("ok") is not True:
             raise RuntimeError(f"Core health failed: {core_health}")
-
-        if bootstrap_first_user:
-            boot = core.post(
-                "/v1/bootstrap/first-user",
-                json={"email": email, "password": password},
-            )
-            if boot.status_code not in (200, 400):
-                boot.raise_for_status()
 
         login = core.post("/v1/auth/login", json={"email": email, "password": password})
         login.raise_for_status()

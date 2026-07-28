@@ -222,7 +222,7 @@ function cleanupScopeQuery(project?: string): string {
 }
 
 export async function listCleanupChecks(
-  params: ListCleanupChecksParams,
+  params: ListCleanupChecksParams & { signal?: AbortSignal },
 ): Promise<CleanupChecksResponse> {
   const q = new URLSearchParams()
   if (params.project) q.set("project", params.project)
@@ -230,6 +230,7 @@ export async function listCleanupChecks(
   const suffix = q.toString() ? `?${q.toString()}` : ""
   return stylebookJsonFetch<CleanupChecksResponse>(
     `${cleanupChecksPath(params.stylebookSlug)}${suffix}`,
+    { cache: "no-store", signal: params.signal },
   )
 }
 

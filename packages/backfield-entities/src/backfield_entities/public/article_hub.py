@@ -13,10 +13,13 @@ from backfield_db import (
     SubstrateImage,
     SubstrateLocation,
     SubstrateLocationMention,
+    SubstrateLocationMentionOccurrence,
     SubstrateOrganization,
     SubstrateOrganizationMention,
+    SubstrateOrganizationMentionOccurrence,
     SubstratePerson,
     SubstratePersonMention,
+    SubstratePersonMentionOccurrence,
 )
 from pydantic import BaseModel, Field
 from sqlalchemy import func, literal, union_all
@@ -27,6 +30,7 @@ from backfield_entities.public.mention_evidence import (
     PublicMentionEvidenceOut,
     location_article_mention_evidence_by_mention_id,
     location_evidence_by_mention_id,
+    maybe_quotes_only_mention_filters,
     organization_article_mention_evidence_by_mention_id,
     organization_evidence_by_mention_id,
     person_article_mention_evidence_by_mention_id,
@@ -748,23 +752,39 @@ def list_article_locations(
     session: Session,
     *,
     article_id: int,
+    nature: str | None = None,
+    location_type: str | None = None,
+    quotes_only: bool = False,
     limit: int,
     offset: int,
 ) -> tuple[list[PublicArticleLocationOut], int]:
+    filters = [
+        SubstrateLocationMention.article_id == article_id,
+        SubstrateLocationMention.deleted == False,  # noqa: E712
+    ]
+    nature_value = (nature or "").strip()
+    if nature_value:
+        filters.append(SubstrateLocationMention.nature == nature_value)
+    location_type_value = (location_type or "").strip()
+    if location_type_value:
+        filters.append(SubstrateLocation.location_type == location_type_value)
+    filters.extend(
+        maybe_quotes_only_mention_filters(
+            SubstrateLocationMention.id,
+            occurrence_model=SubstrateLocationMentionOccurrence,
+            mention_fk_column="location_mention_id",
+            quotes_only=quotes_only,
+        )
+    )
     base = (
         select(SubstrateLocationMention, SubstrateLocation)
         .join(SubstrateLocation, SubstrateLocation.id == SubstrateLocationMention.location_id)
-        .where(
-            SubstrateLocationMention.article_id == article_id,
-            SubstrateLocationMention.deleted == False,  # noqa: E712
-        )
+        .where(*filters)
     )
     count_stmt = select(func.count()).select_from(
         select(SubstrateLocationMention.id)
-        .where(
-            SubstrateLocationMention.article_id == article_id,
-            SubstrateLocationMention.deleted == False,  # noqa: E712
-        )
+        .join(SubstrateLocation, SubstrateLocation.id == SubstrateLocationMention.location_id)
+        .where(*filters)
         .subquery()
     )
     total = int(session.exec(count_stmt).one())
@@ -832,6 +852,7 @@ def list_article_people(
     *,
     article_id: int,
     nature: str | None = None,
+    quotes_only: bool = False,
     limit: int,
     offset: int,
 ) -> tuple[list[PublicArticlePersonOut], int]:
@@ -842,6 +863,14 @@ def list_article_people(
     nature_value = (nature or "").strip()
     if nature_value:
         filters.append(SubstratePersonMention.nature == nature_value)
+    filters.extend(
+        maybe_quotes_only_mention_filters(
+            SubstratePersonMention.id,
+            occurrence_model=SubstratePersonMentionOccurrence,
+            mention_fk_column="person_mention_id",
+            quotes_only=quotes_only,
+        )
+    )
     count_stmt = select(func.count()).select_from(
         select(SubstratePersonMention.id).where(*filters).subquery()
     )
@@ -917,6 +946,7 @@ def list_article_organizations(
     *,
     article_id: int,
     nature: str | None = None,
+    quotes_only: bool = False,
     limit: int,
     offset: int,
 ) -> tuple[list[PublicArticleOrganizationOut], int]:
@@ -927,6 +957,14 @@ def list_article_organizations(
     nature_value = (nature or "").strip()
     if nature_value:
         filters.append(SubstrateOrganizationMention.nature == nature_value)
+    filters.extend(
+        maybe_quotes_only_mention_filters(
+            SubstrateOrganizationMention.id,
+            occurrence_model=SubstrateOrganizationMentionOccurrence,
+            mention_fk_column="organization_mention_id",
+            quotes_only=quotes_only,
+        )
+    )
     count_stmt = select(func.count()).select_from(
         select(SubstrateOrganizationMention.id).where(*filters).subquery()
     )

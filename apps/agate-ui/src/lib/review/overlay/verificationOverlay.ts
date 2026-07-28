@@ -1,6 +1,6 @@
 /**
- * Draft overlay state for processed-item verification (Issue 4).
- * Aligns with ``docs/API.md`` → processed item location overlay (v1).
+ * Draft overlay state for processed-item verification.
+ * Aligns with ``docs/api/processed-item-review.md`` → *Entity review domains*.
  */
 
 export function emptyOverlay(): Record<string, unknown> {
