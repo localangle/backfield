@@ -10,6 +10,8 @@ provisioned with `backfield seed` / `backfield init`, not environment-variable a
 
 ## Service identity and routing
 
+- `BACKFIELD_CLIENT`: trusted deployment slug used as the EMF `Client` dimension. Required when
+  application metrics are enabled; see [`../OBSERVABILITY.md`](../OBSERVABILITY.md).
 - `BACKFIELD_ENV` or `ENVIRONMENT`: deployment label on structured log lines; defaults to
   `development`. Core API also uses `ENVIRONMENT=production` to apply production cookie behavior.
 - `BACKFIELD_HTTP_PATH_PREFIX`: optional prefix stripped before API routing, such as `/api/agate`

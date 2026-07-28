@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from backfield_db import BackfieldPublicIdempotencyRecord
+from backfield_observability.celery_publish import register_publish_timestamp_hook
 from celery import Celery
 from sqlalchemy import and_, column, or_, update
 from sqlmodel import Session
@@ -17,6 +18,7 @@ celery_app = Celery(
     broker=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
     backend=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
 )
+register_publish_timestamp_hook()
 
 ENQUEUE_STATE_PENDING = "pending"
 ENQUEUE_STATE_PUBLISHING = "publishing"

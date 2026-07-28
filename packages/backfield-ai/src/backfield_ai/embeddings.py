@@ -225,7 +225,17 @@ def embed_texts_sync(
         resp = litellm.embedding(**kwargs)
     except Exception as exc:
         latency_ms = int((time.perf_counter() - t0) * 1000)
-        msg = str(exc)[:2000]
+        from backfield_observability.external import emit_external_request, sanitize_error_message
+
+        emit_external_request(
+            operation="llm",
+            duration_seconds=latency_ms / 1000.0,
+            failed=True,
+            provider="litellm",
+            error_type=type(exc).__name__,
+            outcome="exception",
+        )
+        msg = sanitize_error_message(str(exc), limit=2000) or type(exc).__name__
         logger.warning("LiteLLM embedding failed for model=%s: %s", lm, msg)
         result = LiteLLMEmbeddingBatchResult(
             litellm_model=lm,
@@ -255,6 +265,15 @@ def embed_texts_sync(
         return result
 
     latency_ms = int((time.perf_counter() - t0) * 1000)
+    from backfield_observability.external import emit_external_request
+
+    emit_external_request(
+        operation="llm",
+        duration_seconds=latency_ms / 1000.0,
+        failed=False,
+        provider="litellm",
+        outcome="success",
+    )
     try:
         vectors = _vectors_from_embedding_response(resp, expected_count=len(texts))
     except EmbeddingConfigurationError as exc:

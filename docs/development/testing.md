@@ -64,6 +64,8 @@ Common Make targets:
 - `make smoke-fast`: auth, basic Agate, and basic Stylebook checks (no external LLM required)
 - `make smoke`: the primary Agate-to-Stylebook handoff, including Starter flow execution and
   persisted output (needs configured model credentials)
+- `make smoke-observability`: EMF metric emission plus optional live success/failure run checks;
+  see [`../OBSERVABILITY.md`](../OBSERVABILITY.md)
 
 Specialized smoke scripts remain available under `tests/smoke/`. Run them directly when you need a
 focused lane:

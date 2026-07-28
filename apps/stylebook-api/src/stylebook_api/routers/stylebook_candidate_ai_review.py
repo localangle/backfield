@@ -10,6 +10,7 @@ from typing import Any, Literal
 from backfield_auth.gate import require_project_access
 from backfield_db import BackfieldAiModelConfig, BackfieldProject, StylebookCandidateAiReview
 from backfield_entities.catalog.candidate_ai_review import count_open_candidates_for_review
+from backfield_observability.celery_publish import register_publish_timestamp_hook
 from celery import Celery
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -27,6 +28,7 @@ celery_app = Celery(
     broker=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
     backend=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
 )
+register_publish_timestamp_hook()
 
 CandidateEntityType = Literal["person", "organization", "location"]
 

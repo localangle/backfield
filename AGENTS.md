@@ -19,6 +19,7 @@ canonical agent/engineering checklist.
 - `packages/backfield-ai`: Model resolution, LiteLLM integration, embeddings, and AI call accounting.
 - `packages/backfield-ui`: Shared React components and `@backfield/ui/nodeOutputs`.
 - `packages/backfield-auth`: Session, service, and project API-key authentication.
+- `packages/backfield-observability`: Runtime identity, CloudWatch EMF metric emission, and shared observability helpers.
 - `packages/backfield-db`: SQLModel models, database sessions, encryption, seeding, and Alembic migrations.
 - `packages/backfield-entities`: Entity registry, catalog resolution, canonicalization, public queries, ingest, cleanup, connections, and semantic synchronization.
 - `packages/backfield-cli`: Stack lifecycle, migration, seeding, and data-maintenance commands.
@@ -32,7 +33,7 @@ canonical agent/engineering checklist.
 - `make migrate`: run Alembic via the one-off Compose **`migrate`** service. Use `make migrate-host` (or `backfield migrate`) for the host CLI path against local Postgres.
 - `make lint`: run Ruff checks.
 - `make test`: run unit, integration, and structural tests.
-- `make smoke-fast` / `make smoke`: live-stack smoke; see [testing](docs/development/testing.md).
+- `make smoke-fast` / `make smoke` / `make smoke-observability`: live-stack smoke; see [testing](docs/development/testing.md).
 
 ## Docs map
 
@@ -40,6 +41,7 @@ canonical agent/engineering checklist.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): human contribution entry point.
 - [`docs/README.md`](docs/README.md): audience-based documentation index.
 - [`docs/architecture/overview.md`](docs/architecture/overview.md): application and package boundaries and dependency direction.
+- [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md): application metrics / EMF contract with backfield-cloud.
 - [`docs/development/entities/overview.md`](docs/development/entities/overview.md): entity model; use with `.cursor/skills/add-entity-type`.
 - [`docs/development/nodes.md`](docs/development/nodes.md): Agate node contracts and checklists; use with `.cursor/skills/add-agate-node`.
 - [`docs/development/frontend/conventions.md`](docs/development/frontend/conventions.md): shared frontend and user-facing copy rules.

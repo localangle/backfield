@@ -13,6 +13,7 @@ from backfield_auth.gate import require_org_admin
 from backfield_db import BackfieldProject, Stylebook, StylebookBundleJob
 from backfield_entities.catalog.full_bundle import DEFAULT_MAX_ZIP_BYTES, read_manifest_from_zip
 from backfield_entities.catalog.stylebook_record_slug import slugify_stylebook_name
+from backfield_observability.celery_publish import register_publish_timestamp_hook
 from celery import Celery
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
@@ -95,6 +96,7 @@ celery_app = Celery(
     broker=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
     backend=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
 )
+register_publish_timestamp_hook()
 
 
 def _celery_queue() -> str:

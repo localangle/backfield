@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sys
 from datetime import UTC, datetime
 from logging import LogRecord
 from typing import Any
 
+from backfield_observability.identity import read_runtime_identity
+
 from backfield_auth.log_context import read_log_context
-from backfield_auth.service_health import read_build_info
 
 _HANDLER_FLAG = "_backfield_structured_json"
 
@@ -43,13 +43,9 @@ _LOG_RECORD_STANDARD = frozenset(
     }
 )
 
-
+# Preserve CloudWatch EMF metadata if a LogRecord ever carries it.
 def read_environment() -> str:
-    for name in ("BACKFIELD_ENV", "ENVIRONMENT"):
-        raw = os.environ.get(name)
-        if raw is not None and raw.strip():
-            return raw.strip()
-    return "development"
+    return read_runtime_identity("unknown").environment
 
 
 class JsonLogFormatter(logging.Formatter):
@@ -58,20 +54,23 @@ class JsonLogFormatter(logging.Formatter):
     def __init__(self, service_name: str) -> None:
         super().__init__()
         self._service_name = service_name
-        self._build_info = read_build_info(service_name)
-        self._environment = read_environment()
+        self._identity = read_runtime_identity(service_name)
 
     def format(self, record: LogRecord) -> str:
+        severity = record.levelname.lower()
         payload: dict[str, Any] = {
             "timestamp": datetime.fromtimestamp(record.created, UTC).isoformat(),
-            "level": record.levelname.lower(),
+            "level": severity,
+            "severity": severity,
             "logger": record.name,
             "message": record.getMessage(),
             "service": self._service_name,
-            "environment": self._environment,
-            "version": self._build_info.version,
-            "git_sha": self._build_info.git_sha,
+            "environment": self._identity.environment,
+            "version": self._identity.version,
+            "git_sha": self._identity.git_sha,
         }
+        if self._identity.client:
+            payload["client"] = self._identity.client
         payload.update(read_log_context())
         payload.update(_structured_fields(record))
         if record.exc_info:
@@ -82,7 +81,10 @@ class JsonLogFormatter(logging.Formatter):
 def _structured_fields(record: LogRecord) -> dict[str, Any]:
     fields: dict[str, Any] = {}
     for key, value in record.__dict__.items():
-        if key in _LOG_RECORD_STANDARD or key.startswith("_"):
+        if key in _LOG_RECORD_STANDARD:
+            continue
+        # Drop logging-internal attrs; keep CloudWatch EMF `_aws` if present.
+        if key.startswith("_") and key != "_aws":
             continue
         if value is not None:
             fields[key] = value

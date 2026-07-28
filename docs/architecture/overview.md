@@ -39,6 +39,8 @@ Redis and Celery.
   accounting.
 - `packages/backfield-auth` owns signed sessions, service authentication, project API-key
   authentication, and shared FastAPI auth dependencies.
+- `packages/backfield-observability` owns runtime identity, CloudWatch EMF metric emission, and
+  shared lifecycle/external metric helpers. See [`../OBSERVABILITY.md`](../OBSERVABILITY.md).
 - `packages/backfield-cli` owns operator commands for stack lifecycle, migration, seeding, and
   data maintenance.
 - `packages/backfield-ui` owns shared React components and the output-key helpers used by Agate
@@ -56,16 +58,17 @@ infrastructure packages:
 ```text
 UI applications -> HTTP APIs
 
-agate-api -> backfield-auth, agate-runtime, backfield-entities, backfield-db
-core-api -> backfield-ai, backfield-auth, agate-runtime, backfield-entities, backfield-db
-stylebook-api -> backfield-ai, backfield-auth, backfield-entities, backfield-db
-worker -> backfield-ai, backfield-auth, agate-runtime, backfield-entities, backfield-db
+agate-api -> backfield-auth, backfield-observability, agate-runtime, backfield-entities, backfield-db
+core-api -> backfield-ai, backfield-auth, backfield-observability, agate-runtime, backfield-entities, backfield-db
+stylebook-api -> backfield-ai, backfield-auth, backfield-observability, backfield-entities, backfield-db
+worker -> backfield-ai, backfield-auth, backfield-observability, agate-runtime, backfield-entities, backfield-db
 
 agate-runtime -> backfield-ai, backfield-entities, backfield-db
 backfield-auth -> backfield-db
 backfield-ai -> backfield-db
 backfield-entities -> backfield-db
 backfield-cli -> backfield-db
+backfield-observability -> (stdlib / typing only; no DB)
 ```
 
 `backfield-db` does not depend on applications. Shared packages do not import API routers,

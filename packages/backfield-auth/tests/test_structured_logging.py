@@ -21,6 +21,7 @@ def test_json_formatter_emits_standard_fields(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("APP_VERSION", "v1.2.3")
     monkeypatch.setenv("GIT_SHA", "abc123")
     monkeypatch.setenv("BACKFIELD_ENV", "test")
+    monkeypatch.setenv("BACKFIELD_CLIENT", "local-dev")
 
     formatter = JsonLogFormatter("agate-api")
     record = logging.LogRecord(
@@ -34,15 +35,20 @@ def test_json_formatter_emits_standard_fields(monkeypatch: pytest.MonkeyPatch) -
     )
     record.event = "test_event"
     record.method = "GET"
+    record._aws = {"CloudWatchMetrics": []}
 
     payload = json.loads(formatter.format(record))
     assert payload["service"] == "agate-api"
     assert payload["environment"] == "test"
     assert payload["version"] == "v1.2.3"
     assert payload["git_sha"] == "abc123"
+    assert payload["client"] == "local-dev"
     assert payload["event"] == "test_event"
     assert payload["method"] == "GET"
     assert payload["message"] == "hello"
+    assert payload["severity"] == "info"
+    assert payload["level"] == "info"
+    assert payload["_aws"] == {"CloudWatchMetrics": []}
 
 
 def test_log_event_includes_context_fields() -> None:
@@ -61,9 +67,10 @@ def test_log_event_includes_context_fields() -> None:
 
     reset = bind_log_context(
         request_id="req-1",
-        client="pytest",
+        request_client="pytest",
         run_id="run-9",
         job_id="job-3",
+        item_id="42",
     )
     try:
         log_event(logger, "unit_test", path="/demo")
@@ -74,10 +81,13 @@ def test_log_event_includes_context_fields() -> None:
     payload = json.loads(captured[-1])
     assert payload["event"] == "unit_test"
     assert payload["request_id"] == "req-1"
-    assert payload["client"] == "pytest"
+    assert payload["request_client"] == "pytest"
     assert payload["run_id"] == "run-9"
     assert payload["job_id"] == "job-3"
+    assert payload["item_id"] == "42"
     assert payload["path"] == "/demo"
+    assert payload["severity"] == "info"
+    assert payload["level"] == "info"
 
 
 def test_request_logging_middleware_emits_json_access_log(

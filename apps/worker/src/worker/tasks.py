@@ -41,6 +41,7 @@ from backfield_ai.tracking_context import (
     reset_llm_tracking_context,
     set_llm_tracking_current_node,
 )
+from backfield_auth.log_context import bind_log_context
 from backfield_db import (
     AgateGraph,
     AgateNodeTiming,
@@ -79,6 +80,13 @@ from backfield_entities.quality.finders.duplicate_organizations import (
     duplicate_organization_cluster_ids,
 )
 from backfield_entities.quality.finders.duplicate_people import duplicate_person_cluster_ids
+from backfield_observability.celery_publish import register_publish_timestamp_hook
+from backfield_observability.lifecycle import (
+    emit_item_terminal,
+    emit_run_terminal,
+    emit_worker_lost,
+    worker_identity,
+)
 from celery import Celery, chord, group
 from celery.exceptions import Reject
 from sqlalchemy import delete, func, update
@@ -163,7 +171,18 @@ def _reap_stale_running_items_for_run(
         )
         .execution_options(synchronize_session="fetch")
     )
-    return int(result.rowcount or 0)
+    count = int(result.rowcount or 0)
+    for _ in range(count):
+        emit_worker_lost()
+        emit_item_terminal(
+            previous_status="running",
+            new_status="failed",
+            identity=worker_identity(),
+            started_at=None,
+            finished_at=now,
+            correlation={"run_id": run_id},
+        )
+    return count
 
 
 def _try_claim_processed_item(
@@ -329,6 +348,7 @@ celery_app = Celery(
 )
 celery_app.conf.task_acks_late = True
 celery_app.conf.task_reject_on_worker_lost = True
+register_publish_timestamp_hook()
 
 
 def _register_worker_process_hooks() -> None:
@@ -608,6 +628,7 @@ def _finalize_s3_parent_run(session: Session, run_id: str) -> None:
     ]
     failed_count = sum(1 for _, _, status, _ in items if status == "failed")
     run.result_json = merge_run_result_payload(run.result_json, items=item_summary)
+    previous_status = run.status
     if failed_count:
         run.status = "failed"
         run.error_message = f"{failed_count} of {len(items)} file task(s) failed."
@@ -617,6 +638,12 @@ def _finalize_s3_parent_run(session: Session, run_id: str) -> None:
     run.updated_at = datetime.now(UTC)
     session.add(run)
     session.commit()
+    emit_run_terminal(
+        previous_status=previous_status,
+        new_status=run.status,
+        identity=worker_identity(),
+        correlation={"run_id": run_id},
+    )
 
 
 @celery_app.task(name="worker.tasks.execute_agate_run")
@@ -628,11 +655,18 @@ def execute_agate_run(run_id: str) -> None:
             return
         graph = session.get(AgateGraph, run.graph_id)
         if not graph:
+            previous_status = run.status
             run.status = "failed"
             run.error_message = "Graph not found"
             run.updated_at = datetime.now(UTC)
             session.add(run)
             session.commit()
+            emit_run_terminal(
+                previous_status=previous_status,
+                new_status="failed",
+                identity=worker_identity(),
+                correlation={"run_id": run_id},
+            )
             return
 
         if run.status != "pending":
@@ -712,6 +746,7 @@ def execute_agate_run(run_id: str) -> None:
         run = session.get(AgateRun, run_id)
         if not run or run.status != "running":
             return
+        previous_status = run.status
         try:
             if run_error is not None:
                 if run.error_message == _RUN_CANCELLED_MESSAGE:
@@ -732,6 +767,12 @@ def execute_agate_run(run_id: str) -> None:
         run.updated_at = datetime.now(UTC)
         session.add(run)
         session.commit()
+        emit_run_terminal(
+            previous_status=previous_status,
+            new_status=run.status,
+            identity=worker_identity(),
+            correlation={"run_id": run_id},
+        )
 
 
 @celery_app.task(name="worker.tasks.execute_s3_batch_setup")
@@ -743,11 +784,18 @@ def execute_s3_batch_setup(run_id: str) -> None:
             return
         graph = session.get(AgateGraph, run.graph_id)
         if not graph:
+            previous_status = run.status
             run.status = "failed"
             run.error_message = "Graph not found"
             run.updated_at = datetime.now(UTC)
             session.add(run)
             session.commit()
+            emit_run_terminal(
+                previous_status=previous_status,
+                new_status="failed",
+                identity=worker_identity(),
+                correlation={"run_id": run_id},
+            )
             return
 
         claimed_at = datetime.now(UTC)
@@ -802,6 +850,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                 if run is None or run.status != "running":
                     session.rollback()
                     return
+                previous_status = run.status
                 run.status = "failed"
                 run.error_message = f"No JSON objects found under s3://{bucket}/{prefix or ''}"
                 run.result_json = merge_run_result_payload(
@@ -816,6 +865,12 @@ def execute_s3_batch_setup(run_id: str) -> None:
                 run.updated_at = datetime.now(UTC)
                 session.add(run)
                 session.commit()
+                emit_run_terminal(
+                    previous_status=previous_status,
+                    new_status="failed",
+                    identity=worker_identity(),
+                    correlation={"run_id": run_id},
+                )
                 return
 
             with _env_overlay(overlay):
@@ -907,6 +962,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                 if run is None or run.status != "running":
                     session.rollback()
                     return
+                previous_status = run.status
                 run.status = "failed"
                 run.error_message = (
                     "No valid JSON files with a non-empty top-level 'text' field under the prefix."
@@ -914,6 +970,12 @@ def execute_s3_batch_setup(run_id: str) -> None:
                 run.updated_at = datetime.now(UTC)
                 session.add(run)
                 session.commit()
+                emit_run_terminal(
+                    previous_status=previous_status,
+                    new_status="failed",
+                    identity=worker_identity(),
+                    correlation={"run_id": run_id},
+                )
                 return
 
             # Queue all ``execute_processed_item`` tasks and return immediately. A ``chord``
@@ -946,11 +1008,18 @@ def execute_s3_batch_setup(run_id: str) -> None:
                 if run_fail is None or run_fail.status != "running":
                     session3.rollback()
                     return
+                previous_status = run_fail.status
                 run_fail.status = "failed"
                 run_fail.error_message = str(e)
                 run_fail.updated_at = datetime.now(UTC)
                 session3.add(run_fail)
                 session3.commit()
+                emit_run_terminal(
+                    previous_status=previous_status,
+                    new_status="failed",
+                    identity=worker_identity(),
+                    correlation={"run_id": run_id},
+                )
 
 
 @celery_app.task(name="worker.tasks.execute_run_replay_setup")
@@ -1213,12 +1282,14 @@ def _execute_processed_item_impl(item_id: int) -> None:
             run_id_str = str(run.id)
             iid = int(item.id) if item.id is not None else None
             has_db_output = _graph_has_db_output(spec)
+            bind_log_context(run_id=run_id_str, item_id=str(iid) if iid is not None else None)
             session.commit()
     except Exception as e:
         with Session(engine) as session:
             item_run_id = session.exec(
                 select(AgateProcessedItem.run_id).where(AgateProcessedItem.id == item_id)
             ).first()
+            finished_at = datetime.now(UTC)
             if item_run_id and _update_processed_item_outcome_if_active(
                 session,
                 item_id=int(item_id),
@@ -1228,9 +1299,17 @@ def _execute_processed_item_impl(item_id: int) -> None:
                 result_json=None,
                 substrate_article_id=None,
                 error_message=str(e),
-                now=datetime.now(UTC),
+                now=finished_at,
             ):
                 session.commit()
+                emit_item_terminal(
+                    previous_status="running",
+                    new_status="failed",
+                    identity=worker_identity(),
+                    started_at=claimed_at,
+                    finished_at=finished_at,
+                    correlation={"run_id": str(item_run_id), "item_id": str(item_id)},
+                )
                 _finalize_s3_parent_run(session, item_run_id)
             else:
                 session.rollback()
@@ -1283,6 +1362,7 @@ def _execute_processed_item_impl(item_id: int) -> None:
     )
     completed_status = "succeeded" if item_error is None else "failed"
     with Session(engine) as session:
+        finished_at = datetime.now(UTC)
         if not _update_processed_item_outcome_if_active(
             session,
             item_id=int(item_id),
@@ -1292,7 +1372,7 @@ def _execute_processed_item_impl(item_id: int) -> None:
             result_json=completed_result_json,
             substrate_article_id=completed_article_id,
             error_message=item_error,
-            now=datetime.now(UTC),
+            now=finished_at,
         ):
             session.rollback()
             return
@@ -1309,6 +1389,14 @@ def _execute_processed_item_impl(item_id: int) -> None:
                 processed_item_id=iid,
             )
         session.commit()
+        emit_item_terminal(
+            previous_status="running",
+            new_status=completed_status,
+            identity=worker_identity(),
+            started_at=claimed_at,
+            finished_at=finished_at,
+            correlation={"run_id": run_id_str, "item_id": str(item_id)},
+        )
         _finalize_s3_parent_run(session, run_id_str)
 
 

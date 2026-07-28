@@ -52,6 +52,7 @@ Runtime knobs, migrations, artifacts, and failure recovery for local (and artifa
 - [`operations/migrations.md`](operations/migrations.md) — Alembic workflows
 - [`operations/deployment.md`](operations/deployment.md) — artifact builds (no in-repo deploy)
 - [`operations/troubleshooting.md`](operations/troubleshooting.md) — common local failures
+- [`OBSERVABILITY.md`](OBSERVABILITY.md) — application metrics / EMF contract with backfield-cloud
 
 ## Architecture
 

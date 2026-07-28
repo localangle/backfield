@@ -16,7 +16,7 @@ _QUIET_PATHS = frozenset({"/health", "/healthz", "/readyz", "/version"})
 
 
 class RequestLoggingMiddleware:
-    """Bind ``request_id`` / ``client`` and log one JSON line per HTTP request."""
+    """Bind ``request_id`` / ``request_client`` and log one JSON line per HTTP request."""
 
     def __init__(self, app: Any, *, service_name: str) -> None:
         self.app = app
@@ -37,8 +37,8 @@ class RequestLoggingMiddleware:
             for key, value in scope.get("headers", [])
         }
         request_id = headers.get("x-request-id") or str(uuid.uuid4())
-        client = headers.get("x-client-id") or _client_label(headers, scope)
-        context_reset = bind_log_context(request_id=request_id, client=client)
+        request_client = headers.get("x-client-id") or _client_label(headers, scope)
+        context_reset = bind_log_context(request_id=request_id, request_client=request_client)
 
         started = time.perf_counter()
         status_code = 500

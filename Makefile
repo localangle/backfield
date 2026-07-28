@@ -11,7 +11,7 @@ DOCKER_BAKE_ENV := APP_VERSION=$(APP_VERSION) GIT_SHA=$(GIT_SHA) BUILD_TIME=$(BU
 	bootstrap install-cli-shim install-user-cli uninstall-user-cli \
 	up up-detached down logs migrate migrate-host reset-db clear-entity-data \
 	docker-trim docker-trim-full \
-	lint format test smoke smoke-fast \
+	lint format test smoke smoke-fast smoke-observability \
 	ui-bootstrap ui-typecheck ui-test ui-build agate-ui-build stylebook-ui-build \
 	api-playground-bootstrap api-playground-lint api-playground-test api-playground-build \
 	docker-build-prod-apis docker-build-prod-worker
@@ -38,6 +38,7 @@ help:
 	@echo "  make api-playground-lint / api-playground-test"
 	@echo "  make smoke               - Golden Agate-to-Stylebook handoff"
 	@echo "  make smoke-fast          - Auth + basic Agate + basic Stylebook"
+	@echo "  make smoke-observability - EMF metrics + optional live success/failure runs"
 	@echo "  Specialized smoke scripts: uv run python -u tests/smoke/<script>.py"
 	@echo ""
 	@echo "Deploy builds"
@@ -120,7 +121,7 @@ format:
 	uv run ruff format packages apps tests
 
 test:
-	uv run pytest packages/backfield-agate/tests packages/backfield-auth/tests packages/backfield-db/tests packages/backfield-cli/tests -q
+	uv run pytest packages/backfield-agate/tests packages/backfield-auth/tests packages/backfield-db/tests packages/backfield-cli/tests packages/backfield-observability/tests -q
 	uv run pytest tests -q
 
 smoke:
@@ -130,6 +131,9 @@ smoke-fast:
 	uv run python -u tests/smoke/smoke_auth.py
 	uv run python -u tests/smoke/smoke_agate_basic.py
 	uv run python -u tests/smoke/smoke_stylebook_basic.py
+
+smoke-observability:
+	uv run python -u tests/smoke/smoke_observability.py
 
 # --- Frontend validation / deploy builds ------------------------------------
 
