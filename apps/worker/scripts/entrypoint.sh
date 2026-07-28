@@ -5,6 +5,12 @@ if [ -d /app/apps/worker/src ]; then
   export PYTHONPATH="/app/apps/worker/src${PYTHONPATH:+:$PYTHONPATH}"
 fi
 
+# Honor container command overrides (e.g. `python -m worker.metrics_collector`).
+# Without this, ECS/Docker `command` is ignored and Celery always starts.
+if [ "$#" -gt 0 ]; then
+  exec "$@"
+fi
+
 CONCURRENCY="${CELERY_WORKER_CONCURRENCY:-16}"
 PREFETCH_MULTIPLIER="${CELERY_PREFETCH_MULTIPLIER:-1}"
 MAX_TASKS_PER_CHILD="${CELERY_MAX_TASKS_PER_CHILD:-1}"
