@@ -212,6 +212,15 @@ export interface ProcessedItemNodeTiming {
   elapsed_ms: number
 }
 
+export interface S3BatchSummary {
+  total_json_objects: number
+  skipped_invalid: number
+  skipped_cap: number
+  skipped_unchanged: number
+  skipped_claim_conflict: number
+  valid_executed: number
+}
+
 export interface Run {
   id: string
   graph_id: string
@@ -239,6 +248,8 @@ export interface Run {
   graph_spec_snapshot_json?: string | null
   /** True when the saved flow differs from the pinned snapshot; null when no snapshot exists. */
   flow_changed_since_run?: boolean | null
+  /** S3 Input scan counters when this run used batch setup. */
+  s3_batch?: S3BatchSummary | null
 }
 
 export interface ApiKey {
@@ -360,6 +371,14 @@ interface RawRun {
   estimated_ai_cost_total_incomplete?: boolean
   graph_spec_snapshot_json?: string | null
   flow_changed_since_run?: boolean | null
+  s3_batch?: {
+    total_json_objects?: number
+    skipped_invalid?: number
+    skipped_cap?: number
+    skipped_unchanged?: number
+    skipped_claim_conflict?: number
+    valid_executed?: number
+  } | null
 }
 
 interface RawRunStatus {
@@ -379,6 +398,14 @@ interface RawRunStatus {
   estimated_ai_cost_total_incomplete?: boolean
   graph_spec_snapshot_json?: string | null
   flow_changed_since_run?: boolean | null
+  s3_batch?: {
+    total_json_objects?: number
+    skipped_invalid?: number
+    skipped_cap?: number
+    skipped_unchanged?: number
+    skipped_claim_conflict?: number
+    valid_executed?: number
+  } | null
 }
 
 interface RawProcessedItemsPage {
@@ -410,6 +437,25 @@ function _parseCostAmount(v: unknown): number {
 
 function _currencyFromRaw(v: unknown, fallback: string): string {
   return typeof v === 'string' && v.trim() ? v.trim().toUpperCase() : fallback
+}
+
+function normalizeS3BatchSummary(raw: unknown): S3BatchSummary | null {
+  if (!raw || typeof raw !== 'object') return null
+  const obj = raw as Record<string, unknown>
+  const asInt = (key: string): number => {
+    const value = obj[key]
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return {
+    total_json_objects: asInt('total_json_objects'),
+    skipped_invalid: asInt('skipped_invalid'),
+    skipped_cap: asInt('skipped_cap'),
+    skipped_unchanged: asInt('skipped_unchanged'),
+    skipped_claim_conflict: asInt('skipped_claim_conflict'),
+    valid_executed: asInt('valid_executed'),
+  }
 }
 
 function normalizeGraphSummary(raw: RawGraph): GraphSummary {
@@ -579,6 +625,13 @@ function normalizeRun(raw: RawRun): Run {
   const hasTotalAggregate =
     raw.estimated_ai_cost_total !== undefined && raw.estimated_ai_cost_total !== null
 
+  const s3BatchFromField = normalizeS3BatchSummary(raw.s3_batch)
+  const s3BatchFromResult =
+    outputs && typeof outputs === 'object'
+      ? normalizeS3BatchSummary((outputs as Record<string, unknown>).s3_batch)
+      : null
+  const s3Batch = s3BatchFromField ?? s3BatchFromResult
+
   return {
     id: raw.id,
     graph_id: raw.graph_id,
@@ -609,6 +662,7 @@ function normalizeRun(raw: RawRun): Run {
     ...(raw.flow_changed_since_run === true || raw.flow_changed_since_run === false
       ? { flow_changed_since_run: raw.flow_changed_since_run }
       : {}),
+    ...(s3Batch ? { s3_batch: s3Batch } : {}),
   }
 }
 
@@ -635,6 +689,9 @@ function normalizeRunStatus(raw: RawRunStatus): Run {
       : {}),
     ...(raw.flow_changed_since_run === true || raw.flow_changed_since_run === false
       ? { flow_changed_since_run: raw.flow_changed_since_run }
+      : {}),
+    ...(normalizeS3BatchSummary(raw.s3_batch)
+      ? { s3_batch: normalizeS3BatchSummary(raw.s3_batch) }
       : {}),
   }
 }

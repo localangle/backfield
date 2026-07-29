@@ -120,6 +120,7 @@ def claim_ledger_revision(
     flow_run_id: str,
     lease_duration: timedelta,
     now: datetime | None = None,
+    reclaim_succeeded: bool = False,
 ) -> LedgerClaimResult | None:
     """Atomically claim a revision for processing, or return None if not claimable."""
     claimed_at = now or datetime.now(UTC)
@@ -163,7 +164,7 @@ def claim_ledger_revision(
             return None
         return LedgerClaimResult(ledger_id=str(row.id), claim_token=claim_token)
 
-    if existing.status == LEDGER_STATUS_SUCCEEDED:
+    if existing.status == LEDGER_STATUS_SUCCEEDED and not reclaim_succeeded:
         return None
 
     lease = existing.lease_expires_at
@@ -172,7 +173,12 @@ def claim_ledger_revision(
     if existing.status == LEDGER_STATUS_PROCESSING and lease is not None and lease > claimed_at:
         return None
 
-    if existing.status not in (LEDGER_STATUS_FAILED, LEDGER_STATUS_PROCESSING):
+    reclaimable_statuses = (
+        LEDGER_STATUS_FAILED,
+        LEDGER_STATUS_PROCESSING,
+        *((LEDGER_STATUS_SUCCEEDED,) if reclaim_succeeded else ()),
+    )
+    if existing.status not in reclaimable_statuses:
         return None
 
     observed_status = existing.status

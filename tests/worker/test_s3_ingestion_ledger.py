@@ -201,6 +201,32 @@ def test_changed_contents_start_new_revision(ledger_engine, monkeypatch):
         assert statuses == {"succeeded"}
 
 
+def test_reprocess_unchanged_reclaims_succeeded(ledger_engine, monkeypatch):
+    engine, graph_id, _pid = ledger_engine
+    s3 = _MutableS3()
+    _run_setup(engine, graph_id, s3, monkeypatch)
+
+    with Session(engine) as session:
+        graph = session.get(AgateGraph, graph_id)
+        assert graph is not None
+        spec = json.loads(graph.spec_json)
+        spec["nodes"][0]["params"]["reprocess_unchanged"] = True
+        graph.spec_json = json.dumps(spec)
+        session.add(graph)
+        session.commit()
+
+    forced = _run_setup(engine, graph_id, s3, monkeypatch)
+    with Session(engine) as session:
+        items = session.exec(
+            select(AgateProcessedItem).where(AgateProcessedItem.run_id == forced)
+        ).all()
+        assert len(items) == 1
+        assert items[0].status == "succeeded"
+        ledger = session.exec(select(AgateS3IngestionLedger)).one()
+        assert ledger.status == "succeeded"
+        assert ledger.attempt_count >= 2
+
+
 def test_identical_bytes_new_version_skipped(ledger_engine, monkeypatch):
     engine, graph_id, _pid = ledger_engine
     s3 = _MutableS3()

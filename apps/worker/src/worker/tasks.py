@@ -883,6 +883,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                     "S3Input requires a non-empty bucket parameter before running the flow."
                 )
             max_files = s3_max_files_from_params(params)
+            reprocess_unchanged = bool(params.get("reprocess_unchanged"))
             prefix = folder_path.rstrip("/") + "/" if folder_path else ""
             lease_duration = timedelta(seconds=_STALE_RUNNING_AFTER_S)
             project_id = int(graph.project_id)
@@ -942,7 +943,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                     key = listing.key
                     item_logical_id = logical_item_id(bucket=bucket, key=key)
 
-                    if find_succeeded_matching_metadata(
+                    if not reprocess_unchanged and find_succeeded_matching_metadata(
                         session,
                         source_id=source_id,
                         item_id=item_logical_id,
@@ -980,7 +981,11 @@ def execute_s3_batch_setup(run_id: str) -> None:
                         item_id=item_logical_id,
                         content_fingerprint=fingerprint,
                     )
-                    if existing_fp is not None and existing_fp.status == "succeeded":
+                    if (
+                        not reprocess_unchanged
+                        and existing_fp is not None
+                        and existing_fp.status == "succeeded"
+                    ):
                         skipped_unchanged += 1
                         continue
                     if (
@@ -1011,6 +1016,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                         version_id=version_id_str,
                         flow_run_id=run_id,
                         lease_duration=lease_duration,
+                        reclaim_succeeded=reprocess_unchanged,
                     )
                     if claim is None:
                         skipped_claim_conflict += 1

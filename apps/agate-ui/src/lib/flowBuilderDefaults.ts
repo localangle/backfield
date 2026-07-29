@@ -11,6 +11,7 @@ export function getInputBookendDefaultData(type: string): Record<string, unknown
         bucket: '',
         folder_path: '',
         max_files: 500,
+        reprocess_unchanged: false,
         source_id:
           typeof crypto !== 'undefined' && crypto.randomUUID
             ? crypto.randomUUID()

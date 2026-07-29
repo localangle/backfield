@@ -32,7 +32,9 @@ TextInput and JSONInput runs create one `agate_processed_item` and enqueue
 5. Dispatches claimed items as a Celery chord on the `agate` queue.
 6. Marks each ledger revision `succeeded` or `failed` when that item finishes (not when the
    parent run finishes). `finalize_s3_parent_run` aggregates child statuses onto the parent
-   `agate_run`. A scan with objects but zero new claims succeeds as caught up.
+   `agate_run`. A scan with objects but zero new claims succeeds as caught up. The S3 Input
+   **Process files again** (`reprocess_unchanged`) setting reclaims previously succeeded
+   revisions so unchanged objects can be claimed again.
 
 Run replay clones replayable processed-item inputs and executes them against the graph snapshot
 carried by the replay run; it does not consult the S3 ingestion ledger.

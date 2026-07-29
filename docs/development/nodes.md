@@ -215,7 +215,9 @@ steps.
 
 S3 Input scans claim object revisions through `agate_s3_ingestion_ledger` so unchanged
 content is skipped across runs. A stable `source_id` is stored on the node params
-(minted automatically). Replay bypasses the ledger and re-executes stored inputs.
+(minted automatically). The **Process files again** setting reclaims previously succeeded
+revisions so the same files can be run once more. Replay bypasses the ledger and
+re-executes stored inputs.
 
 The worker records node ID and type for AI usage. Agate resolves display names from
 the current graph and metadata label, with node type as a fallback, so every node

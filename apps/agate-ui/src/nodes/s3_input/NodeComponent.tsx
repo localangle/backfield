@@ -18,7 +18,8 @@ const nodeMetadata = {
     "bucket": "",
     "folder_path": "",
     "max_files": 500,
-    "source_id": ""
+    "source_id": "",
+    "reprocess_unchanged": false
   }
 };
 
