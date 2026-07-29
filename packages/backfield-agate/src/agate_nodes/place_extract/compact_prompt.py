@@ -19,6 +19,12 @@ Rules for compact output:
 - **Block addresses:** never emit "block of" in `location`. Normalize journalistic
   block references to mailing-style addresses (`6500 block of South Hermitage Avenue`
   → `6500 S Hermitage Ave, Chicago, IL`).
+- **Place + street co-mention:** when a named venue appears with its street beside it
+  (comma or parentheses), emit **one `pl` / place row only**. Put venue name first,
+  then the street as a comma segment, then city/state when inferable
+  (`Garfield Community Service Center, 10 S. Kedzie Ave., Chicago, IL`). Do **not**
+  also emit that street as a separate `ad` / address row. Standalone streets with no
+  named venue still use `ad`.
 - **Intersections and spans:** use full street-type words and include city/state
   (`Main Street and 2nd Street, Chicago, IL`; `Lake Street from Nicollet Avenue to
   28th Avenue, Minneapolis, MN`).

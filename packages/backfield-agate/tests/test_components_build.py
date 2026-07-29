@@ -73,6 +73,37 @@ def test_place_with_embedded_street_address() -> None:
     assert components["city"] == "Chicago"
 
 
+def test_place_with_parenthetical_street_address() -> None:
+    ctx = extract_article_context(
+        "Cooling hours extend at the Garfield Community Service Center in Chicago."
+    )
+    components = build_components(
+        "Garfield Community Service Center (10 S. Kedzie Ave.), Chicago, IL",
+        "place",
+        ctx,
+    )
+    assert components["place"]["name"] == "Garfield Community Service Center"
+    assert "(" not in components["place"]["name"]
+    assert components["place"]["natural"] is False
+    assert components["place"]["addressable"] is True
+    assert "10" in components["address"]
+    assert "Kedzie" in components["address"]
+    assert components["city"] == "Chicago"
+    assert components["state"]["abbr"] == "IL"
+
+
+def test_place_parenthetical_non_address_kept_in_name() -> None:
+    """Parentheticals that are not mailing streets stay on the place name."""
+    ctx = extract_article_context("Visitors gathered in Chicago, IL this weekend.")
+    components = build_components(
+        "Museum of Science and Industry (MSI), Chicago, IL",
+        "place",
+        ctx,
+    )
+    assert components["place"]["name"] == "Museum of Science and Industry (MSI)"
+    assert components["address"] == ""
+
+
 @pytest.mark.parametrize(
     "location,expected_name",
     [

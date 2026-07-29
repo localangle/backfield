@@ -22,6 +22,7 @@ SPAN_TO_RE = re.compile(
     flags=re.IGNORECASE,
 )
 _BLOCK_OF_RE = re.compile(r"(\d+)\s+block\s+of\s+", flags=re.IGNORECASE)
+_PARENTHETICAL_RE = re.compile(r"\(([^)]+)\)")
 _STREET_TYPE_ABBREVS = (
     (re.compile(r"\bAvenue\b", flags=re.IGNORECASE), "Ave"),
     (re.compile(r"\bStreet\b", flags=re.IGNORECASE), "St"),
@@ -347,6 +348,29 @@ def _has_address_number(tagged: dict[str, str]) -> bool:
     return bool(tagged.get("AddressNumber"))
 
 
+def _parenthetical_segments(text: str) -> list[str]:
+    """Return non-empty parenthetical interiors from ``text``."""
+    return [match.group(1).strip() for match in _PARENTHETICAL_RE.finditer(text) if match.group(1).strip()]
+
+
+def _is_mailing_street_candidate(value: str) -> bool:
+    tagged, _ = _usaddress_tag(value)
+    return _has_address_number(tagged)
+
+
+def _strip_address_parentheticals(text: str) -> str:
+    """Remove parentheticals that parse as house-number streets from a place name."""
+
+    def _replace(match: re.Match[str]) -> str:
+        inner = match.group(1).strip()
+        if inner and _is_mailing_street_candidate(inner):
+            return ""
+        return match.group(0)
+
+    cleaned = _PARENTHETICAL_RE.sub(_replace, text)
+    return re.sub(r"\s{2,}", " ", cleaned).strip(" ,")
+
+
 def _extract_address_from_location(
     location: str,
     *,
@@ -356,7 +380,7 @@ def _extract_address_from_location(
 ) -> str:
     """Find a mailing-style address in a location string or its middle segments."""
     candidates: list[str] = []
-    for segment in extra_segments or []:
+    for segment in list(extra_segments or []) + _parenthetical_segments(location):
         cleaned = segment.strip()
         if not cleaned:
             continue
@@ -466,6 +490,7 @@ def build_components(
         # Trust extract type for dispatch: type=place is always a POI path.
         # Do not reinterpret category from name tokens (park, river, etc.).
         place_name = primary or location.split(",")[0].strip()
+        place_name = _strip_address_parentheticals(place_name) or place_name
         embedded_address = _extract_address_from_location(
             location,
             city=components["city"],

@@ -123,6 +123,11 @@ Dispatch trusts extract **type**: `place` always attempts POI geocoding (parks,
 zoos, plazas, conservatories included); `natural` is reserved for true geographic
 features (rivers, lakes, mountains). Deterministic component building must not
 reinterpret `type: place` as natural from name tokens like park or river.
+When extract co-mentions a named venue with its street (comma or parenthetical),
+PlaceExtract emits one `place` row and attaches the street on
+`components.address`; compact expansion peels house-number parentheticals out of
+the place name. Independently extracted address and place rows still remain
+separate in GeocodeAgent reconciliation even when they share coordinates.
 
 Consolidate QA also routes state/country contradictions to `needs_review` with
 `geocode_qa_code: geocode_subnational_mismatch` when the extract names a US state
