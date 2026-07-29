@@ -58,10 +58,22 @@ class _FakeBody:
 
 class _FakeS3:
     def list_objects_v2(self, **_kwargs: Any) -> dict[str, Any]:
+        from datetime import UTC, datetime
+
         return {
             "Contents": [
-                {"Key": "seed/bad.json"},
-                {"Key": "seed/good.json"},
+                {
+                    "Key": "seed/bad.json",
+                    "ETag": '"bad"',
+                    "Size": 8,
+                    "LastModified": datetime(2024, 1, 1, tzinfo=UTC),
+                },
+                {
+                    "Key": "seed/good.json",
+                    "ETag": '"good"',
+                    "Size": 40,
+                    "LastModified": datetime(2024, 1, 2, tzinfo=UTC),
+                },
             ],
             "IsTruncated": False,
         }
@@ -157,18 +169,23 @@ def main() -> int:
                     select(AgateProcessedItem).where(AgateProcessedItem.run_id == run.id)
                 ).all()
             )
-            if len(items) != 2:
-                raise RuntimeError(f"Expected two processed items, got {len(items)}")
-            statuses = {row.status for row in items}
-            if statuses != {"skipped", "succeeded"}:
-                raise RuntimeError(f"Unexpected processed item statuses: {sorted(statuses)!r}")
+            if len(items) != 1:
+                raise RuntimeError(f"Expected one processed item, got {len(items)}")
+            if items[0].status != "succeeded":
+                raise RuntimeError(f"Unexpected processed item status: {items[0].status!r}")
+            if not items[0].ingestion_ledger_id:
+                raise RuntimeError("Expected ingestion_ledger_id on processed item")
 
             summary = json.loads(run_row.result_json or "{}")
             batch = summary.get("s3_batch")
-            if not isinstance(batch, dict) or int(batch.get("valid_executed", -1)) != 1:
+            if (
+                not isinstance(batch, dict)
+                or int(batch.get("valid_executed", -1)) != 1
+                or int(batch.get("skipped_invalid", -1)) != 1
+            ):
                 raise RuntimeError(f"Unexpected s3_batch summary: {summary!r}")
             items_payload = summary.get("items")
-            if not isinstance(items_payload, list) or len(items_payload) != 2:
+            if not isinstance(items_payload, list) or len(items_payload) != 1:
                 raise RuntimeError(f"Expected batch summary items list: {summary!r}")
 
         log("Smoke s3 batch passed.")

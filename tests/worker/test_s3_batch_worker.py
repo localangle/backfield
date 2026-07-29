@@ -56,8 +56,18 @@ class _FakeS3:
     def list_objects_v2(self, **_kwargs: Any) -> dict[str, Any]:
         return {
             "Contents": [
-                {"Key": "p/bad.json"},
-                {"Key": "p/good.json"},
+                {
+                    "Key": "p/bad.json",
+                    "ETag": '"bad-etag"',
+                    "Size": 8,
+                    "LastModified": datetime(2024, 1, 1, tzinfo=UTC),
+                },
+                {
+                    "Key": "p/good.json",
+                    "ETag": '"good-etag"',
+                    "Size": 32,
+                    "LastModified": datetime(2024, 1, 2, tzinfo=UTC),
+                },
             ],
             "IsTruncated": False,
         }
@@ -354,14 +364,16 @@ def test_execute_s3_batch_setup_fanout_and_finalize(batch_engine, monkeypatch):
         items = session.exec(
             select(AgateProcessedItem).where(AgateProcessedItem.run_id == run_id)
         ).all()
-        assert len(items) == 2
-        statuses = {row.status for row in items}
-        assert "skipped" in statuses
-        assert "succeeded" in statuses
+        assert len(items) == 1
+        assert items[0].status == "succeeded"
+        assert items[0].ingestion_ledger_id
         summary = json.loads(run.result_json or "{}")
         assert "items" in summary
         assert summary.get("s3_batch", {}).get("valid_executed") == 1
+        assert summary.get("s3_batch", {}).get("skipped_invalid") == 1
         assert summary.get("graph_spec_json") == graph.spec_json
+        params = json.loads(graph.spec_json)["nodes"][0]["params"]
+        assert params.get("source_id")
 
 
 def test_s3_setup_rolls_back_items_if_run_is_cancelled_during_listing(

@@ -4,6 +4,7 @@ import IngressApiRunsSection from '@/components/node-panel/IngressApiRunsSection
 import type { GraphPanelContext } from '@/components/NodePanel'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import {
   normalizeS3BucketName,
   normalizeS3FolderPath,
@@ -79,6 +80,15 @@ export default function S3InputPanel({
     )
   }
 
+  const patchReprocessUnchanged = (checked: boolean) => {
+    if (!setNodes) return
+    setNodes((nds: any[]) =>
+      nds.map((n: any) =>
+        n.id === node.id ? { ...n, data: { ...n.data, reprocess_unchanged: checked } } : n,
+      ),
+    )
+  }
+
   return (
     <>
       <div className="space-y-3">
@@ -148,6 +158,27 @@ export default function S3InputPanel({
           ) : (
             <div className="mt-1 p-2 bg-muted rounded">
               <span className="text-xs">{node.data.max_files ?? S3_DEFAULT_MAX_FILES}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <Label htmlFor="reprocess-unchanged">Process files again</Label>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Run files that already completed successfully, even when their contents have not
+              changed.
+            </p>
+          </div>
+          {editMode && setNodes ? (
+            <Switch
+              id="reprocess-unchanged"
+              checked={Boolean(node.data.reprocess_unchanged)}
+              onCheckedChange={patchReprocessUnchanged}
+            />
+          ) : (
+            <div className="p-2 bg-muted rounded">
+              <span className="text-xs">{node.data.reprocess_unchanged ? 'On' : 'Off'}</span>
             </div>
           )}
         </div>

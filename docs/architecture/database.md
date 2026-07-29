@@ -41,7 +41,11 @@ All schema changes use the single Alembic chain under `packages/backfield-db/ale
 - `agate_template` stores reusable graph specs.
 - `agate_run` stores parent execution status, graph snapshot payload, result, and error state.
 - `agate_processed_item` stores per-document input, immutable model result, review overlay,
-  reviewed output, status, and article provenance.
+  reviewed output, status, article provenance, and an optional link to an S3 ingestion ledger
+  revision (`ingestion_ledger_id`).
+- `agate_s3_ingestion_ledger` stores cross-run S3 Input object revisions keyed by
+  `source_id` + `logical_item_id` + `content_fingerprint`, with claim/lease state so unchanged
+  objects are skipped and failed or abandoned claims can retry.
 - `agate_node_timing` stores per-node wall-clock measurements for processed items.
 
 ### Substrate content and entities

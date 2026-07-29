@@ -43,6 +43,7 @@ import {
   resolveRunGraphSpecForDisplay,
   s3InputSourceForRun,
 } from '@/lib/runGraphSpec'
+import { runEmptyItemsCopy, s3BatchAlreadyProcessedCount } from '@/lib/runEmptyItemsCopy'
 import { ArrowLeft, ArrowRight, ArrowUpDown, ChevronDown, ChevronUp, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, Play, StopCircle, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -484,6 +485,8 @@ export default function RunDetail() {
   const endIndex = startIndex + displayedItems.length
   const paginatedItems = displayedItems
   const preparingItems = isRunPreparingItems(run)
+  const alreadyProcessedCount = s3BatchAlreadyProcessedCount(run.s3_batch)
+  const emptyItemsCopy = runEmptyItemsCopy(run)
 
   return (
     <div className="space-y-6">
@@ -620,6 +623,12 @@ export default function RunDetail() {
               <div className="text-2xl font-bold text-green-600">{run.succeeded_items}</div>
               <div className="text-xs text-muted-foreground mt-1">Succeeded</div>
             </div>
+            {alreadyProcessedCount > 0 && (
+              <div className="text-center p-4 bg-slate-50 rounded-lg">
+                <div className="text-2xl font-bold text-slate-700">{alreadyProcessedCount}</div>
+                <div className="text-xs text-muted-foreground mt-1">Already processed</div>
+              </div>
+            )}
             {run.failed_items > 0 && (
               <div className="text-center p-4 bg-red-50 rounded-lg">
                 <div className="text-2xl font-bold text-red-600">{run.failed_items}</div>
@@ -990,9 +999,9 @@ export default function RunDetail() {
           <CardContent className="py-12">
             <div className="text-center">
               <AlertTriangle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No Items Processed</h3>
-              <p className="text-muted-foreground">
-                This run has no processed items yet.
+              <h3 className="text-lg font-semibold mb-2">{emptyItemsCopy.title}</h3>
+              <p className="text-muted-foreground max-w-xl mx-auto">
+                {emptyItemsCopy.description}
               </p>
             </div>
           </CardContent>

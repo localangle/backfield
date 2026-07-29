@@ -341,6 +341,17 @@ class RunOut(BaseModel):
     flow_changed_since_run: bool | None = None
 
 
+class S3BatchSummaryOut(BaseModel):
+    """Scan counters from S3 batch setup (``result_json.s3_batch``)."""
+
+    total_json_objects: int = 0
+    skipped_invalid: int = 0
+    skipped_cap: int = 0
+    skipped_unchanged: int = 0
+    skipped_claim_conflict: int = 0
+    valid_executed: int = 0
+
+
 class RunStatusOut(BaseModel):
     """Compact status for active-run polling without processed-item rows."""
 
@@ -360,6 +371,7 @@ class RunStatusOut(BaseModel):
     estimated_ai_cost_total_incomplete: bool = False
     graph_spec_snapshot_json: str | None = None
     flow_changed_since_run: bool | None = None
+    s3_batch: S3BatchSummaryOut | None = None
 
 
 class ProcessedItemsPageOut(BaseModel):
@@ -379,6 +391,28 @@ def _run_graph_spec_snapshot_json(run: AgateRun) -> str | None:
     if isinstance(snap, str) and snap.strip():
         return snap
     return None
+
+
+def _s3_batch_summary_from_run(run: AgateRun) -> S3BatchSummaryOut | None:
+    raw = parse_run_result_payload(run.result_json).get("s3_batch")
+    if not isinstance(raw, dict):
+        return None
+
+    def _int_field(key: str) -> int:
+        value = raw.get(key, 0)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    return S3BatchSummaryOut(
+        total_json_objects=_int_field("total_json_objects"),
+        skipped_invalid=_int_field("skipped_invalid"),
+        skipped_cap=_int_field("skipped_cap"),
+        skipped_unchanged=_int_field("skipped_unchanged"),
+        skipped_claim_conflict=_int_field("skipped_claim_conflict"),
+        valid_executed=_int_field("valid_executed"),
+    )
 
 
 def _flow_changed_since_run(session: Session, run: AgateRun) -> bool | None:
@@ -2524,6 +2558,7 @@ def _serialize_run_status(session: Session, r: AgateRun) -> RunStatusOut:
         estimated_ai_cost_total_incomplete=total_inc,
         graph_spec_snapshot_json=snapshot_json,
         flow_changed_since_run=flow_changed,
+        s3_batch=_s3_batch_summary_from_run(r),
     )
 
 

@@ -29,9 +29,11 @@ from agate_runtime.run_graph_spec import (
     resolve_run_graph_spec_json,
 )
 from agate_runtime.s3_batch import (
-    list_json_keys_under_prefix,
+    list_json_objects_under_prefix,
+    logical_item_id,
     parse_s3_text_json_document,
     s3_max_files_from_params,
+    sha256_hex,
 )
 from agate_utils.llm import call_llm
 from backfield_ai.credentials import merge_project_and_org_llm_api_keys
@@ -100,6 +102,16 @@ from worker.processed_item_claims import (
     release_orphan_running_items_for_run,
     release_running_claim,
     should_reconcile_orphan_running_items,
+)
+from worker.s3_ingestion_ledger import (
+    attach_processed_item,
+    claim_ledger_revision,
+    ensure_s3_input_source_id,
+    find_row_for_fingerprint,
+    find_succeeded_matching_metadata,
+    load_claim_token,
+    mark_ledger_failed,
+    mark_ledger_succeeded,
 )
 from worker.semantic_indexing.reindex import run_semantic_reindex_for_scope
 from worker.substrate.candidates.ai_review import run_candidate_ai_review
@@ -528,6 +540,40 @@ def _first_s3_input_params(spec: GraphSpec) -> dict[str, Any]:
     raise ValueError("S3 batch setup requires an S3Input node in the graph.")
 
 
+def _terminalize_ingestion_ledger_for_item(
+    session: Session,
+    *,
+    item_id: int,
+    status: str,
+    error_message: str | None,
+    now: datetime,
+) -> None:
+    item = session.get(AgateProcessedItem, item_id)
+    if item is None or not item.ingestion_ledger_id:
+        return
+    ledger_id = str(item.ingestion_ledger_id)
+    claim_token = load_claim_token(session, ledger_id=ledger_id)
+    if not claim_token:
+        return
+    if status == "succeeded":
+        mark_ledger_succeeded(
+            session,
+            ledger_id=ledger_id,
+            claim_token=claim_token,
+            processed_item_id=item_id,
+            now=now,
+        )
+    else:
+        mark_ledger_failed(
+            session,
+            ledger_id=ledger_id,
+            claim_token=claim_token,
+            processed_item_id=item_id,
+            error_message=error_message,
+            now=now,
+        )
+
+
 def _parent_run_status(session: Session, run_id: str) -> str | None:
     return session.exec(select(AgateRun.status).where(AgateRun.id == run_id)).first()
 
@@ -822,6 +868,14 @@ def execute_s3_batch_setup(run_id: str) -> None:
             )
             spec = GraphSpec.model_validate_json(spec_json)
             params = _first_s3_input_params(spec)
+            source_id, spec_json, params = ensure_s3_input_source_id(
+                params=params,
+                graph_spec_json=spec_json,
+            )
+            if str(graph.spec_json or "") != spec_json:
+                graph.spec_json = spec_json
+                session.add(graph)
+                session.commit()
             bucket = str(params.get("bucket") or "").strip()
             folder_path = str(params.get("folder_path") or "").strip()
             if not bucket:
@@ -829,18 +883,25 @@ def execute_s3_batch_setup(run_id: str) -> None:
                     "S3Input requires a non-empty bucket parameter before running the flow."
                 )
             max_files = s3_max_files_from_params(params)
+            reprocess_unchanged = bool(params.get("reprocess_unchanged"))
             prefix = folder_path.rstrip("/") + "/" if folder_path else ""
+            lease_duration = timedelta(seconds=_STALE_RUNNING_AFTER_S)
+            project_id = int(graph.project_id)
 
             overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
             with _env_overlay(overlay):
                 s3_client = _s3_client_from_env()
-                keys = list_json_keys_under_prefix(s3_client, bucket=bucket, prefix=prefix)
+                listings = list_json_objects_under_prefix(
+                    s3_client, bucket=bucket, prefix=prefix
+                )
 
             skipped_invalid = 0
             skipped_cap = 0
+            skipped_unchanged = 0
+            skipped_claim_conflict = 0
             pending: list[tuple[int, int]] = []
 
-            if not keys:
+            if not listings:
                 run = session.exec(
                     select(AgateRun)
                     .where(AgateRun.id == run_id)
@@ -859,8 +920,11 @@ def execute_s3_batch_setup(run_id: str) -> None:
                         "total_json_objects": 0,
                         "skipped_invalid": 0,
                         "skipped_cap": 0,
+                        "skipped_unchanged": 0,
+                        "skipped_claim_conflict": 0,
                         "valid_executed": 0,
                     },
+                    graph_spec_json=spec_json,
                 )
                 run.updated_at = datetime.now(UTC)
                 session.add(run)
@@ -875,45 +939,87 @@ def execute_s3_batch_setup(run_id: str) -> None:
 
             with _env_overlay(overlay):
                 s3_client = _s3_client_from_env()
-                for key in keys:
-                    try:
-                        response = s3_client.get_object(Bucket=bucket, Key=key)
-                        raw = response["Body"].read().decode("utf-8")
-                    except Exception as exc:  # noqa: BLE001 — classify as skipped row
-                        row = AgateProcessedItem(
-                            run_id=run_id,
-                            source_file=key,
-                            input_json=None,
-                            status="skipped",
-                            error_message=str(exc),
-                        )
-                        session.add(row)
-                        skipped_invalid += 1
-                        continue
+                for listing in listings:
+                    key = listing.key
+                    item_logical_id = logical_item_id(bucket=bucket, key=key)
 
-                    doc, err = parse_s3_text_json_document(raw)
-                    if err or doc is None:
-                        row = AgateProcessedItem(
-                            run_id=run_id,
-                            source_file=key,
-                            input_json=None,
-                            status="skipped",
-                            error_message=err or "invalid",
-                        )
-                        session.add(row)
-                        skipped_invalid += 1
+                    if not reprocess_unchanged and find_succeeded_matching_metadata(
+                        session,
+                        source_id=source_id,
+                        item_id=item_logical_id,
+                        listing=listing,
+                    ):
+                        skipped_unchanged += 1
                         continue
 
                     if len(pending) >= max_files:
-                        row = AgateProcessedItem(
-                            run_id=run_id,
-                            source_file=key,
-                            input_json=json.dumps(doc),
-                            status="skipped",
-                            error_message="max_files cap",
-                        )
-                        session.add(row)
                         skipped_cap += 1
+                        continue
+
+                    try:
+                        response = s3_client.get_object(Bucket=bucket, Key=key)
+                        raw_bytes = response["Body"].read()
+                        raw = raw_bytes.decode("utf-8")
+                        version_id = response.get("VersionId")
+                        version_id_str = (
+                            str(version_id) if version_id is not None else None
+                        )
+                    except Exception as exc:  # noqa: BLE001 — classify as skipped
+                        skipped_invalid += 1
+                        logger.info(
+                            "S3 batch skip get failure run_id=%s key=%s err=%s",
+                            run_id,
+                            key,
+                            exc,
+                        )
+                        continue
+
+                    fingerprint = sha256_hex(raw_bytes)
+                    existing_fp = find_row_for_fingerprint(
+                        session,
+                        source_id=source_id,
+                        item_id=item_logical_id,
+                        content_fingerprint=fingerprint,
+                    )
+                    if (
+                        not reprocess_unchanged
+                        and existing_fp is not None
+                        and existing_fp.status == "succeeded"
+                    ):
+                        skipped_unchanged += 1
+                        continue
+                    if (
+                        existing_fp is not None
+                        and existing_fp.status == "processing"
+                        and existing_fp.lease_expires_at is not None
+                    ):
+                        lease = existing_fp.lease_expires_at
+                        if lease.tzinfo is None:
+                            lease = lease.replace(tzinfo=UTC)
+                        if lease > datetime.now(UTC):
+                            skipped_claim_conflict += 1
+                            continue
+
+                    doc, err = parse_s3_text_json_document(raw)
+                    if err or doc is None:
+                        skipped_invalid += 1
+                        continue
+
+                    claim = claim_ledger_revision(
+                        session,
+                        project_id=project_id,
+                        source_id=source_id,
+                        bucket=bucket,
+                        key=key,
+                        content_fingerprint=fingerprint,
+                        listing=listing,
+                        version_id=version_id_str,
+                        flow_run_id=run_id,
+                        lease_duration=lease_duration,
+                        reclaim_succeeded=reprocess_unchanged,
+                    )
+                    if claim is None:
+                        skipped_claim_conflict += 1
                         continue
 
                     row = AgateProcessedItem(
@@ -921,17 +1027,28 @@ def execute_s3_batch_setup(run_id: str) -> None:
                         source_file=key,
                         input_json=json.dumps(doc),
                         status="pending",
+                        ingestion_ledger_id=claim.ledger_id,
                     )
                     session.add(row)
                     session.flush()
-                    if row.id is not None:
-                        text_len = len(str(doc.get("text") or ""))
-                        pending.append((int(row.id), text_len))
+                    if row.id is None:
+                        skipped_claim_conflict += 1
+                        continue
+                    attach_processed_item(
+                        session,
+                        ledger_id=claim.ledger_id,
+                        claim_token=claim.claim_token,
+                        processed_item_id=int(row.id),
+                    )
+                    text_len = len(str(doc.get("text") or ""))
+                    pending.append((int(row.id), text_len))
 
             batch_meta = {
-                "total_json_objects": len(keys),
+                "total_json_objects": len(listings),
                 "skipped_invalid": skipped_invalid,
                 "skipped_cap": skipped_cap,
+                "skipped_unchanged": skipped_unchanged,
+                "skipped_claim_conflict": skipped_claim_conflict,
                 "valid_executed": len(pending),
             }
             run = session.exec(
@@ -963,6 +1080,20 @@ def execute_s3_batch_setup(run_id: str) -> None:
                     session.rollback()
                     return
                 previous_status = run.status
+                # Caught up: keys existed but nothing new to claim.
+                if skipped_unchanged > 0 or skipped_claim_conflict > 0:
+                    run.status = "succeeded"
+                    run.error_message = None
+                    run.updated_at = datetime.now(UTC)
+                    session.add(run)
+                    session.commit()
+                    emit_run_terminal(
+                        previous_status=previous_status,
+                        new_status="succeeded",
+                        identity=worker_identity(),
+                        correlation={"run_id": run_id},
+                    )
+                    return
                 run.status = "failed"
                 run.error_message = (
                     "No valid JSON files with a non-empty top-level 'text' field under the prefix."
@@ -1301,6 +1432,13 @@ def _execute_processed_item_impl(item_id: int) -> None:
                 error_message=str(e),
                 now=finished_at,
             ):
+                _terminalize_ingestion_ledger_for_item(
+                    session,
+                    item_id=int(item_id),
+                    status="failed",
+                    error_message=str(e),
+                    now=finished_at,
+                )
                 session.commit()
                 emit_item_terminal(
                     previous_status="running",
@@ -1376,6 +1514,13 @@ def _execute_processed_item_impl(item_id: int) -> None:
         ):
             session.rollback()
             return
+        _terminalize_ingestion_ledger_for_item(
+            session,
+            item_id=int(item_id),
+            status=completed_status,
+            error_message=item_error,
+            now=finished_at,
+        )
         _log_node_wall_clock_summary(
             run_id=run_id_str,
             processed_item_id=iid,
