@@ -6,17 +6,18 @@ Cross-repo contract between this application repo and **backfield-cloud**. Cloud
 
 | Item | Decision | Cloud ack |
 |------|----------|-----------|
-| Namespace | `Backfield/Application` | Proposed for cloud — app emits this now |
-| Completed metric names | Keep `runs_completed_total` / `items_completed_total`; **completed = transition to domain status `succeeded`** | Proposed for cloud — app emits these names |
-| Service enum | `agate-api`, `stylebook-api`, `core-api`, `worker` | Locked to match ECS container names |
-| Queue / collector `Service` | `worker` | Locked |
-| Client identity | `BACKFIELD_CLIENT` (deployment slug only) | Cloud must inject |
-| Publisher | EMF via JSON stderr (no app `PutMetricData`) | Cloud owns log groups / metric discovery |
-| Collector schedule | Every **60s**, ECS scheduled task / singleton using worker image | Cloud owns |
-| Queue gauge authority | App collector EMF is authoritative; ECS Exec `LLEN` is diagnostic only | Locked |
-| App implementation | Identity, EMF `log_metric()`, lifecycle/external metrics, collector command, cancel race fix, log scrubbing | Landed on this branch; production wiring awaits cloud ack |
+| Namespace | `Backfield/Application` | **Acked** 2026-07-28 (backfield-cloud `docs/observability.md`, PR branch `chore/cleanup-and-docs`) |
+| Completed metric names | Keep `runs_completed_total` / `items_completed_total`; **completed = transition to domain status `succeeded`** | **Acked** — do not rename without both repos |
+| Service enum | `agate-api`, `stylebook-api`, `core-api`, `worker` | **Acked** — matches ECS container names |
+| Queue / collector `Service` | `worker` | **Acked** |
+| Client identity | `BACKFIELD_CLIENT` (deployment slug only) | **Acked** — cloud injects on all tasks |
+| Publisher | EMF via JSON stderr (no app `PutMetricData`) | **Acked** — cloud owns log groups / EMF discovery |
+| Collector schedule | Every **60s**, EventBridge → ECS RunTask using worker image | **Acked** and live on canary + CPM |
+| Queue gauge authority | App collector EMF is authoritative; ECS Exec `LLEN` is diagnostic only | **Acked** |
+| Worker entrypoint | Must `exec "$@"` when container command is set so collector is not Celery | **Fixed** in `apps/worker/scripts/entrypoint.sh` (this change); cloud temporary `entryPoint` override can be removed after this image is deployed |
+| App implementation | Identity, EMF `log_metric()`, lifecycle/external metrics, collector command, cancel race fix, log scrubbing | Landed; cloud consumer live |
 
-Record cloud confirmation here when received (date + PR/issue). Do not diverge metric names or Service values without updating both repos.
+Do not diverge metric names or Service values without updating both repos.
 
 ## Dimensions
 
@@ -69,6 +70,8 @@ Never log: secrets, auth headers, raw DB/Redis URLs, passwords, or customer cont
 
 - **Image:** production worker image.
 - **Command:** `python -m worker.metrics_collector` (single shot; exit 0 after one emit pass).
+  The worker image `ENTRYPOINT` must honor container command overrides via `exec "$@"`; otherwise
+  ECS `command` is ignored and Celery starts instead of the collector.
 - **Schedule:** every 60 seconds.
 - **Network/secrets:** same Redis (`REDIS_URL`) and DB reachability as the worker; prefer a **read-only** DB role for counting active `agate_run` rows.
 - **Environment:** `BACKFIELD_CLIENT` (required), `BACKFIELD_ENV` / `ENVIRONMENT`, `REDIS_URL`, `CELERY_QUEUE` (default `agate`), `BACKFIELD_DATABASE_URL` / `DATABASE_URL`.

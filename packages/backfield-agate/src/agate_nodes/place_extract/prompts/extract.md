@@ -58,7 +58,7 @@ The **`location`** field must always be a geocodable proper-name string (city, v
 Classify each included location with one type:
 
 - **place**: A **named** physical site people could find or visit on a map — building, campus, business, landmark, stadium, **named bridge**, and **managed destinations / public sites** such as parks, zoos, gardens, conservatories, plazas, and similar facilities. Never an event title, hearing name, or activity label. Treat a **named bridge** as place when it is a landmark or venue; use **span** only for an explicit roadway segment between two endpoints. Prefer **place** whenever the story treats the site as a **visit destination or venue**, even if the name contains words like park, river, or lake (e.g. Lincoln Park Zoo, Garfield Park Conservatory, River East Plaza).
-- **address**: A street address with a house number. Journalistic **block references** ("6500 block of South Hermitage Avenue," "500 block of Portland Ave.") also use this type — but **`location` must be the normalized mailing-style address**, never the verbatim "block of" phrase (see **Block addresses** below). If a place also includes an address, extract only the address as this type. Streets without a house or block number are not addresses.
+- **address**: A street address with a house number that appears **without** a named venue attached. Journalistic **block references** ("6500 block of South Hermitage Avenue," "500 block of Portland Ave.") also use this type — but **`location` must be the normalized mailing-style address**, never the verbatim "block of" phrase (see **Block addresses** below). Streets without a house or block number are not addresses. When a named place and its street appear together, use **place** (see **Place + street co-mention**), not this type.
 - **intersection_road**: An intersection of two non-highway roads. You may infer the intersection from context elsewhere in the article.
 - **intersection_highway**: An intersection where at least one component is an interstate or highway ("I-94 and Selby Avenue").
 - **street_road**: A single street, road, or highway without address context ("Hennepin Avenue," "I-35").
@@ -90,6 +90,14 @@ Classify each included location with one type:
   | 500 block of Portland Ave. | `500 Portland Ave., Minneapolis, MN` |
 
   Wrong: `6500 block of South Hermitage Avenue, Chicago, IL`. Right: `6500 S Hermitage Ave, Chicago, IL`.
+- **Place + street co-mention (critical)** — When a named venue appears with its street beside it (comma or parentheses), emit **one `place` row only**. Do **not** also emit that street as a separate `address` row. Format `location` as venue name first, then the street as a comma segment, then city/state when inferable. Parenthetical story wording may normalize to the same comma-segment form. Put the street line in **`components.address`** (full mode); in compact mode, keep the street inside `location` so expansion can peel it.
+
+  | Story wording | Output `location` (type `place`) |
+  |---------------|----------------------------------|
+  | Garfield Community Service Center, 10 S. Kedzie Ave. | `Garfield Community Service Center, 10 S. Kedzie Ave., Chicago, IL` |
+  | North Shore Center for the Performing Arts (9501 Skokie Blvd.) | `North Shore Center for the Performing Arts, 9501 Skokie Blvd., Skokie, IL` |
+
+  Wrong: two rows (`place` + `address`) for the same co-mention, or `address`-only that drops the venue name.
 - **Neighborhoods and regions**: include city and state in `location` when inferable (`Longfellow, Minneapolis, MN`; `South Minneapolis, Minneapolis, MN`). For every **`region_city`** or **`region_state`**, also emit the parent **`city`** or **`state`** as a **separate row**.
 - **Intersections**: format as `Road A and Road B, City, ST` with street types spelled out in full (`Main Street and 2nd Street, Chicago, IL`; `I-94 and Selby Avenue, Minneapolis, MN`). You may infer an intersection from context elsewhere in the article even when the story does not state it in one string.
 - **Spans**: include the road plus **both** endpoints and city/state when inferable (`Lake Street from Nicollet Avenue to 28th Avenue, Minneapolis, MN`; `I-35 between Pine City and Hinckley, MN`). A road with only one endpoint is not a span.
@@ -111,7 +119,7 @@ Separate each location into components where possible:
 - **place**: Only for named places — businesses, landmarks, **schools**, **bridges**, parks, zoos, gardens, conservatories, plazas, and similar destinations:
   - **name**: The place name ("Dogwood Coffee," "Hopkins High School," "Stone Arch Bridge," "Lincoln Park Zoo").
   - **natural**: Almost always **false** for `type: place`. True only if the object is somehow both typed place and a true geographic feature (rare). Do **not** set true just because the name contains park, river, lake, or similar tokens.
-  - **addressable**: **True** for named destinations and venues (including parks, zoos, conservatories, plazas, bridges). Geocode attempts a POI pin even without a mailing address in the story. If the article states a street address for the place, put that street line in **`components.address`** (not only in geocode hints).
+  - **addressable**: **True** for named destinations and venues (including parks, zoos, conservatories, plazas, bridges). Geocode attempts a POI pin even without a mailing address in the story. If the article states a street address for the place (including co-mentions), put that street line in **`components.address`** (not only in geocode hints) and keep type **`place`** — never downgrade the row to **`address`**.
 - **street_road**: Only for street_road types:
   - **name**: The street name.
   - **boundary**: A geocodable string for the most specific boundary containing the segment, inferred from context.
