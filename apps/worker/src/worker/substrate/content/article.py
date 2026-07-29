@@ -6,11 +6,12 @@ import json
 from datetime import date
 from typing import Any
 
-from backfield_db import SubstrateArticle, SubstrateImage
+from backfield_db import AgateProcessedItem, SubstrateArticle, SubstrateImage
 from backfield_db.text_sanitize import strip_nul_bytes
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
+from worker.s3_ingestion_ledger import S3_INGESTION_EXTERNAL_SOURCE
 from worker.substrate.common import _parse_date, _sha256_hex, _utcnow
 
 
@@ -136,6 +137,17 @@ def _upsert_article(
     external_id = None
     if entry_id is not None and str(entry_id).strip():
         external_id = str(entry_id).strip()
+
+    if processed_item_id is not None:
+        processed_item = session.get(AgateProcessedItem, processed_item_id)
+        ledger_id = (
+            str(processed_item.ingestion_ledger_id).strip()
+            if processed_item is not None and processed_item.ingestion_ledger_id
+            else ""
+        )
+        if ledger_id:
+            external_source = S3_INGESTION_EXTERNAL_SOURCE
+            external_id = ledger_id
 
     text_fingerprint = _text_fingerprint(project_id=project_id, text_str=text_str)
     resolved_external_source = external_source or "backfield_text_fingerprint"

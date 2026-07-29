@@ -10,6 +10,11 @@ export function getInputBookendDefaultData(type: string): Record<string, unknown
       return {
         bucket: '',
         folder_path: '',
+        max_files: 500,
+        source_id:
+          typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `s3-src-${Date.now()}`,
       }
     default: {
       const meta = nodeMetadata.find((m) => m.type === type)

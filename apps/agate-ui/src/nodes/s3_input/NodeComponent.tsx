@@ -17,7 +17,8 @@ const nodeMetadata = {
   "defaultParams": {
     "bucket": "",
     "folder_path": "",
-    "max_files": 500
+    "max_files": 500,
+    "source_id": ""
   }
 };
 

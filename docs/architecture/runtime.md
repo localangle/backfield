@@ -20,14 +20,22 @@ enqueue best-effort after commit; clients that need durable trigger semantics sh
 TextInput and JSONInput runs create one `agate_processed_item` and enqueue
 `execute_processed_item`. S3Input runs enqueue `execute_s3_batch_setup`, which:
 
-1. Lists JSON objects under the snapshotted bucket and prefix.
-2. Stores valid documents as `agate_processed_item` rows and records invalid or capped objects as
-   skipped rows.
-3. Dispatches valid items as a Celery chord on the `agate` queue.
-4. Uses `finalize_s3_parent_run` to aggregate child statuses onto the parent `agate_run`.
+1. Ensures a stable `source_id` on the S3 Input node (minted and persisted when missing).
+2. Lists JSON objects under the snapshotted bucket and prefix (paginated), including list
+   metadata used only for discovery optimization.
+3. Skips unchanged objects via the `agate_s3_ingestion_ledger` (metadata short-circuit or
+   matching content SHA-256) without creating processed-item rows.
+4. Atomically claims new or retryable revisions (`processing` + claim token + lease), then
+   stores claimed documents as `agate_processed_item` rows linked by `ingestion_ledger_id`.
+   Invalid JSON / get failures do not create ledger or item rows; `max_files` limits new
+   claims per scan.
+5. Dispatches claimed items as a Celery chord on the `agate` queue.
+6. Marks each ledger revision `succeeded` or `failed` when that item finishes (not when the
+   parent run finishes). `finalize_s3_parent_run` aggregates child statuses onto the parent
+   `agate_run`. A scan with objects but zero new claims succeeds as caught up.
 
 Run replay clones replayable processed-item inputs and executes them against the graph snapshot
-carried by the replay run.
+carried by the replay run; it does not consult the S3 ingestion ledger.
 
 ## Item execution
 

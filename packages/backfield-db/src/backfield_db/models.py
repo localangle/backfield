@@ -2090,6 +2090,82 @@ class AgateRun(SQLModel, table=True):
     )
 
 
+class AgateS3IngestionLedger(SQLModel, table=True):
+    """Cross-run idempotency ledger for S3 Input object revisions."""
+
+    __tablename__ = "agate_s3_ingestion_ledger"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_id",
+            "logical_item_id",
+            "content_fingerprint",
+            name="uq_agate_s3_ingestion_ledger_revision",
+        ),
+        Index("ix_agate_s3_ingestion_ledger_source_item", "source_id", "logical_item_id"),
+        Index("ix_agate_s3_ingestion_ledger_status_lease", "status", "lease_expires_at"),
+        Index("ix_agate_s3_ingestion_ledger_project", "project_id"),
+    )
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    project_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("backfield_project.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    source_id: str = Field(sa_column=Column(Text, nullable=False))
+    logical_item_id: str = Field(sa_column=Column(Text, nullable=False))
+    bucket: str = Field(sa_column=Column(Text, nullable=False))
+    key: str = Field(sa_column=Column(Text, nullable=False))
+    version_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    content_fingerprint: str = Field(sa_column=Column(Text, nullable=False))
+    etag: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    size_bytes: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))
+    last_modified: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    status: str = Field(sa_column=Column(Text, nullable=False))
+    claim_token: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    lease_expires_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    attempt_count: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False, server_default=text("0")),
+    )
+    flow_run_id: str | None = Field(
+        default=None,
+        sa_column=Column(
+            Text,
+            ForeignKey("agate_run.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    processed_item_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            Integer,
+            ForeignKey("agate_processed_item.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    first_seen_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    started_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    completed_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    last_error: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+
+
 class AgateProcessedItem(SQLModel, table=True):
     """Per-S3-object execution unit for S3Input batch runs (parent ``agate_run``)."""
 
@@ -2130,6 +2206,16 @@ class AgateProcessedItem(SQLModel, table=True):
         default=None,
         foreign_key="substrate_article.id",
         index=True,
+    )
+    #: S3 ingestion ledger revision claimed for this item (idempotent batch path).
+    ingestion_ledger_id: str | None = Field(
+        default=None,
+        sa_column=Column(
+            Text,
+            ForeignKey("agate_s3_ingestion_ledger.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
+        ),
     )
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
