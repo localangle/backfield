@@ -7,10 +7,11 @@ This checkout is for **local development and source inspection**. Published Comp
 
 Install:
 
-- Python 3.11
+- Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
 - Docker Engine with Compose v2
 - Node.js 20 when building or typechecking the UIs outside Docker
+- On macOS hosts: a recent Rust toolchain (`rustc` ≥ 1.86 via [rustup](https://rustup.rs/)) so `uv sync` can build LiteLLM from source (PyPI ships Linux/Windows wheels only for current LiteLLM releases)
 
 Run commands from the repository root.
 
