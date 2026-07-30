@@ -119,15 +119,33 @@ export default function AppSidebar() {
     }
   }, [])
 
+  const loadStylebooks = useCallback(async () => {
+    if (organizationId == null) {
+      setStylebooks([])
+      return
+    }
+    try {
+      const rows = await listStylebookCatalogs(organizationId)
+      setStylebooks(rows)
+    } catch (err) {
+      console.error('Failed to fetch stylebooks:', err)
+    }
+  }, [organizationId])
+
   useEffect(() => {
     void loadWorkspaces()
     void loadProjects()
   }, [loadWorkspaces, loadProjects])
 
   useEffect(() => {
+    void loadStylebooks()
+  }, [loadStylebooks])
+
+  useEffect(() => {
     const onChanged = () => {
       void loadWorkspaces()
       void loadProjects()
+      void loadStylebooks()
     }
     window.addEventListener('agate:projects-changed', onChanged)
     window.addEventListener('agate:workspaces-changed', onChanged)
@@ -135,17 +153,7 @@ export default function AppSidebar() {
       window.removeEventListener('agate:projects-changed', onChanged)
       window.removeEventListener('agate:workspaces-changed', onChanged)
     }
-  }, [loadWorkspaces, loadProjects])
-
-  useEffect(() => {
-    if (organizationId == null) {
-      setStylebooks([])
-      return
-    }
-    void listStylebookCatalogs(organizationId)
-      .then(setStylebooks)
-      .catch((err) => console.error('Failed to fetch stylebooks:', err))
-  }, [organizationId])
+  }, [loadWorkspaces, loadProjects, loadStylebooks])
 
   const hubLinkClass =
     'flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring text-muted-foreground hover:text-foreground'

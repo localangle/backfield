@@ -229,6 +229,19 @@ export default function Layout({ children, headerContent }: LayoutProps) {
     }
   }, [])
 
+  const loadStylebooks = useCallback(async () => {
+    if (orgId == null) {
+      setStylebooks([])
+      return
+    }
+    try {
+      const rows = await fetchOrganizationStylebooks(orgId)
+      setStylebooks(rows)
+    } catch (err) {
+      console.error("Failed to fetch stylebooks:", err)
+    }
+  }, [orgId])
+
   useEffect(() => {
     void loadWorkspaces()
   }, [loadWorkspaces, location.pathname])
@@ -236,6 +249,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
   useEffect(() => {
     const onChanged = () => {
       void loadWorkspaces()
+      void loadStylebooks()
     }
     window.addEventListener("agate:projects-changed", onChanged)
     window.addEventListener("agate:workspaces-changed", onChanged)
@@ -243,7 +257,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
       window.removeEventListener("agate:projects-changed", onChanged)
       window.removeEventListener("agate:workspaces-changed", onChanged)
     }
-  }, [loadWorkspaces])
+  }, [loadWorkspaces, loadStylebooks])
 
   useEffect(() => {
     void fetchMe()
@@ -254,11 +268,8 @@ export default function Layout({ children, headerContent }: LayoutProps) {
   }, [])
 
   useEffect(() => {
-    if (orgId == null) return
-    void fetchOrganizationStylebooks(orgId)
-      .then(setStylebooks)
-      .catch((err) => console.error("Failed to fetch stylebooks:", err))
-  }, [orgId])
+    void loadStylebooks()
+  }, [loadStylebooks])
 
   /** Every stylebook catalog URL keeps workflow project scope in the query (``project_scope=``). */
   useEffect(() => {

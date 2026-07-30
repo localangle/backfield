@@ -880,6 +880,10 @@ def test_ai_models_catalog_org_admin_flow(
     opts = curated.json()
     ids = {o["curated_id"] for o in opts}
     assert "openai:gpt-5-nano" in ids
+    assert "openai:gpt-5.6" in ids
+    assert "openai:gpt-5.6-sol" in ids
+    assert "openai:gpt-5.6-terra" in ids
+    assert "openai:gpt-5.6-luna" in ids
     assert all("provider" in o and "capabilities" in o for o in opts)
 
     empty = client.get(f"/v1/organizations/{org_id}/ai-models")

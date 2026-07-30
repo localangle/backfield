@@ -71,6 +71,35 @@ class CuratedAiModelTemplate:
 # Insertion order controls default API list order and Preset dropdown order within each provider.
 CURATED_TEMPLATES: dict[str, CuratedAiModelTemplate] = {
     # --- OpenAI ---
+    # GPT-5.6 family: bare gpt-5.6 aliases to sol; terra/luna are named capability tiers.
+    "openai:gpt-5.6": CuratedAiModelTemplate(
+        template_id="openai:gpt-5.6",
+        provider="openai",
+        provider_model_id="gpt-5.6",
+        label="GPT-5.6",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openai:gpt-5.6-sol": CuratedAiModelTemplate(
+        template_id="openai:gpt-5.6-sol",
+        provider="openai",
+        provider_model_id="gpt-5.6-sol",
+        label="GPT-5.6 Sol",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openai:gpt-5.6-terra": CuratedAiModelTemplate(
+        template_id="openai:gpt-5.6-terra",
+        provider="openai",
+        provider_model_id="gpt-5.6-terra",
+        label="GPT-5.6 Terra",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openai:gpt-5.6-luna": CuratedAiModelTemplate(
+        template_id="openai:gpt-5.6-luna",
+        provider="openai",
+        provider_model_id="gpt-5.6-luna",
+        label="GPT-5.6 Luna",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
     "openai:gpt-5.5": CuratedAiModelTemplate(
         template_id="openai:gpt-5.5",
         provider="openai",
