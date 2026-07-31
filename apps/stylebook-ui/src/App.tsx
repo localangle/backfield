@@ -4,11 +4,17 @@ import {
   Route,
   Routes,
   useLocation,
+  useNavigate,
   useParams,
 } from "react-router-dom"
 import { AppMessageProvider } from "@/components/AppMessageProvider"
 import { AuthProvider, useAuth } from "@/lib/auth"
-import { scopeOrganizationPath } from "@backfield/ui"
+import {
+  ForcedPasswordChange,
+  scopeOrganizationPath,
+  shouldForcePasswordChange,
+} from "@backfield/ui"
+import { changePassword } from "@/lib/core-api"
 import {
   parseLegacyStylebookQuery,
   stripLegacyStylebookFromSearch,
@@ -156,11 +162,37 @@ function OrganizationApp() {
 
 function OrganizationScopedRoutes() {
   const location = useLocation()
-  const { isAuthenticated, loading, organizationSlug } = useAuth()
+  const navigate = useNavigate()
+  const {
+    isAuthenticated,
+    loading,
+    organizationSlug,
+    mustChangePassword,
+    checkAuth,
+    logout,
+  } = useAuth()
   const pathScope = organizationSlug
     ? scopeOrganizationPath(location.pathname, location.search, organizationSlug)
     : null
   const scopedPathname = pathScope?.scopedPathname ?? location.pathname
+
+  if (shouldForcePasswordChange({ loading, isAuthenticated, mustChangePassword })) {
+    return (
+      <ForcedPasswordChange
+        changePassword={changePassword}
+        onLogout={logout}
+        onComplete={async () => {
+          await checkAuth()
+          navigate(
+            organizationSlug
+              ? `/org/${encodeURIComponent(organizationSlug)}/`
+              : "/",
+            { replace: true },
+          )
+        }}
+      />
+    )
+  }
 
   if (
     !loading &&

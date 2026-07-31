@@ -15,6 +15,7 @@ from backfield_db import (
     BackfieldWorkspace,
     Stylebook,
 )
+from backfield_db.passwords import hash_password
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from core_api.deps import get_session
 from core_api.main import app
@@ -171,6 +172,51 @@ def test_bootstrap_login_me_whoami(client: TestClient) -> None:
     w = who.json()
     assert w.get("auth_type") == "session"
     assert w.get("email") == "owner@example.com"
+
+
+def test_login_matches_legacy_email_case_and_whitespace(client: TestClient) -> None:
+    seed_first_admin(client, "mixed@example.com", "mixed-secret-42")
+    with Session(client.test_engine) as session:  # type: ignore[attr-defined]
+        user = session.exec(
+            select(BackfieldUser).where(BackfieldUser.email == "mixed@example.com")
+        ).one()
+        user.email = " Mixed@Example.COM "
+        session.add(user)
+        session.commit()
+
+    login = client.post(
+        "/v1/auth/login",
+        json={"email": " MIXED@example.com ", "password": "mixed-secret-42"},
+    )
+    assert login.status_code == 200
+
+
+def test_login_rejects_ambiguous_legacy_email_without_account_disclosure(
+    client: TestClient,
+) -> None:
+    seed_first_admin(client, "duplicate@example.com", "duplicate-secret-42")
+    with Session(client.test_engine) as session:  # type: ignore[attr-defined]
+        session.add(
+            BackfieldUser(
+                email=" Duplicate@Example.com ",
+                password_hash=hash_password("duplicate-secret-42"),
+            )
+        )
+        session.commit()
+
+    ambiguous = client.post(
+        "/v1/auth/login",
+        json={
+            "email": "duplicate@example.com",
+            "password": "duplicate-secret-42",
+        },
+    )
+    unknown = client.post(
+        "/v1/auth/login",
+        json={"email": "unknown@example.com", "password": "duplicate-secret-42"},
+    )
+    assert ambiguous.status_code == unknown.status_code == 401
+    assert ambiguous.json() == unknown.json() == {"detail": "Invalid email or password"}
 
 
 def _add_second_organization_membership(client: TestClient, email: str) -> int:
@@ -520,6 +566,155 @@ def test_change_password(client: TestClient) -> None:
         json={"email": "pw@example.com", "password": "new-secret"},
     )
     assert good_login.status_code == 200
+    assert good_login.json()["must_change_password"] is False
+
+
+def test_change_password_enforces_bcrypt_multibyte_limit(client: TestClient) -> None:
+    seed_first_admin(client, "bytes@example.com", "original-secret-42")
+    client.post(
+        "/v1/auth/login",
+        json={"email": "bytes@example.com", "password": "original-secret-42"},
+    )
+    over_limit = client.post(
+        "/v1/auth/change-password",
+        json={
+            "current_password": "original-secret-42",
+            "new_password": "é" * 37,
+        },
+    )
+    assert over_limit.status_code == 400
+    assert over_limit.json()["detail"] == "Password must be at most 72 UTF-8 bytes"
+
+    at_limit = client.post(
+        "/v1/auth/change-password",
+        json={
+            "current_password": "original-secret-42",
+            "new_password": "é" * 36,
+        },
+    )
+    assert at_limit.status_code == 200
+
+
+def test_change_password_clears_temporary_password_flag(client: TestClient) -> None:
+    seed_first_admin(client, "temporary@example.com", "temporary-secret-19")
+    engine = getattr(client, "test_engine")
+    with Session(engine) as session:
+        user = session.exec(
+            select(BackfieldUser).where(
+                BackfieldUser.email == "temporary@example.com"
+            )
+        ).one()
+        user.must_change_password = True
+        session.add(user)
+        session.commit()
+
+    login = client.post(
+        "/v1/auth/login",
+        json={"email": "temporary@example.com", "password": "temporary-secret-19"},
+    )
+    assert login.status_code == 200
+    assert login.json()["must_change_password"] is True
+    assert client.get("/v1/auth/me").json()["must_change_password"] is True
+    blocked = client.get("/v1/me/workspaces")
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"]["code"] == "password_change_required"
+    assert client.get("/v1/auth/session-check").status_code == 403
+
+    blocked_switch = client.post(
+        "/v1/auth/switch-organization",
+        json={"organization_id": 999_999},
+    )
+    assert blocked_switch.status_code == 403
+    assert blocked_switch.json()["detail"]["code"] == "password_change_required"
+
+    failed_change = client.post(
+        "/v1/auth/change-password",
+        json={
+            "current_password": "wrong-secret",
+            "new_password": "permanent-secret-83",
+        },
+    )
+    assert failed_change.status_code == 401
+    assert client.get("/v1/me/workspaces").status_code == 403
+
+    unchanged = client.post(
+        "/v1/auth/change-password",
+        json={
+            "current_password": "temporary-secret-19",
+            "new_password": "temporary-secret-19",
+        },
+    )
+    assert unchanged.status_code == 400
+    assert unchanged.json()["detail"] == "New password must differ from the current password"
+    assert client.get("/v1/auth/me").json()["must_change_password"] is True
+
+    changed = client.post(
+        "/v1/auth/change-password",
+        json={
+            "current_password": "temporary-secret-19",
+            "new_password": "permanent-secret-83",
+        },
+    )
+    assert changed.status_code == 200
+    assert "session=" in changed.headers["set-cookie"]
+    assert client.get("/v1/auth/me").json()["must_change_password"] is False
+    assert client.get("/v1/me/workspaces").status_code == 200
+
+
+def test_flagged_user_with_multiple_memberships_selects_before_password_change(
+    client: TestClient,
+) -> None:
+    seed_first_admin(client, "flagged-multi@example.com", "temporary-secret-19")
+    second_org_id = _add_second_organization_membership(
+        client,
+        "flagged-multi@example.com",
+    )
+    engine = getattr(client, "test_engine")
+    with Session(engine) as session:
+        user = session.exec(
+            select(BackfieldUser).where(
+                BackfieldUser.email == "flagged-multi@example.com"
+            )
+        ).one()
+        user.must_change_password = True
+        session.add(user)
+        session.commit()
+        user_id = int(user.id)
+
+    login = client.post(
+        "/v1/auth/login",
+        json={
+            "email": "flagged-multi@example.com",
+            "password": "temporary-secret-19",
+        },
+    )
+    assert login.status_code == 200
+    assert login.json()["organization_selection_required"] is True
+    assert login.json()["must_change_password"] is True
+
+    selected = client.post(
+        "/v1/auth/select-organization",
+        json={"organization_id": second_org_id},
+    )
+    assert selected.status_code == 200
+    assert selected.json()["must_change_password"] is True
+    assert client.get("/v1/auth/me").json()["organization_id"] == second_org_id
+    blocked = client.get("/v1/me/workspaces")
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"]["code"] == "password_change_required"
+
+    with Session(engine) as session:
+        membership = session.exec(
+            select(BackfieldOrganizationMembership).where(
+                BackfieldOrganizationMembership.user_id == user_id,
+                BackfieldOrganizationMembership.organization_id == second_org_id,
+            )
+        ).one()
+        session.delete(membership)
+        session.commit()
+    removed = client.get("/v1/auth/me")
+    assert removed.status_code == 409
+    assert removed.json()["detail"]["code"] == "organization_selection_required"
 
 
 def test_org_admin_list_projects_and_users_detail(client: TestClient) -> None:

@@ -25,7 +25,8 @@ All schema changes use the single Alembic chain under `packages/backfield-db/ale
   Projects store both their workspace and a direct Stylebook ownership reference. The direct
   reference and workspace are required, indexed, and copied from the selected workspace when a
   project is created. Composite foreign keys prevent projects and workspaces from retaining
-  cross-organization ownership references.
+  cross-organization ownership references. Users created with provisioning temporary passwords
+  carry `must_change_password` until the password-change flow succeeds.
 - Access grants and API keys: `backfield_organization_membership`,
   `backfield_workspace_membership`, `backfield_project_membership`,
   `backfield_api_credential`.
@@ -37,7 +38,11 @@ All schema changes use the single Alembic chain under `packages/backfield-db/ale
   `backfield_organization_integration_secret`.
 - Shared AI catalog and accounting: `backfield_ai_model_config`,
   `backfield_ai_project_model_override`, `backfield_ai_default_model_role`,
-  `backfield_ai_call_record`.
+  `backfield_ai_call_record`. Curated preset metadata is Backfield-owned shared package data;
+  provisioning snapshots only the operator's explicit selection into organization-owned rows.
+  The immutable preset registry lives in `backfield-db`, the lowest package shared by provisioning
+  and Core API; this avoids either package depending upward on an application or on `backfield-ai`,
+  which already depends on `backfield-db`.
 
 ### Agate execution
 

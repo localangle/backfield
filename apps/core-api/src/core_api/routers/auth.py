@@ -10,19 +10,19 @@ from backfield_auth import (
     resolve_auth,
     verify_organization_selection_token,
 )
-from backfield_auth.deps import require_auth
 from backfield_auth.identity import LoginCredentials, NewPasswordBody
 from backfield_db import (
     BackfieldOrganization,
     BackfieldOrganizationMembership,
     BackfieldUser,
 )
+from backfield_db.users import users_by_normalized_email
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, Field, ValidationError
 from sqlmodel import Session, select
 
 from core_api.authz import session_project_ids_for_user
-from core_api.deps import get_auth, get_session
+from core_api.deps import get_auth, get_password_change_auth, get_session
 from core_api.security import hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -42,6 +42,7 @@ class UserResponse(BaseModel):
     organization_name: str | None = None
     organization_slug: str | None = None
     org_role: str | None = None
+    must_change_password: bool = False
     organizations: list[OrganizationChoice] = Field(default_factory=list)
 
 
@@ -49,6 +50,7 @@ class LoginResponse(BaseModel):
     success: bool
     email: str
     organization_selection_required: bool = False
+    must_change_password: bool = False
     organizations: list[OrganizationChoice] = Field(default_factory=list)
 
 
@@ -168,19 +170,34 @@ def _issue_session(
     user: BackfieldUser,
     membership: BackfieldOrganizationMembership,
 ) -> None:
-    org_id = int(membership.organization_id)
-    org_role = str(membership.role)
+    _issue_session_for_context(
+        session,
+        response,
+        user=user,
+        organization_id=int(membership.organization_id),
+        org_role=str(membership.role),
+    )
+
+
+def _issue_session_for_context(
+    session: Session,
+    response: Response,
+    *,
+    user: BackfieldUser,
+    organization_id: int,
+    org_role: str,
+) -> None:
     project_ids = session_project_ids_for_user(
         session,
         user_id=int(user.id),
-        organization_id=org_id,
+        organization_id=organization_id,
         org_role=org_role,
     )
     token = create_session_token(
         user_id=int(user.id),
         email=str(user.email),
         projects=project_ids,
-        organization_id=org_id,
+        organization_id=organization_id,
         org_role=org_role,
         is_admin=org_role == "org_admin",
     )
@@ -194,8 +211,11 @@ def login(
     session: Session = Depends(get_session),
 ) -> LoginResponse:
     email_norm = body.email
-    user = session.exec(select(BackfieldUser).where(BackfieldUser.email == email_norm)).first()
-    if user is None or user.disabled_at is not None:
+    users = users_by_normalized_email(session, email_norm)
+    if len(users) != 1:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    user = users[0]
+    if user.disabled_at is not None:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -215,12 +235,17 @@ def login(
             success=False,
             email=str(user.email),
             organization_selection_required=True,
+            must_change_password=bool(user.must_change_password),
             organizations=_organization_choices(memberships),
         )
 
     _clear_organization_selection_cookie(response)
     _issue_session(session, response, user=user, membership=memberships[0][0])
-    return LoginResponse(success=True, email=str(user.email))
+    return LoginResponse(
+        success=True,
+        email=str(user.email),
+        must_change_password=bool(user.must_change_password),
+    )
 
 
 @router.post("/select-organization", response_model=LoginResponse)
@@ -258,7 +283,11 @@ def select_organization(
         raise HTTPException(status_code=403, detail="Organization is not available")
     _clear_organization_selection_cookie(response)
     _issue_session(session, response, user=user, membership=membership)
-    return LoginResponse(success=True, email=str(user.email))
+    return LoginResponse(
+        success=True,
+        email=str(user.email),
+        must_change_password=bool(user.must_change_password),
+    )
 
 
 @router.post("/switch-organization", response_model=LoginResponse)
@@ -280,7 +309,11 @@ def switch_organization(
     if membership is None:
         raise HTTPException(status_code=403, detail="Organization is not available")
     _issue_session(session, response, user=user, membership=membership)
-    return LoginResponse(success=True, email=str(user.email))
+    return LoginResponse(
+        success=True,
+        email=str(user.email),
+        must_change_password=bool(user.must_change_password),
+    )
 
 
 @router.get("/me", response_model=UserResponse)
@@ -292,7 +325,12 @@ def me(
     if not cookie and not authorization:
         return UserResponse(email="", authenticated=False)
     try:
-        auth = resolve_auth(session, cookie=cookie, authorization=authorization)
+        auth = resolve_auth(
+            session,
+            cookie=cookie,
+            authorization=authorization,
+            allow_password_change_required=True,
+        )
     except HTTPException as exc:
         if exc.status_code == status.HTTP_409_CONFLICT:
             raise
@@ -310,6 +348,7 @@ def me(
         organization_name=str(org.name) if org is not None else None,
         organization_slug=str(org.slug) if org is not None else None,
         org_role=str(auth.get("org_role")),
+        must_change_password=bool(user.must_change_password),
         organizations=_organization_choices(_active_memberships(session, int(user.id))),
     )
 
@@ -317,22 +356,36 @@ def me(
 @router.post("/change-password")
 def change_password(
     body: ChangePasswordBody,
+    response: Response,
     session: Session = Depends(get_session),
-    auth: dict = Depends(get_auth),
+    auth: dict = Depends(get_password_change_auth),
 ) -> dict[str, bool]:
     if auth["type"] != "session":
         raise HTTPException(status_code=403, detail="Session required")
     user = auth["user"]
     if not verify_password(body.current_password, user.password_hash):
         raise HTTPException(status_code=401, detail="Current password is incorrect")
+    if verify_password(body.new_password, user.password_hash):
+        raise HTTPException(
+            status_code=400,
+            detail="New password must differ from the current password",
+        )
     try:
         new_password = body.validated_new_password(email=str(user.email))
     except (ValidationError, ValueError) as exc:
         detail = exc.errors()[0]["msg"] if isinstance(exc, ValidationError) else str(exc)
         raise HTTPException(status_code=400, detail=detail) from exc
     user.password_hash = hash_password(new_password)
+    user.must_change_password = False
     session.add(user)
     session.commit()
+    _issue_session_for_context(
+        session,
+        response,
+        user=user,
+        organization_id=int(auth["organization_id"]),
+        org_role=str(auth["org_role"]),
+    )
     return {"ok": True}
 
 
@@ -343,5 +396,7 @@ def logout(response: Response) -> dict[str, bool | str]:
 
 
 @router.get("/session-check")
-def session_check(username: str = Depends(require_auth)) -> dict[str, str]:
-    return {"username": username}
+def session_check(auth: dict = Depends(get_auth)) -> dict[str, str]:
+    if auth["type"] != "session":
+        raise HTTPException(status_code=403, detail="Session required")
+    return {"username": str(auth["user"].email)}

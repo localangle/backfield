@@ -20,6 +20,7 @@ Homepage = "https://github.com/localangle/backfield"
 Repository = "https://github.com/localangle/backfield"
 
 [project.scripts]
+backfield = "backfield_cli.main:main"
 backfield-migrate = "backfield_cli.migrate:main"
 backfield-seed = "backfield_cli.seed:main"
 

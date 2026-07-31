@@ -200,6 +200,15 @@ def test_071_upgrade_and_downgrade_against_postgres(
             "ix_backfield_project_org_stylebook",
         } <= index_names
 
+        command.upgrade(config, "072_user_password_change_flag")
+        user_columns = {row["name"]: row for row in inspect(engine).get_columns("backfield_user")}
+        assert user_columns["must_change_password"]["nullable"] is False
+        command.downgrade(config, "071_project_org_slug_scope")
+        user_column_names = {
+            row["name"] for row in inspect(engine).get_columns("backfield_user")
+        }
+        assert "must_change_password" not in user_column_names
+
         command.downgrade(config, "070_project_stylebook_runtime")
         downgraded = inspect(engine)
         constraints = downgraded.get_unique_constraints("backfield_project")

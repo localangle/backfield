@@ -12,6 +12,8 @@ treat this document as a self-hosting runbook.
 
 First administrators are created with `backfield seed` (or the seed step in `backfield init`). There
 is no HTTP bootstrap endpoint and no environment-variable admin bootstrap path.
+Additional complete organizations are created through the trusted host command
+`backfield organization create`; see [organization provisioning](organization-provisioning.md).
 
 ## What this repository implements
 
@@ -49,9 +51,11 @@ non-root `appuser`. The worker starts Celery through `apps/worker/scripts/entryp
 non-root in prod). Every image receives `APP_VERSION`, `GIT_SHA`, `BUILD_TIME`, and `LICENSE.md`.
 APIs expose version metadata on `GET /version`, and the worker includes them in its startup log.
 
-Agate API's production image also contains `backfield-migrate` and `backfield-seed` for one-off
-tasks. Alembic assets are copied to `/app/packages/backfield-db`, with `BACKFIELD_ALEMBIC_ROOT` set
-to that directory.
+Agate API's production image also contains the generic `backfield` operator command plus the
+compatibility `backfield-migrate` and `backfield-seed` entrypoints for one-off tasks. Use
+`backfield organization create` from that image with `BACKFIELD_DATABASE_URL_DIRECT` for trusted
+offline tenant provisioning. Alembic assets are copied to `/app/packages/backfield-db`, with
+`BACKFIELD_ALEMBIC_ROOT` set to that directory.
 
 ## Static UI builds
 
@@ -125,12 +129,15 @@ For an external deployment system only (not supported as in-repo self-hosting):
 2. provision runtime secrets and connectivity (`SESSION_SECRET` required; no built-in default)
 3. run `backfield-migrate` with `BACKFIELD_DATABASE_URL_DIRECT`
 4. run `backfield-seed --admin-email … --admin-password-file …`
-5. deploy the API and worker images by manifest digest
-6. publish and checksum-verify the three UI archives, including the tenant API Playground host
-7. configure `/v1`, `/api/agate`, and `/api/stylebook` routing, plus Playground DNS/TLS
-8. set each tenant API `PLAYGROUND_ORIGIN` to that tenant’s Playground URL
-9. check each API's `/health` and `/version`
-10. run the applicable smoke checks against the deployed environment
+5. run `backfield organization create …` once for each additional explicitly configured tenant
+6. deploy the API and worker images by manifest digest
+7. publish and checksum-verify the three UI archives, including the tenant API Playground host
+8. configure `/v1`, `/api/agate`, and `/api/stylebook` routing, plus Playground DNS/TLS
+9. set each tenant API `PLAYGROUND_ORIGIN` to that tenant’s Playground URL
+10. check each API's `/health` and `/version`
+11. run the applicable smoke checks against the deployed environment
 
 `backfield seed` is idempotent: it ensures the organization and administrator exist, but re-runs do
 not change an existing administrator's password or role.
+Complete organization provisioning is also idempotent for an exact input and fails atomically on
+partial or conflicting state.

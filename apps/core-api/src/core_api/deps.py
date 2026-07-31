@@ -31,3 +31,17 @@ def get_auth(
         authorization=authorization,
         service_organization_id=service_organization_id,
     )
+
+
+def get_password_change_auth(
+    session: Session = Depends(get_session),
+    session_cookie: str | None = Cookie(None, alias="session"),
+    authorization: str | None = Header(None, alias="Authorization"),
+):
+    """Allow a current session to complete its required password change."""
+    return resolve_auth(
+        session,
+        cookie=session_cookie,
+        authorization=authorization,
+        allow_password_change_required=True,
+    )

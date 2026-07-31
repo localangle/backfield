@@ -98,6 +98,10 @@ class BackfieldUser(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     email: str = Field(sa_column=Column(Text, unique=True, nullable=False, index=True))
     password_hash: str = Field(sa_column=Column(Text, nullable=False))
+    must_change_password: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
     display_name: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     disabled_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     created_at: datetime = Field(

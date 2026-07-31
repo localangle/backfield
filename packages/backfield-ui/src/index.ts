@@ -4,6 +4,14 @@ export { STYLEBOOK_BOOK_OPEN_PATHS } from "./stylebookBrand"
 export { StylebookProductMark } from "./StylebookProductMark"
 export { UserAccountMenu, type UserAccountMenuProps } from "./UserAccountMenu"
 export {
+  ForcedPasswordChange,
+  type ForcedPasswordChangeProps,
+} from "./ForcedPasswordChange"
+export {
+  shouldForcePasswordChange,
+  type PasswordChangeGateState,
+} from "./passwordChangeGate"
+export {
   OrganizationSwitcher,
   type OrganizationSwitcherOption,
   type OrganizationSwitcherProps,
@@ -24,6 +32,7 @@ export {
   clearTenantBrowserState,
   handleTenantResponse,
   ORGANIZATION_SELECTION_REQUIRED_EVENT,
+  PASSWORD_CHANGE_REQUIRED_EVENT,
 } from "./tenantSession"
 export {
   resolveUiOrigin,

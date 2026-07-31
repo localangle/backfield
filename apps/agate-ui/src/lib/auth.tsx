@@ -13,6 +13,7 @@ import {
   clearTenantBrowserState,
   handleTenantResponse,
   ORGANIZATION_SELECTION_REQUIRED_EVENT,
+  PASSWORD_CHANGE_REQUIRED_EVENT,
 } from "@backfield/ui/tenantSession"
 
 const authBase = () => import.meta.env.VITE_AUTH_API_BASE ?? ""
@@ -27,6 +28,7 @@ interface AuthContextType {
   organizations: OrganizationSwitcherOption[]
   orgRole: string | null
   isOrgAdmin: boolean
+  mustChangePassword: boolean
   loading: boolean
   logout: () => Promise<void>
   checkAuth: () => Promise<void>
@@ -47,6 +49,7 @@ function applyMe(
     setOrganizations: (v: OrganizationSwitcherOption[]) => void
     setOrgRole: (v: string | null) => void
     setIsOrgAdmin: (v: boolean) => void
+    setMustChangePassword: (v: boolean) => void
   },
 ) {
   const ok = Boolean(data.authenticated && data.email)
@@ -66,6 +69,7 @@ function applyMe(
   const role = ok ? (data.org_role ?? null) : null
   setters.setOrgRole(role)
   setters.setIsOrgAdmin(ok && role === "org_admin")
+  setters.setMustChangePassword(ok && Boolean(data.must_change_password))
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -78,6 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [organizations, setOrganizations] = useState<OrganizationSwitcherOption[]>([])
   const [orgRole, setOrgRole] = useState<string | null>(null)
   const [isOrgAdmin, setIsOrgAdmin] = useState(false)
+  const [mustChangePassword, setMustChangePassword] = useState(false)
   const [loading, setLoading] = useState(true)
 
   const checkAuth = useCallback(async () => {
@@ -93,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setOrganizations,
         setOrgRole,
         setIsOrgAdmin,
+        setMustChangePassword,
       })
     } catch {
       setIsAuthenticated(false)
@@ -104,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setOrganizations([])
       setOrgRole(null)
       setIsOrgAdmin(false)
+      setMustChangePassword(false)
     } finally {
       setLoading(false)
     }
@@ -125,16 +132,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setOrganizations([])
       setOrgRole(null)
       setIsOrgAdmin(false)
+      setMustChangePassword(false)
     }
     window.addEventListener(
       ORGANIZATION_SELECTION_REQUIRED_EVENT,
       requireOrganizationSelection,
     )
+    const requirePasswordChange = () => setMustChangePassword(true)
+    window.addEventListener(PASSWORD_CHANGE_REQUIRED_EVENT, requirePasswordChange)
     return () => {
       window.removeEventListener(
         ORGANIZATION_SELECTION_REQUIRED_EVENT,
         requireOrganizationSelection,
       )
+      window.removeEventListener(PASSWORD_CHANGE_REQUIRED_EVENT, requirePasswordChange)
     }
   }, [])
 
@@ -156,6 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setOrganizations([])
     setOrgRole(null)
     setIsOrgAdmin(false)
+    setMustChangePassword(false)
   }, [])
 
   const switchOrganization = useCallback(
@@ -185,6 +197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     organizations,
     orgRole,
     isOrgAdmin,
+    mustChangePassword,
     loading,
     logout,
     checkAuth,

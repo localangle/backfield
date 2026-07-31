@@ -5,29 +5,18 @@ from __future__ import annotations
 import re
 from typing import Literal
 
+from backfield_db.passwords import (
+    MAX_PASSWORD_LENGTH,
+    validate_password_strength,
+)
 from pydantic import BaseModel, Field, field_validator
 
 OrgRole = Literal["member", "org_admin"]
 
-MIN_PASSWORD_LENGTH = 8
-MAX_PASSWORD_LENGTH = 128
 MAX_EMAIL_LENGTH = 320
 MAX_DISPLAY_NAME_LENGTH = 200
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-_WEAK_PASSWORDS = frozenset(
-    {
-        "admin",
-        "password",
-        "password1",
-        "password123",
-        "12345678",
-        "qwertyui",
-        "letmein1",
-        "changeme",
-        "backfield",
-    }
-)
 
 
 def normalize_email(email: str) -> str:
@@ -42,18 +31,7 @@ def validate_email_address(email: str) -> str:
 
 
 def validate_password(password: str, *, email: str | None = None) -> str:
-    if len(password) < MIN_PASSWORD_LENGTH:
-        raise ValueError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
-    if len(password) > MAX_PASSWORD_LENGTH:
-        raise ValueError(f"Password must be at most {MAX_PASSWORD_LENGTH} characters")
-    lowered = password.lower()
-    if lowered in _WEAK_PASSWORDS:
-        raise ValueError("Choose a stronger password")
-    if email:
-        local = normalize_email(email).split("@", 1)[0]
-        if local and lowered == local:
-            raise ValueError("Password must not match the email local part")
-    return password
+    return validate_password_strength(password, email=email)
 
 
 class LoginCredentials(BaseModel):

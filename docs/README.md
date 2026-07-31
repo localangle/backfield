@@ -49,6 +49,7 @@ Getting a local stack running and validating changes:
 Runtime knobs, migrations, artifacts, and failure recovery for local (and artifact-consuming) work:
 
 - [`operations/runtime-configuration.md`](operations/runtime-configuration.md) — env vars and service contracts
+- [`operations/organization-provisioning.md`](operations/organization-provisioning.md) — trusted complete-organization CLI
 - [`operations/migrations.md`](operations/migrations.md) — Alembic workflows
 - [`operations/deployment.md`](operations/deployment.md) — artifact builds (no in-repo deploy)
 - [`operations/troubleshooting.md`](operations/troubleshooting.md) — common local failures

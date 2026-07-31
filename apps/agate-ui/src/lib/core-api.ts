@@ -58,6 +58,7 @@ export interface MeResponse {
   organization_name?: string | null
   organization_slug?: string | null
   org_role?: string | null
+  must_change_password?: boolean
   organizations?: { id: number; name: string; slug: string }[]
 }
 

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { Routes, Route, Navigate, useLocation } from "react-router-dom"
+import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom"
 import ProjectDetailPage from './pages/ProjectDetailPage'
 import WorkspacesHomePage from './pages/WorkspacesHomePage'
 import WorkspaceDetailPage from './pages/WorkspaceDetailPage'
@@ -24,7 +24,12 @@ import SettingsHub from './pages/SettingsHub'
 import HubLayout from './components/HubLayout'
 import { AppMessageProvider } from '@/components/AppMessageProvider'
 import { AuthProvider, useAuth } from './lib/auth'
-import { scopeOrganizationPath } from '@backfield/ui'
+import {
+  ForcedPasswordChange,
+  scopeOrganizationPath,
+  shouldForcePasswordChange,
+} from '@backfield/ui'
+import { changePassword } from "@/lib/core-api"
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { isAuthenticated, loading } = useAuth()
@@ -70,11 +75,37 @@ function OrgAdminRoute({ children }: { children: ReactNode }) {
 
 function AppRoutes() {
   const location = useLocation()
-  const { isAuthenticated, loading, organizationSlug } = useAuth()
+  const navigate = useNavigate()
+  const {
+    isAuthenticated,
+    loading,
+    organizationSlug,
+    mustChangePassword,
+    checkAuth,
+    logout,
+  } = useAuth()
   const pathScope = organizationSlug
     ? scopeOrganizationPath(location.pathname, location.search, organizationSlug)
     : null
   const scopedPathname = pathScope?.scopedPathname ?? location.pathname
+
+  if (shouldForcePasswordChange({ loading, isAuthenticated, mustChangePassword })) {
+    return (
+      <ForcedPasswordChange
+        changePassword={changePassword}
+        onLogout={logout}
+        onComplete={async () => {
+          await checkAuth()
+          navigate(
+            organizationSlug
+              ? `/org/${encodeURIComponent(organizationSlug)}/`
+              : "/",
+            { replace: true },
+          )
+        }}
+      />
+    )
+  }
 
   if (
     !loading &&

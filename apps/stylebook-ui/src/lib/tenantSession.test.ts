@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import {
   handleTenantResponse,
   ORGANIZATION_SELECTION_REQUIRED_EVENT,
+  PASSWORD_CHANGE_REQUIRED_EVENT,
 } from "@backfield/ui/tenantSession"
 
 describe("tenant session responses", () => {
@@ -30,5 +31,19 @@ describe("tenant session responses", () => {
     )
     expect(listener).not.toHaveBeenCalled()
     window.removeEventListener(ORGANIZATION_SELECTION_REQUIRED_EVENT, listener)
+  })
+
+  it("announces a required password change response", async () => {
+    const listener = vi.fn()
+    window.addEventListener(PASSWORD_CHANGE_REQUIRED_EVENT, listener)
+    const response = new Response(
+      JSON.stringify({
+        detail: { code: "password_change_required" },
+      }),
+      { status: 403, headers: { "Content-Type": "application/json" } },
+    )
+    expect(await handleTenantResponse(response)).toBe(response)
+    expect(listener).toHaveBeenCalledOnce()
+    window.removeEventListener(PASSWORD_CHANGE_REQUIRED_EVENT, listener)
   })
 })

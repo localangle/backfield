@@ -20,7 +20,10 @@ Redis and Celery.
   candidates, cleanup, activity, relationships, and bundle operations.
 - `apps/core-api` owns sessions, users, organization administration, project visibility and
   credentials, integration secrets, AI model configuration, and `/public/v1` read and
-  run-trigger routes. Project creation and mutation remain in Agate API.
+  run-trigger routes. Interactive project creation and mutation remain in Agate API. Trusted
+  offline `backfield organization create` provisioning is the explicit exception: its shared
+  database service atomically creates the organization, Stylebook, workspace, project, initial
+  memberships, and model snapshot across those domain boundaries.
 - `apps/agate-ui` owns the flow builder and run-review experience.
 - `apps/stylebook-ui` owns Stylebook catalog, candidate, cleanup, and activity interfaces.
 - `apps/api-playground` owns the developer-only schema explorer for `/public/v1`. It derives

@@ -115,6 +115,18 @@ def get_engine() -> Engine:
     return _engine
 
 
+def create_direct_engine() -> Engine:
+    """Create an isolated direct-DB engine for trusted administrative commands."""
+    url = get_database_url_direct()
+    return create_engine(
+        url,
+        echo=False,
+        connect_args=_engine_connect_args(url),
+        poolclass=NullPool,
+        pool_pre_ping=True,
+    )
+
+
 @contextmanager
 def null_pool_session() -> Generator[Session, None, None]:
     """Open a short-lived Session that does not use the process pool.

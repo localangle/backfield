@@ -145,6 +145,7 @@ def resolve_auth(
     cookie: str | None,
     authorization: str | None,
     service_organization_id: int | None = None,
+    allow_password_change_required: bool = False,
 ) -> dict[str, Any]:
     """Resolve service Bearer, project API key, session cookie, or raise 401."""
     if authorization:
@@ -168,7 +169,11 @@ def resolve_auth(
     if cookie:
         data = verify_session_token(cookie)
         if data:
-            return _resolve_session_auth(session, data)
+            return _resolve_session_auth(
+                session,
+                data,
+                allow_password_change_required=allow_password_change_required,
+            )
 
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
@@ -207,7 +212,12 @@ def resolve_project_by_slug(
     return project
 
 
-def _resolve_session_auth(session: Session, data: dict[str, Any]) -> dict[str, Any]:
+def _resolve_session_auth(
+    session: Session,
+    data: dict[str, Any],
+    *,
+    allow_password_change_required: bool = False,
+) -> dict[str, Any]:
     """Load the current user and DB membership; do not trust cookie authorization claims."""
     uid = data.get("user_id")
     if uid is None:
@@ -238,6 +248,12 @@ def _resolve_session_auth(session: Session, data: dict[str, Any]) -> dict[str, A
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "organization_selection_required"},
+        )
+
+    if bool(user.must_change_password) and not allow_password_change_required:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "password_change_required"},
         )
 
     org_role = str(membership.role)

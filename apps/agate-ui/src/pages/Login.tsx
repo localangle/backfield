@@ -18,6 +18,7 @@ interface OrganizationChoice {
 interface LoginResponse {
   organization_selection_required?: boolean
   organizations?: OrganizationChoice[]
+  must_change_password?: boolean
 }
 
 export default function Login() {
@@ -58,7 +59,7 @@ export default function Login() {
         return
       }
       await checkAuth()
-      navigate('/')
+      navigate(data.must_change_password ? "/account/password" : "/")
     } catch {
       setError('Failed to connect to server')
     } finally {
@@ -84,8 +85,14 @@ export default function Login() {
         setOrganizations([])
         return
       }
+      const data = (await response.json()) as LoginResponse
       await checkAuth()
-      navigate(`/org/${encodeURIComponent(organization.slug)}/`, { replace: true })
+      navigate(
+        data.must_change_password
+          ? `/org/${encodeURIComponent(organization.slug)}/account/password`
+          : `/org/${encodeURIComponent(organization.slug)}/`,
+        { replace: true },
+      )
     } catch {
       setError('Could not select that organization. Please try again.')
     } finally {

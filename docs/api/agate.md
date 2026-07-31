@@ -22,6 +22,11 @@ Project, flow, and run access is checked against the resource's project. Organiz
 
 `/projects` owns project creation, listing, detail, updates, deletion, statistics, tracked AI cost, and encrypted project secrets.
 
+The trusted offline `backfield organization create` command is the only project-creation exception.
+It uses a shared database transaction because a starter project must be committed atomically with
+its organization, Stylebook, workspace, administrators, and curated model snapshot. It is not an
+HTTP endpoint and does not change Agate API ownership of interactive project lifecycle operations.
+
 - List responses are filtered to visible projects.
 - Project creation requires `workspace_id` and copies that workspace's Stylebook into the
   project's direct ownership field. Session users must belong to the workspace organization;
