@@ -43,9 +43,9 @@ All schema changes use the single Alembic chain under `packages/backfield-db/ale
 - `agate_processed_item` stores per-document input, immutable model result, review overlay,
   reviewed output, status, article provenance, and an optional link to an S3 ingestion ledger
   revision (`ingestion_ledger_id`).
-- `agate_s3_ingestion_ledger` stores cross-run S3 Input object revisions keyed by
-  `source_id` + `logical_item_id` + `content_fingerprint`, with claim/lease state so unchanged
-  objects are skipped and failed or abandoned claims can retry.
+- `agate_s3_ingestion_ledger` stores cross-run S3 Input object revisions keyed by project,
+  `source_id`, `logical_item_id`, and `content_fingerprint`, with claim/lease state so unchanged
+  objects are skipped within a project and failed or abandoned claims can retry.
 - `agate_node_timing` stores per-node wall-clock measurements for processed items.
 
 ### Substrate content and entities

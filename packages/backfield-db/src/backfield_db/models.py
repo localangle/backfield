@@ -2096,12 +2096,18 @@ class AgateS3IngestionLedger(SQLModel, table=True):
     __tablename__ = "agate_s3_ingestion_ledger"
     __table_args__ = (
         UniqueConstraint(
+            "project_id",
             "source_id",
             "logical_item_id",
             "content_fingerprint",
             name="uq_agate_s3_ingestion_ledger_revision",
         ),
-        Index("ix_agate_s3_ingestion_ledger_source_item", "source_id", "logical_item_id"),
+        Index(
+            "ix_agate_s3_ingestion_ledger_source_item",
+            "project_id",
+            "source_id",
+            "logical_item_id",
+        ),
         Index("ix_agate_s3_ingestion_ledger_status_lease", "status", "lease_expires_at"),
         Index("ix_agate_s3_ingestion_ledger_project", "project_id"),
     )

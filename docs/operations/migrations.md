@@ -43,6 +43,10 @@ Back up production data before applying schema changes and verify the current
 
 ## Active upgrade warnings
 
+- The project-scoped S3 ingestion ledger migration (`068_s3_ledger_project_scope`) permits
+  otherwise-identical revisions in different projects. After such rows exist, downgrading to
+  `067_s3_ingestion_ledger` cannot restore the former global uniqueness constraint without
+  manually reconciling those rows. Prefer forward repair after deployment.
 - The location-canonical UUID migration (`019_sb_loc_canon_uuid`) drops and recreates location
   canonical-linked tables and does not preserve their rows. A database whose current revision is
   before this migration must not be upgraded in place when that catalog data matters. Rebuild a

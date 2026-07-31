@@ -256,6 +256,49 @@ def test_ledger_identity_lookups_are_project_scoped(ledger_engine):
         )
 
 
+def test_identical_revisions_are_processed_independently_by_project(ledger_engine, monkeypatch):
+    engine, graph_id, project_id = ledger_engine
+    s3 = _MutableS3()
+    first_run_id = _run_setup(engine, graph_id, s3, monkeypatch)
+
+    with Session(engine) as session:
+        project = session.get(BackfieldProject, project_id)
+        assert project is not None
+        other_project = BackfieldProject(
+            organization_id=int(project.organization_id),
+            name="Other",
+            slug="other-ledger-project",
+        )
+        session.add(other_project)
+        session.flush()
+        other_project_id = int(other_project.id)  # type: ignore[arg-type]
+        other_graph = AgateGraph(
+            name="Other graph",
+            spec_json=_spec("src-fixed"),
+            project_id=other_project_id,
+        )
+        session.add(other_graph)
+        session.commit()
+        session.refresh(other_graph)
+        other_graph_id = str(other_graph.id)
+
+    second_run_id = _run_setup(engine, other_graph_id, s3, monkeypatch)
+
+    with Session(engine) as session:
+        first_items = session.exec(
+            select(AgateProcessedItem).where(AgateProcessedItem.run_id == first_run_id)
+        ).all()
+        second_items = session.exec(
+            select(AgateProcessedItem).where(AgateProcessedItem.run_id == second_run_id)
+        ).all()
+        ledgers = session.exec(select(AgateS3IngestionLedger)).all()
+
+        assert len(first_items) == 1
+        assert len(second_items) == 1
+        assert len(ledgers) == 2
+        assert {row.project_id for row in ledgers} == {project_id, other_project_id}
+
+
 def test_changed_contents_start_new_revision(ledger_engine, monkeypatch):
     engine, graph_id, _pid = ledger_engine
     s3 = _MutableS3()
