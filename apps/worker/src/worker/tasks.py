@@ -945,6 +945,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
 
                     if not reprocess_unchanged and find_succeeded_matching_metadata(
                         session,
+                        project_id=project_id,
                         source_id=source_id,
                         item_id=item_logical_id,
                         listing=listing,
@@ -977,6 +978,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                     fingerprint = sha256_hex(raw_bytes)
                     existing_fp = find_row_for_fingerprint(
                         session,
+                        project_id=project_id,
                         source_id=source_id,
                         item_id=item_logical_id,
                         content_fingerprint=fingerprint,
@@ -1036,6 +1038,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                         continue
                     attach_processed_item(
                         session,
+                        project_id=project_id,
                         ledger_id=claim.ledger_id,
                         claim_token=claim.claim_token,
                         processed_item_id=int(row.id),

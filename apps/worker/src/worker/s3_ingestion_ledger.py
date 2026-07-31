@@ -67,6 +67,7 @@ def _set_first_s3_input_source_id(spec_json: str, source_id: str) -> str:
 def find_succeeded_matching_metadata(
     session: Session,
     *,
+    project_id: int,
     source_id: str,
     item_id: str,
     listing: S3ObjectListing,
@@ -74,6 +75,7 @@ def find_succeeded_matching_metadata(
     rows = list(
         session.exec(
             select(AgateS3IngestionLedger).where(
+                AgateS3IngestionLedger.project_id == project_id,
                 AgateS3IngestionLedger.source_id == source_id,
                 AgateS3IngestionLedger.logical_item_id == item_id,
                 AgateS3IngestionLedger.status == LEDGER_STATUS_SUCCEEDED,
@@ -94,12 +96,14 @@ def find_succeeded_matching_metadata(
 def find_row_for_fingerprint(
     session: Session,
     *,
+    project_id: int,
     source_id: str,
     item_id: str,
     content_fingerprint: str,
 ) -> AgateS3IngestionLedger | None:
     return session.exec(
         select(AgateS3IngestionLedger).where(
+            AgateS3IngestionLedger.project_id == project_id,
             AgateS3IngestionLedger.source_id == source_id,
             AgateS3IngestionLedger.logical_item_id == item_id,
             AgateS3IngestionLedger.content_fingerprint == content_fingerprint,
@@ -130,6 +134,7 @@ def claim_ledger_revision(
 
     existing = find_row_for_fingerprint(
         session,
+        project_id=project_id,
         source_id=source_id,
         item_id=item_id,
         content_fingerprint=content_fingerprint,
@@ -184,6 +189,7 @@ def claim_ledger_revision(
     observed_status = existing.status
     reclaim_filter = [
         AgateS3IngestionLedger.id == existing.id,
+        AgateS3IngestionLedger.project_id == project_id,
         AgateS3IngestionLedger.status == observed_status,
     ]
     if observed_status == LEDGER_STATUS_PROCESSING:
@@ -220,6 +226,7 @@ def claim_ledger_revision(
 def attach_processed_item(
     session: Session,
     *,
+    project_id: int,
     ledger_id: str,
     claim_token: str,
     processed_item_id: int,
@@ -228,6 +235,7 @@ def attach_processed_item(
         update(AgateS3IngestionLedger)
         .where(
             AgateS3IngestionLedger.id == ledger_id,
+            AgateS3IngestionLedger.project_id == project_id,
             AgateS3IngestionLedger.claim_token == claim_token,
             AgateS3IngestionLedger.status == LEDGER_STATUS_PROCESSING,
         )
