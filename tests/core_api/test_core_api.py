@@ -805,6 +805,7 @@ def test_member_workspace_memberships_grant_project_access(client: TestClient) -
     listed = client.get("/v1/projects/1/api-keys").json()
     assert len(listed) == 1
     assert listed[0]["user_id"] == member_id
+    assert "raw_key" not in listed[0]
 
 
 def test_member_multiple_workspace_memberships(client: TestClient) -> None:
@@ -894,7 +895,7 @@ def test_member_cannot_access_project_in_unassigned_workspace(client: TestClient
     assert all(w["slug"] != "investigations" for w in me_ws)
 
 
-def test_project_api_key_bearer(client: TestClient) -> None:
+def test_project_api_key_bearer_is_rejected_by_core_internal_api(client: TestClient) -> None:
     seed_first_admin(client, "keyuser@example.com", "shortpw1")
     client.post(
         "/v1/auth/login",
@@ -913,18 +914,13 @@ def test_project_api_key_bearer(client: TestClient) -> None:
         "/v1/projects/1/api-keys",
         headers={"Authorization": f"Bearer {raw_key}"},
     )
-    assert listed.status_code == 200
-    rows = listed.json()
-    assert len(rows) == 1
-    assert rows[0]["key_prefix"] == raw_key[:22]
-    assert rows[0].get("user_id") == 1
+    assert listed.status_code == 401
 
     who = client.get(
         "/v1/secure/whoami",
         headers={"Authorization": f"Bearer {raw_key}"},
     )
-    assert who.status_code == 200
-    assert who.json().get("auth_type") == "api_key"
+    assert who.status_code == 401
 
 
 def test_api_keys_no_auth_returns_401(client: TestClient) -> None:
@@ -940,7 +936,7 @@ def test_api_keys_invalid_bearer_returns_401(client: TestClient) -> None:
     assert r.status_code == 401
 
 
-def test_api_keys_wrong_project_bearer_returns_403(client: TestClient) -> None:
+def test_api_keys_project_bearer_is_rejected_before_project_scope(client: TestClient) -> None:
     seed_first_admin(client, "wp@example.com", "wp-secret")
     client.post(
         "/v1/auth/login",
@@ -957,8 +953,7 @@ def test_api_keys_wrong_project_bearer_returns_403(client: TestClient) -> None:
         "/v1/projects/2/api-keys",
         headers={"Authorization": f"Bearer {raw_key}"},
     )
-    assert r.status_code == 403
-    assert "project" in r.json().get("detail", "").lower()
+    assert r.status_code == 401
 
 
 def test_api_keys_revoked_bearer_returns_401(client: TestClient) -> None:
@@ -976,17 +971,20 @@ def test_api_keys_revoked_bearer_returns_401(client: TestClient) -> None:
 
     assert (
         client.get(
-            "/v1/projects/1/api-keys",
+            "/public/v1/projects/general",
             headers={"Authorization": f"Bearer {raw_key}"},
         ).status_code
         == 200
     )
 
     client.delete(f"/v1/projects/1/api-keys/{cid}")
+    retained = client.get("/v1/projects/1/api-keys").json()
+    assert retained[0]["id"] == cid
+    assert retained[0]["revoked_at"] is not None
     client.post("/v1/auth/logout")
 
     r = client.get(
-        "/v1/projects/1/api-keys",
+        "/public/v1/projects/general",
         headers={"Authorization": f"Bearer {raw_key}"},
     )
     assert r.status_code == 401
@@ -1009,8 +1007,7 @@ def test_api_keys_post_user_key_requires_session_not_bearer(client: TestClient) 
         json={"credential_type": "user", "label": "b"},
         headers={"Authorization": f"Bearer {raw}"},
     )
-    assert r.status_code == 400
-    assert "session" in r.json()["detail"].lower()
+    assert r.status_code == 401
 
 
 def test_api_keys_post_service_key_forbidden_for_member(client: TestClient) -> None:
@@ -1092,6 +1089,7 @@ def test_api_keys_member_cannot_revoke_another_users_key(client: TestClient) -> 
         json={"email": "bob@example.com", "password": "bob-secret"},
     )
 
+    assert client.get("/v1/projects/1/api-keys").json() == []
     r = client.delete(f"/v1/projects/1/api-keys/{cred_id}")
     assert r.status_code == 403
 
@@ -1115,8 +1113,7 @@ def test_api_keys_revoke_with_bearer_forbidden_even_for_own_row(client: TestClie
         f"/v1/projects/1/api-keys/{cid}",
         headers={"Authorization": f"Bearer {raw_key}"},
     )
-    assert r.status_code == 403
-    assert "session" in r.json()["detail"].lower()
+    assert r.status_code == 401
 
 
 def test_api_keys_org_admin_creates_revokes_service_key(client: TestClient) -> None:
@@ -1141,7 +1138,7 @@ def test_api_keys_org_admin_creates_revokes_service_key(client: TestClient) -> N
 
     assert (
         client.get(
-            "/v1/projects/1/api-keys",
+            "/public/v1/projects/general",
             headers={"Authorization": f"Bearer {raw_key}"},
         ).status_code
         == 200
@@ -1154,7 +1151,7 @@ def test_api_keys_org_admin_creates_revokes_service_key(client: TestClient) -> N
 
     assert (
         client.get(
-            "/v1/projects/1/api-keys",
+            "/public/v1/projects/general",
             headers={"Authorization": f"Bearer {raw_key}"},
         ).status_code
         == 401
@@ -1196,8 +1193,12 @@ def test_api_keys_org_admin_revokes_other_users_user_key(client: TestClient) -> 
         json={"email": "adm3@example.com", "password": "adm3-secret"},
     )
 
+    assert client.get("/v1/projects/1/api-keys").json()[0]["id"] == cred_id
     assert client.delete(f"/v1/projects/1/api-keys/{cred_id}").status_code == 204
-    assert client.get("/v1/projects/1/api-keys").json() == []
+    listed = client.get("/v1/projects/1/api-keys").json()
+    assert len(listed) == 1
+    assert listed[0]["id"] == cred_id
+    assert listed[0]["revoked_at"] is not None
 
 
 def test_ai_models_curated_options_requires_auth(client: TestClient) -> None:

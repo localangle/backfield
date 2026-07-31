@@ -74,6 +74,21 @@ def test_project_key_validates_its_bound_project_slug() -> None:
         assert exc.value.status_code == 403
 
 
+def test_project_key_resolves_its_bound_duplicate_cross_org_slug() -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        first = _project(session, "first", "news")
+        second = _project(session, "second", "news")
+        resolved = resolve_project_by_slug(
+            session,
+            {"type": "api_key", "project_id": int(second.id)},
+            "news",
+        )
+        assert resolved.id == second.id
+        assert resolved.id != first.id
+
+
 def test_service_slug_resolution_requires_explicit_organization() -> None:
     engine = create_engine("sqlite://")
     SQLModel.metadata.create_all(engine)

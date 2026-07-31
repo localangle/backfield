@@ -733,6 +733,16 @@ def test_list_locations_requires_auth(client: TestClient) -> None:
     assert r.status_code == 401
 
 
+def test_project_api_key_cannot_authenticate_stylebook_internal_api(
+    client: TestClient,
+) -> None:
+    response = client.get(
+        "/v1/stylebooks/default/canonical-locations",
+        headers={"Authorization": "Bearer bfk_validly_shaped_but_internal_only_123456"},
+    )
+    assert response.status_code == 401
+
+
 def test_import_geojson_analyze_requires_auth(client: TestClient) -> None:
     r = client.post(
         "/v1/import/geojson/analyze?project_slug=demo-proj",

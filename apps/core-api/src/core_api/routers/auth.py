@@ -7,7 +7,7 @@ import os
 from backfield_auth import (
     create_organization_selection_token,
     create_session_token,
-    resolve_auth,
+    resolve_internal_auth,
     verify_organization_selection_token,
 )
 from backfield_auth.identity import LoginCredentials, NewPasswordBody
@@ -325,7 +325,7 @@ def me(
     if not cookie and not authorization:
         return UserResponse(email="", authenticated=False)
     try:
-        auth = resolve_auth(
+        auth = resolve_internal_auth(
             session,
             cookie=cookie,
             authorization=authorization,

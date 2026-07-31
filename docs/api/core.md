@@ -21,7 +21,9 @@ Authenticated users switch with `/v1/auth/switch-organization`.
 - `SERVICE_API_TOKEN` is accepted by administration routes intended for automation and has
   cross-organization authority. Slug-based project operations require
   `X-Backfield-Organization-ID`; automation never receives an implicit organization.
-- Project API keys use the `bfk_…` Bearer format. They are bound to one project and carry `read` and, for eligible service keys, `runs:trigger` scopes.
+- Project API keys use the `bfk_…` Bearer format only on documented `/public/v1` routes. Core's
+  internal `/v1` routes reject them; those routes accept the intended browser session or trusted
+  service token.
 - Routes compare path and resource ownership with the authenticated organization or project. A caller cannot use an identifier from another tenant to widen access.
 
 `GET /health` is unauthenticated. Bootstrap routes are deployment setup surfaces, not normal application APIs.
@@ -64,9 +66,16 @@ Workspace membership replacement endpoints treat the submitted collection as the
 Routes under `/v1/projects/{project_id}/api-keys` list, create, and revoke project API keys.
 
 - Raw key material is returned only when a key is created.
-- User keys require a session and are read-only.
+- Members may create, list, and revoke only their own read-only keys for projects they can
+  currently access.
+- Organization admins may list and revoke every project key in their active organization.
 - Service keys require organization-admin authority and may receive `runs:trigger`.
-- Revocation rules distinguish a user's own key from another user's key or a service key.
+- Trusted service-token operators retain cross-organization key-management authority.
+- Lists retain revoked-key metadata without returning key secrets.
+- Every personal-key use reloads the owner, organization membership, project access, and project
+  ownership. Disabling the owner or removing either membership immediately invalidates the key.
+  Legacy ownerless personal keys fail closed. Ownerless `service` rows remain the explicit trusted
+  automation-key form.
 
 ### AI models and integration secrets
 

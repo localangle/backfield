@@ -6,14 +6,16 @@ The current canonical domains are locations, people, and organizations.
 
 ## Authentication and tenancy
 
-Routes accept the signed browser `session` cookie, `SERVICE_API_TOKEN` Bearer authentication, or a project-bound `bfk_…` API key. `GET /health` is unauthenticated.
+Routes accept the signed browser `session` cookie or `SERVICE_API_TOKEN` Bearer authentication.
+Project-bound `bfk_…` credentials are rejected throughout Stylebook API; consumer reads belong on
+Core API's documented `/public/v1` routes. `GET /health` is unauthenticated.
 
 Two scopes are used:
 
 - Project-scoped routes take `project_slug`, resolve it to a project, and require project access.
   They always use the project's assigned Stylebook. A temporary `stylebook_slug` parameter remains
   accepted only when it matches that assignment; conflicting values are rejected.
-- Stylebook-scoped routes take `stylebook_slug` and require the Stylebook to belong to the authenticated organization. Reads follow the caller's catalog access. Writes require an organization admin, a Stylebook editor membership, or the service token. Project API keys cannot edit a Stylebook.
+- Stylebook-scoped routes take `stylebook_slug` and require the Stylebook to belong to the authenticated organization. Reads follow the caller's catalog access. Writes require an organization admin, a Stylebook editor membership, or the service token.
 
 Organization library routes compare `org_id` with the session organization. The service token is allowed for automation across organizations.
 

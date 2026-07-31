@@ -1,11 +1,9 @@
-"""DB-backed auth: session cookie, service Bearer, project API keys (`bfk_`).
-
-Used by core-api and agate-api with the same Postgres tables (no RPC to Core).
-"""
+"""DB-backed internal and public authentication boundaries."""
 
 from __future__ import annotations
 
 import hashlib
+import hmac
 from typing import Any
 
 from backfield_db import (
@@ -34,7 +32,7 @@ def parse_scopes(raw: str | None) -> list[str]:
 
 
 def try_resolve_bearer_api_key(session: Session, raw: str) -> dict[str, Any] | None:
-    """Validate `bfk_` project API key; return auth dict or None if not a valid key."""
+    """Validate a public project key and its owner's current access."""
     raw = raw.strip()
     if not raw.startswith("bfk_") or len(raw) < 24:
         return None
@@ -45,17 +43,47 @@ def try_resolve_bearer_api_key(session: Session, raw: str) -> dict[str, Any] | N
     ).first()
     if row is None or row.revoked_at is not None:
         return None
-    if row.key_hash != digest:
+    if not hmac.compare_digest(str(row.key_hash), digest):
         return None
     proj = session.get(BackfieldProject, row.project_id)
     if proj is None:
+        return None
+    credential_type = str(row.credential_type)
+    if credential_type == "user":
+        if row.user_id is None:
+            # Legacy ownerless personal keys cannot prove an accountable principal.
+            return None
+        user = session.get(BackfieldUser, int(row.user_id))
+        if user is None or user.disabled_at is not None:
+            return None
+        membership = session.exec(
+            select(BackfieldOrganizationMembership).where(
+                BackfieldOrganizationMembership.user_id == int(row.user_id),
+                BackfieldOrganizationMembership.organization_id == int(proj.organization_id),
+            )
+        ).first()
+        if membership is None:
+            return None
+        accessible_project_ids = session_project_ids_for_user(
+            session,
+            user_id=int(row.user_id),
+            organization_id=int(proj.organization_id),
+            org_role=str(membership.role),
+        )
+        if int(proj.id) not in accessible_project_ids:
+            return None
+    elif credential_type == "service":
+        # Ownerless service keys are the explicit trusted legacy/operator path.
+        if row.user_id is not None:
+            return None
+    else:
         return None
     return {
         "type": "api_key",
         "credential": row,
         "project_id": int(row.project_id),
         "organization_id": int(proj.organization_id),
-        "credential_type": str(row.credential_type),
+        "credential_type": credential_type,
         "scopes": parse_scopes(row.scopes),
     }
 
@@ -139,7 +167,33 @@ def visible_project_ids(session: Session, auth: dict[str, Any]) -> list[int] | N
     )
 
 
-def resolve_auth(
+def _service_auth(
+    token: str,
+    *,
+    service_organization_id: int | None,
+) -> dict[str, Any] | None:
+    if not verify_service_token(token):
+        return None
+    return {
+        "type": "service",
+        "is_admin": True,
+        "organization_id": service_organization_id,
+    }
+
+
+def _bearer_token(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    try:
+        scheme, token = authorization.split(" ", 1)
+    except ValueError:
+        return None
+    if scheme.lower() != "bearer":
+        return None
+    return token.strip()
+
+
+def resolve_internal_auth(
     session: Session,
     *,
     cookie: str | None,
@@ -147,24 +201,20 @@ def resolve_auth(
     service_organization_id: int | None = None,
     allow_password_change_required: bool = False,
 ) -> dict[str, Any]:
-    """Resolve service Bearer, project API key, session cookie, or raise 401."""
-    if authorization:
-        try:
-            scheme, token = authorization.split(" ", 1)
-            if scheme.lower() != "bearer":
-                raise ValueError
-            token = token.strip()
-            if verify_service_token(token):
-                return {
-                    "type": "service",
-                    "is_admin": True,
-                    "organization_id": service_organization_id,
-                }
-            api_auth = try_resolve_bearer_api_key(session, token)
-            if api_auth is not None:
-                return api_auth
-        except ValueError:
-            pass
+    """Resolve only trusted service tokens or browser sessions."""
+    token = _bearer_token(authorization)
+    if token:
+        service_auth = _service_auth(
+            token,
+            service_organization_id=service_organization_id,
+        )
+        if service_auth is not None:
+            return service_auth
+        if token.startswith("bfk_"):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Project API keys are only accepted by /public/v1 endpoints",
+            )
 
     if cookie:
         data = verify_session_token(cookie)
@@ -176,6 +226,31 @@ def resolve_auth(
             )
 
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+
+def resolve_public_auth(
+    session: Session,
+    *,
+    authorization: str | None,
+    service_organization_id: int | None = None,
+) -> dict[str, Any]:
+    """Resolve a public project key or an explicitly scoped trusted service token."""
+    token = _bearer_token(authorization)
+    if token:
+        service_auth = _service_auth(
+            token,
+            service_organization_id=service_organization_id,
+        )
+        if service_auth is not None:
+            return service_auth
+        api_auth = try_resolve_bearer_api_key(session, token)
+        if api_auth is not None:
+            return api_auth
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+
+# Compatibility for downstream callers; internal authentication is the safe default.
+resolve_auth = resolve_internal_auth
 
 
 def resolve_project_by_slug(
@@ -364,4 +439,4 @@ def get_auth_dependency(
     session_cookie: str | None = Cookie(None, alias="session"),
     authorization: str | None = Header(None, alias="Authorization"),
 ) -> dict[str, Any]:
-    return resolve_auth(session, cookie=session_cookie, authorization=authorization)
+    return resolve_internal_auth(session, cookie=session_cookie, authorization=authorization)

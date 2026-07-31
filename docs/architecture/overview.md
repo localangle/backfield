@@ -41,7 +41,9 @@ Redis and Celery.
 - `packages/backfield-ai` owns model resolution, LiteLLM integration, embeddings, and AI call
   accounting.
 - `packages/backfield-auth` owns signed sessions, service authentication, project API-key
-  authentication, and shared FastAPI auth dependencies.
+  authentication, and shared FastAPI auth dependencies. Internal dependencies accept sessions and
+  trusted service tokens; the separate public dependency accepts project keys only on Core API's
+  `/public/v1` surface.
 - `packages/backfield-observability` owns runtime identity, CloudWatch EMF metric emission, and
   shared lifecycle/external metric helpers. See [`../OBSERVABILITY.md`](../OBSERVABILITY.md).
 - `packages/backfield-cli` owns operator commands for stack lifecycle, migration, seeding, and

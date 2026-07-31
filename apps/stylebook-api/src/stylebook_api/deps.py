@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Generator
 from typing import Any
 
-from backfield_auth.gate import resolve_auth
+from backfield_auth.gate import resolve_internal_auth
 from backfield_db.session import get_engine
 from fastapi import Cookie, Depends, Header
 from sqlmodel import Session
@@ -23,8 +23,8 @@ def get_auth(
         alias="X-Backfield-Organization-ID",
     ),
 ) -> dict[str, Any]:
-    """Session cookie, service Bearer, or project API key (``bfk_``)."""
-    auth = resolve_auth(
+    """Authenticate an internal browser session or trusted service."""
+    auth = resolve_internal_auth(
         session,
         cookie=session_cookie,
         authorization=authorization,

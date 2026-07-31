@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from backfield_auth.gate import require_project_access, resolve_auth, resolve_project_by_slug
+from backfield_auth.gate import (
+    require_project_access,
+    resolve_project_by_slug,
+    resolve_public_auth,
+)
 from backfield_db import BackfieldProject
 from fastapi import Depends, HTTPException, Request, Response, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -40,9 +44,8 @@ def require_public_api_auth(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid organization context",
         ) from exc
-    auth = resolve_auth(
+    auth = resolve_public_auth(
         session,
-        cookie=None,
         authorization=authorization,
         service_organization_id=service_organization_id,
     )

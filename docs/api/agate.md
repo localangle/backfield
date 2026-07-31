@@ -9,10 +9,13 @@ Processed-item editing contracts are documented in [`processed-item-review.md`](
 Authenticated routes accept:
 
 - the signed browser `session` cookie;
-- `Authorization: Bearer <SERVICE_API_TOKEN>`;
-- a project-bound `bfk_…` API key.
+- `Authorization: Bearer <SERVICE_API_TOKEN>`.
 
-Project, flow, and run access is checked against the resource's project. Organization admins see every project in their organization. Members see projects from workspace membership plus any explicit project grants that remain in use. A project API key can access only its bound project; the service token has automation-wide access.
+Project, flow, and run access is checked against the resource's project. Organization admins see
+every project in their organization. Members see projects from workspace membership plus any
+explicit project grants that remain in use. The service token has automation-wide access.
+Project-bound `bfk_…` credentials are rejected throughout Agate API; consumer access belongs on
+Core API's documented `/public/v1` routes.
 
 `GET /health` and `GET /nodes/metadata` are intentionally unauthenticated.
 
@@ -32,7 +35,7 @@ HTTP endpoint and does not change Agate API ownership of interactive project lif
   project's direct ownership field. Session users must belong to the workspace organization;
   members need workspace membership, and org admins may assign any workspace in their org.
   The required workspace is the explicit organization context for service-token callers; the
-  endpoint never falls back to a default organization. API keys cannot create projects.
+  endpoint never falls back to a default organization.
 - Secret responses contain metadata, never secret values.
 - Project responses expose direct `stylebook_id`, `stylebook_name`, and `stylebook_slug` fields
   while retaining the `workspace_stylebook_*` response fields for compatibility. The direct

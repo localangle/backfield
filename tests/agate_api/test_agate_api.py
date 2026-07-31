@@ -713,7 +713,7 @@ def test_graph_description_round_trip(client: TestClient):
     assert listed["description"] == "Updated description"
 
 
-def test_project_api_key_scopes_agate_api_access(tmp_path):
+def test_project_api_key_cannot_authenticate_agate_internal_api(tmp_path):
     database_path = tmp_path / "agate-project-key-scope.db"
     engine = create_engine(
         f"sqlite:///{database_path}",
@@ -753,17 +753,9 @@ def test_project_api_key_scopes_agate_api_access(tmp_path):
 
         headers = {"Authorization": f"Bearer {raw_key}"}
 
-        listed = tc.get("/projects", headers=headers)
-        assert listed.status_code == 200
-        assert [row["id"] for row in listed.json()] == [project_one["id"]]
-
-        own = tc.get(f"/projects/{project_one['id']}", headers=headers)
-        assert own.status_code == 200
-        assert own.json()["id"] == project_one["id"]
-
-        other = tc.get(f"/projects/{project_two['id']}", headers=headers)
-        assert other.status_code == 403
-        assert "project" in other.json().get("detail", "").lower()
+        assert tc.get("/projects", headers=headers).status_code == 401
+        assert tc.get(f"/projects/{project_one['id']}", headers=headers).status_code == 401
+        assert tc.get(f"/projects/{project_two['id']}", headers=headers).status_code == 401
     finally:
         app.dependency_overrides.clear()
 

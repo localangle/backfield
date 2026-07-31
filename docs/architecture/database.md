@@ -29,7 +29,11 @@ All schema changes use the single Alembic chain under `packages/backfield-db/ale
   carry `must_change_password` until the password-change flow succeeds.
 - Access grants and API keys: `backfield_organization_membership`,
   `backfield_workspace_membership`, `backfield_project_membership`,
-  `backfield_api_credential`.
+  `backfield_api_credential`. Personal API credentials retain their owning `user_id` and are
+  authorized against the owner's current enabled state, organization membership, and project
+  access on every use. Ownerless personal rows fail closed. Ownerless `service` credentials are
+  the explicit administrator-managed automation form. Revocation timestamps and hashes are
+  retained; raw keys are never stored.
 - Public request safety: `backfield_public_idempotency_record` stores a seven-day
   project/operation/key reservation, canonical request hash, linked Agate run, and
   retryable enqueue state (`pending` / `publishing` / `published`) with a Celery

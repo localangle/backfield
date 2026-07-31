@@ -8,7 +8,7 @@ from backfield_db.session import get_engine
 from fastapi import Cookie, Depends, Header
 from sqlmodel import Session
 
-from core_api.authz import resolve_auth
+from core_api.authz import resolve_internal_auth
 
 
 def get_session() -> Generator[Session, None, None]:
@@ -25,7 +25,7 @@ def get_auth(
         alias="X-Backfield-Organization-ID",
     ),
 ):
-    return resolve_auth(
+    return resolve_internal_auth(
         session,
         cookie=session_cookie,
         authorization=authorization,
@@ -39,7 +39,7 @@ def get_password_change_auth(
     authorization: str | None = Header(None, alias="Authorization"),
 ):
     """Allow a current session to complete its required password change."""
-    return resolve_auth(
+    return resolve_internal_auth(
         session,
         cookie=session_cookie,
         authorization=authorization,

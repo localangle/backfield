@@ -152,8 +152,7 @@ def test_create_api_key_unknown_scope_rejected(client: TestClient) -> None:
             "scopes": ["admin:all"],
         },
     )
-    assert r.status_code == 400
-    assert "unknown scope" in r.json()["detail"].lower()
+    assert r.status_code == 422
 
 
 def test_require_scope_enforcement() -> None:
