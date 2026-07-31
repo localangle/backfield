@@ -137,6 +137,10 @@ For an external deployment system only (not supported as in-repo self-hosting):
 10. check each API's `/health` and `/version`
 11. run the applicable smoke checks against the deployed environment
 
+This sequence assumes migrations are safe to apply before the new application starts. Upgrading an
+existing environment across Alembic revisions `068`–`072` inverts that order for one revision;
+follow the [organization tenancy upgrade runbook](organization-tenancy-upgrade.md) instead.
+
 `backfield seed` is idempotent: it ensures the organization and administrator exist, but re-runs do
 not change an existing administrator's password or role.
 Complete organization provisioning is also idempotent for an exact input and fails atomically on

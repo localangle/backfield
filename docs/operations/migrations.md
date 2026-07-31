@@ -66,6 +66,10 @@ Back up production data before applying schema changes and verify the current
 
 ## Active upgrade warnings
 
+Revisions `068` through `072` are sequenced together by the
+[organization tenancy upgrade runbook](organization-tenancy-upgrade.md). Use it instead of the
+default migrate-before-app order for that upgrade.
+
 - The organization-scoped project slug migration (`071_project_org_slug_scope`) permits the same
   project slug in different organizations and is an explicit exception to the normal
   migrate-before-app sequence. Use two deployments: first deploy organization-qualified readers
