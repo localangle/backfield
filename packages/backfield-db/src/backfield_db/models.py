@@ -131,6 +131,11 @@ class BackfieldProject(SQLModel, table=True):
 
     __tablename__ = "backfield_project"
     __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "slug",
+            name="uq_backfield_project_org_slug",
+        ),
         ForeignKeyConstraint(
             ["organization_id", "workspace_id"],
             ["backfield_workspace.organization_id", "backfield_workspace.id"],
@@ -154,7 +159,7 @@ class BackfieldProject(SQLModel, table=True):
         index=True,
     )
     name: str = Field(sa_column=Column(Text, nullable=False))
-    slug: str = Field(sa_column=Column(Text, unique=True, nullable=False, index=True))
+    slug: str = Field(sa_column=Column(Text, nullable=False, index=True))
     settings_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

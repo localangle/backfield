@@ -144,6 +144,7 @@ def resolve_auth(
     *,
     cookie: str | None,
     authorization: str | None,
+    service_organization_id: int | None = None,
 ) -> dict[str, Any]:
     """Resolve service Bearer, project API key, session cookie, or raise 401."""
     if authorization:
@@ -153,7 +154,11 @@ def resolve_auth(
                 raise ValueError
             token = token.strip()
             if verify_service_token(token):
-                return {"type": "service", "is_admin": True}
+                return {
+                    "type": "service",
+                    "is_admin": True,
+                    "organization_id": service_organization_id,
+                }
             api_auth = try_resolve_bearer_api_key(session, token)
             if api_auth is not None:
                 return api_auth
@@ -166,6 +171,40 @@ def resolve_auth(
             return _resolve_session_auth(session, data)
 
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+
+def resolve_project_by_slug(
+    session: Session,
+    auth: dict[str, Any],
+    slug: str,
+) -> BackfieldProject:
+    """Resolve a slug inside the caller's organization or bound API-key project."""
+    normalized_slug = slug.strip()
+    if not normalized_slug:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    if auth["type"] == "api_key":
+        project = session.get(BackfieldProject, int(auth["project_id"]))
+        if project is None or str(project.slug) != normalized_slug:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="API key project mismatch",
+            )
+        return project
+    organization_id = auth.get("organization_id")
+    if organization_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Explicit organization context is required",
+        )
+    project = session.exec(
+        select(BackfieldProject).where(
+            BackfieldProject.organization_id == int(organization_id),
+            BackfieldProject.slug == normalized_slug,
+        )
+    ).first()
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return project
 
 
 def _resolve_session_auth(session: Session, data: dict[str, Any]) -> dict[str, Any]:
@@ -184,24 +223,21 @@ def _resolve_session_auth(session: Session, data: dict[str, Any]) -> dict[str, A
         )
 
     claimed_org_id = data.get("organization_id")
-    membership: BackfieldOrganizationMembership | None = None
-    if claimed_org_id is not None:
-        membership = session.exec(
-            select(BackfieldOrganizationMembership).where(
-                BackfieldOrganizationMembership.user_id == int(uid),
-                BackfieldOrganizationMembership.organization_id == int(claimed_org_id),
-            )
-        ).first()
-    if membership is None:
-        membership = session.exec(
-            select(BackfieldOrganizationMembership).where(
-                BackfieldOrganizationMembership.user_id == int(uid)
-            )
-        ).first()
+    if claimed_org_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "organization_selection_required"},
+        )
+    membership = session.exec(
+        select(BackfieldOrganizationMembership).where(
+            BackfieldOrganizationMembership.user_id == int(uid),
+            BackfieldOrganizationMembership.organization_id == int(claimed_org_id),
+        )
+    ).first()
     if membership is None:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid session",
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "organization_selection_required"},
         )
 
     org_role = str(membership.role)

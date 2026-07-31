@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+from alembic import command
 from backfield_db.migrate import (
     alembic_root,
     build_alembic_config,
@@ -14,7 +15,7 @@ from backfield_db.migrate import (
     main,
     run_migrations,
 )
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import OperationalError
 
 
@@ -143,6 +144,69 @@ def test_run_migrations_against_fresh_postgres_creates_extensions(
                 )
             }
         assert {"postgis", "vector", "h3"} <= extensions
+    finally:
+        with admin_engine.connect() as conn:
+            conn.execution_options(isolation_level="AUTOCOMMIT")
+            conn.execute(
+                text(
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    f"WHERE datname = '{db_name}' AND pid <> pg_backend_pid()"
+                )
+            )
+            conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
+
+
+def test_071_upgrade_and_downgrade_against_postgres(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    admin_url = os.environ.get(
+        "BACKFIELD_MIGRATE_TEST_ADMIN_URL",
+        "postgresql+psycopg://postgres:postgres@localhost:5433/postgres",
+    )
+    try:
+        admin_engine = create_engine(admin_url)
+        with admin_engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except OperationalError:
+        pytest.skip("postgres not available for migration integration test")
+
+    db_name = f"backfield_migrate_071_{uuid.uuid4().hex[:10]}"
+    with admin_engine.connect() as conn:
+        conn.execution_options(isolation_level="AUTOCOMMIT")
+        conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+    target_url = admin_url.rsplit("/", 1)[0] + f"/{db_name}"
+    monkeypatch.setenv("BACKFIELD_DATABASE_URL_DIRECT", target_url)
+    monkeypatch.delenv("BACKFIELD_DATABASE_URL", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    config = build_alembic_config()
+
+    try:
+        command.upgrade(config, "070_project_stylebook_runtime")
+        engine = create_engine(target_url)
+        before = inspect(engine).get_unique_constraints("backfield_project")
+        assert any(row["column_names"] == ["slug"] for row in before)
+
+        command.upgrade(config, "071_project_org_slug_scope")
+        upgraded = inspect(engine)
+        constraints = upgraded.get_unique_constraints("backfield_project")
+        assert any(
+            row["name"] == "uq_backfield_project_org_slug"
+            and row["column_names"] == ["organization_id", "slug"]
+            for row in constraints
+        )
+        index_names = {row["name"] for row in upgraded.get_indexes("backfield_project")}
+        assert {
+            "ix_backfield_project_org_workspace",
+            "ix_backfield_project_org_stylebook",
+        } <= index_names
+
+        command.downgrade(config, "070_project_stylebook_runtime")
+        downgraded = inspect(engine)
+        constraints = downgraded.get_unique_constraints("backfield_project")
+        assert any(row["column_names"] == ["slug"] for row in constraints)
+        index_names = {row["name"] for row in downgraded.get_indexes("backfield_project")}
+        assert "ix_backfield_project_org_workspace" not in index_names
+        assert "ix_backfield_project_org_stylebook" not in index_names
     finally:
         with admin_engine.connect() as conn:
             conn.execution_options(isolation_level="AUTOCOMMIT")

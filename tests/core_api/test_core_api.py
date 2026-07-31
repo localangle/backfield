@@ -9,7 +9,9 @@ from urllib.parse import quote
 import pytest
 from backfield_db import (
     BackfieldOrganization,
+    BackfieldOrganizationMembership,
     BackfieldProject,
+    BackfieldUser,
     BackfieldWorkspace,
     Stylebook,
 )
@@ -18,7 +20,7 @@ from core_api.deps import get_session
 from core_api.main import app
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from tests.core_api.auth_helpers import attach_test_engine, seed_first_admin
 from tests.integration_helpers import patch_test_engine
@@ -169,6 +171,147 @@ def test_bootstrap_login_me_whoami(client: TestClient) -> None:
     w = who.json()
     assert w.get("auth_type") == "session"
     assert w.get("email") == "owner@example.com"
+
+
+def _add_second_organization_membership(client: TestClient, email: str) -> int:
+    with Session(client.test_engine) as session:  # type: ignore[attr-defined]
+        user = session.exec(select(BackfieldUser).where(BackfieldUser.email == email)).one()
+        organization = BackfieldOrganization(name="Second Newsroom", slug="second-newsroom")
+        session.add(organization)
+        session.commit()
+        session.refresh(organization)
+        session.add(
+            BackfieldOrganizationMembership(
+                user_id=int(user.id),
+                organization_id=int(organization.id),
+                role="org_admin",
+            )
+        )
+        session.commit()
+        return int(organization.id)
+
+
+def test_login_requires_organization_selection_for_multiple_memberships(
+    client: TestClient,
+) -> None:
+    seed_first_admin(client, "multi@example.com", "multi-secret-12")
+    second_org_id = _add_second_organization_membership(client, "multi@example.com")
+    login = client.post(
+        "/v1/auth/login",
+        json={"email": "multi@example.com", "password": "multi-secret-12"},
+    )
+    assert login.status_code == 200
+    body = login.json()
+    assert body["success"] is False
+    assert body["organization_selection_required"] is True
+    assert len(body["organizations"]) == 2
+    assert "organization_selection_token" not in body
+    assert client.cookies.get("organization_selection")
+    assert client.get("/v1/auth/me").json()["authenticated"] is False
+
+    selected = client.post(
+        "/v1/auth/select-organization",
+        json={"organization_id": second_org_id},
+    )
+    assert selected.status_code == 200
+    assert client.cookies.get("organization_selection") is None
+    assert client.get("/v1/auth/me").json()["organization_id"] == second_org_id
+    # This verifies deletion from this browser jar, not global nonce consumption:
+    # a copied signed cookie remains valid until expiry.
+    same_browser_retry = client.post(
+        "/v1/auth/select-organization",
+        json={"organization_id": second_org_id},
+    )
+    assert same_browser_retry.status_code == 401
+
+
+def test_organization_selection_rejects_tamper_and_unlisted_org(client: TestClient) -> None:
+    seed_first_admin(client, "select@example.com", "select-secret-12")
+    _add_second_organization_membership(client, "select@example.com")
+    body = client.post(
+        "/v1/auth/login",
+        json={"email": "select@example.com", "password": "select-secret-12"},
+    ).json()
+    token = client.cookies.get("organization_selection")
+    assert token is not None
+    client.cookies.clear()
+    tampered = client.post(
+        "/v1/auth/select-organization",
+        json={"organization_id": body["organizations"][0]["id"]},
+        headers={"Cookie": f"organization_selection={token}x"},
+    )
+    assert tampered.status_code == 401
+    assert client.cookies.get("organization_selection") is None
+    body = client.post(
+        "/v1/auth/login",
+        json={"email": "select@example.com", "password": "select-secret-12"},
+    ).json()
+    unlisted = client.post(
+        "/v1/auth/select-organization",
+        json={"organization_id": 999999},
+    )
+    assert unlisted.status_code == 403
+
+
+def test_expired_organization_selection_cookie_is_cleared(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed_first_admin(client, "expired-select@example.com", "select-secret-12")
+    _add_second_organization_membership(client, "expired-select@example.com")
+    body = client.post(
+        "/v1/auth/login",
+        json={"email": "expired-select@example.com", "password": "select-secret-12"},
+    ).json()
+    assert client.cookies.get("organization_selection")
+    monkeypatch.setattr(
+        "core_api.routers.auth.verify_organization_selection_token",
+        lambda _token: None,
+    )
+    response = client.post(
+        "/v1/auth/select-organization",
+        json={"organization_id": body["organizations"][0]["id"]},
+    )
+    assert response.status_code == 401
+    assert client.cookies.get("organization_selection") is None
+
+
+def test_switch_and_removed_membership_requires_new_selection(client: TestClient) -> None:
+    seed_first_admin(client, "switch@example.com", "switch-secret-12")
+    second_org_id = _add_second_organization_membership(client, "switch@example.com")
+    login = client.post(
+        "/v1/auth/login",
+        json={"email": "switch@example.com", "password": "switch-secret-12"},
+    ).json()
+    first_org_id = next(
+        organization["id"]
+        for organization in login["organizations"]
+        if organization["id"] != second_org_id
+    )
+    client.post(
+        "/v1/auth/select-organization",
+        json={"organization_id": first_org_id},
+    )
+    switched = client.post(
+        "/v1/auth/switch-organization",
+        json={"organization_id": second_org_id},
+    )
+    assert switched.status_code == 200
+    with Session(client.test_engine) as session:  # type: ignore[attr-defined]
+        user = session.exec(
+            select(BackfieldUser).where(BackfieldUser.email == "switch@example.com")
+        ).one()
+        membership = session.exec(
+            select(BackfieldOrganizationMembership).where(
+                BackfieldOrganizationMembership.user_id == int(user.id),
+                BackfieldOrganizationMembership.organization_id == second_org_id,
+            )
+        ).one()
+        session.delete(membership)
+        session.commit()
+    response = client.get("/v1/me/workspaces")
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "organization_selection_required"
 
 
 def test_secure_whoami_service_token(client: TestClient) -> None:

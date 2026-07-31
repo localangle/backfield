@@ -138,7 +138,10 @@ def stylebook_test_engine(_stylebook_test_stack: tuple[TestClient, Engine]) -> E
 
 
 def _service_headers() -> dict[str, str]:
-    return {"Authorization": "Bearer backfield-dev"}
+    return {
+        "Authorization": "Bearer backfield-dev",
+        "X-Backfield-Organization-ID": "1",
+    }
 
 
 def _session_auth_for_user(user: BackfieldUser, *, org_id: int, org_role: str) -> dict[str, Any]:

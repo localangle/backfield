@@ -66,6 +66,14 @@ Back up production data before applying schema changes and verify the current
 
 ## Active upgrade warnings
 
+- The organization-scoped project slug migration (`071_project_org_slug_scope`) permits the same
+  project slug in different organizations and is an explicit exception to the normal
+  migrate-before-app sequence. Use two deployments: first deploy organization-qualified readers
+  and writers while the old global constraint remains; then verify every old reader is retired
+  before applying `071` in a second deployment phase. Do not create cross-organization duplicate
+  slugs between those phases. During the first phase, create requests can still be rejected by the
+  old global constraint and return a temporary-unavailability conflict instead of a server error.
+  A downgrade stops if cross-organization duplicates already exist.
 - The project-scoped S3 ingestion ledger migration (`068_s3_ledger_project_scope`) permits
   otherwise-identical revisions in different projects. After such rows exist, downgrading to
   `067_s3_ingestion_ledger` cannot restore the former global uniqueness constraint without

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from backfield_auth.gate import require_project_access, resolve_auth
+from backfield_auth.gate import require_project_access, resolve_auth, resolve_project_by_slug
 from backfield_db import BackfieldProject
 from fastapi import Depends, HTTPException, Request, Response, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from core_api.deps import get_session
 from core_api.routers.public.rate_limit import enforce_public_rate_limit
@@ -32,7 +32,20 @@ def require_public_api_auth(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing Authorization header. Use Bearer <project_api_key>.",
         )
-    auth = resolve_auth(session, cookie=None, authorization=authorization)
+    raw_org_id = request.headers.get("X-Backfield-Organization-ID")
+    try:
+        service_organization_id = int(raw_org_id) if raw_org_id else None
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid organization context",
+        ) from exc
+    auth = resolve_auth(
+        session,
+        cookie=None,
+        authorization=authorization,
+        service_organization_id=service_organization_id,
+    )
     if auth["type"] not in ("api_key", "service"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -52,7 +65,7 @@ def get_public_project(
     slug = project_slug.strip()
     if not slug:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    project = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
+    project = resolve_project_by_slug(session, auth, slug)
     if project is None or project.id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     authorized_project = require_project_access(session, auth, int(project.id))

@@ -1,5 +1,9 @@
 # Public API
 
+Project API keys resolve their bound project first and then validate the project slug in the path.
+Trusted service-token calls to slug routes must also send `X-Backfield-Organization-ID`; project
+slugs are unique only inside an organization.
+
 Backfield's consumer-facing HTTP API is owned and served by **Core API**. Its
 public namespace is:
 

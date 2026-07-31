@@ -418,7 +418,7 @@ def test_public_project_unknown_slug(public_client: TestClient) -> None:
         "/public/v1/projects/no-such-project",
         headers={"Authorization": f"Bearer {raw_key}"},
     )
-    assert r.status_code == 404
+    assert r.status_code == 403
 
 
 def test_public_project_wrong_project_key(public_client: TestClient) -> None:
@@ -433,7 +433,10 @@ def test_public_project_wrong_project_key(public_client: TestClient) -> None:
 def test_public_project_service_token(public_client: TestClient) -> None:
     r = public_client.get(
         "/public/v1/projects/general",
-        headers={"Authorization": "Bearer backfield-dev"},
+        headers={
+            "Authorization": "Bearer backfield-dev",
+            "X-Backfield-Organization-ID": "1",
+        },
     )
     assert r.status_code == 200
     assert r.json()["slug"] == "general"

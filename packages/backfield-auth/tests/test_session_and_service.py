@@ -39,3 +39,35 @@ def test_session_token_roundtrip(monkeypatch):
     assert data["username"] == "alice@example.com"
     assert data["user_id"] == 1
     assert data["projects"] == [10, 20]
+
+
+def test_organization_selection_token_is_single_purpose_and_tamper_resistant(monkeypatch):
+    monkeypatch.setenv("SESSION_SECRET", "test-selection-secret")
+    import importlib
+
+    import backfield_auth.session_tokens as s
+
+    importlib.reload(s)
+    s._session_serializer.cache_clear()
+    token = s.create_organization_selection_token(
+        user_id=7,
+        organization_ids=[3, 2, 3],
+    )
+    data = s.verify_organization_selection_token(token)
+    assert data is not None
+    assert data["user_id"] == 7
+    assert data["organization_ids"] == [2, 3]
+    assert s.verify_session_token(token) is None
+    assert s.verify_organization_selection_token(token + "x") is None
+
+
+def test_organization_selection_token_expires(monkeypatch):
+    monkeypatch.setenv("SESSION_SECRET", "test-expiry-secret")
+    import importlib
+
+    import backfield_auth.session_tokens as s
+
+    importlib.reload(s)
+    monkeypatch.setattr(s, "ORGANIZATION_SELECTION_MAX_AGE", -1)
+    token = s.create_organization_selection_token(user_id=7, organization_ids=[2])
+    assert s.verify_organization_selection_token(token) is None

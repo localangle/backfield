@@ -18,6 +18,15 @@ def get_auth(
     session: Session = Depends(get_session),
     session_cookie: str | None = Cookie(None, alias="session"),
     authorization: str | None = Header(None, alias="Authorization"),
+    service_organization_id: int | None = Header(
+        None,
+        alias="X-Backfield-Organization-ID",
+    ),
 ) -> dict[str, Any]:
     """Session cookie, service Bearer, or project API key (`bfk_`)."""
-    return resolve_auth(session, cookie=session_cookie, authorization=authorization)
+    return resolve_auth(
+        session,
+        cookie=session_cookie,
+        authorization=authorization,
+        service_organization_id=service_organization_id,
+    )

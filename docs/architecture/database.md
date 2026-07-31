@@ -135,6 +135,8 @@ specialized indexes include:
 - project plus H3 resolution/cell indexes for map aggregation;
 - partial pending-candidate indexes on substrate entity tables;
 - unique identity fingerprints within a project and canonical slugs within a Stylebook;
+- unique project slugs within an organization, with organization/slug, organization/workspace,
+  and organization/Stylebook lookup indexes;
 - unique public idempotency keys within project and operation, plus expiry, run,
   and enqueue-state indexes for retention cleanup, run linkage, and publish recovery;
 - processed-item run/status indexes for batch progress and finalization, plus run, node-type,

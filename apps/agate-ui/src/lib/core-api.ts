@@ -1,4 +1,5 @@
 /** Core API (session cookie) helpers — same origin as Agate UI via Vite proxy. */
+import { handleTenantResponse } from "@backfield/ui/tenantSession"
 
 const coreBase = () => import.meta.env.VITE_AUTH_API_BASE ?? ''
 
@@ -24,14 +25,14 @@ async function jsonFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const r = await fetch(`${coreBase()}${path}`, {
+  const r = await handleTenantResponse(await fetch(`${coreBase()}${path}`, {
     ...init,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(init?.headers ?? {}),
     },
-  })
+  }))
   if (!r.ok) {
     let detail = r.statusText
     try {
@@ -55,7 +56,9 @@ export interface MeResponse {
   organization_id?: number
   /** Display name of the organization (publication / tenant). */
   organization_name?: string | null
+  organization_slug?: string | null
   org_role?: string | null
+  organizations?: { id: number; name: string; slug: string }[]
 }
 
 export async function fetchMe(): Promise<MeResponse> {

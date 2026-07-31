@@ -3,6 +3,11 @@ export { AgateProductMark } from "./AgateProductMark"
 export { STYLEBOOK_BOOK_OPEN_PATHS } from "./stylebookBrand"
 export { StylebookProductMark } from "./StylebookProductMark"
 export { UserAccountMenu, type UserAccountMenuProps } from "./UserAccountMenu"
+export {
+  OrganizationSwitcher,
+  type OrganizationSwitcherOption,
+  type OrganizationSwitcherProps,
+} from "./OrganizationSwitcher"
 export { ShellProductBrand, type ShellProductBrandProps } from "./ShellProductBrand"
 export {
   ShellSidebar,
@@ -11,6 +16,15 @@ export {
   type ShellSidebarActions,
 } from "./ShellSidebar"
 export { cn } from "./cn"
+export {
+  scopeOrganizationPath,
+  type OrganizationPathScope,
+} from "./organizationPaths"
+export {
+  clearTenantBrowserState,
+  handleTenantResponse,
+  ORGANIZATION_SELECTION_REQUIRED_EVENT,
+} from "./tenantSession"
 export {
   resolveUiOrigin,
   swapUiHostname,

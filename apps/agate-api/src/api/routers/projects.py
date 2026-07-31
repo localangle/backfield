@@ -13,6 +13,7 @@ from api.deps import get_auth, get_session
 from backfield_auth.gate import (
     require_project_access,
     require_session_may_assign_project_to_workspace,
+    resolve_project_by_slug,
     visible_project_ids,
 )
 from backfield_db import (
@@ -30,6 +31,7 @@ from backfield_entities.catalog.resolve import resolve_stylebook_id_for_project_
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import case, func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -164,15 +166,30 @@ def create_project(
     if auth["type"] == "api_key":
         raise HTTPException(403, "Cannot create projects with an API key")
     slug = body.slug.strip() if body.slug else _slugify(body.name)
-    existing = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
-    if existing:
-        raise HTTPException(409, "Slug already exists")
-
     ws = session.get(BackfieldWorkspace, int(body.workspace_id))
     if ws is None or ws.id is None:
         raise HTTPException(400, "Workspace not found")
     workspace_id = int(ws.id)
     organization_id = int(ws.organization_id)
+    auth_org_id = auth.get("organization_id")
+    if auth["type"] == "session" and (
+        auth_org_id is None or int(auth_org_id) != organization_id
+    ):
+        raise HTTPException(403, "Workspace is not in the active organization")
+    if (
+        auth["type"] == "service"
+        and auth_org_id is not None
+        and int(auth_org_id) != organization_id
+    ):
+        raise HTTPException(403, "Workspace is not in the active organization")
+    existing = session.exec(
+        select(BackfieldProject).where(
+            BackfieldProject.organization_id == organization_id,
+            BackfieldProject.slug == slug,
+        )
+    ).first()
+    if existing:
+        raise HTTPException(409, "Slug already exists in this organization")
     stylebook = session.get(Stylebook, int(ws.stylebook_id))
     if stylebook is None or int(stylebook.organization_id) != organization_id:
         raise HTTPException(400, "Workspace has an invalid Stylebook assignment")
@@ -191,7 +208,22 @@ def create_project(
         stylebook_id=int(ws.stylebook_id),
     )
     session.add(p)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        same_org = session.exec(
+            select(BackfieldProject).where(
+                BackfieldProject.organization_id == organization_id,
+                BackfieldProject.slug == slug,
+            )
+        ).first()
+        if same_org is not None:
+            raise HTTPException(409, "Slug already exists in this organization") from error
+        raise HTTPException(
+            409,
+            "This slug is temporarily unavailable while project tenancy is being upgraded",
+        ) from error
     session.refresh(p)
     if p.id is None:
         raise HTTPException(500, "Project persist failed")
@@ -621,9 +653,7 @@ def project_stats_by_slug(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ):
-    p = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
-    if not p:
-        raise HTTPException(404, "Project not found")
+    p = resolve_project_by_slug(session, auth, slug)
     require_project_access(session, auth, int(p.id))
     return _project_stats(session, p)
 
@@ -634,9 +664,7 @@ def get_project_by_slug(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ):
-    p = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
-    if not p:
-        raise HTTPException(404, "Project not found")
+    p = resolve_project_by_slug(session, auth, slug)
     require_project_access(session, auth, int(p.id))
     return _project_to_out(session, p)
 
@@ -679,22 +707,45 @@ def update_project(
     if not p:
         raise HTTPException(404, "Project not found")
     patch = body.model_dump(exclude_unset=True)
+    renamed_slug: str | None = None
     if "name" in patch and patch["name"] is not None:
         p.name = patch["name"].strip()
     if "slug" in patch and patch["slug"] is not None:
         new_slug = patch["slug"].strip()
         if new_slug != p.slug:
             clash = session.exec(
-                select(BackfieldProject).where(BackfieldProject.slug == new_slug)
+                select(BackfieldProject).where(
+                    BackfieldProject.organization_id == int(p.organization_id),
+                    BackfieldProject.slug == new_slug,
+                )
             ).first()
             if clash and clash.id != p.id:
-                raise HTTPException(409, "Slug already exists")
+                raise HTTPException(409, "Slug already exists in this organization")
             p.slug = new_slug
+            renamed_slug = new_slug
     if "system_prompt" in patch:
         _set_system_prompt(p, patch["system_prompt"])
     p.updated_at = datetime.now(UTC)
     session.add(p)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        if renamed_slug is None:
+            raise
+        same_org = session.exec(
+            select(BackfieldProject).where(
+                BackfieldProject.organization_id == int(p.organization_id),
+                BackfieldProject.slug == renamed_slug,
+                BackfieldProject.id != project_id,
+            )
+        ).first()
+        if same_org is not None:
+            raise HTTPException(409, "Slug already exists in this organization") from error
+        raise HTTPException(
+            409,
+            "This slug is temporarily unavailable while project tenancy is being upgraded",
+        ) from error
     session.refresh(p)
     return _project_to_out(session, p)
 

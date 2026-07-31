@@ -335,6 +335,7 @@ async def resolve_cache_or_miss(state: AgentState) -> AgentState:
     use_cache = state.get("use_cache", False)
     stylebook_api_url = state.get("stylebook_api_url") or os.environ.get("STYLEBOOK_API_URL")
     project_slug = state.get("project_slug") or os.environ.get("PROJECT_SLUG")
+    organization_id = state.get("organization_id")
     service_api_token = state.get("service_api_token") or os.environ.get("SERVICE_API_TOKEN")
 
     geocoding_result = None
@@ -472,6 +473,7 @@ async def resolve_cache_or_miss(state: AgentState) -> AgentState:
                 name=location_text,
                 base_url=stylebook_api_url,
                 project_slug=project_slug,
+                organization_id=organization_id,
                 service_token=service_api_token,
             )
             if canonical_match:
@@ -495,6 +497,7 @@ async def resolve_cache_or_miss(state: AgentState) -> AgentState:
                     name=location_text,
                     base_url=stylebook_api_url,
                     project_slug=project_slug,
+                    organization_id=organization_id,
                     service_token=service_api_token,
                 )
                 if cache_match:

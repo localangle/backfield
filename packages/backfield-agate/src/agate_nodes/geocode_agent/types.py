@@ -39,6 +39,7 @@ class AgentState(TypedDict, total=False):
     use_cache: bool  # Whether to use Stylebook canonical matching and cache
     stylebook_api_url: Optional[str]  # Stylebook API URL for canonical matching
     project_slug: Optional[str]  # Project slug for canonical matching
+    organization_id: Optional[int]  # Explicit tenant context for service-token HTTP calls
     service_api_token: Optional[str]  # Service API token for Stylebook API
     # When set with ``use_cache``, DB-backed canonical + substrate_location_cache (Backfield worker).
     cache_resolve: Optional[CacheResolveFn]

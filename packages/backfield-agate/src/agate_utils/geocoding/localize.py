@@ -19,6 +19,7 @@ def match_canonical_location(
     state: Optional[str] = None,
     min_similarity: float = 0.7,
     service_token: Optional[str] = None,
+    organization_id: Optional[int] = None,
     timeout: float = 5.0
 ) -> Optional[Dict[str, Any]]:
     """
@@ -52,7 +53,10 @@ def match_canonical_location(
         
         headers = {}
         if service_token:
+            if organization_id is None:
+                raise ValueError("organization_id is required with a service token")
             headers["Authorization"] = f"Bearer {service_token}"
+            headers["X-Backfield-Organization-ID"] = str(organization_id)
         
         logging.info(f"Stylebook canonical match: name={name}, project_slug={project_slug}")
         response = requests.get(url, params=params, headers=headers, timeout=timeout)
@@ -87,6 +91,7 @@ def get_location_cache(
     base_url: str,
     project_slug: str,
     service_token: Optional[str] = None,
+    organization_id: Optional[int] = None,
     timeout: float = 5.0
 ) -> Optional[Dict[str, Any]]:
     """
@@ -111,7 +116,10 @@ def get_location_cache(
         
         headers = {}
         if service_token:
+            if organization_id is None:
+                raise ValueError("organization_id is required with a service token")
             headers["Authorization"] = f"Bearer {service_token}"
+            headers["X-Backfield-Organization-ID"] = str(organization_id)
         
         logging.info(f"Stylebook cache lookup: name={name}, project_slug={project_slug}")
         response = requests.get(url, params=params, headers=headers, timeout=timeout)

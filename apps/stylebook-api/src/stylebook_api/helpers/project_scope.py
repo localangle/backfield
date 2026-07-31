@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from backfield_auth.gate import resolve_project_by_slug
 from backfield_db import BackfieldProject
 from backfield_entities.catalog.resolve import (
     STYLEBOOK_SLUG_NOT_IN_ORG,
@@ -12,10 +13,17 @@ from sqlmodel import Session, select
 
 
 def project_by_slug(session: Session, slug: str) -> BackfieldProject:
-    row = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
-    if row is None:
+    auth = session.info.get("backfield_auth")
+    if isinstance(auth, dict):
+        return resolve_project_by_slug(session, auth, slug)
+    # Dependency overrides in focused tests may provide an already-authorized
+    # session principal without running the normal dependency that records it.
+    rows = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).all()
+    if len(rows) == 1:
+        return rows[0]
+    if not rows:
         raise HTTPException(status_code=404, detail="Project not found")
-    return row
+    raise HTTPException(status_code=400, detail="Explicit organization context is required")
 
 
 def require_stylebook_id(

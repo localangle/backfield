@@ -47,6 +47,13 @@ accessibility consistent.
 
 - Both apps use the Core API session cookie and send requests with
   `credentials: "include"`.
+- Authenticated Agate and Stylebook pages use `/org/:orgSlug/...`. The backend session remains
+  authoritative: the URL slug is validated against the active session organization. Legacy paths
+  redirect after authentication for one compatibility window.
+- Organization switching clears app-prefixed browser state, remounts the organization-scoped
+  React tree, and navigates to the selected organization's safe landing page. API clients
+  centralize `409 organization_selection_required` handling so stale tenant state is cleared and
+  the user returns to authentication instead of continuing with prior-organization data.
 - Agate graph, project, and run calls belong in `apps/agate-ui/src/lib/api.ts`.
 - Stylebook calls are split under `apps/stylebook-ui/src/lib/stylebook-api/` and
   re-exported from `src/lib/api.ts` where older callers still use the flat module.

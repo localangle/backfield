@@ -10,7 +10,7 @@ export function stylebookCatalogBasePath(stylebookSlug: string): string {
 
 /** Strip `/stylebook/<slug>` from pathname if present. */
 export function parseStylebookSlugFromPath(pathname: string): string | null {
-  const m = pathname.match(/^\/stylebook\/([^/]+)\/?/)
+  const m = pathname.match(/^(?:\/org\/[^/]+)?\/stylebook\/([^/]+)\/?/)
   return m ? decodeURIComponent(m[1]) : null
 }
 

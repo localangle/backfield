@@ -18,6 +18,7 @@ import {
   normalizeProcessedItemSemanticIndexing,
   type ProcessedItemSemanticIndexing,
 } from '@/lib/review/content/semanticIndexingDisplay'
+import { handleTenantResponse } from '@backfield/ui/tenantSession'
 
 export type {
   ProcessedItemArticleEmbedding,
@@ -700,14 +701,14 @@ function normalizeRunStatus(raw: RawRunStatus): Run {
 }
 
 async function fetchAPI(path: string, options?: RequestInit): Promise<unknown> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await handleTenantResponse(await fetch(`${API_BASE}${path}`, {
     ...options,
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...options?.headers,
     },
-  })
+  }))
 
   if (response.status === 401) {
     throw new Error('Unauthorized')

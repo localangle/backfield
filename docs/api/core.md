@@ -6,11 +6,21 @@ Consumer routes under `/public/v1` are documented separately in [`public.md`](pu
 
 ## Authentication and tenancy
 
-Core API issues and clears the signed `session` cookie through `/v1/auth`. A valid session carries one organization and an organization role.
+Core API issues and clears the signed `session` cookie through `/v1/auth`. A valid session carries
+one organization and an organization role. Login issues a session immediately when the user has
+one membership. With several memberships it returns organization choices and a short-lived,
+single-purpose credential in an HttpOnly SameSite cookie; JavaScript never receives the signed
+token. `/v1/auth/select-organization` exchanges and deletes that cookie before issuing a session.
+The credential binds the user, allowed organizations, purpose, and expiry. There is no shared
+durable nonce store in the current architecture, so a copied cookie value can be replayed until
+expiry; successful exchange prevents replay in the same browser context by deleting the cookie.
+Authenticated users switch with `/v1/auth/switch-organization`.
 
 - Organization admins may administer all workspaces, projects, users, Stylebooks, and AI configuration in their organization.
 - Members see projects in assigned workspaces plus any explicit project grants that remain in use.
-- `SERVICE_API_TOKEN` is accepted by administration routes intended for automation and has cross-organization authority.
+- `SERVICE_API_TOKEN` is accepted by administration routes intended for automation and has
+  cross-organization authority. Slug-based project operations require
+  `X-Backfield-Organization-ID`; automation never receives an implicit organization.
 - Project API keys use the `bfk_…` Bearer format. They are bound to one project and carry `read` and, for eligible service keys, `runs:trigger` scopes.
 - Routes compare path and resource ownership with the authenticated organization or project. A caller cannot use an identifier from another tenant to widen access.
 
@@ -20,10 +30,13 @@ Core API issues and clears the signed `session` cookie through `/v1/auth`. A val
 
 ### Session and current-user context
 
-- `/v1/auth/login`, `/v1/auth/me`, `/v1/auth/change-password`, and `/v1/auth/logout` manage browser sessions.
+- `/v1/auth/login`, `/v1/auth/select-organization`, `/v1/auth/switch-organization`,
+  `/v1/auth/me`, `/v1/auth/change-password`, and `/v1/auth/logout` manage browser sessions.
 - `/v1/me/workspaces` returns the workspaces and nested projects visible to the signed-in user. Organization admins can see empty workspaces; members can see empty workspaces assigned to them.
 
 These routes are session-oriented. Service tokens and project API keys do not substitute for a browser identity where a route requires one.
+If the selected membership is removed, protected routes return `409` with
+`detail.code="organization_selection_required"` instead of selecting another membership.
 
 ### Organization administration
 

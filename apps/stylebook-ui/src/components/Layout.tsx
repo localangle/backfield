@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import {
   AgateProductMark,
+  OrganizationSwitcher,
   ShellProductBrand,
   ShellSidebar,
   StylebookProductMark,
@@ -81,7 +82,15 @@ interface LayoutProps {
 }
 
 export default function Layout({ children, headerContent }: LayoutProps) {
-  const { username, logout, isOrgAdmin, organizationName } = useAuth()
+  const {
+    username,
+    logout,
+    isOrgAdmin,
+    organizationName,
+    organizationId,
+    organizations,
+    switchOrganization,
+  } = useAuth()
   const organizationLabel = organizationName?.trim() || "Backfield"
   const agateBase = agateUiOrigin()
   const location = useLocation()
@@ -362,6 +371,14 @@ export default function Layout({ children, headerContent }: LayoutProps) {
           />
           <div className="flex items-center gap-2 flex-wrap justify-end flex-1 min-w-0">
             {headerContent}
+            <OrganizationSwitcher
+              organizations={organizations}
+              organizationId={organizationId}
+              onSwitch={async (nextOrganizationId) => {
+                const slug = await switchOrganization(nextOrganizationId)
+                navigate(`/org/${encodeURIComponent(slug)}/`, { replace: true })
+              }}
+            />
             {username ? (
               <UserAccountMenu
                 userLabel={username}

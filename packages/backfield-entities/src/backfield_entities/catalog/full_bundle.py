@@ -564,7 +564,10 @@ def export_stylebook_bundle(
         slug = project_slug.strip()
         if slug and slug not in project_slices_by_slug:
             project = session.exec(
-                select(BackfieldProject).where(BackfieldProject.slug == slug)
+                select(BackfieldProject).where(
+                    BackfieldProject.organization_id == organization_id,
+                    BackfieldProject.slug == slug,
+                )
             ).first()
             project_slices_by_slug[slug] = {
                 "project_slug": slug,

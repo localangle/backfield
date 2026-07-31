@@ -73,7 +73,10 @@ def _ensure_default_workspace_and_general(session: Session) -> None:
             session.add(ws)
 
     project = session.exec(
-        select(BackfieldProject).where(BackfieldProject.slug == GENERAL_SLUG)
+        select(BackfieldProject).where(
+            BackfieldProject.organization_id == oid,
+            BackfieldProject.slug == GENERAL_SLUG,
+        )
     ).first()
     if project is None or project.id is None or ws.id is None:
         return
@@ -129,8 +132,20 @@ def run_local_bootstrap() -> int:
     engine = get_engine()
     with Session(engine) as session:
         _ensure_default_workspace_and_general(session)
+        org = session.exec(
+            select(BackfieldOrganization).where(
+                BackfieldOrganization.slug == DEFAULT_ORG_SLUG
+            )
+        ).first()
+        if org is None or org.id is None:
+            logger.warning("local_bootstrap: default organization is missing; skipping")
+            return 0
+        oid = int(org.id)
         project = session.exec(
-            select(BackfieldProject).where(BackfieldProject.slug == GENERAL_SLUG)
+            select(BackfieldProject).where(
+                BackfieldProject.organization_id == oid,
+                BackfieldProject.slug == GENERAL_SLUG,
+            )
         ).first()
         if project is None or project.id is None:
             logger.warning(

@@ -6,11 +6,12 @@ import hashlib
 import json
 from collections.abc import Generator
 from decimal import Decimal
+from unittest.mock import MagicMock
 
 import pytest
 from api.deps import get_session
 from api.main import app
-from api.routers import runs
+from api.routers import projects, runs
 from backfield_auth import create_session_token
 from backfield_db import (
     AgateGraph,
@@ -29,8 +30,10 @@ from backfield_db import (
     SubstratePersonMention,
 )
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from httpx import Response
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from tests.integration_helpers import patch_test_engine
@@ -124,7 +127,10 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, N
     try:
         yield TestClient(
             app,
-            headers={"Authorization": "Bearer backfield-dev"},
+            headers={
+                "Authorization": "Bearer backfield-dev",
+                "X-Backfield-Organization-ID": "1",
+            },
         )
     finally:
         app.dependency_overrides.clear()
@@ -2150,6 +2156,36 @@ def test_get_run_processed_item_article_context_inline_only(tmp_path, monkeypatc
         assert ac["headline"] == "Inline title"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_project_rename_handles_reader_first_global_slug_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = BackfieldProject(
+        id=22,
+        organization_id=2,
+        workspace_id=2,
+        stylebook_id=2,
+        name="Renamed",
+        slug="old-slug",
+    )
+    session = MagicMock()
+    session.get.return_value = project
+    session.exec.return_value.first.return_value = None
+    session.commit.side_effect = IntegrityError("UPDATE", {}, Exception("unique slug"))
+    monkeypatch.setattr(projects, "require_project_access", lambda *_args, **_kwargs: None)
+
+    with pytest.raises(HTTPException) as caught:
+        projects.update_project(
+            22,
+            projects.ProjectUpdate(slug="shared-slug"),
+            session=session,
+            auth={"type": "service", "organization_id": 2},
+        )
+
+    assert caught.value.status_code == 409
+    assert "temporarily unavailable" in str(caught.value.detail)
+    session.rollback.assert_called_once()
 
 
 def test_create_project_with_workspace_id(tmp_path):

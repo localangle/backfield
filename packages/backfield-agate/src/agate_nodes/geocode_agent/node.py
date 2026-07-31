@@ -332,6 +332,8 @@ async def run_geocode_agent_pipeline(
     # Get cache parameters
     stylebook_api_url = params.stylebookApiUrl or os.environ.get("STYLEBOOK_API_URL")
     project_slug = params.projectSlug or os.environ.get("PROJECT_SLUG")
+    organization_id_raw = os.environ.get("BACKFIELD_ORGANIZATION_ID", "").strip()
+    organization_id = int(organization_id_raw) if organization_id_raw.isdigit() else None
     meta = ctx.metadata if isinstance(ctx.metadata, dict) else {}
     raw_resolve = meta.get("cache_resolve")
     cache_resolve = raw_resolve if callable(raw_resolve) else None
@@ -442,6 +444,7 @@ async def run_geocode_agent_pipeline(
                     use_cache=params.useCache,
                     stylebook_api_url=stylebook_api_url,
                     project_slug=project_slug,
+                    organization_id=organization_id,
                     service_api_token=service_api_token,
                     cache_resolve=cache_resolve,
                     geocode_cache_bundle=cache_bundle,
