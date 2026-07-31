@@ -18,6 +18,7 @@ import { s3OutputUploadsFromItemOutput, s3ObjectPublicHttpsUrl } from '@/lib/rev
 import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
 import { getVisualizationsForItem, type VisualizationDescriptor } from '@/lib/visualizations'
 import { processedItemDisplayTitle } from '@/lib/review/content/displayTitle'
+import { reviewStylebookSlug } from '@/lib/projectStylebook'
 import {
   PROCESSED_ITEM_DETAIL_TABS,
   isProcessedItemDetailTab,
@@ -738,7 +739,7 @@ export default function ProcessedItemDetail() {
               graph={graph}
               onItemUpdated={(next) => setItem({ ...next, synthetic: false })}
               onVerificationDirtyChange={handleVerificationDirtyChange}
-              catalogStylebookSlug={catalogProject?.workspace_stylebook_slug ?? null}
+              catalogStylebookSlug={reviewStylebookSlug(catalogProject)}
               catalogProjectSlug={catalogProject?.slug ?? null}
               reviewLocked={reviewLocked}
             />
@@ -760,7 +761,7 @@ export default function ProcessedItemDetail() {
               graph={graph}
               onItemUpdated={(next) => setItem({ ...next, synthetic: false })}
               onVerificationDirtyChange={handleVerificationDirtyChange}
-              catalogStylebookSlug={catalogProject?.workspace_stylebook_slug ?? null}
+              catalogStylebookSlug={reviewStylebookSlug(catalogProject)}
               catalogProjectSlug={catalogProject?.slug ?? null}
               reviewLocked={reviewLocked}
             />
@@ -782,7 +783,7 @@ export default function ProcessedItemDetail() {
               graph={graph}
               onItemUpdated={(next) => setItem({ ...next, synthetic: false })}
               onVerificationDirtyChange={handleVerificationDirtyChange}
-              catalogStylebookSlug={catalogProject?.workspace_stylebook_slug ?? null}
+              catalogStylebookSlug={reviewStylebookSlug(catalogProject)}
               catalogProjectSlug={catalogProject?.slug ?? null}
               reviewLocked={reviewLocked}
             />

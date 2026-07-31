@@ -172,7 +172,9 @@ flagged item links to its canonical detail page.
 ## Cross-app navigation
 
 Agate builds Stylebook links through `apps/agate-ui/src/lib/platformUrls.ts` and
-passes the selected workspace Stylebook slug plus optional project context.
+passes the project's own Stylebook slug plus optional project context. Never pass a
+workspace Stylebook slug: a workspace only supplies the default offered at project
+creation, so it points at the wrong Stylebook for any project created with a choice.
 Stylebook workspace and project links return to Agate through its own platform URL
 helpers. Leave origins unset for Backfield Cloud split hosts (sibling origins are
 derived from the current hostname) or same-origin local deploys; set the paired

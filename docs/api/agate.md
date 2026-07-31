@@ -31,15 +31,23 @@ its organization, Stylebook, workspace, administrators, and curated model snapsh
 HTTP endpoint and does not change Agate API ownership of interactive project lifecycle operations.
 
 - List responses are filtered to visible projects.
-- Project creation requires `workspace_id` and copies that workspace's Stylebook into the
-  project's direct ownership field. Session users must belong to the workspace organization;
-  members need workspace membership, and org admins may assign any workspace in their org.
-  The required workspace is the explicit organization context for service-token callers; the
-  endpoint never falls back to a default organization.
+- Project creation requires `workspace_id`. Session users must belong to the workspace
+  organization; members need workspace membership, and org admins may assign any workspace in
+  their org. The required workspace is the explicit organization context for service-token
+  callers; the endpoint never falls back to a default organization.
+- Project creation accepts an optional `stylebook_id`. It must belong to the workspace's
+  organization, and any other value is rejected with `400`. When it is omitted, the workspace's
+  Stylebook is copied into the project's direct ownership field. Assigning a Stylebook does not
+  require Stylebook editor membership. There is no endpoint for changing a project's Stylebook
+  after creation.
 - Secret responses contain metadata, never secret values.
-- Project responses expose direct `stylebook_id`, `stylebook_name`, and `stylebook_slug` fields
-  while retaining the `workspace_stylebook_*` response fields for compatibility. The direct
-  project Stylebook is authoritative. A later workspace Stylebook change does not alter existing
+- Project responses expose the authoritative `stylebook_id`, `stylebook_name`, and
+  `stylebook_slug` fields. Use them for every read, write, and Stylebook UI route.
+- The `workspace_stylebook_*` response fields remain, but they now report the workspace's own
+  Stylebook rather than the project's. For a project created with an explicit choice the two
+  differ, so a caller that treats them as interchangeable will target the wrong Stylebook. They
+  are null when the workspace or its Stylebook cannot be resolved, which is logged and degraded
+  rather than failing the request. A later workspace Stylebook change does not alter existing
   projects.
 
 ### Flows and templates

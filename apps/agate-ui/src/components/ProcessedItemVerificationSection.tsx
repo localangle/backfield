@@ -82,7 +82,7 @@ export interface ProcessedItemVerificationSectionProps {
   onItemUpdated: (item: ProcessedItem) => void
   /** Fires when overlay draft dirty state changes (for navigation guard with ``BrowserRouter``). */
   onVerificationDirtyChange?: (dirty: boolean) => void
-  /** Catalog slug from the run's project workspace (for opening Stylebook). */
+  /** Slug of the run project's own Stylebook (read, write, and deep-link target). */
   catalogStylebookSlug?: string | null
   /** Agate project slug for Stylebook ``?project=`` context. */
   catalogProjectSlug?: string | null

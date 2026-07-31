@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import statistics
 from datetime import UTC, datetime
@@ -33,6 +34,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import case, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -78,6 +81,8 @@ class ProjectCreate(BaseModel):
     name: str
     slug: str | None = None
     workspace_id: int
+    # Omitted means "use the workspace's creation default".
+    stylebook_id: int | None = None
 
 
 class ProjectUpdate(BaseModel):
@@ -98,9 +103,34 @@ class ProjectOut(BaseModel):
     stylebook_id: int
     stylebook_name: str
     stylebook_slug: str
-    workspace_stylebook_id: int
-    workspace_stylebook_name: str
-    workspace_stylebook_slug: str
+    # Compatibility fields reporting the workspace's own creation-time default. Null when the
+    # workspace or its Stylebook cannot be resolved.
+    workspace_stylebook_id: int | None = None
+    workspace_stylebook_name: str | None = None
+    workspace_stylebook_slug: str | None = None
+
+
+def _workspace_stylebook(session: Session, workspace_id: int) -> Stylebook | None:
+    """Return the Stylebook a workspace hands to new projects, or ``None`` when broken.
+
+    This can legitimately differ from a project's own Stylebook, because the workspace value
+    is only a creation-time default. It is reported for compatibility only, so a broken row
+    is logged and omitted rather than failing a request; one such row must not take down a
+    whole project listing.
+    """
+    workspace = session.get(BackfieldWorkspace, workspace_id)
+    if workspace is None:
+        logger.warning("project workspace %s is missing", workspace_id)
+        return None
+    stylebook = session.get(Stylebook, int(workspace.stylebook_id))
+    if stylebook is None or int(stylebook.organization_id) != int(workspace.organization_id):
+        logger.warning(
+            "workspace %s has an unresolvable Stylebook assignment (stylebook %s)",
+            workspace_id,
+            workspace.stylebook_id,
+        )
+        return None
+    return stylebook
 
 
 def _project_to_out(session: Session, p: BackfieldProject) -> ProjectOut:
@@ -113,9 +143,8 @@ def _project_to_out(session: Session, p: BackfieldProject) -> ProjectOut:
     stylebook = session.get(Stylebook, sid)
     if stylebook is None:
         raise HTTPException(500, "Invalid project Stylebook ownership")
-    sname = str(stylebook.name)
-    sslug = str(stylebook.slug)
     wid = int(p.workspace_id)
+    workspace_stylebook = _workspace_stylebook(session, wid)
     d = _settings_dict(p)
     return ProjectOut(
         id=int(p.id),
@@ -127,11 +156,17 @@ def _project_to_out(session: Session, p: BackfieldProject) -> ProjectOut:
         updated_at=p.updated_at,
         workspace_id=wid,
         stylebook_id=sid,
-        stylebook_name=sname,
-        stylebook_slug=sslug,
-        workspace_stylebook_id=sid,
-        workspace_stylebook_name=sname,
-        workspace_stylebook_slug=sslug,
+        stylebook_name=str(stylebook.name),
+        stylebook_slug=str(stylebook.slug),
+        workspace_stylebook_id=(
+            int(workspace_stylebook.id) if workspace_stylebook is not None else None
+        ),
+        workspace_stylebook_name=(
+            str(workspace_stylebook.name) if workspace_stylebook is not None else None
+        ),
+        workspace_stylebook_slug=(
+            str(workspace_stylebook.slug) if workspace_stylebook is not None else None
+        ),
     )
 
 
@@ -155,6 +190,27 @@ def list_projects(
         q = q.where(BackfieldProject.id.in_(visible))
     rows = session.exec(q).all()
     return [_project_to_out(session, r) for r in rows if r.id is not None]
+
+
+def _chosen_project_stylebook_id(
+    session: Session,
+    *,
+    organization_id: int,
+    workspace_stylebook_id: int,
+    requested_stylebook_id: int | None,
+) -> int:
+    """Pin the new project to the requested Stylebook, or the workspace default.
+
+    A requested Stylebook must live in the same organization as the workspace. Assignment
+    deliberately does not require Stylebook editor membership; that ACL governs editing
+    catalog contents, not which Stylebook a project writes into.
+    """
+    if requested_stylebook_id is None:
+        return workspace_stylebook_id
+    requested = session.get(Stylebook, int(requested_stylebook_id))
+    if requested is None or int(requested.organization_id) != organization_id:
+        raise HTTPException(400, "Stylebook not found in this organization")
+    return int(requested.id)
 
 
 @router.post("", response_model=ProjectOut)
@@ -182,6 +238,12 @@ def create_project(
         and int(auth_org_id) != organization_id
     ):
         raise HTTPException(403, "Workspace is not in the active organization")
+    require_session_may_assign_project_to_workspace(
+        session,
+        auth,
+        workspace_id=workspace_id,
+        organization_id=organization_id,
+    )
     existing = session.exec(
         select(BackfieldProject).where(
             BackfieldProject.organization_id == organization_id,
@@ -190,14 +252,14 @@ def create_project(
     ).first()
     if existing:
         raise HTTPException(409, "Slug already exists in this organization")
-    stylebook = session.get(Stylebook, int(ws.stylebook_id))
-    if stylebook is None or int(stylebook.organization_id) != organization_id:
+    workspace_stylebook = session.get(Stylebook, int(ws.stylebook_id))
+    if workspace_stylebook is None or int(workspace_stylebook.organization_id) != organization_id:
         raise HTTPException(400, "Workspace has an invalid Stylebook assignment")
-    require_session_may_assign_project_to_workspace(
+    stylebook_id = _chosen_project_stylebook_id(
         session,
-        auth,
-        workspace_id=workspace_id,
         organization_id=organization_id,
+        workspace_stylebook_id=int(workspace_stylebook.id),
+        requested_stylebook_id=body.stylebook_id,
     )
 
     p = BackfieldProject(
@@ -205,7 +267,7 @@ def create_project(
         name=body.name.strip(),
         slug=slug,
         workspace_id=workspace_id,
-        stylebook_id=int(ws.stylebook_id),
+        stylebook_id=stylebook_id,
     )
     session.add(p)
     try:

@@ -23,10 +23,11 @@ All schema changes use the single Alembic chain under `packages/backfield-db/ale
 - Organizations, workspaces, projects, and users:
   `backfield_organization`, `backfield_workspace`, `backfield_project`, `backfield_user`.
   Projects store both their workspace and a direct Stylebook ownership reference. The direct
-  reference and workspace are required, indexed, and copied from the selected workspace when a
-  project is created. Composite foreign keys prevent projects and workspaces from retaining
-  cross-organization ownership references. Users created with provisioning temporary passwords
-  carry `must_change_password` until the password-change flow succeeds.
+  reference and workspace are required and indexed. The Stylebook is set once at creation, either
+  from an explicit same-organization choice or by copying the selected workspace's Stylebook.
+  Composite foreign keys prevent projects and workspaces from retaining cross-organization
+  ownership references. Users created with provisioning temporary passwords carry
+  `must_change_password` until the password-change flow succeeds.
 - Access grants and API keys: `backfield_organization_membership`,
   `backfield_workspace_membership`, `backfield_project_membership`,
   `backfield_api_credential`. Personal API credentials retain their owning `user_id` and are
@@ -104,8 +105,9 @@ shared entity rows are not trusted because sibling batch items may reuse the sam
 Canonical ids are UUID strings. Canonical slugs are unique within a Stylebook, and aliases are
 unique by canonical plus normalized alias. A Stylebook belongs to one organization. The project's
 direct `stylebook_id` is authoritative for project-scoped reads and runtime writes. Compatibility
-slug or node parameters are accepted only when they match that assignment. Changing a workspace's
-Stylebook affects future project creation but does not rewrite existing project ownership.
+slug or node parameters are accepted only when they match that assignment. A workspace's Stylebook
+is only the default offered at project creation; changing it does not rewrite existing project
+ownership.
 
 Deleting a Stylebook reassigns projects, workspaces, and graph Stylebook refs, resets linked
 substrate rows to pending, removes non-cascading dependents (activity, bundle jobs, cleanup and

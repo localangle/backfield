@@ -573,9 +573,6 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       return {
         organizationId: null as number | null,
         projectId: null as number | null,
-        workspaceDefaultStylebookId: null as number | null,
-        workspaceStylebookName: null as string | null,
-        missingWorkspaceStylebook: false,
         flowProjectLoading: true,
       }
     }
@@ -584,21 +581,12 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       return {
         organizationId: null as number | null,
         projectId: null as number | null,
-        workspaceDefaultStylebookId: null as number | null,
-        workspaceStylebookName: null as string | null,
-        missingWorkspaceStylebook: false,
         flowProjectLoading: false,
       }
     }
-    const sid = p.workspace_stylebook_id ?? null
-    const rawName = p.workspace_stylebook_name
-    const nm = typeof rawName === 'string' && rawName.trim() !== '' ? rawName.trim() : null
     return {
       organizationId: p.organization_id ?? null,
       projectId: p.id ?? null,
-      workspaceDefaultStylebookId: sid,
-      workspaceStylebookName: nm,
-      missingWorkspaceStylebook: sid == null && nm == null,
       flowProjectLoading: false,
       fetchProjectAiModels: flowProjectId != null ? fetchProjectAiModels : undefined,
       publicRunEnabled,

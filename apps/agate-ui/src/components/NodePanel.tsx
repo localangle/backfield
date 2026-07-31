@@ -22,11 +22,7 @@ export type GraphPanelContext = {
   organizationId: number | null
   /** Resolved Backfield project id for AI catalog lookups (when known). */
   projectId: number | null
-  workspaceDefaultStylebookId: number | null
-  workspaceStylebookName: string | null
-  /** True when a project is selected but the API did not resolve a workspace Stylebook. */
-  missingWorkspaceStylebook?: boolean
-  /** Flow editor is still fetching the project (for workspace Stylebook). */
+  /** Flow editor is still fetching the project. */
   flowProjectLoading?: boolean
   /** Loads project-effective AI models filtered by capability (e.g. text+json for JSON-using nodes). */
   fetchProjectAiModels?: (capabilities: string[]) => Promise<ProjectAiModelOption[]>
