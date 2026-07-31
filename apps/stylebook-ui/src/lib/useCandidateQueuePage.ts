@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
-import { fetchProjects, type Project } from "@/lib/api"
 import { pickCreateLinkNudge, candidateQueueNameKey, duplicateCreateNewSummary } from "@/lib/candidateQueueSimilarity"
 import { suggestedRowAction, candidatesWithSuggestedAction } from "@/lib/candidateQueueSuggestions"
 import { useCandidateQueueToasts } from "@/lib/useCandidateQueueToasts"
 import { useCandidateQueueInlineNote } from "@/lib/useCandidateQueueInlineNote"
+import {
+  CandidateQueueRequestGate,
+  validCandidateTypeFilter,
+} from "@/lib/candidateQueueState"
 import type {
   CandidateQueuePageConfig,
   CandidateQueueStatus,
@@ -17,16 +20,18 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
   config: CandidateQueuePageConfig<TCandidate>,
 ) {
   const {
-    projectScopeSlug: projectSlug,
+    projectFilterSlug: projectSlug,
     stylebookSlug,
   } = useProjectCatalogScope()
 
-  const [projects, setProjects] = useState<Project[]>([])
-  const [projectsLoading, setProjectsLoading] = useState(true)
+  const [projects, setProjects] = useState<
+    Array<{ project_id: number; project_slug: string; project_name: string; count: number }>
+  >([])
+  const [projectsLoading, setProjectsLoading] = useState(false)
   const projectDisplayName = useMemo(() => {
-    const row = projects.find((p) => p.slug === projectSlug)
-    const name = row?.name?.trim()
-    return name || projectSlug || "this project"
+    const row = projects.find((p) => p.project_slug === projectSlug)
+    const name = row?.project_name?.trim()
+    return name || "All accessible projects"
   }, [projects, projectSlug])
 
   const [loading, setLoading] = useState(false)
@@ -45,6 +50,16 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
     const base = `${projectSlug}|${stylebookSlug}|${status}|${debouncedQuery}`
     return config.typeFilter ? `${base}|${typeFilter}` : base
   }, [projectSlug, stylebookSlug, status, debouncedQuery, typeFilter, config.typeFilter])
+  const listRequestScopeKey = `${filterKey}|${listPage}`
+  const requestGate = useMemo(() => new CandidateQueueRequestGate(), [])
+  const typeRequestScopeKey = `${stylebookSlug}|${projectSlug}|${status}`
+  const typeRequestGate = useMemo(() => new CandidateQueueRequestGate(), [])
+  useLayoutEffect(() => {
+    requestGate.setScope(listRequestScopeKey)
+  }, [listRequestScopeKey, requestGate])
+  useLayoutEffect(() => {
+    typeRequestGate.setScope(typeRequestScopeKey)
+  }, [typeRequestGate, typeRequestScopeKey])
   const [types, setTypes] = useState<string[]>([])
   const [acceptingId, setAcceptingId] = useState<number | null>(null)
   const [deferringId, setDeferringId] = useState<number | null>(null)
@@ -108,25 +123,7 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
   )
 
   useEffect(() => {
-    let cancelled = false
-    setProjectsLoading(true)
-    void fetchProjects()
-      .then((rows) => {
-        if (!cancelled) setProjects(rows)
-      })
-      .catch(() => {
-        if (!cancelled) setProjects([])
-      })
-      .finally(() => {
-        if (!cancelled) setProjectsLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!projectSlug) {
+    if (!stylebookSlug) {
       filterKeySeenRef.current = null
       return
     }
@@ -138,7 +135,7 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
     filterKeySeenRef.current = filterKey
     setListFetchGen((g) => g + 1)
     setListPage(1)
-  }, [filterKey, projectSlug])
+  }, [filterKey, stylebookSlug])
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedQuery(query), 250)
@@ -146,30 +143,59 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
   }, [query])
 
   useEffect(() => {
-    if (!config.api.listTypes || !projectSlug) return
+    if (!config.api.listTypes || !stylebookSlug) {
+      setTypes([])
+      setTypeFilter("all")
+      return
+    }
+    const requestToken = typeRequestGate.begin(typeRequestScopeKey)
+    if (!requestToken) return
+    let cancelled = false
     void (async () => {
       try {
-        const res = await config.api.listTypes!(projectSlug, status)
+        const res = await config.api.listTypes!(
+          stylebookSlug,
+          projectSlug || undefined,
+          status,
+        )
+        if (cancelled || !typeRequestGate.isCurrent(requestToken)) return
         setTypes(res.types)
+        setTypeFilter((current) => validCandidateTypeFilter(current, res.types))
       } catch {
-        setTypes([])
+        if (!cancelled && typeRequestGate.isCurrent(requestToken)) {
+          setTypes([])
+          setTypeFilter("all")
+        }
       }
     })()
-  }, [config.api, projectSlug, status])
+    return () => {
+      cancelled = true
+    }
+  }, [
+    config.api,
+    projectSlug,
+    status,
+    stylebookSlug,
+    typeRequestGate,
+    typeRequestScopeKey,
+  ])
 
   const refreshListQuiet = useCallback(async () => {
-    if (!projectSlug) return
+    if (!stylebookSlug) return
+    const requestToken = requestGate.begin(listRequestScopeKey)
+    if (!requestToken) return
     setError(null)
     const type_filter = config.typeFilter && typeFilter !== "all" ? typeFilter : undefined
     const q = debouncedQuery.trim() || undefined
     const offset = (listPage - 1) * REVIEW_QUEUE_PAGE_SIZE
     try {
-      const res = await config.api.list(projectSlug, status, {
+      const res = await config.api.list(stylebookSlug, projectSlug || undefined, status, {
         limit: REVIEW_QUEUE_PAGE_SIZE,
         offset,
         type_filter,
         q,
       })
+      if (!requestGate.isCurrent(requestToken)) return
       setListTotal(res.total)
       setCandidates(res.candidates)
       setListHasNext(res.has_next)
@@ -178,18 +204,21 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
         setListPage((p) => Math.max(1, p - 1))
       }
     } catch (e) {
+      if (!requestGate.isCurrent(requestToken)) return
       setError(e instanceof Error ? e.message : "Request failed")
+    } finally {
+      if (requestGate.isCurrent(requestToken)) setLoading(false)
     }
-  }, [projectSlug, status, debouncedQuery, typeFilter, listPage, config.api, config.typeFilter])
+  }, [stylebookSlug, projectSlug, status, debouncedQuery, typeFilter, listPage, config.api, config.typeFilter, listRequestScopeKey, requestGate])
 
   const fetchAllFilteredCandidates = useCallback(async (): Promise<TCandidate[]> => {
-    if (!projectSlug) return []
+    if (!stylebookSlug) return []
     const type_filter = config.typeFilter && typeFilter !== "all" ? typeFilter : undefined
     const q = debouncedQuery.trim() || undefined
     const all: TCandidate[] = []
     let offset = 0
     while (true) {
-      const res = await config.api.list(projectSlug, status, {
+      const res = await config.api.list(stylebookSlug, projectSlug || undefined, status, {
         limit: REVIEW_QUEUE_PAGE_SIZE,
         offset,
         type_filter,
@@ -200,39 +229,39 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
       offset += REVIEW_QUEUE_PAGE_SIZE
     }
     return all
-  }, [projectSlug, status, debouncedQuery, typeFilter, config.api, config.typeFilter])
+  }, [stylebookSlug, projectSlug, status, debouncedQuery, typeFilter, config.api, config.typeFilter])
 
   const fetchOpenCandidatesForLabel = useCallback(
     async (label: string) => {
-      if (!projectSlug) return []
-      const res = await config.api.list(projectSlug, "open", {
+      if (!stylebookSlug) return []
+      const res = await config.api.list(stylebookSlug, projectSlug || undefined, "open", {
         limit: 100,
         offset: 0,
         q: label,
       })
       return res.candidates
     },
-    [projectSlug, config.api],
+    [stylebookSlug, projectSlug, config.api],
   )
 
   const queueToasts = useCandidateQueueToasts<TCandidate>({
-    projectSlug,
+    projectSlug: stylebookSlug,
     fetchOpenCandidatesForLabel,
     getCandidateLabel: (c) => c.suggested_name ?? "",
     mapFollowupRow: config.mapFollowupRow,
     linkCandidateToCanonical: async (c, canonicalId) => {
-      if (!projectSlug) return
-      await config.api.linkToCanonical(c.id, projectSlug, canonicalId)
+      await config.api.linkToCanonical(c.id, c.project_slug, canonicalId, stylebookSlug)
     },
     onAfterToastLink: refreshListQuiet,
   })
 
   const saveCandidateNote = useCallback(
     async (candidateId: number, note: string | null) => {
-      if (!projectSlug) return
+      const candidate = candidates.find((row) => row.id === candidateId)
+      if (!candidate) return
       setError(null)
       try {
-        await config.api.updateNote(projectSlug, candidateId, note)
+        await config.api.updateNote(candidate.project_slug, candidateId, note, stylebookSlug)
         setContextById((prev) => {
           const existing = prev[candidateId]
           if (!existing) return prev
@@ -243,13 +272,15 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
         setError(e instanceof Error ? e.message : "Failed to save note")
       }
     },
-    [projectSlug, refreshListQuiet, config.api],
+    [candidates, stylebookSlug, refreshListQuiet, config.api],
   )
 
   const candidateNotes = useCandidateQueueInlineNote({ onSave: saveCandidateNote })
 
   useEffect(() => {
-    if (!projectSlug) return
+    if (!stylebookSlug) return
+    const requestToken = requestGate.begin(listRequestScopeKey)
+    if (!requestToken) return
     let cancelled = false
     void (async () => {
       setLoading(true)
@@ -258,13 +289,18 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
       const q = debouncedQuery.trim() || undefined
       const offset = (listPage - 1) * REVIEW_QUEUE_PAGE_SIZE
       try {
-        const res = await config.api.list(projectSlug, status, {
-          limit: REVIEW_QUEUE_PAGE_SIZE,
-          offset,
-          type_filter,
-          q,
-        })
-        if (cancelled) return
+        setProjectsLoading(true)
+        const [res, counts] = await Promise.all([
+          config.api.list(stylebookSlug, projectSlug || undefined, status, {
+            limit: REVIEW_QUEUE_PAGE_SIZE,
+            offset,
+            type_filter,
+            q,
+          }),
+          config.api.count(stylebookSlug, undefined, status, {}),
+        ])
+        if (cancelled || !requestGate.isCurrent(requestToken)) return
+        setProjects(counts.projects)
         setListTotal(res.total)
         setCandidates(res.candidates)
         setListHasNext(res.has_next)
@@ -278,23 +314,26 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
           setListPage((p) => Math.max(1, p - 1))
         }
       } catch (e) {
-        if (cancelled) return
+        if (cancelled || !requestGate.isCurrent(requestToken)) return
         setError(e instanceof Error ? e.message : "Request failed")
         setListTotal(0)
         setCandidates([])
         setListHasNext(false)
         setListHasPrev(false)
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled && requestGate.isCurrent(requestToken)) {
+          setLoading(false)
+          setProjectsLoading(false)
+        }
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [projectSlug, status, debouncedQuery, typeFilter, listPage, listFetchGen, config.api, config.typeFilter])
+  }, [stylebookSlug, projectSlug, status, debouncedQuery, typeFilter, listPage, listFetchGen, config.api, config.typeFilter, listRequestScopeKey, requestGate])
 
   useEffect(() => {
-    if (!projectSlug || status !== "open" || listTotal === 0) {
+    if (!stylebookSlug || status !== "open" || listTotal === 0) {
       setQueueRecommendationCount(0)
       return
     }
@@ -314,28 +353,29 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
     return () => {
       cancelled = true
     }
-  }, [projectSlug, status, listTotal, filterKey, fetchAllFilteredCandidates])
+  }, [stylebookSlug, status, listTotal, filterKey, fetchAllFilteredCandidates])
 
   useEffect(() => {
-    if (!projectSlug || status !== "open" || listTotal === 0) {
+    if (!stylebookSlug || status !== "open" || listTotal === 0) {
       return
     }
     if (listTotal > REVIEW_QUEUE_PAGE_SIZE) {
       return
     }
     setQueueRecommendationCount(candidatesWithSuggestedAction(candidates).length)
-  }, [projectSlug, status, listTotal, candidates])
+  }, [stylebookSlug, status, listTotal, candidates])
 
   const refreshCreateLinkNudge = useCallback(
     async (candidateId: number, draftLabel: string) => {
-      if (!projectSlug) return
+      const candidate = candidates.find((row) => row.id === candidateId)
+      if (!candidate) return
       const draft = draftLabel.trim()
       if (!draft) {
         setCreateLinkNudge(null)
         return
       }
       try {
-        const res = await config.api.getSuggestedCanonicals(projectSlug, candidateId, 16)
+        const res = await config.api.getSuggestedCanonicals(candidate.project_slug, candidateId, 16)
         const nudge = pickCreateLinkNudge(res.suggestions, draft)
         setCreateLinkNudge(
           nudge ? { canonicalId: nudge.canonicalId, label: nudge.label } : null,
@@ -344,11 +384,11 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
         setCreateLinkNudge(null)
       }
     },
-    [projectSlug, config.api],
+    [candidates, config.api],
   )
 
   useEffect(() => {
-    if (createModalId === null || !projectSlug) return
+    if (createModalId === null) return
     let cancelled = false
     const draft = config.createDialog.getDraftLabelForNudge(createDraft).trim()
     if (!draft) {
@@ -365,7 +405,7 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
       cancelled = true
       window.clearTimeout(t)
     }
-  }, [createModalId, createDraft, projectSlug, refreshCreateLinkNudge, config.createDialog])
+  }, [createModalId, createDraft, refreshCreateLinkNudge, config.createDialog])
 
   const openCreateModal = useCallback(
     (candidate: TCandidate) => {
@@ -383,7 +423,7 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
   }, [])
 
   const submitCreateFromModal = useCallback(async () => {
-    if (!projectSlug || createModalId === null || !createModalCandidate) return
+    if (createModalId === null || !createModalCandidate) return
     const validationError = config.createDialog.validate(createDraft)
     if (validationError) {
       setError(validationError)
@@ -393,7 +433,12 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
     setError(null)
     try {
       const body = config.createDialog.buildAcceptBody(createDraft, createModalCandidate)
-      const acceptRes = await config.api.acceptCreateNew(projectSlug, createModalId, body)
+      const acceptRes = await config.api.acceptCreateNew(
+        createModalCandidate.project_slug,
+        createModalId,
+        body,
+        stylebookSlug,
+      )
       await refreshListQuiet()
       closeCreateModal()
       const cid = acceptRes.canonicalId.trim()
@@ -409,7 +454,6 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
       setAcceptingId(null)
     }
   }, [
-    projectSlug,
     createModalId,
     createModalCandidate,
     createDraft,
@@ -425,7 +469,6 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
       candidate: TCandidate,
       options?: { silent?: boolean; batchCreatedByNameKey?: Map<string, string> },
     ): Promise<boolean> => {
-      if (!projectSlug) return false
       const action = suggestedRowAction(candidate)
       if (!action) return false
 
@@ -435,11 +478,20 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
         setLinkingSuggestedId(candidate.id)
         setError(null)
         try {
-          await config.api.linkToCanonical(candidate.id, projectSlug, cid)
+          await config.api.linkToCanonical(
+            candidate.id,
+            candidate.project_slug,
+            cid,
+            stylebookSlug,
+          )
           if (!options?.silent) {
             let canonLabel = cid
             try {
-              canonLabel = await config.api.getCanonicalLabel(cid, stylebookSlug, projectSlug)
+              canonLabel = await config.api.getCanonicalLabel(
+                cid,
+                stylebookSlug,
+                candidate.project_slug,
+              )
             } catch {
               // ignore; fall back to id
             }
@@ -466,7 +518,7 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
         setDeferringId(candidate.id)
         setError(null)
         try {
-          await config.api.defer(projectSlug, candidate.id)
+          await config.api.defer(candidate.project_slug, candidate.id, stylebookSlug)
           return true
         } catch (e) {
           if (!options?.silent) {
@@ -493,7 +545,12 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
         setLinkingSuggestedId(candidate.id)
         setError(null)
         try {
-          await config.api.linkToCanonical(candidate.id, projectSlug, cid)
+          await config.api.linkToCanonical(
+            candidate.id,
+            candidate.project_slug,
+            cid,
+            stylebookSlug,
+          )
           return true
         } catch (e) {
           if (!options?.silent) {
@@ -509,7 +566,12 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
       setError(null)
       try {
         const body = config.createDialog.buildAcceptBody(draft, candidate)
-        const acceptRes = await config.api.acceptCreateNew(projectSlug, candidate.id, body)
+        const acceptRes = await config.api.acceptCreateNew(
+          candidate.project_slug,
+          candidate.id,
+          body,
+          stylebookSlug,
+        )
         const cid = acceptRes.canonicalId.trim()
         if (
           options?.batchCreatedByNameKey &&
@@ -538,7 +600,6 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
       }
     },
     [
-      projectSlug,
       stylebookSlug,
       config.api,
       config.createDialog,
@@ -559,11 +620,10 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
 
   const handleDefer = useCallback(
     async (candidate: TCandidate) => {
-      if (!projectSlug) return
       setDeferringId(candidate.id)
       setError(null)
       try {
-        await config.api.defer(projectSlug, candidate.id)
+        await config.api.defer(candidate.project_slug, candidate.id, stylebookSlug)
         await refreshListQuiet()
       } catch (e) {
         setError(e instanceof Error ? e.message : "Defer failed")
@@ -571,16 +631,15 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
         setDeferringId(null)
       }
     },
-    [projectSlug, config.api, refreshListQuiet],
+    [stylebookSlug, config.api, refreshListQuiet],
   )
 
   const handleClearRecommendation = useCallback(
     async (candidate: TCandidate) => {
-      if (!projectSlug) return
       setClearingRecommendationId(candidate.id)
       setError(null)
       try {
-        await config.api.clearRecommendation(projectSlug, candidate.id)
+        await config.api.clearRecommendation(candidate.project_slug, candidate.id, stylebookSlug)
         await refreshListQuiet()
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to clear recommendation")
@@ -588,11 +647,11 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
         setClearingRecommendationId(null)
       }
     },
-    [projectSlug, config.api, refreshListQuiet],
+    [stylebookSlug, config.api, refreshListQuiet],
   )
 
   const acceptAiRecommendations = useCallback(async () => {
-    if (!projectSlug || status !== "open") return
+    if (!stylebookSlug || status !== "open") return
 
     setAcceptingAiRecommendations(true)
     setError(null)
@@ -612,7 +671,7 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
       setAcceptingAiRecommendations(false)
     }
   }, [
-    projectSlug,
+    stylebookSlug,
     status,
     fetchAllFilteredCandidates,
     applySuggestedAction,
@@ -621,14 +680,13 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
 
   const toggleExpanded = useCallback(
     async (candidate: TCandidate) => {
-      if (!projectSlug) return
       const next = expandedId === candidate.id ? null : candidate.id
       setExpandedId(next)
       if (next === null) return
       if (contextById[next]) return
       setContextLoadingId(next)
       try {
-        const ctx = await config.api.getContext(projectSlug, next, 3)
+        const ctx = await config.api.getContext(candidate.project_slug, next, 3)
         setContextById((prev) => ({ ...prev, [next]: ctx }))
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load context")
@@ -636,7 +694,7 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
         setContextLoadingId(null)
       }
     },
-    [projectSlug, expandedId, contextById, config.api],
+    [expandedId, contextById, config.api],
   )
 
   const openLinkModal = useCallback(

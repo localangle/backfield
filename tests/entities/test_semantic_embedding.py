@@ -28,6 +28,8 @@ from backfield_entities.ingest.semantic_indexing.embedding_contract import (
 )
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _engine():
     engine = create_engine("sqlite://", echo=False)
@@ -41,6 +43,7 @@ def _seed_person_semantic_doc(session: Session) -> tuple[int, int, PendingSemant
     session.commit()
     session.refresh(org)
     proj = BackfieldProject(
+        **project_ownership_fields(session, int(org.id)),
         name="Demo",
         slug="demo-embed",
         organization_id=int(org.id),  # type: ignore[arg-type]

@@ -9,19 +9,23 @@ from urllib.parse import quote
 import pytest
 from backfield_db import (
     BackfieldOrganization,
+    BackfieldOrganizationMembership,
     BackfieldProject,
+    BackfieldUser,
     BackfieldWorkspace,
     Stylebook,
 )
+from backfield_db.passwords import hash_password
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from core_api.deps import get_session
 from core_api.main import app
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from tests.core_api.auth_helpers import attach_test_engine, seed_first_admin
 from tests.integration_helpers import patch_test_engine
+from tests.project_helpers import project_ownership_fields
 
 
 @pytest.fixture
@@ -62,6 +66,7 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, N
         s.refresh(ws)
         s.add(
             BackfieldProject(
+                **project_ownership_fields(s, int(org.id), workspace_id=int(ws.id)),
                 name="General",
                 slug="general",
                 organization_id=int(org.id),
@@ -70,6 +75,7 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, N
         )
         s.add(
             BackfieldProject(
+                **project_ownership_fields(s, int(org.id), workspace_id=int(ws.id)),
                 name="Other",
                 slug="other",
                 organization_id=int(org.id),
@@ -87,6 +93,7 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, N
         s.refresh(ws2)
         s.add(
             BackfieldProject(
+                **project_ownership_fields(s, int(org.id), workspace_id=int(ws2.id)),
                 name="Alpha",
                 slug="alpha-proj",
                 organization_id=int(org.id),
@@ -165,6 +172,192 @@ def test_bootstrap_login_me_whoami(client: TestClient) -> None:
     w = who.json()
     assert w.get("auth_type") == "session"
     assert w.get("email") == "owner@example.com"
+
+
+def test_login_matches_legacy_email_case_and_whitespace(client: TestClient) -> None:
+    seed_first_admin(client, "mixed@example.com", "mixed-secret-42")
+    with Session(client.test_engine) as session:  # type: ignore[attr-defined]
+        user = session.exec(
+            select(BackfieldUser).where(BackfieldUser.email == "mixed@example.com")
+        ).one()
+        user.email = " Mixed@Example.COM "
+        session.add(user)
+        session.commit()
+
+    login = client.post(
+        "/v1/auth/login",
+        json={"email": " MIXED@example.com ", "password": "mixed-secret-42"},
+    )
+    assert login.status_code == 200
+
+
+def test_login_rejects_ambiguous_legacy_email_without_account_disclosure(
+    client: TestClient,
+) -> None:
+    seed_first_admin(client, "duplicate@example.com", "duplicate-secret-42")
+    with Session(client.test_engine) as session:  # type: ignore[attr-defined]
+        session.add(
+            BackfieldUser(
+                email=" Duplicate@Example.com ",
+                password_hash=hash_password("duplicate-secret-42"),
+            )
+        )
+        session.commit()
+
+    ambiguous = client.post(
+        "/v1/auth/login",
+        json={
+            "email": "duplicate@example.com",
+            "password": "duplicate-secret-42",
+        },
+    )
+    unknown = client.post(
+        "/v1/auth/login",
+        json={"email": "unknown@example.com", "password": "duplicate-secret-42"},
+    )
+    assert ambiguous.status_code == unknown.status_code == 401
+    assert ambiguous.json() == unknown.json() == {"detail": "Invalid email or password"}
+
+
+def _add_second_organization_membership(client: TestClient, email: str) -> int:
+    with Session(client.test_engine) as session:  # type: ignore[attr-defined]
+        user = session.exec(select(BackfieldUser).where(BackfieldUser.email == email)).one()
+        organization = BackfieldOrganization(name="Second Newsroom", slug="second-newsroom")
+        session.add(organization)
+        session.commit()
+        session.refresh(organization)
+        session.add(
+            BackfieldOrganizationMembership(
+                user_id=int(user.id),
+                organization_id=int(organization.id),
+                role="org_admin",
+            )
+        )
+        session.commit()
+        return int(organization.id)
+
+
+def test_login_requires_organization_selection_for_multiple_memberships(
+    client: TestClient,
+) -> None:
+    seed_first_admin(client, "multi@example.com", "multi-secret-12")
+    second_org_id = _add_second_organization_membership(client, "multi@example.com")
+    login = client.post(
+        "/v1/auth/login",
+        json={"email": "multi@example.com", "password": "multi-secret-12"},
+    )
+    assert login.status_code == 200
+    body = login.json()
+    assert body["success"] is False
+    assert body["organization_selection_required"] is True
+    assert len(body["organizations"]) == 2
+    assert "organization_selection_token" not in body
+    assert client.cookies.get("organization_selection")
+    assert client.get("/v1/auth/me").json()["authenticated"] is False
+
+    selected = client.post(
+        "/v1/auth/select-organization",
+        json={"organization_id": second_org_id},
+    )
+    assert selected.status_code == 200
+    assert client.cookies.get("organization_selection") is None
+    assert client.get("/v1/auth/me").json()["organization_id"] == second_org_id
+    # This verifies deletion from this browser jar, not global nonce consumption:
+    # a copied signed cookie remains valid until expiry.
+    same_browser_retry = client.post(
+        "/v1/auth/select-organization",
+        json={"organization_id": second_org_id},
+    )
+    assert same_browser_retry.status_code == 401
+
+
+def test_organization_selection_rejects_tamper_and_unlisted_org(client: TestClient) -> None:
+    seed_first_admin(client, "select@example.com", "select-secret-12")
+    _add_second_organization_membership(client, "select@example.com")
+    body = client.post(
+        "/v1/auth/login",
+        json={"email": "select@example.com", "password": "select-secret-12"},
+    ).json()
+    token = client.cookies.get("organization_selection")
+    assert token is not None
+    client.cookies.clear()
+    tampered = client.post(
+        "/v1/auth/select-organization",
+        json={"organization_id": body["organizations"][0]["id"]},
+        headers={"Cookie": f"organization_selection={token}x"},
+    )
+    assert tampered.status_code == 401
+    assert client.cookies.get("organization_selection") is None
+    body = client.post(
+        "/v1/auth/login",
+        json={"email": "select@example.com", "password": "select-secret-12"},
+    ).json()
+    unlisted = client.post(
+        "/v1/auth/select-organization",
+        json={"organization_id": 999999},
+    )
+    assert unlisted.status_code == 403
+
+
+def test_expired_organization_selection_cookie_is_cleared(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed_first_admin(client, "expired-select@example.com", "select-secret-12")
+    _add_second_organization_membership(client, "expired-select@example.com")
+    body = client.post(
+        "/v1/auth/login",
+        json={"email": "expired-select@example.com", "password": "select-secret-12"},
+    ).json()
+    assert client.cookies.get("organization_selection")
+    monkeypatch.setattr(
+        "core_api.routers.auth.verify_organization_selection_token",
+        lambda _token: None,
+    )
+    response = client.post(
+        "/v1/auth/select-organization",
+        json={"organization_id": body["organizations"][0]["id"]},
+    )
+    assert response.status_code == 401
+    assert client.cookies.get("organization_selection") is None
+
+
+def test_switch_and_removed_membership_requires_new_selection(client: TestClient) -> None:
+    seed_first_admin(client, "switch@example.com", "switch-secret-12")
+    second_org_id = _add_second_organization_membership(client, "switch@example.com")
+    login = client.post(
+        "/v1/auth/login",
+        json={"email": "switch@example.com", "password": "switch-secret-12"},
+    ).json()
+    first_org_id = next(
+        organization["id"]
+        for organization in login["organizations"]
+        if organization["id"] != second_org_id
+    )
+    client.post(
+        "/v1/auth/select-organization",
+        json={"organization_id": first_org_id},
+    )
+    switched = client.post(
+        "/v1/auth/switch-organization",
+        json={"organization_id": second_org_id},
+    )
+    assert switched.status_code == 200
+    with Session(client.test_engine) as session:  # type: ignore[attr-defined]
+        user = session.exec(
+            select(BackfieldUser).where(BackfieldUser.email == "switch@example.com")
+        ).one()
+        membership = session.exec(
+            select(BackfieldOrganizationMembership).where(
+                BackfieldOrganizationMembership.user_id == int(user.id),
+                BackfieldOrganizationMembership.organization_id == second_org_id,
+            )
+        ).one()
+        session.delete(membership)
+        session.commit()
+    response = client.get("/v1/me/workspaces")
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "organization_selection_required"
 
 
 def test_secure_whoami_service_token(client: TestClient) -> None:
@@ -373,6 +566,155 @@ def test_change_password(client: TestClient) -> None:
         json={"email": "pw@example.com", "password": "new-secret"},
     )
     assert good_login.status_code == 200
+    assert good_login.json()["must_change_password"] is False
+
+
+def test_change_password_enforces_bcrypt_multibyte_limit(client: TestClient) -> None:
+    seed_first_admin(client, "bytes@example.com", "original-secret-42")
+    client.post(
+        "/v1/auth/login",
+        json={"email": "bytes@example.com", "password": "original-secret-42"},
+    )
+    over_limit = client.post(
+        "/v1/auth/change-password",
+        json={
+            "current_password": "original-secret-42",
+            "new_password": "é" * 37,
+        },
+    )
+    assert over_limit.status_code == 400
+    assert over_limit.json()["detail"] == "Password must be at most 72 UTF-8 bytes"
+
+    at_limit = client.post(
+        "/v1/auth/change-password",
+        json={
+            "current_password": "original-secret-42",
+            "new_password": "é" * 36,
+        },
+    )
+    assert at_limit.status_code == 200
+
+
+def test_change_password_clears_temporary_password_flag(client: TestClient) -> None:
+    seed_first_admin(client, "temporary@example.com", "temporary-secret-19")
+    engine = getattr(client, "test_engine")
+    with Session(engine) as session:
+        user = session.exec(
+            select(BackfieldUser).where(
+                BackfieldUser.email == "temporary@example.com"
+            )
+        ).one()
+        user.must_change_password = True
+        session.add(user)
+        session.commit()
+
+    login = client.post(
+        "/v1/auth/login",
+        json={"email": "temporary@example.com", "password": "temporary-secret-19"},
+    )
+    assert login.status_code == 200
+    assert login.json()["must_change_password"] is True
+    assert client.get("/v1/auth/me").json()["must_change_password"] is True
+    blocked = client.get("/v1/me/workspaces")
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"]["code"] == "password_change_required"
+    assert client.get("/v1/auth/session-check").status_code == 403
+
+    blocked_switch = client.post(
+        "/v1/auth/switch-organization",
+        json={"organization_id": 999_999},
+    )
+    assert blocked_switch.status_code == 403
+    assert blocked_switch.json()["detail"]["code"] == "password_change_required"
+
+    failed_change = client.post(
+        "/v1/auth/change-password",
+        json={
+            "current_password": "wrong-secret",
+            "new_password": "permanent-secret-83",
+        },
+    )
+    assert failed_change.status_code == 401
+    assert client.get("/v1/me/workspaces").status_code == 403
+
+    unchanged = client.post(
+        "/v1/auth/change-password",
+        json={
+            "current_password": "temporary-secret-19",
+            "new_password": "temporary-secret-19",
+        },
+    )
+    assert unchanged.status_code == 400
+    assert unchanged.json()["detail"] == "New password must differ from the current password"
+    assert client.get("/v1/auth/me").json()["must_change_password"] is True
+
+    changed = client.post(
+        "/v1/auth/change-password",
+        json={
+            "current_password": "temporary-secret-19",
+            "new_password": "permanent-secret-83",
+        },
+    )
+    assert changed.status_code == 200
+    assert "session=" in changed.headers["set-cookie"]
+    assert client.get("/v1/auth/me").json()["must_change_password"] is False
+    assert client.get("/v1/me/workspaces").status_code == 200
+
+
+def test_flagged_user_with_multiple_memberships_selects_before_password_change(
+    client: TestClient,
+) -> None:
+    seed_first_admin(client, "flagged-multi@example.com", "temporary-secret-19")
+    second_org_id = _add_second_organization_membership(
+        client,
+        "flagged-multi@example.com",
+    )
+    engine = getattr(client, "test_engine")
+    with Session(engine) as session:
+        user = session.exec(
+            select(BackfieldUser).where(
+                BackfieldUser.email == "flagged-multi@example.com"
+            )
+        ).one()
+        user.must_change_password = True
+        session.add(user)
+        session.commit()
+        user_id = int(user.id)
+
+    login = client.post(
+        "/v1/auth/login",
+        json={
+            "email": "flagged-multi@example.com",
+            "password": "temporary-secret-19",
+        },
+    )
+    assert login.status_code == 200
+    assert login.json()["organization_selection_required"] is True
+    assert login.json()["must_change_password"] is True
+
+    selected = client.post(
+        "/v1/auth/select-organization",
+        json={"organization_id": second_org_id},
+    )
+    assert selected.status_code == 200
+    assert selected.json()["must_change_password"] is True
+    assert client.get("/v1/auth/me").json()["organization_id"] == second_org_id
+    blocked = client.get("/v1/me/workspaces")
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"]["code"] == "password_change_required"
+
+    with Session(engine) as session:
+        membership = session.exec(
+            select(BackfieldOrganizationMembership).where(
+                BackfieldOrganizationMembership.user_id == user_id,
+                BackfieldOrganizationMembership.organization_id == second_org_id,
+            )
+        ).one()
+        session.delete(membership)
+        session.commit()
+    removed = client.get("/v1/auth/me")
+    assert removed.status_code == 409
+    assert removed.json()["detail"]["code"] == "organization_selection_required"
 
 
 def test_org_admin_list_projects_and_users_detail(client: TestClient) -> None:
@@ -463,6 +805,7 @@ def test_member_workspace_memberships_grant_project_access(client: TestClient) -
     listed = client.get("/v1/projects/1/api-keys").json()
     assert len(listed) == 1
     assert listed[0]["user_id"] == member_id
+    assert "raw_key" not in listed[0]
 
 
 def test_member_multiple_workspace_memberships(client: TestClient) -> None:
@@ -552,7 +895,7 @@ def test_member_cannot_access_project_in_unassigned_workspace(client: TestClient
     assert all(w["slug"] != "investigations" for w in me_ws)
 
 
-def test_project_api_key_bearer(client: TestClient) -> None:
+def test_project_api_key_bearer_is_rejected_by_core_internal_api(client: TestClient) -> None:
     seed_first_admin(client, "keyuser@example.com", "shortpw1")
     client.post(
         "/v1/auth/login",
@@ -571,18 +914,13 @@ def test_project_api_key_bearer(client: TestClient) -> None:
         "/v1/projects/1/api-keys",
         headers={"Authorization": f"Bearer {raw_key}"},
     )
-    assert listed.status_code == 200
-    rows = listed.json()
-    assert len(rows) == 1
-    assert rows[0]["key_prefix"] == raw_key[:22]
-    assert rows[0].get("user_id") == 1
+    assert listed.status_code == 401
 
     who = client.get(
         "/v1/secure/whoami",
         headers={"Authorization": f"Bearer {raw_key}"},
     )
-    assert who.status_code == 200
-    assert who.json().get("auth_type") == "api_key"
+    assert who.status_code == 401
 
 
 def test_api_keys_no_auth_returns_401(client: TestClient) -> None:
@@ -598,7 +936,7 @@ def test_api_keys_invalid_bearer_returns_401(client: TestClient) -> None:
     assert r.status_code == 401
 
 
-def test_api_keys_wrong_project_bearer_returns_403(client: TestClient) -> None:
+def test_api_keys_project_bearer_is_rejected_before_project_scope(client: TestClient) -> None:
     seed_first_admin(client, "wp@example.com", "wp-secret")
     client.post(
         "/v1/auth/login",
@@ -615,8 +953,7 @@ def test_api_keys_wrong_project_bearer_returns_403(client: TestClient) -> None:
         "/v1/projects/2/api-keys",
         headers={"Authorization": f"Bearer {raw_key}"},
     )
-    assert r.status_code == 403
-    assert "project" in r.json().get("detail", "").lower()
+    assert r.status_code == 401
 
 
 def test_api_keys_revoked_bearer_returns_401(client: TestClient) -> None:
@@ -634,17 +971,20 @@ def test_api_keys_revoked_bearer_returns_401(client: TestClient) -> None:
 
     assert (
         client.get(
-            "/v1/projects/1/api-keys",
+            "/public/v1/projects/general",
             headers={"Authorization": f"Bearer {raw_key}"},
         ).status_code
         == 200
     )
 
     client.delete(f"/v1/projects/1/api-keys/{cid}")
+    retained = client.get("/v1/projects/1/api-keys").json()
+    assert retained[0]["id"] == cid
+    assert retained[0]["revoked_at"] is not None
     client.post("/v1/auth/logout")
 
     r = client.get(
-        "/v1/projects/1/api-keys",
+        "/public/v1/projects/general",
         headers={"Authorization": f"Bearer {raw_key}"},
     )
     assert r.status_code == 401
@@ -667,8 +1007,7 @@ def test_api_keys_post_user_key_requires_session_not_bearer(client: TestClient) 
         json={"credential_type": "user", "label": "b"},
         headers={"Authorization": f"Bearer {raw}"},
     )
-    assert r.status_code == 400
-    assert "session" in r.json()["detail"].lower()
+    assert r.status_code == 401
 
 
 def test_api_keys_post_service_key_forbidden_for_member(client: TestClient) -> None:
@@ -750,6 +1089,7 @@ def test_api_keys_member_cannot_revoke_another_users_key(client: TestClient) -> 
         json={"email": "bob@example.com", "password": "bob-secret"},
     )
 
+    assert client.get("/v1/projects/1/api-keys").json() == []
     r = client.delete(f"/v1/projects/1/api-keys/{cred_id}")
     assert r.status_code == 403
 
@@ -773,8 +1113,7 @@ def test_api_keys_revoke_with_bearer_forbidden_even_for_own_row(client: TestClie
         f"/v1/projects/1/api-keys/{cid}",
         headers={"Authorization": f"Bearer {raw_key}"},
     )
-    assert r.status_code == 403
-    assert "session" in r.json()["detail"].lower()
+    assert r.status_code == 401
 
 
 def test_api_keys_org_admin_creates_revokes_service_key(client: TestClient) -> None:
@@ -799,7 +1138,7 @@ def test_api_keys_org_admin_creates_revokes_service_key(client: TestClient) -> N
 
     assert (
         client.get(
-            "/v1/projects/1/api-keys",
+            "/public/v1/projects/general",
             headers={"Authorization": f"Bearer {raw_key}"},
         ).status_code
         == 200
@@ -812,7 +1151,7 @@ def test_api_keys_org_admin_creates_revokes_service_key(client: TestClient) -> N
 
     assert (
         client.get(
-            "/v1/projects/1/api-keys",
+            "/public/v1/projects/general",
             headers={"Authorization": f"Bearer {raw_key}"},
         ).status_code
         == 401
@@ -854,8 +1193,12 @@ def test_api_keys_org_admin_revokes_other_users_user_key(client: TestClient) -> 
         json={"email": "adm3@example.com", "password": "adm3-secret"},
     )
 
+    assert client.get("/v1/projects/1/api-keys").json()[0]["id"] == cred_id
     assert client.delete(f"/v1/projects/1/api-keys/{cred_id}").status_code == 204
-    assert client.get("/v1/projects/1/api-keys").json() == []
+    listed = client.get("/v1/projects/1/api-keys").json()
+    assert len(listed) == 1
+    assert listed[0]["id"] == cred_id
+    assert listed[0]["revoked_at"] is not None
 
 
 def test_ai_models_curated_options_requires_auth(client: TestClient) -> None:

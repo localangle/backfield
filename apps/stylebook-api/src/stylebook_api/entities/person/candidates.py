@@ -8,6 +8,7 @@ from uuid import UUID
 
 from backfield_auth.gate import require_project_access
 from backfield_db import (
+    BackfieldProject,
     StylebookPersonCanonical,
     SubstrateArticle,
     SubstratePerson,
@@ -39,6 +40,7 @@ from stylebook_api.helpers.candidate_review_display import (
     first_candidate_review_line,
     format_candidate_review_lines,
 )
+from stylebook_api.helpers.candidate_scope import require_candidate_project_in_stylebook
 from stylebook_api.helpers.project_scope import (
     project_by_slug as _project_by_slug,
 )
@@ -50,7 +52,7 @@ from stylebook_api.mention_serialization import article_fields_for_linked_mentio
 router = APIRouter(prefix="/v1/people", tags=["person-candidates"])
 
 
-def _substrate_list_sort_key():
+def candidate_sort_key():
     return func.coalesce(col(SubstratePerson.sort_key), col(SubstratePerson.normalized_name))
 
 
@@ -79,7 +81,7 @@ class UpdateCandidateNoteBody(BaseModel):
     note: str | None = None
 
 
-def _open_candidate_filters(
+def open_candidate_filters(
     project_id: int,
     *,
     needs_review: bool | None,
@@ -114,7 +116,7 @@ def _open_candidate_filters(
     return filters
 
 
-def _deferred_candidate_filters(
+def deferred_candidate_filters(
     project_id: int, *, q: str | None, type_filter: str | None
 ) -> list[Any]:
     filters: list[Any] = [
@@ -200,7 +202,7 @@ def _extract_review_note(person: SubstratePerson) -> str | None:
     return None
 
 
-def _candidate_dict(person: SubstratePerson) -> dict[str, Any]:
+def serialize_candidate(person: SubstratePerson) -> dict[str, Any]:
     note = _extract_review_note(person)
     sug = _canonical_suggestion_payload(person)
     review_lines = format_candidate_review_lines(person.canonical_review_reasons_json)
@@ -230,6 +232,14 @@ def _candidate_dict(person: SubstratePerson) -> dict[str, Any]:
     return row
 
 
+def _candidate_dict_with_project(
+    person: SubstratePerson, project: BackfieldProject
+) -> dict[str, Any]:
+    row = serialize_candidate(person)
+    row.update(project_slug=project.slug, project_name=project.name)
+    return row
+
+
 def _list_open_candidates(
     session: Session,
     *,
@@ -240,7 +250,7 @@ def _list_open_candidates(
     q: str | None,
     type_filter: str | None,
 ) -> PaginatedCandidatesResponse:
-    filters = _open_candidate_filters(
+    filters = open_candidate_filters(
         project_id,
         needs_review=needs_review,
         q=q,
@@ -251,12 +261,15 @@ def _list_open_candidates(
     stmt = (
         select(SubstratePerson)
         .where(*filters)
-        .order_by(_substrate_list_sort_key().asc(), col(SubstratePerson.id).asc())
+        .order_by(candidate_sort_key().asc(), col(SubstratePerson.id).asc())
         .offset(offset)
         .limit(limit)
     )
     rows = list(session.exec(stmt).all())
-    candidates = [_candidate_dict(r) for r in rows]
+    project = session.get(BackfieldProject, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    candidates = [_candidate_dict_with_project(r, project) for r in rows]
     return PaginatedCandidatesResponse(
         candidates=candidates,
         total=total,
@@ -274,18 +287,21 @@ def _list_deferred_candidates(
     q: str | None,
     type_filter: str | None,
 ) -> PaginatedCandidatesResponse:
-    filters = _deferred_candidate_filters(project_id, q=q, type_filter=type_filter)
+    filters = deferred_candidate_filters(project_id, q=q, type_filter=type_filter)
     count_stmt = select(func.count()).select_from(SubstratePerson).where(*filters)
     total = int(session.scalar(count_stmt) or 0)
     stmt = (
         select(SubstratePerson)
         .where(*filters)
-        .order_by(_substrate_list_sort_key().asc(), col(SubstratePerson.id).asc())
+        .order_by(candidate_sort_key().asc(), col(SubstratePerson.id).asc())
         .offset(offset)
         .limit(limit)
     )
     rows = list(session.exec(stmt).all())
-    candidates = [_candidate_dict(r) for r in rows]
+    project = session.get(BackfieldProject, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    candidates = [_candidate_dict_with_project(r, project) for r in rows]
     return PaginatedCandidatesResponse(
         candidates=candidates,
         total=total,
@@ -469,13 +485,17 @@ def candidate_update_note(
     auth: dict[str, Any] = Depends(get_auth),
 ) -> dict[str, str]:
     """Attach a short editor note to a review queue item (stored on the person row)."""
-    proj = _project_by_slug(session, project_slug)
-    require_project_access(session, auth, int(proj.id))
-    _ = _require_stylebook_id(session, proj, stylebook_slug)
-
     person = session.get(SubstratePerson, substrate_person_id)
-    if person is None or int(person.project_id) != int(proj.id):
+    if person is None:
         raise HTTPException(status_code=404, detail="Substrate person not found")
+    require_candidate_project_in_stylebook(
+        session,
+        auth=auth,
+        project_id=int(person.project_id),
+        project_slug=project_slug,
+        stylebook_slug=stylebook_slug,
+        require_edit=True,
+    )
     if person.stylebook_person_canonical_id is not None:
         raise HTTPException(status_code=409, detail="Person is already linked to a canonical")
     if str(person.canonical_link_status) not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED):
@@ -598,13 +618,17 @@ def defer_candidate(
     auth: dict[str, Any] = Depends(get_auth),
 ) -> dict[str, str]:
     """Defer canonical linking for a substrate row (remove from open queue without linking)."""
-    proj = _project_by_slug(session, project_slug)
-    require_project_access(session, auth, int(proj.id))
-    _ = _require_stylebook_id(session, proj, stylebook_slug)
-
     person = session.get(SubstratePerson, substrate_person_id)
-    if person is None or int(person.project_id) != int(proj.id):
+    if person is None:
         raise HTTPException(status_code=404, detail="Substrate person not found")
+    require_candidate_project_in_stylebook(
+        session,
+        auth=auth,
+        project_id=int(person.project_id),
+        project_slug=project_slug,
+        stylebook_slug=stylebook_slug,
+        require_edit=True,
+    )
     if person.stylebook_person_canonical_id is not None:
         raise HTTPException(status_code=409, detail="Person is already linked to a canonical")
     if person.canonical_link_status != CANONICAL_LINK_PENDING:
@@ -630,13 +654,17 @@ def clear_candidate_recommendation(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> dict[str, str]:
-    proj = _project_by_slug(session, project_slug)
-    require_project_access(session, auth, int(proj.id))
-    _ = _require_stylebook_id(session, proj, stylebook_slug)
-
     person = session.get(SubstratePerson, substrate_person_id)
-    if person is None or int(person.project_id) != int(proj.id):
+    if person is None:
         raise HTTPException(status_code=404, detail="Substrate person not found")
+    require_candidate_project_in_stylebook(
+        session,
+        auth=auth,
+        project_id=int(person.project_id),
+        project_slug=project_slug,
+        stylebook_slug=stylebook_slug,
+        require_edit=True,
+    )
     if person.stylebook_person_canonical_id is not None:
         raise HTTPException(status_code=409, detail="Person is already linked to a canonical")
     if person.canonical_link_status != CANONICAL_LINK_PENDING:
@@ -662,13 +690,18 @@ def accept_candidate(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> AcceptCandidateResponse:
-    proj = _project_by_slug(session, project_slug)
-    require_project_access(session, auth, int(proj.id))
-    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
-
     person = session.get(SubstratePerson, substrate_person_id)
-    if person is None or int(person.project_id) != int(proj.id):
+    if person is None:
         raise HTTPException(status_code=404, detail="Substrate person not found")
+    _, guarded_stylebook = require_candidate_project_in_stylebook(
+        session,
+        auth=auth,
+        project_id=int(person.project_id),
+        project_slug=project_slug,
+        stylebook_slug=stylebook_slug,
+        require_edit=True,
+    )
+    stylebook_id = int(guarded_stylebook.id)
     if person.stylebook_person_canonical_id is not None:
         raise HTTPException(status_code=409, detail="Person already linked to a canonical")
     if person.canonical_link_status not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED):

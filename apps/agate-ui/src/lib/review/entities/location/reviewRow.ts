@@ -79,7 +79,7 @@ export function getMergedRowStylebookCanonicalId(row: Record<string, unknown>): 
   return null
 }
 
-/** Stylebook that owns the linked canonical (preferred over project workspace slug). */
+/** Stylebook that owns the linked canonical (preferred over the project's Stylebook). */
 export function getMergedRowStylebookSlug(row: Record<string, unknown>): string | null {
   const raw = row.stylebook_slug
   if (typeof raw === 'string' && raw.trim()) {
@@ -88,12 +88,12 @@ export function getMergedRowStylebookSlug(row: Record<string, unknown>): string 
   return null
 }
 
-/** Slug for deep links to a linked canonical; row slug wins over workspace default. */
+/** Slug for deep links to a linked canonical; row slug wins over the project's Stylebook. */
 export function resolveStylebookSlugForLinkedRow(
   row: Record<string, unknown>,
-  workspaceStylebookSlug: string | null | undefined,
+  projectStylebookSlug: string | null | undefined,
 ): string | null {
-  return getMergedRowStylebookSlug(row) ?? (workspaceStylebookSlug?.trim() || null)
+  return getMergedRowStylebookSlug(row) ?? (projectStylebookSlug?.trim() || null)
 }
 
 export function getMergedRowStylebookLink(row: Record<string, unknown>): MergedRowStylebookLink | null {

@@ -77,7 +77,6 @@ def starter_geocode_flow_graph_spec() -> GraphSpec:
                 type="DBOutput",
                 params={
                     "stylebook_matching_enabled": True,
-                    "stylebook_id": None,
                     "canonicalization_mode": "ai_assisted",
                     "auto_apply_canonicalization": True,
                     "adjudication_model": "gpt-5-nano",

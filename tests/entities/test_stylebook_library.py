@@ -36,6 +36,8 @@ from sqlalchemy import event
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _engine():
     engine = create_engine("sqlite://", echo=False)
@@ -182,10 +184,11 @@ def test_delete_reassigns_graph_node_stylebook_refs() -> None:
         bid = int(b.id)  # type: ignore[arg-type]
 
         proj = BackfieldProject(
+            **project_ownership_fields(session, oid, stylebook_id=aid),
             organization_id=oid,
+            stylebook_id=aid,
             name="P",
             slug="p-graph",
-            workspace_id=None,
         )
         session.add(proj)
         session.commit()
@@ -335,7 +338,9 @@ def test_delete_stylebook_resets_linked_substrate_to_pending() -> None:
                 status="active",
             )
         )
-        proj = BackfieldProject(organization_id=oid, name="P", slug="p-sub")
+        proj = BackfieldProject(
+            **project_ownership_fields(session, oid), organization_id=oid, name="P", slug="p-sub"
+        )
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -377,6 +382,25 @@ def test_delete_default_with_replacement() -> None:
         session.refresh(b)
         aid = int(a.id)  # type: ignore[arg-type]
         bid = int(b.id)  # type: ignore[arg-type]
+        workspace = BackfieldWorkspace(
+            organization_id=oid,
+            stylebook_id=aid,
+            name="Workspace",
+            slug="workspace-delete-reassign",
+        )
+        session.add(workspace)
+        session.flush()
+        project = BackfieldProject(
+            organization_id=oid,
+            workspace_id=int(workspace.id),
+            stylebook_id=aid,
+            name="Project",
+            slug="project-delete-reassign",
+        )
+        session.add(project)
+        session.commit()
+        project_id = int(project.id)
+        workspace_id = int(workspace.id)
 
         delete_stylebook(session, aid, replacement_default_id=bid)
         session.commit()
@@ -385,6 +409,12 @@ def test_delete_default_with_replacement() -> None:
         assert len(rest) == 1
         assert rest[0].id == bid
         assert rest[0].is_default is True
+        reassigned_project = session.get(BackfieldProject, project_id)
+        reassigned_workspace = session.get(BackfieldWorkspace, workspace_id)
+        assert reassigned_project is not None
+        assert reassigned_project.stylebook_id == bid
+        assert reassigned_workspace is not None
+        assert reassigned_workspace.stylebook_id == bid
 
 
 def test_ensure_default_still_idempotent() -> None:

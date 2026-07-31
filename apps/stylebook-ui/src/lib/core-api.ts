@@ -1,16 +1,17 @@
 /** Core API (session cookie) — same-origin via Vite `/v1` proxy. */
+import { handleTenantResponse } from "@backfield/ui/tenantSession"
 
 const coreBase = () => import.meta.env.VITE_AUTH_API_BASE ?? ""
 
 async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(`${coreBase()}${path}`, {
+  const r = await handleTenantResponse(await fetch(`${coreBase()}${path}`, {
     ...init,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(init?.headers ?? {}),
     },
-  })
+  }))
   if (!r.ok) {
     let detail = r.statusText
     try {
@@ -35,11 +36,27 @@ export interface MeResponse {
   user_id?: number
   organization_id?: number
   organization_name?: string | null
+  organization_slug?: string | null
   org_role?: string | null
+  must_change_password?: boolean
+  organizations?: { id: number; name: string; slug: string }[]
 }
 
 export async function fetchMe(): Promise<MeResponse> {
   return jsonFetch<MeResponse>("/v1/auth/me")
+}
+
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  await jsonFetch("/v1/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  })
 }
 
 export interface ProjectSummary {

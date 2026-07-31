@@ -207,9 +207,12 @@ export async function linkPersonSubstrateToCanonical(
   substratePersonId: number,
   projectSlug: string,
   stylebookPersonCanonicalId: string,
+  stylebookSlug?: string,
 ): Promise<{ changed: boolean }> {
+  const params = new URLSearchParams({ project_slug: projectSlug })
+  if (stylebookSlug) params.set("stylebook_slug", stylebookSlug)
   return stylebookJsonFetch<{ changed: boolean }>(
-    `/v1/people/${substratePersonId}/link-canonical?project_slug=${encodeURIComponent(projectSlug)}`,
+    `/v1/people/${substratePersonId}/link-canonical?${params}`,
     {
       method: "POST",
       body: JSON.stringify({ stylebook_person_canonical_id: stylebookPersonCanonicalId }),

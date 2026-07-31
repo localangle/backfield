@@ -460,7 +460,6 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   }, [isRunVariant, scaffoldModel])
 
   const flowProjectId = resolvedFlowProject?.id ?? null
-  const workspaceStylebookId = resolvedFlowProject?.workspace_stylebook_id ?? null
 
   useEffect(() => {
     if (resolvedFlowProject?.workspace_id == null) {
@@ -574,9 +573,6 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       return {
         organizationId: null as number | null,
         projectId: null as number | null,
-        workspaceDefaultStylebookId: null as number | null,
-        workspaceStylebookName: null as string | null,
-        missingWorkspaceStylebook: false,
         flowProjectLoading: true,
       }
     }
@@ -585,21 +581,12 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       return {
         organizationId: null as number | null,
         projectId: null as number | null,
-        workspaceDefaultStylebookId: null as number | null,
-        workspaceStylebookName: null as string | null,
-        missingWorkspaceStylebook: false,
         flowProjectLoading: false,
       }
     }
-    const sid = p.workspace_stylebook_id ?? null
-    const rawName = p.workspace_stylebook_name
-    const nm = typeof rawName === 'string' && rawName.trim() !== '' ? rawName.trim() : null
     return {
       organizationId: p.organization_id ?? null,
       projectId: p.id ?? null,
-      workspaceDefaultStylebookId: sid,
-      workspaceStylebookName: nm,
-      missingWorkspaceStylebook: sid == null && nm == null,
       flowProjectLoading: false,
       fetchProjectAiModels: flowProjectId != null ? fetchProjectAiModels : undefined,
       publicRunEnabled,
@@ -712,7 +699,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       const data = (
         isInput
           ? getInputBookendDefaultData(type)
-          : getOutputBookendDefaultData(type, workspaceStylebookId)
+          : getOutputBookendDefaultData(type)
       ) as Record<string, unknown>
       const node: Node = { id, type, data, position: currentBookend?.position ?? { x: 0, y: 0 } }
 
@@ -789,7 +776,6 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       inputNode,
       outputNode,
       scaffoldModel,
-      workspaceStylebookId,
       resetStepsAfterInput,
       resetStepsAfterOutput,
       clearScaffold,
@@ -1538,7 +1524,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       const newNode = {
         id: nextNodeId(),
         type,
-        data: getMiddleNodeDefaultData(type, workspaceStylebookId),
+        data: getMiddleNodeDefaultData(type),
       }
       setScaffoldModel((model) => {
         if (!model) return model
@@ -1559,7 +1545,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       setAddFromParentId(null)
       setAddIntoEdge(null)
     },
-    [addFromParentId, addIntoEdge, scaffoldModel, workspaceStylebookId],
+    [addFromParentId, addIntoEdge, scaffoldModel],
   )
 
   /**

@@ -27,6 +27,8 @@ from backfield_entities.public.article_hub import (
 )
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _seed_stylebook(session: Session) -> tuple[int, int]:
     org = BackfieldOrganization(name="Org", slug="org-article-hub")
@@ -37,6 +39,7 @@ def _seed_stylebook(session: Session) -> tuple[int, int]:
 
     stylebook = ensure_default_stylebook_for_organization(session, int(org.id))  # type: ignore[arg-type]
     proj = BackfieldProject(
+        **project_ownership_fields(session, int(org.id)),
         name="News",
         slug="news",
         organization_id=int(org.id),  # type: ignore[arg-type]

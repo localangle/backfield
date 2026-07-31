@@ -13,7 +13,11 @@ from backfield_db import AgateProcessedItem, BackfieldOrganization
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 
-from tests.agate_api.test_agate_api import _insert_pending_run, _minimal_text_input_spec
+from tests.agate_api.test_agate_api import (
+    _insert_pending_run,
+    _minimal_text_input_spec,
+    _post_project,
+)
 
 
 def _s3_output_result_json() -> str:
@@ -62,7 +66,7 @@ def _insert_succeeded_item(
     result_json: str | None,
     status: str = "succeeded",
 ) -> tuple[str, int]:
-    project = tc.post("/projects", json={"name": "S3 Sync", "slug": "s3-sync-api"}).json()
+    project = _post_project(tc, name="S3 Sync", slug="s3-sync-api").json()
     graph = tc.post(
         "/graphs",
         json={

@@ -22,9 +22,19 @@ All schema changes use the single Alembic chain under `packages/backfield-db/ale
 
 - Organizations, workspaces, projects, and users:
   `backfield_organization`, `backfield_workspace`, `backfield_project`, `backfield_user`.
+  Projects store both their workspace and a direct Stylebook ownership reference. The direct
+  reference and workspace are required and indexed. The Stylebook is set once at creation, either
+  from an explicit same-organization choice or by copying the selected workspace's Stylebook.
+  Composite foreign keys prevent projects and workspaces from retaining cross-organization
+  ownership references. Users created with provisioning temporary passwords carry
+  `must_change_password` until the password-change flow succeeds.
 - Access grants and API keys: `backfield_organization_membership`,
   `backfield_workspace_membership`, `backfield_project_membership`,
-  `backfield_api_credential`.
+  `backfield_api_credential`. Personal API credentials retain their owning `user_id` and are
+  authorized against the owner's current enabled state, organization membership, and project
+  access on every use. Ownerless personal rows fail closed. Ownerless `service` credentials are
+  the explicit administrator-managed automation form. Revocation timestamps and hashes are
+  retained; raw keys are never stored.
 - Public request safety: `backfield_public_idempotency_record` stores a seven-day
   project/operation/key reservation, canonical request hash, linked Agate run, and
   retryable enqueue state (`pending` / `publishing` / `published`) with a Celery
@@ -33,7 +43,11 @@ All schema changes use the single Alembic chain under `packages/backfield-db/ale
   `backfield_organization_integration_secret`.
 - Shared AI catalog and accounting: `backfield_ai_model_config`,
   `backfield_ai_project_model_override`, `backfield_ai_default_model_role`,
-  `backfield_ai_call_record`.
+  `backfield_ai_call_record`. Curated preset metadata is Backfield-owned shared package data;
+  provisioning snapshots only the operator's explicit selection into organization-owned rows.
+  The immutable preset registry lives in `backfield-db`, the lowest package shared by provisioning
+  and Core API; this avoids either package depending upward on an application or on `backfield-ai`,
+  which already depends on `backfield-db`.
 
 ### Agate execution
 
@@ -43,9 +57,9 @@ All schema changes use the single Alembic chain under `packages/backfield-db/ale
 - `agate_processed_item` stores per-document input, immutable model result, review overlay,
   reviewed output, status, article provenance, and an optional link to an S3 ingestion ledger
   revision (`ingestion_ledger_id`).
-- `agate_s3_ingestion_ledger` stores cross-run S3 Input object revisions keyed by
-  `source_id` + `logical_item_id` + `content_fingerprint`, with claim/lease state so unchanged
-  objects are skipped and failed or abandoned claims can retry.
+- `agate_s3_ingestion_ledger` stores cross-run S3 Input object revisions keyed by project,
+  `source_id`, `logical_item_id`, and `content_fingerprint`, with claim/lease state so unchanged
+  objects are skipped within a project and failed or abandoned claims can retry.
 - `agate_node_timing` stores per-node wall-clock measurements for processed items.
 
 ### Substrate content and entities
@@ -89,12 +103,15 @@ shared entity rows are not trusted because sibling batch items may reuse the sam
   `stylebook_candidate_ai_review`.
 
 Canonical ids are UUID strings. Canonical slugs are unique within a Stylebook, and aliases are
-unique by canonical plus normalized alias. A Stylebook belongs to one organization; projects use
-an explicit same-organization Stylebook or the organization's default.
+unique by canonical plus normalized alias. A Stylebook belongs to one organization. The project's
+direct `stylebook_id` is authoritative for project-scoped reads and runtime writes. Compatibility
+slug or node parameters are accepted only when they match that assignment. A workspace's Stylebook
+is only the default offered at project creation; changing it does not rewrite existing project
+ownership.
 
-Deleting a Stylebook reassigns workspaces and graph Stylebook refs, resets linked substrate rows
-to pending, removes non-cascading dependents (activity, bundle jobs, cleanup and candidate AI
-review rows), and deletes canonical trees before the catalog row itself.
+Deleting a Stylebook reassigns projects, workspaces, and graph Stylebook refs, resets linked
+substrate rows to pending, removes non-cascading dependents (activity, bundle jobs, cleanup and
+candidate AI review rows), and deletes canonical trees before the catalog row itself.
 
 ## Shared entity field contracts
 
@@ -129,6 +146,8 @@ specialized indexes include:
 - project plus H3 resolution/cell indexes for map aggregation;
 - partial pending-candidate indexes on substrate entity tables;
 - unique identity fingerprints within a project and canonical slugs within a Stylebook;
+- unique project slugs within an organization, with organization/slug, organization/workspace,
+  and organization/Stylebook lookup indexes;
 - unique public idempotency keys within project and operation, plus expiry, run,
   and enqueue-state indexes for retention cleanup, run linkage, and publish recovery;
 - processed-item run/status indexes for batch progress and finalization, plus run, node-type,

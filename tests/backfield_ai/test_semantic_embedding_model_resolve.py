@@ -26,6 +26,8 @@ from backfield_db import (
 )
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _engine():
     engine = create_engine("sqlite://", echo=False)
@@ -51,7 +53,12 @@ def test_resolve_semantic_embedding_model_prefers_project_default() -> None:
             capabilities_json=["embedding"],
         )
         session.add(cfg)
-        proj = BackfieldProject(name="P", slug="p-emb", organization_id=org_id)
+        proj = BackfieldProject(
+            **project_ownership_fields(session, org_id),
+            name="P",
+            slug="p-emb",
+            organization_id=org_id,
+        )
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -66,9 +73,7 @@ def test_resolve_semantic_embedding_model_prefers_project_default() -> None:
         )
         session.commit()
 
-        assert (
-            resolve_semantic_embedding_model_config_id(session, project_id) == "emb-project"
-        )
+        assert resolve_semantic_embedding_model_config_id(session, project_id) == "emb-project"
 
 
 def test_resolve_semantic_embedding_model_missing_raises() -> None:
@@ -79,6 +84,7 @@ def test_resolve_semantic_embedding_model_missing_raises() -> None:
         session.commit()
         session.refresh(org)
         proj = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
             name="P",
             slug="p-emb-miss",
             organization_id=int(org.id),  # type: ignore[arg-type]
@@ -99,6 +105,7 @@ def test_semantic_embedding_configured_false_without_default() -> None:
         session.commit()
         session.refresh(org)
         proj = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
             name="P",
             slug="p-emb-cfg0",
             organization_id=int(org.id),  # type: ignore[arg-type]
@@ -129,7 +136,12 @@ def test_semantic_embedding_configured_false_when_project_default_disabled() -> 
             capabilities_json=["embedding"],
         )
         session.add(cfg)
-        proj = BackfieldProject(name="P", slug="p-emb-off", organization_id=org_id)
+        proj = BackfieldProject(
+            **project_ownership_fields(session, org_id),
+            name="P",
+            slug="p-emb-off",
+            organization_id=org_id,
+        )
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -172,7 +184,12 @@ def test_semantic_embedding_configured_true_with_enabled_default() -> None:
             capabilities_json=["embedding"],
         )
         session.add(cfg)
-        proj = BackfieldProject(name="P", slug="p-emb-on", organization_id=org_id)
+        proj = BackfieldProject(
+            **project_ownership_fields(session, org_id),
+            name="P",
+            slug="p-emb-on",
+            organization_id=org_id,
+        )
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -219,7 +236,12 @@ def test_resolve_semantic_embedding_uses_sole_enabled_when_default_points_off() 
         )
         session.add(cfg_off)
         session.add(cfg_on)
-        proj = BackfieldProject(name="P", slug="p-emb-sole", organization_id=org_id)
+        proj = BackfieldProject(
+            **project_ownership_fields(session, org_id),
+            name="P",
+            slug="p-emb-sole",
+            organization_id=org_id,
+        )
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -241,9 +263,7 @@ def test_resolve_semantic_embedding_uses_sole_enabled_when_default_points_off() 
         )
         session.commit()
 
-        assert (
-            resolve_semantic_embedding_model_config_id(session, project_id) == "emb-on-sole"
-        )
+        assert resolve_semantic_embedding_model_config_id(session, project_id) == "emb-on-sole"
         assert semantic_embedding_configured(session, project_id) is True
 
 
@@ -265,7 +285,12 @@ def test_resolve_semantic_embedding_after_default_re_enabled() -> None:
             capabilities_json=["embedding"],
         )
         session.add(cfg)
-        proj = BackfieldProject(name="P", slug="p-emb-reon", organization_id=org_id)
+        proj = BackfieldProject(
+            **project_ownership_fields(session, org_id),
+            name="P",
+            slug="p-emb-reon",
+            organization_id=org_id,
+        )
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -319,7 +344,12 @@ def test_resolve_generative_default_prefers_project_default() -> None:
             capabilities_json=["text"],
         )
         session.add(cfg)
-        proj = BackfieldProject(name="P", slug="p-gen-res", organization_id=org_id)
+        proj = BackfieldProject(
+            **project_ownership_fields(session, org_id),
+            name="P",
+            slug="p-gen-res",
+            organization_id=org_id,
+        )
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -337,9 +367,7 @@ def test_resolve_generative_default_prefers_project_default() -> None:
         assert (
             resolve_generative_default_model_config_id(session, project_id) == "gen-project-default"
         )
-        assert (
-            resolve_semantic_hyde_model_config_id(session, project_id) == "gen-project-default"
-        )
+        assert resolve_semantic_hyde_model_config_id(session, project_id) == "gen-project-default"
 
 
 def test_resolve_generative_default_falls_back_to_legacy_semantic_hyde_role() -> None:
@@ -360,7 +388,12 @@ def test_resolve_generative_default_falls_back_to_legacy_semantic_hyde_role() ->
             capabilities_json=["text"],
         )
         session.add(cfg)
-        proj = BackfieldProject(name="P", slug="p-hyde-legacy", organization_id=org_id)
+        proj = BackfieldProject(
+            **project_ownership_fields(session, org_id),
+            name="P",
+            slug="p-hyde-legacy",
+            organization_id=org_id,
+        )
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -375,9 +408,7 @@ def test_resolve_generative_default_falls_back_to_legacy_semantic_hyde_role() ->
         )
         session.commit()
 
-        assert (
-            resolve_generative_default_model_config_id(session, project_id) == "gen-hyde-legacy"
-        )
+        assert resolve_generative_default_model_config_id(session, project_id) == "gen-hyde-legacy"
 
 
 def test_resolve_generative_default_uses_sole_enabled_generative_when_no_default() -> None:
@@ -398,7 +429,12 @@ def test_resolve_generative_default_uses_sole_enabled_generative_when_no_default
             capabilities_json=["text"],
         )
         session.add(cfg)
-        proj = BackfieldProject(name="P", slug="p-hyde-sole", organization_id=org_id)
+        proj = BackfieldProject(
+            **project_ownership_fields(session, org_id),
+            name="P",
+            slug="p-hyde-sole",
+            organization_id=org_id,
+        )
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -415,6 +451,7 @@ def test_resolve_generative_default_missing_raises() -> None:
         session.commit()
         session.refresh(org)
         proj = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
             name="P",
             slug="p-hyde-miss",
             organization_id=int(org.id),  # type: ignore[arg-type]

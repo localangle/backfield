@@ -3,6 +3,29 @@
 Backfield has one Alembic chain in `packages/backfield-db/alembic`. Run it once as a standalone
 operation; API and worker processes do not migrate on startup.
 
+## Tenancy preflight
+
+Before applying organization-tenancy migrations to retained data, run the read-only audit:
+
+```bash
+backfield tenancy-audit --json
+```
+
+The command supports databases before the additive project `stylebook_id` column exists, emits a
+typed JSON report, and exits `1` when it finds blockers. It checks orphaned projects;
+project/workspace and workspace/Stylebook organization mismatches; unresolved or
+cross-organization direct project Stylebooks; conflicting or multi-Stylebook graph node
+references; linked location, person, and organization canonicals from another Stylebook; and
+duplicate project slugs within an organization. The audit does not create workspaces, rewrite
+projects or graphs, or change canonical links. Canonical-link mismatches are aggregated by
+project, entity type, expected Stylebook, and actual Stylebook, with an affected count and a
+five-id sample so large datasets still produce practical reports.
+
+The strict project runtime migration validates retained projects before making `workspace_id` and
+`stylebook_id` required. It stops with the first project or workspace that has a null, missing, or
+cross-organization assignment. Repair those rows and rerun the migration; it does not guess a
+replacement catalog.
+
 ## Local workflow
 
 With the Compose stack configuration:
@@ -43,6 +66,22 @@ Back up production data before applying schema changes and verify the current
 
 ## Active upgrade warnings
 
+Revisions `068` through `072` are sequenced together by the
+[organization tenancy upgrade runbook](organization-tenancy-upgrade.md). Use it instead of the
+default migrate-before-app order for that upgrade.
+
+- The organization-scoped project slug migration (`071_project_org_slug_scope`) permits the same
+  project slug in different organizations and is an explicit exception to the normal
+  migrate-before-app sequence. Use two deployments: first deploy organization-qualified readers
+  and writers while the old global constraint remains; then verify every old reader is retired
+  before applying `071` in a second deployment phase. Do not create cross-organization duplicate
+  slugs between those phases. During the first phase, create requests can still be rejected by the
+  old global constraint and return a temporary-unavailability conflict instead of a server error.
+  A downgrade stops if cross-organization duplicates already exist.
+- The project-scoped S3 ingestion ledger migration (`068_s3_ledger_project_scope`) permits
+  otherwise-identical revisions in different projects. After such rows exist, downgrading to
+  `067_s3_ingestion_ledger` cannot restore the former global uniqueness constraint without
+  manually reconciling those rows. Prefer forward repair after deployment.
 - The location-canonical UUID migration (`019_sb_loc_canon_uuid`) drops and recreates location
   canonical-linked tables and does not preserve their rows. A database whose current revision is
   before this migration must not be upgraded in place when that catalog data matters. Rebuild a

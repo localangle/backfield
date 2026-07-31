@@ -15,21 +15,33 @@ describe("candidateQueueSimilarity", () => {
     const rows = [
       {
         id: 1,
+        project_id: 1,
+        project_slug: "news",
+        project_name: "News",
         canonical_suggestion: { suggested_action: "materialize_new" },
         name: "Ronald Acuña",
       },
       {
         id: 2,
+        project_id: 1,
+        project_slug: "news",
+        project_name: "News",
         canonical_suggestion: { suggested_action: "materialize_new" },
         name: "Ronald Acuña",
       },
       {
         id: 3,
+        project_id: 1,
+        project_slug: "news",
+        project_name: "News",
         canonical_suggestion: { suggested_action: "link_existing" },
         name: "Ronald Acuña",
       },
       {
         id: 4,
+        project_id: 1,
+        project_slug: "news",
+        project_name: "News",
         canonical_suggestion: { suggested_action: "materialize_new" },
         name: "Mike Trout",
       },

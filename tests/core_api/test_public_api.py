@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Generator
 from datetime import date
@@ -10,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from backfield_ai.query_embedding import SemanticQueryEmbedding
 from backfield_db import (
+    BackfieldApiCredential,
     BackfieldOrganization,
     BackfieldProject,
     BackfieldWorkspace,
@@ -41,6 +43,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from tests.core_api.auth_helpers import attach_test_engine, seed_first_admin
+from tests.project_helpers import project_ownership_fields
 
 
 @pytest.fixture
@@ -71,6 +74,7 @@ def public_client(tmp_path) -> Generator[TestClient, None, None]:
         s.refresh(ws)
         s.add(
             BackfieldProject(
+                **project_ownership_fields(s, oid, workspace_id=int(ws.id)),
                 name="General",
                 slug="general",
                 organization_id=oid,
@@ -79,6 +83,7 @@ def public_client(tmp_path) -> Generator[TestClient, None, None]:
         )
         s.add(
             BackfieldProject(
+                **project_ownership_fields(s, oid, workspace_id=int(ws.id)),
                 name="Other",
                 slug="other",
                 organization_id=oid,
@@ -415,7 +420,7 @@ def test_public_project_unknown_slug(public_client: TestClient) -> None:
         "/public/v1/projects/no-such-project",
         headers={"Authorization": f"Bearer {raw_key}"},
     )
-    assert r.status_code == 404
+    assert r.status_code == 403
 
 
 def test_public_project_wrong_project_key(public_client: TestClient) -> None:
@@ -427,10 +432,71 @@ def test_public_project_wrong_project_key(public_client: TestClient) -> None:
     assert r.status_code == 403
 
 
+def test_public_project_key_is_safe_with_duplicate_cross_org_slug(
+    public_client: TestClient,
+) -> None:
+    raw_key = "bfk_cross_org_duplicate_slug_key_1234567890"
+    engine = public_client.test_engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        organization = BackfieldOrganization(name="Other Newsroom", slug="other-newsroom")
+        session.add(organization)
+        session.flush()
+        stylebook = Stylebook(
+            organization_id=int(organization.id),
+            slug="other-default",
+            name="Other Default",
+            is_default=True,
+        )
+        session.add(stylebook)
+        session.flush()
+        workspace = BackfieldWorkspace(
+            organization_id=int(organization.id),
+            stylebook_id=int(stylebook.id),
+            slug="other-default",
+            name="Other Default",
+        )
+        session.add(workspace)
+        session.flush()
+        project = BackfieldProject(
+            organization_id=int(organization.id),
+            workspace_id=int(workspace.id),
+            stylebook_id=int(stylebook.id),
+            slug="general",
+            name="Other General",
+        )
+        session.add(project)
+        session.flush()
+        session.add(
+            BackfieldApiCredential(
+                project_id=int(project.id),
+                credential_type="service",
+                key_prefix=raw_key[:22],
+                key_hash=hashlib.sha256(raw_key.encode()).hexdigest(),
+                scopes="read",
+            )
+        )
+        session.commit()
+        project_id = int(project.id)
+
+    response = public_client.get(
+        "/public/v1/projects/general",
+        headers={
+            "Authorization": f"Bearer {raw_key}",
+            "X-Backfield-Organization-ID": "1",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["id"] == project_id
+    assert response.json()["name"] == "Other General"
+
+
 def test_public_project_service_token(public_client: TestClient) -> None:
     r = public_client.get(
         "/public/v1/projects/general",
-        headers={"Authorization": "Bearer backfield-dev"},
+        headers={
+            "Authorization": "Bearer backfield-dev",
+            "X-Backfield-Organization-ID": "1",
+        },
     )
     assert r.status_code == 200
     assert r.json()["slug"] == "general"
@@ -445,6 +511,81 @@ def test_public_article_search(public_client: TestClient) -> None:
     assert body["pagination"]["total"] == 2
     headlines = {item["headline"] for item in body["items"]}
     assert "City council votes on budget" in headlines
+
+
+def test_public_key_sees_shared_canonical_but_not_sibling_project_evidence(
+    public_client: TestClient,
+) -> None:
+    engine = public_client.test_engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        sibling = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "other")
+        ).one()
+        canonical = StylebookPersonCanonical(
+            stylebook_id=int(sibling.stylebook_id),
+            label="Shared Editor",
+            slug="shared-editor",
+            title="Editor",
+            affiliation="Newsroom",
+        )
+        sibling_article = SubstrateArticle(
+            project_id=int(sibling.id),
+            headline="Sibling project private story",
+            text="Private source evidence.",
+        )
+        session.add(canonical)
+        session.add(sibling_article)
+        session.flush()
+        sibling_person = SubstratePerson(
+            project_id=int(sibling.id),
+            name="Shared Editor",
+            normalized_name="shared editor",
+            stylebook_person_canonical_id=str(canonical.id),
+        )
+        session.add(sibling_person)
+        session.flush()
+        session.add(
+            SubstratePersonMention(
+                article_id=int(sibling_article.id),
+                person_id=int(sibling_person.id),
+                nature="source",
+            )
+        )
+        session.commit()
+        sibling_article_id = int(sibling_article.id)
+
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    articles = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+    )
+    assert articles.status_code == 200
+    assert "Sibling project private story" not in {
+        item["headline"] for item in articles.json()["items"]
+    }
+    assert (
+        public_client.get(
+            f"/public/v1/projects/general/articles/{sibling_article_id}",
+            headers=headers,
+        ).status_code
+        == 404
+    )
+
+    people = public_client.get(
+        "/public/v1/projects/general/people",
+        headers=headers,
+    )
+    shared = next(item for item in people.json()["items"] if item["slug"] == "shared-editor")
+    assert shared["title"] == "Editor"
+    assert shared["affiliation"] == "Newsroom"
+    assert shared["counts"] == {"mentions": 0, "stories": 0}
+    mentions = public_client.get(
+        f"/public/v1/projects/general/people/{shared['id']}/mentions",
+        headers=headers,
+    )
+    assert mentions.status_code == 200
+    assert mentions.json()["items"] == []
 
 
 def test_public_article_search_body_keyword(public_client: TestClient) -> None:
@@ -1008,9 +1149,7 @@ def test_public_article_detail_include_text(public_client: TestClient) -> None:
     body = r.json()
     assert "text" in body
     assert body["preview"]
-    assert body["text"] == (
-        "The council approved the budget after a long debate downtown."
-    )
+    assert body["text"] == ("The council approved the budget after a long debate downtown.")
     assert body.get("counts") is None
 
 
@@ -1551,7 +1690,9 @@ def test_public_organization_not_found(public_client: TestClient) -> None:
     assert r.status_code == 404
 
 
-def test_public_entity_search_stylebook_slug_override(public_client: TestClient) -> None:
+def test_public_entity_search_rejects_stylebook_slug_override(
+    public_client: TestClient,
+) -> None:
     engine = public_client.test_engine  # type: ignore[attr-defined]
     with Session(engine) as session:
         org = session.exec(
@@ -1604,19 +1745,16 @@ def test_public_entity_search_stylebook_slug_override(public_client: TestClient)
         headers=headers,
         params={"q": "Newsroom", "stylebook_slug": "mnn-stylebook"},
     )
-    assert overridden.status_code == 200
-    body = overridden.json()
-    assert body["pagination"]["total"] == 1
-    assert body["items"][0]["label"] == "MNN Newsroom"
-    assert body["items"][0]["stylebook_slug"] == "mnn-stylebook"
+    assert overridden.status_code == 400
+    assert "does not match" in overridden.json()["error"]["message"]
 
     types = public_client.get(
         "/public/v1/projects/general/organizations/types",
         headers=headers,
         params={"stylebook_slug": "mnn-stylebook"},
     )
-    assert types.status_code == 200
-    assert "media" in types.json()["types"]
+    assert types.status_code == 400
+    assert "does not match" in types.json()["error"]["message"]
 
     missing = public_client.get(
         "/public/v1/projects/general/organizations/search",
@@ -1828,8 +1966,7 @@ def test_public_mentions_search_facets_and_detail(public_client: TestClient) -> 
     entity_types = {item["entity_type"] for item in body["items"]}
     assert entity_types == {"location", "person", "organization"}
     assert all(
-        item["article"]["headline"] == "City council votes on budget"
-        for item in body["items"]
+        item["article"]["headline"] == "City council votes on budget" for item in body["items"]
     )
 
     by_person = public_client.get(

@@ -13,6 +13,8 @@ from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_or
 from sqlmodel import Session, SQLModel, create_engine
 from worker.substrate.candidates.ai_review import _process_location_candidate_review
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _bootstrap(session: Session) -> tuple[int, int]:
     organization = BackfieldOrganization(name="Candidate Review", slug="candidate-review")
@@ -32,6 +34,7 @@ def _bootstrap(session: Session) -> tuple[int, int]:
     session.commit()
     session.refresh(workspace)
     project = BackfieldProject(
+        **project_ownership_fields(session, organization_id, workspace_id=int(workspace.id)),
         organization_id=organization_id,
         workspace_id=int(workspace.id),  # type: ignore[arg-type]
         name="Candidate Review",

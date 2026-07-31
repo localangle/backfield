@@ -72,7 +72,7 @@ describe('processedItemReviewRow', () => {
     ).toBe(77)
   })
 
-  it('prefers row stylebook_slug over workspace slug for links', () => {
+  it("prefers row stylebook_slug over the project's Stylebook for links", () => {
     const row = {
       stylebook_slug: 'illinois-stylebook',
       stylebook_location_canonical_id: 'uuid-1',

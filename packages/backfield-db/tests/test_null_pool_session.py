@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 
 import pytest
-from backfield_db.session import get_engine, null_pool_session
+from backfield_db.session import create_direct_engine, get_engine, null_pool_session
 from sqlalchemy import text
 from sqlmodel import Session
 
@@ -40,3 +40,19 @@ def test_null_pool_session_works_while_pooled_session_held(
         raise
     finally:
         session_mod._engine = None
+
+
+def test_create_direct_engine_prefers_admin_database_url(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    runtime_path = tmp_path / "runtime.db"
+    direct_path = tmp_path / "direct.db"
+    monkeypatch.setenv("BACKFIELD_DATABASE_URL", f"sqlite:///{runtime_path}")
+    monkeypatch.setenv("BACKFIELD_DATABASE_URL_DIRECT", f"sqlite:///{direct_path}")
+
+    engine = create_direct_engine()
+    try:
+        assert engine.url.database == str(direct_path)
+    finally:
+        engine.dispose()

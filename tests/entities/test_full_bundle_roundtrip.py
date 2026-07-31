@@ -34,6 +34,8 @@ from backfield_entities.catalog.full_bundle import (
 )
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _engine():
     engine = create_engine("sqlite://", echo=False)
@@ -149,6 +151,75 @@ def test_export_import_roundtrip_canonicals_only(tmp_path: Path) -> None:
         ).all()
         assert len(aliases) >= 1
         assert any(a.normalized_alias == "elm street" for a in aliases)
+
+
+def test_export_project_slice_lookup_stays_in_source_organization(tmp_path: Path) -> None:
+    engine = _engine()
+    zip_path = tmp_path / "scoped-project.zip"
+    with Session(engine) as session:
+        foreign_org = BackfieldOrganization(name="Foreign", slug="foreign-bundle")
+        source_org = BackfieldOrganization(name="Source", slug="source-bundle")
+        session.add(foreign_org)
+        session.add(source_org)
+        session.commit()
+        foreign_id = int(foreign_org.id)  # type: ignore[arg-type]
+        source_id = int(source_org.id)  # type: ignore[arg-type]
+
+        source_book = Stylebook(
+            organization_id=source_id,
+            name="Source Book",
+            slug="source-bundle-book",
+            is_default=True,
+        )
+        session.add(source_book)
+        session.commit()
+        source_book_id = int(source_book.id)  # type: ignore[arg-type]
+        foreign_project = BackfieldProject(
+            **project_ownership_fields(session, foreign_id),
+            organization_id=foreign_id,
+            name="Wrong Project",
+            slug="shared-project",
+        )
+        source_project = BackfieldProject(
+            **project_ownership_fields(session, source_id, stylebook_id=source_book_id),
+            organization_id=source_id,
+            stylebook_id=source_book_id,
+            name="Source Project",
+            slug="shared-project",
+        )
+        session.add(foreign_project)
+        session.add(source_project)
+        session.commit()
+        canonical_id = str(uuid4())
+        session.add(
+            StylebookLocationCanonical(
+                id=canonical_id,
+                stylebook_id=source_book_id,
+                label="Scoped Place",
+                slug="scoped-place",
+                status="active",
+            )
+        )
+        session.add(
+            StylebookLocationMeta(
+                project_id=int(source_project.id),  # type: ignore[arg-type]
+                stylebook_location_canonical_id=canonical_id,
+                meta_type="review",
+                data_json={},
+            )
+        )
+        session.commit()
+        export_stylebook_bundle(
+            session,
+            organization_id=source_id,
+            stylebook_id=source_book_id,
+            zip_path=zip_path,
+        )
+
+    manifest = read_manifest_from_zip(zip_path)
+    assert manifest["project_slices"] == [
+        {"project_slug": "shared-project", "project_name": "Source Project"}
+    ]
 
 
 def test_export_import_roundtrip_includes_people(tmp_path: Path) -> None:
@@ -311,16 +382,6 @@ def test_export_import_roundtrip_includes_aliases_meta_connections(tmp_path: Pat
         session.refresh(org)
         oid = int(org.id)  # type: ignore[arg-type]
 
-        project = BackfieldProject(
-            organization_id=oid,
-            name="Demo Project",
-            slug="demo-proj-sidecars",
-        )
-        session.add(project)
-        session.commit()
-        session.refresh(project)
-        project_id = int(project.id)  # type: ignore[arg-type]
-
         sb = Stylebook(
             organization_id=oid,
             name="Sidecar Book",
@@ -331,6 +392,17 @@ def test_export_import_roundtrip_includes_aliases_meta_connections(tmp_path: Pat
         session.commit()
         session.refresh(sb)
         sb_id = int(sb.id)  # type: ignore[arg-type]
+        project = BackfieldProject(
+            **project_ownership_fields(session, oid, stylebook_id=sb_id),
+            organization_id=oid,
+            stylebook_id=sb_id,
+            name="Demo Project",
+            slug="demo-proj-sidecars",
+        )
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+        project_id = int(project.id)  # type: ignore[arg-type]
 
         loc_id = str(uuid4())
         person_id = str(uuid4())

@@ -20,6 +20,8 @@ from backfield_db import (
 from backfield_entities.canonical.link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
 from sqlmodel import Session, create_engine
 
+from tests.project_helpers import project_ownership_fields
+
 
 def test_geometries_json_equal_sorts_keys() -> None:
     a = {"type": "Point", "coordinates": [1.0, 2.0]}
@@ -57,6 +59,7 @@ def test_enrich_merged_locations_attaches_persisted_and_stylebook_link() -> None
         session.refresh(stylebook)
 
         project = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
             organization_id=int(org.id),
             name="Proj",
             slug="proj-enrich",
@@ -162,6 +165,7 @@ def test_enrich_skips_unlinked_canonical() -> None:
         session.refresh(org)
 
         project = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
             organization_id=int(org.id),
             name="Proj2",
             slug="proj-enrich-2",
@@ -223,6 +227,7 @@ def test_enrich_appends_manual_location_without_model_row() -> None:
         session.refresh(org)
 
         project = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
             organization_id=int(org.id),
             name="Manual Proj",
             slug="manual-proj",
@@ -312,6 +317,7 @@ def test_enrich_matches_h3_rows_by_display_name_suffix() -> None:
         session.refresh(org)
 
         project = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
             organization_id=int(org.id),
             name="Proj H3",
             slug="proj-h3",
@@ -398,6 +404,7 @@ def test_enrich_omits_stylebook_link_when_mention_deleted_for_article() -> None:
         session.refresh(stylebook)
 
         project = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
             organization_id=int(org.id),
             name="Proj3",
             slug="proj-enrich-3",
@@ -473,6 +480,7 @@ def test_enrich_skips_run_wide_substrate_when_article_id_missing() -> None:
         session.refresh(org)
 
         project = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
             organization_id=int(org.id),
             name="Proj Batch",
             slug="proj-batch-bleed",

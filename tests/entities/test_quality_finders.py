@@ -25,6 +25,8 @@ from backfield_entities.quality.finders.location_geography_issues import (
 )
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _make_stylebook(session: Session) -> tuple[int, int]:
     org = BackfieldOrganization(name="Test Org", slug="test-org")
@@ -194,7 +196,12 @@ def test_location_geography_issues_distant_linked_places_sqlite() -> None:
         stylebook_id, org_id = _make_stylebook(session)
         org = session.get(BackfieldOrganization, org_id)
         assert org is not None
-        project = BackfieldProject(organization_id=org_id, name="Demo", slug="demo")
+        project = BackfieldProject(
+            **project_ownership_fields(session, org_id),
+            organization_id=org_id,
+            name="Demo",
+            slug="demo",
+        )
         session.add(project)
         session.commit()
         session.refresh(project)
@@ -856,7 +863,12 @@ def test_person_name_mismatch_finder_sqlite() -> None:
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
         stylebook_id, org_id = _make_stylebook(session)
-        project = BackfieldProject(organization_id=org_id, name="Demo", slug="demo")
+        project = BackfieldProject(
+            **project_ownership_fields(session, org_id),
+            organization_id=org_id,
+            name="Demo",
+            slug="demo",
+        )
         session.add(project)
         session.commit()
         session.refresh(project)
@@ -936,7 +948,12 @@ def test_organization_name_mismatch_finder_sqlite() -> None:
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
         stylebook_id, org_id = _make_stylebook(session)
-        project = BackfieldProject(organization_id=org_id, name="Demo", slug="demo")
+        project = BackfieldProject(
+            **project_ownership_fields(session, org_id),
+            organization_id=org_id,
+            name="Demo",
+            slug="demo",
+        )
         session.add(project)
         session.commit()
         session.refresh(project)
@@ -995,7 +1012,12 @@ def test_location_name_mismatch_finder_sqlite() -> None:
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
         stylebook_id, org_id = _make_stylebook(session)
-        project = BackfieldProject(organization_id=org_id, name="Demo", slug="demo")
+        project = BackfieldProject(
+            **project_ownership_fields(session, org_id),
+            organization_id=org_id,
+            name="Demo",
+            slug="demo",
+        )
         session.add(project)
         session.commit()
         session.refresh(project)

@@ -24,10 +24,7 @@ export function getInputBookendDefaultData(type: string): Record<string, unknown
   }
 }
 
-export function getOutputBookendDefaultData(
-  type: string,
-  workspaceStylebookId?: number | null,
-): Record<string, unknown> {
+export function getOutputBookendDefaultData(type: string): Record<string, unknown> {
   switch (type) {
     case 'Output':
       return {}
@@ -42,10 +39,7 @@ export function getOutputBookendDefaultData(
   }
 }
 
-export function getMiddleNodeDefaultData(
-  type: string,
-  workspaceStylebookId?: number | null,
-): Record<string, unknown> {
+export function getMiddleNodeDefaultData(type: string): Record<string, unknown> {
   switch (type) {
     case 'PlaceExtract':
     case 'PersonExtract':
@@ -60,11 +54,7 @@ export function getMiddleNodeDefaultData(
     }
     case 'GeocodeAgent': {
       const meta = nodeMetadata.find((m) => m.type === 'GeocodeAgent')
-      const base = { ...(meta?.defaultParams ?? {}) } as Record<string, unknown>
-      if (typeof workspaceStylebookId === 'number') {
-        base.stylebook_id = workspaceStylebookId
-      }
-      return base
+      return { ...(meta?.defaultParams ?? {}) } as Record<string, unknown>
     }
     default: {
       const meta = nodeMetadata.find((m) => m.type === type)

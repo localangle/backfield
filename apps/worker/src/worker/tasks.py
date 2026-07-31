@@ -491,10 +491,18 @@ def _load_project_system_prompt(session: Session, project_id: int) -> str | None
     return _project_system_prompt_from_settings(project.settings_json)
 
 
+def _load_project_organization_id(session: Session, project_id: int) -> int:
+    project = session.get(BackfieldProject, int(project_id))
+    if project is None:
+        raise ValueError(f"Project {project_id} not found")
+    return int(project.organization_id)
+
+
 @contextmanager
 def _run_execution_env(
     *,
     project_id: int,
+    organization_id: int,
     graph_id: str,
     run_id: str,
     replace_article_geography: bool = False,
@@ -503,6 +511,7 @@ def _run_execution_env(
 ):
     updates: dict[str, str] = {
         "BACKFIELD_PROJECT_ID": str(project_id),
+        "BACKFIELD_ORGANIZATION_ID": str(organization_id),
         "BACKFIELD_GRAPH_ID": str(graph_id),
         "BACKFIELD_RUN_ID": str(run_id),
     }
@@ -723,47 +732,49 @@ def execute_agate_run(run_id: str) -> None:
         session.commit()
 
     project_id: int
+    organization_id: int
     graph_id: str
     overlay: dict[str, str]
     spec: GraphSpec
     replace_geography: bool
     project_system_prompt: str | None
 
-    with Session(engine) as session:
-        run = session.get(AgateRun, run_id)
-        if not run or run.status != "running":
-            return
-        graph = session.get(AgateGraph, run.graph_id)
-        if not graph:
-            return
-        spec = GraphSpec.model_validate_json(
-            resolve_run_graph_spec_json(
-                run_result_json=run.result_json,
-                graph_spec_json=graph.spec_json,
-            )
-        )
-        overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
-        replace_geography = bool(run.replace_article_geography_on_persist)
-        project_system_prompt = _load_project_system_prompt(session, graph.project_id)
-        project_id = int(graph.project_id)
-        graph_id = str(graph.id)
-        session.commit()
-
-    node_runners = dict(NODE_RUNNERS)
-    node_runners["DBOutput"] = run_db_output
     outputs: dict[str, Any] | None = None
     node_timings: dict[str, float] = {}
     run_error: str | None = None
-
-    track_tok = attach_llm_tracking_context(
-        LlmAttemptTrackingContext(
-            project_id=project_id,
-            run_id=run_id,
-        )
-    )
+    track_tok = None
     try:
+        with Session(engine) as session:
+            run = session.get(AgateRun, run_id)
+            if not run or run.status != "running":
+                return
+            graph = session.get(AgateGraph, run.graph_id)
+            if not graph:
+                raise ValueError("Graph not found")
+            spec = GraphSpec.model_validate_json(
+                resolve_run_graph_spec_json(
+                    run_result_json=run.result_json,
+                    graph_spec_json=graph.spec_json,
+                )
+            )
+            overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
+            replace_geography = bool(run.replace_article_geography_on_persist)
+            project_system_prompt = _load_project_system_prompt(session, graph.project_id)
+            project_id = int(graph.project_id)
+            organization_id = _load_project_organization_id(session, project_id)
+            graph_id = str(graph.id)
+
+        node_runners = dict(NODE_RUNNERS)
+        node_runners["DBOutput"] = run_db_output
+        track_tok = attach_llm_tracking_context(
+            LlmAttemptTrackingContext(
+                project_id=project_id,
+                run_id=run_id,
+            )
+        )
         with _env_overlay(overlay), _run_execution_env(
             project_id=project_id,
+            organization_id=organization_id,
             graph_id=graph_id,
             run_id=run_id,
             replace_article_geography=replace_geography,
@@ -786,7 +797,8 @@ def execute_agate_run(run_id: str) -> None:
     except Exception as e:
         run_error = str(e)
     finally:
-        reset_llm_tracking_context(track_tok)
+        if track_tok is not None:
+            reset_llm_tracking_context(track_tok)
 
     with Session(engine) as session:
         run = session.get(AgateRun, run_id)
@@ -945,6 +957,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
 
                     if not reprocess_unchanged and find_succeeded_matching_metadata(
                         session,
+                        project_id=project_id,
                         source_id=source_id,
                         item_id=item_logical_id,
                         listing=listing,
@@ -977,6 +990,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                     fingerprint = sha256_hex(raw_bytes)
                     existing_fp = find_row_for_fingerprint(
                         session,
+                        project_id=project_id,
                         source_id=source_id,
                         item_id=item_logical_id,
                         content_fingerprint=fingerprint,
@@ -1036,6 +1050,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                         continue
                     attach_processed_item(
                         session,
+                        project_id=project_id,
                         ledger_id=claim.ledger_id,
                         claim_token=claim.claim_token,
                         processed_item_id=int(row.id),
@@ -1409,6 +1424,7 @@ def _execute_processed_item_impl(item_id: int) -> None:
             )
             project_system_prompt = _load_project_system_prompt(session, graph.project_id)
             project_id = int(graph.project_id)
+            organization_id = _load_project_organization_id(session, project_id)
             graph_id = str(graph.id)
             run_id_str = str(run.id)
             iid = int(item.id) if item.id is not None else None
@@ -1467,6 +1483,7 @@ def _execute_processed_item_impl(item_id: int) -> None:
     try:
         with _env_overlay(overlay), _run_execution_env(
             project_id=project_id,
+            organization_id=organization_id,
             graph_id=graph_id,
             run_id=run_id_str,
             replace_article_geography=replace_geography,

@@ -11,6 +11,8 @@ from backfield_db import (
 from sqlalchemy import create_engine
 from sqlmodel import Session, SQLModel, select
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _org_and_project(session: Session) -> tuple[int, int]:
     session.add(BackfieldOrganization(name="Org", slug="org-art"))
@@ -22,6 +24,7 @@ def _org_and_project(session: Session) -> tuple[int, int]:
     slug = f"proj-art-{oid}"
     session.add(
         BackfieldProject(
+            **project_ownership_fields(session, oid),
             organization_id=oid,
             name="Proj",
             slug=slug,
@@ -124,6 +127,7 @@ def test_article_context_project_mismatch() -> None:
         slug_b = f"other-art-{pid_a}"
         session.add(
             BackfieldProject(
+                **project_ownership_fields(session, oid),
                 organization_id=oid,
                 name="Other",
                 slug=slug_b,

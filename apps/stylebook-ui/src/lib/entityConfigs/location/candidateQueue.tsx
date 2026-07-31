@@ -7,8 +7,6 @@ import {
   getCanonicalLocation,
   getSuggestedCanonicals,
   linkSubstrateToCanonical,
-  listCandidates,
-  listLocationCandidateTypes,
   updateCandidateNote,
 } from "@/lib/api"
 import {
@@ -28,6 +26,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import type { CandidateQueueLinkModalProps, CandidateQueuePageConfig } from "@/lib/entityConfigs/candidateQueueTypes"
+import {
+  countStylebookCandidates,
+  listStylebookCandidateTypes,
+  listStylebookCandidates,
+} from "@/lib/stylebook-api/stylebookCandidates"
 
 function LocationLinkModal({
   substrateId,
@@ -73,7 +76,7 @@ export const locationCandidateQueueConfig: CandidateQueuePageConfig<Candidate> =
     breadcrumbEntityLabel: "Locations",
     canonicalButtonLabel: "Canonical locations",
     reviewQueueDescription:
-      "Unlinked locations for this project. Use “Link” to attach to an existing canonical, or “Create new” to add a new one.",
+      "Unlinked locations from projects using this Stylebook. Link an existing location or create a new one.",
     searchInputId: "candidate-search",
     searchPlaceholder: "Search name…",
     emptyState: "No unlinked locations.",
@@ -119,8 +122,11 @@ export const locationCandidateQueueConfig: CandidateQueuePageConfig<Candidate> =
   },
 
   api: {
-    list: async (projectSlug, status, options) => {
-      const res = await listCandidates(projectSlug, status, false, options)
+    list: async (stylebookSlug, projectSlug, status, options) => {
+      const res = await listStylebookCandidates<Candidate>(stylebookSlug, "locations", status, {
+        ...options,
+        project_slug: projectSlug,
+      })
       return {
         candidates: res.candidates,
         total: res.total,
@@ -128,19 +134,25 @@ export const locationCandidateQueueConfig: CandidateQueuePageConfig<Candidate> =
         has_prev: res.has_prev,
       }
     },
-    listTypes: listLocationCandidateTypes,
+    count: (stylebookSlug, projectSlug, status, options) =>
+      countStylebookCandidates(stylebookSlug, "locations", status, {
+        ...options,
+        project_slug: projectSlug,
+      }),
+    listTypes: (stylebookSlug, projectSlug, status) =>
+      listStylebookCandidateTypes(stylebookSlug, "locations", projectSlug, status),
     getContext: getCandidateContext,
-    defer: async (projectSlug, candidateId) => {
-      await deferCandidate(projectSlug, candidateId)
+    defer: async (projectSlug, candidateId, stylebookSlug) => {
+      await deferCandidate(projectSlug, candidateId, stylebookSlug)
     },
-    clearRecommendation: async (projectSlug, candidateId) => {
-      await clearLocationCandidateRecommendation(projectSlug, candidateId)
+    clearRecommendation: async (projectSlug, candidateId, stylebookSlug) => {
+      await clearLocationCandidateRecommendation(projectSlug, candidateId, stylebookSlug)
     },
-    updateNote: async (projectSlug, candidateId, note) => {
-      await updateCandidateNote(projectSlug, candidateId, note)
+    updateNote: async (projectSlug, candidateId, note, stylebookSlug) => {
+      await updateCandidateNote(projectSlug, candidateId, note, stylebookSlug)
     },
-    linkToCanonical: async (candidateId, projectSlug, canonicalId) => {
-      await linkSubstrateToCanonical(candidateId, projectSlug, canonicalId)
+    linkToCanonical: async (candidateId, projectSlug, canonicalId, stylebookSlug) => {
+      await linkSubstrateToCanonical(candidateId, projectSlug, canonicalId, stylebookSlug)
     },
     getSuggestedCanonicalId: (c) => {
       const cid = (c.canonical_suggestion?.stylebook_location_canonical_id ?? "").trim()
@@ -159,11 +171,12 @@ export const locationCandidateQueueConfig: CandidateQueuePageConfig<Candidate> =
       const canon = await getCanonicalLocation(canonicalId, stylebookSlug, projectSlug)
       return (canon.label ?? "").trim() || canonicalId
     },
-    acceptCreateNew: async (projectSlug, candidateId, body) => {
+    acceptCreateNew: async (projectSlug, candidateId, body, stylebookSlug) => {
       const acceptRes = await acceptCandidate(
         projectSlug,
         candidateId,
         body as Parameters<typeof acceptCandidate>[2],
+        stylebookSlug,
       )
       const cid = acceptRes.stylebook_location_canonical_id
       return { canonicalId: typeof cid === "string" ? cid : "" }

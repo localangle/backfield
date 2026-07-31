@@ -18,6 +18,7 @@ from backfield_db import (
     AgateRun,
     BackfieldOrganization,
     BackfieldProject,
+    BackfieldWorkspace,
 )
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from sqlalchemy import event, update
@@ -102,8 +103,22 @@ def batch_engine(tmp_path, monkeypatch):
         session.commit()
         session.refresh(org)
         oid = int(org.id)  # type: ignore[arg-type]
-        ensure_default_stylebook_for_organization(session, oid)
-        proj = BackfieldProject(organization_id=oid, name="P", slug="p-s3")
+        stylebook = ensure_default_stylebook_for_organization(session, oid)
+        workspace = BackfieldWorkspace(
+            organization_id=oid,
+            stylebook_id=int(stylebook.id),
+            name="Workspace",
+            slug="s3-worker",
+        )
+        session.add(workspace)
+        session.flush()
+        proj = BackfieldProject(
+            organization_id=oid,
+            workspace_id=int(workspace.id),
+            stylebook_id=int(stylebook.id),
+            name="P",
+            slug="p-s3",
+        )
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -186,7 +201,7 @@ def test_finalization_preserves_metadata_and_is_idempotent(batch_engine):
         result_json=json.dumps(
             {
                 "s3_batch": {"valid_executed": 1},
-                "graph_spec_json": "{\"name\":\"snapshot\"}",
+                "graph_spec_json": '{"name":"snapshot"}',
             }
         ),
     )
@@ -221,8 +236,7 @@ def test_failed_and_stale_items_fail_parent(batch_engine):
         engine,
         graph_id,
         ["running"],
-        started_at=datetime.now(UTC)
-        - timedelta(seconds=worker_tasks._STALE_RUNNING_AFTER_S + 5),
+        started_at=datetime.now(UTC) - timedelta(seconds=worker_tasks._STALE_RUNNING_AFTER_S + 5),
     )
 
     with Session(engine) as session:

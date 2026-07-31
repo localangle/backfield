@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import statistics
 from datetime import UTC, datetime
@@ -13,6 +14,7 @@ from api.deps import get_auth, get_session
 from backfield_auth.gate import (
     require_project_access,
     require_session_may_assign_project_to_workspace,
+    resolve_project_by_slug,
     visible_project_ids,
 )
 from backfield_db import (
@@ -20,17 +22,20 @@ from backfield_db import (
     AgateProcessedItem,
     AgateRun,
     BackfieldAiCallRecord,
-    BackfieldOrganization,
     BackfieldProject,
     BackfieldProjectSecret,
     BackfieldWorkspace,
     Stylebook,
 )
 from backfield_db.crypto import encrypt_secret, fernet_from_env
+from backfield_entities.catalog.resolve import resolve_stylebook_id_for_project_id
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import case, func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -75,7 +80,9 @@ def _set_system_prompt(project: BackfieldProject, value: str | None) -> None:
 class ProjectCreate(BaseModel):
     name: str
     slug: str | None = None
-    workspace_id: int | None = None
+    workspace_id: int
+    # Omitted means "use the workspace's creation default".
+    stylebook_id: int | None = None
 
 
 class ProjectUpdate(BaseModel):
@@ -92,28 +99,53 @@ class ProjectOut(BaseModel):
     system_prompt: str | None = None
     created_at: datetime
     updated_at: datetime
-    workspace_id: int | None = None
+    workspace_id: int
+    stylebook_id: int
+    stylebook_name: str
+    stylebook_slug: str
+    # Compatibility fields reporting the workspace's own creation-time default. Null when the
+    # workspace or its Stylebook cannot be resolved.
     workspace_stylebook_id: int | None = None
     workspace_stylebook_name: str | None = None
     workspace_stylebook_slug: str | None = None
 
 
+def _workspace_stylebook(session: Session, workspace_id: int) -> Stylebook | None:
+    """Return the Stylebook a workspace hands to new projects, or ``None`` when broken.
+
+    This can legitimately differ from a project's own Stylebook, because the workspace value
+    is only a creation-time default. It is reported for compatibility only, so a broken row
+    is logged and omitted rather than failing a request; one such row must not take down a
+    whole project listing.
+    """
+    workspace = session.get(BackfieldWorkspace, workspace_id)
+    if workspace is None:
+        logger.warning("project workspace %s is missing", workspace_id)
+        return None
+    stylebook = session.get(Stylebook, int(workspace.stylebook_id))
+    if stylebook is None or int(stylebook.organization_id) != int(workspace.organization_id):
+        logger.warning(
+            "workspace %s has an unresolvable Stylebook assignment (stylebook %s)",
+            workspace_id,
+            workspace.stylebook_id,
+        )
+        return None
+    return stylebook
+
+
 def _project_to_out(session: Session, p: BackfieldProject) -> ProjectOut:
-    wid = int(p.workspace_id) if p.workspace_id is not None else None
-    sid: int | None = None
-    sname: str | None = None
-    sslug: str | None = None
-    if wid is not None:
-        ws = session.get(BackfieldWorkspace, wid)
-        if ws is not None and ws.stylebook_id is not None:
-            sb = session.get(Stylebook, int(ws.stylebook_id))
-            if sb is not None and sb.id is not None:
-                sid = int(sb.id)
-                sname = str(sb.name)
-                sslug = str(sb.slug)
-    d = _settings_dict(p)
     if p.id is None:
         raise HTTPException(500, "Project row missing id")
+    try:
+        sid = resolve_stylebook_id_for_project_id(session, int(p.id))
+    except (LookupError, ValueError) as error:
+        raise HTTPException(500, "Invalid project Stylebook ownership") from error
+    stylebook = session.get(Stylebook, sid)
+    if stylebook is None:
+        raise HTTPException(500, "Invalid project Stylebook ownership")
+    wid = int(p.workspace_id)
+    workspace_stylebook = _workspace_stylebook(session, wid)
+    d = _settings_dict(p)
     return ProjectOut(
         id=int(p.id),
         name=p.name,
@@ -123,9 +155,18 @@ def _project_to_out(session: Session, p: BackfieldProject) -> ProjectOut:
         created_at=p.created_at,
         updated_at=p.updated_at,
         workspace_id=wid,
-        workspace_stylebook_id=sid,
-        workspace_stylebook_name=sname,
-        workspace_stylebook_slug=sslug,
+        stylebook_id=sid,
+        stylebook_name=str(stylebook.name),
+        stylebook_slug=str(stylebook.slug),
+        workspace_stylebook_id=(
+            int(workspace_stylebook.id) if workspace_stylebook is not None else None
+        ),
+        workspace_stylebook_name=(
+            str(workspace_stylebook.name) if workspace_stylebook is not None else None
+        ),
+        workspace_stylebook_slug=(
+            str(workspace_stylebook.slug) if workspace_stylebook is not None else None
+        ),
     )
 
 
@@ -151,29 +192,25 @@ def list_projects(
     return [_project_to_out(session, r) for r in rows if r.id is not None]
 
 
-def _default_organization_id(session: Session) -> int:
-    """Fallback org for unscoped creates (service tokens / legacy no-workspace path)."""
-    org = session.exec(
-        select(BackfieldOrganization).where(BackfieldOrganization.slug == "default")
-    ).first()
-    if org is None or org.id is None:
-        raise HTTPException(500, "Default organization missing; run migrations")
-    return int(org.id)
+def _chosen_project_stylebook_id(
+    session: Session,
+    *,
+    organization_id: int,
+    workspace_stylebook_id: int,
+    requested_stylebook_id: int | None,
+) -> int:
+    """Pin the new project to the requested Stylebook, or the workspace default.
 
-
-def _organization_id_for_unscoped_create(session: Session, auth: dict[str, Any]) -> int:
-    """Resolve org when ``workspace_id`` is omitted.
-
-    Session creates use the session's organization. Service tokens (and any other
-    unscoped callers) fall back to the seeded ``default`` organization.
+    A requested Stylebook must live in the same organization as the workspace. Assignment
+    deliberately does not require Stylebook editor membership; that ACL governs editing
+    catalog contents, not which Stylebook a project writes into.
     """
-    if auth["type"] == "session" and auth.get("organization_id") is not None:
-        organization_id = int(auth["organization_id"])
-        org = session.get(BackfieldOrganization, organization_id)
-        if org is None or org.id is None:
-            raise HTTPException(400, "Organization not found")
-        return int(org.id)
-    return _default_organization_id(session)
+    if requested_stylebook_id is None:
+        return workspace_stylebook_id
+    requested = session.get(Stylebook, int(requested_stylebook_id))
+    if requested is None or int(requested.organization_id) != organization_id:
+        raise HTTPException(400, "Stylebook not found in this organization")
+    return int(requested.id)
 
 
 @router.post("", response_model=ProjectOut)
@@ -185,34 +222,70 @@ def create_project(
     if auth["type"] == "api_key":
         raise HTTPException(403, "Cannot create projects with an API key")
     slug = body.slug.strip() if body.slug else _slugify(body.name)
-    existing = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
-    if existing:
-        raise HTTPException(409, "Slug already exists")
-
-    workspace_id: int | None = None
-    if body.workspace_id is not None:
-        ws = session.get(BackfieldWorkspace, int(body.workspace_id))
-        if ws is None or ws.id is None:
-            raise HTTPException(400, "Workspace not found")
-        workspace_id = int(ws.id)
-        organization_id = int(ws.organization_id)
-        require_session_may_assign_project_to_workspace(
-            session,
-            auth,
-            workspace_id=workspace_id,
-            organization_id=organization_id,
+    ws = session.get(BackfieldWorkspace, int(body.workspace_id))
+    if ws is None or ws.id is None:
+        raise HTTPException(400, "Workspace not found")
+    workspace_id = int(ws.id)
+    organization_id = int(ws.organization_id)
+    auth_org_id = auth.get("organization_id")
+    if auth["type"] == "session" and (
+        auth_org_id is None or int(auth_org_id) != organization_id
+    ):
+        raise HTTPException(403, "Workspace is not in the active organization")
+    if (
+        auth["type"] == "service"
+        and auth_org_id is not None
+        and int(auth_org_id) != organization_id
+    ):
+        raise HTTPException(403, "Workspace is not in the active organization")
+    require_session_may_assign_project_to_workspace(
+        session,
+        auth,
+        workspace_id=workspace_id,
+        organization_id=organization_id,
+    )
+    existing = session.exec(
+        select(BackfieldProject).where(
+            BackfieldProject.organization_id == organization_id,
+            BackfieldProject.slug == slug,
         )
-    else:
-        organization_id = _organization_id_for_unscoped_create(session, auth)
+    ).first()
+    if existing:
+        raise HTTPException(409, "Slug already exists in this organization")
+    workspace_stylebook = session.get(Stylebook, int(ws.stylebook_id))
+    if workspace_stylebook is None or int(workspace_stylebook.organization_id) != organization_id:
+        raise HTTPException(400, "Workspace has an invalid Stylebook assignment")
+    stylebook_id = _chosen_project_stylebook_id(
+        session,
+        organization_id=organization_id,
+        workspace_stylebook_id=int(workspace_stylebook.id),
+        requested_stylebook_id=body.stylebook_id,
+    )
 
     p = BackfieldProject(
         organization_id=organization_id,
         name=body.name.strip(),
         slug=slug,
         workspace_id=workspace_id,
+        stylebook_id=stylebook_id,
     )
     session.add(p)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        same_org = session.exec(
+            select(BackfieldProject).where(
+                BackfieldProject.organization_id == organization_id,
+                BackfieldProject.slug == slug,
+            )
+        ).first()
+        if same_org is not None:
+            raise HTTPException(409, "Slug already exists in this organization") from error
+        raise HTTPException(
+            409,
+            "This slug is temporarily unavailable while project tenancy is being upgraded",
+        ) from error
     session.refresh(p)
     if p.id is None:
         raise HTTPException(500, "Project persist failed")
@@ -642,9 +715,7 @@ def project_stats_by_slug(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ):
-    p = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
-    if not p:
-        raise HTTPException(404, "Project not found")
+    p = resolve_project_by_slug(session, auth, slug)
     require_project_access(session, auth, int(p.id))
     return _project_stats(session, p)
 
@@ -655,9 +726,7 @@ def get_project_by_slug(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ):
-    p = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
-    if not p:
-        raise HTTPException(404, "Project not found")
+    p = resolve_project_by_slug(session, auth, slug)
     require_project_access(session, auth, int(p.id))
     return _project_to_out(session, p)
 
@@ -700,22 +769,45 @@ def update_project(
     if not p:
         raise HTTPException(404, "Project not found")
     patch = body.model_dump(exclude_unset=True)
+    renamed_slug: str | None = None
     if "name" in patch and patch["name"] is not None:
         p.name = patch["name"].strip()
     if "slug" in patch and patch["slug"] is not None:
         new_slug = patch["slug"].strip()
         if new_slug != p.slug:
             clash = session.exec(
-                select(BackfieldProject).where(BackfieldProject.slug == new_slug)
+                select(BackfieldProject).where(
+                    BackfieldProject.organization_id == int(p.organization_id),
+                    BackfieldProject.slug == new_slug,
+                )
             ).first()
             if clash and clash.id != p.id:
-                raise HTTPException(409, "Slug already exists")
+                raise HTTPException(409, "Slug already exists in this organization")
             p.slug = new_slug
+            renamed_slug = new_slug
     if "system_prompt" in patch:
         _set_system_prompt(p, patch["system_prompt"])
     p.updated_at = datetime.now(UTC)
     session.add(p)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        if renamed_slug is None:
+            raise
+        same_org = session.exec(
+            select(BackfieldProject).where(
+                BackfieldProject.organization_id == int(p.organization_id),
+                BackfieldProject.slug == renamed_slug,
+                BackfieldProject.id != project_id,
+            )
+        ).first()
+        if same_org is not None:
+            raise HTTPException(409, "Slug already exists in this organization") from error
+        raise HTTPException(
+            409,
+            "This slug is temporarily unavailable while project tenancy is being upgraded",
+        ) from error
     session.refresh(p)
     return _project_to_out(session, p)
 

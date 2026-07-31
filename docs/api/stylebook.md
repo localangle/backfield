@@ -6,12 +6,16 @@ The current canonical domains are locations, people, and organizations.
 
 ## Authentication and tenancy
 
-Routes accept the signed browser `session` cookie, `SERVICE_API_TOKEN` Bearer authentication, or a project-bound `bfk_…` API key. `GET /health` is unauthenticated.
+Routes accept the signed browser `session` cookie or `SERVICE_API_TOKEN` Bearer authentication.
+Project-bound `bfk_…` credentials are rejected throughout Stylebook API; consumer reads belong on
+Core API's documented `/public/v1` routes. `GET /health` is unauthenticated.
 
 Two scopes are used:
 
-- Project-scoped routes take `project_slug`, resolve it to a project, and require project access. An optional `stylebook_slug` selects another Stylebook in the same organization; when omitted, the organization's default Stylebook is used (or its first Stylebook by id when none is marked default).
-- Stylebook-scoped routes take `stylebook_slug` and require the Stylebook to belong to the authenticated organization. Reads follow the caller's catalog access. Writes require an organization admin, a Stylebook editor membership, or the service token. Project API keys cannot edit a Stylebook.
+- Project-scoped routes take `project_slug`, resolve it to a project, and require project access.
+  They always use the project's assigned Stylebook. A temporary `stylebook_slug` parameter remains
+  accepted only when it matches that assignment; conflicting values are rejected.
+- Stylebook-scoped routes take `stylebook_slug` and require the Stylebook to belong to the authenticated organization. Reads follow the caller's catalog access. Writes require an organization admin, a Stylebook editor membership, or the service token.
 
 Organization library routes compare `org_id` with the session organization. The service token is allowed for automation across organizations.
 
@@ -41,6 +45,18 @@ Canonical metadata is Stylebook-wide editorial data. Its rows retain a project a
 
 ## Saved entities and candidate review
 
+Stylebook-scoped candidate inboxes use
+`/v1/stylebooks/{stylebook_slug}/candidates/{locations|people|organizations}` and the matching
+`/count` route. They combine only caller-accessible projects assigned to that Stylebook, support
+an optional `project_slug` filter, and return project ID, slug, and name with each candidate.
+Counts include per-project totals for the project filter. The matching `/types` route aggregates
+available candidate types across the same accessible project scope and review status.
+
+Candidate reads require project access. Location, person, and organization candidate mutations
+(notes, deferral, recommendation clearing, acceptance/linking, unlinking, or canonical creation)
+reload the candidate's project and require both project access and edit permission for its
+assigned Stylebook.
+
 Project-scoped saved entity routes manage article evidence before or after a canonical decision:
 
 - `/v1/locations` and `/v1/candidates`
@@ -49,7 +65,10 @@ Project-scoped saved entity routes manage article evidence before or after a can
 
 Saved entities can be inspected, edited, linked or unlinked from a canonical, and removed from an article. Article-evidence create routes for each current domain validate selected quote offsets and create the saved entity, mention, and first occurrence together.
 
-Candidate queues support open and deferred review, notes, context, suggested canonicals, recommendation clearing, acceptance into a new or existing canonical, and type facets. Location clustering is available in addition to the flat location queue.
+Candidate queues support open and deferred review, notes, context, suggested canonicals,
+recommendation clearing, acceptance into a new or existing canonical, and type facets. Existing
+project-specific candidate routes remain compatibility contracts during rolling deployments.
+Location clustering is available in addition to the flat location queue.
 
 Stylebook-scoped candidate AI review can evaluate open locations, people, or organizations. Starting a review queues work; status and cancellation routes expose cooperative progress. Recommendations do not mutate canonical links until accepted.
 

@@ -5,6 +5,12 @@ from __future__ import annotations
 import json
 
 from backfield_cli.main import main
+from backfield_db.tenancy_audit import (
+    TenancyAuditBlocker,
+    TenancyAuditReport,
+    TenancyBlockerCode,
+)
+from sqlalchemy import create_engine
 
 
 def test_backfield_migrate_subcommand_delegates(monkeypatch) -> None:
@@ -61,3 +67,35 @@ def test_backfield_seed_subcommand_delegates(monkeypatch, capsys) -> None:
 def test_backfield_seed_subcommand_requires_password(monkeypatch) -> None:
     monkeypatch.setattr("backfield_db.seed.run_seed", lambda **_kwargs: None)
     assert main(["seed", "--admin-email", "admin@example.com"]) == 1
+
+
+def test_tenancy_audit_json_exits_nonzero_for_blockers(monkeypatch, capsys) -> None:
+    report = TenancyAuditReport(
+        ok=False,
+        blocker_count=1,
+        blockers=[
+            TenancyAuditBlocker(
+                code=TenancyBlockerCode.ORPHAN_PROJECT,
+                message="project 1 has no workspace",
+                project_id=1,
+            )
+        ],
+    )
+    monkeypatch.setattr("backfield_cli.tenancy_audit.get_engine", lambda: create_engine("sqlite://"))
+    monkeypatch.setattr("backfield_cli.tenancy_audit.audit_tenancy", lambda _session: report)
+
+    assert main(["tenancy-audit", "--json"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is False
+    assert payload["blocker_count"] == 1
+    assert payload["blockers"][0]["code"] == "orphan_project"
+
+
+def test_tenancy_audit_json_exits_zero_when_clean(monkeypatch, capsys) -> None:
+    report = TenancyAuditReport(ok=True, blocker_count=0, blockers=[])
+    monkeypatch.setattr("backfield_cli.tenancy_audit.get_engine", lambda: create_engine("sqlite://"))
+    monkeypatch.setattr("backfield_cli.tenancy_audit.audit_tenancy", lambda _session: report)
+
+    assert main(["tenancy-audit", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {"ok": True, "blocker_count": 0, "blockers": []}

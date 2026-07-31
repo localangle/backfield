@@ -26,6 +26,7 @@ from stylebook_api.routers import (
     stylebook_activity,
     stylebook_bundle_jobs,
     stylebook_candidate_ai_review,
+    stylebook_candidates,
     stylebook_canonicals,
     stylebook_cleanup,
     stylebook_cleanup_ai_review,
@@ -90,6 +91,7 @@ app.include_router(stylebook_canonicals.router)
 app.include_router(stylebook_cleanup.router)
 app.include_router(stylebook_cleanup_ai_review.router)
 app.include_router(stylebook_candidate_ai_review.router)
+app.include_router(stylebook_candidates.router)
 app.include_router(stylebook_person_canonicals.router)
 app.include_router(stylebook_organization_canonicals.router)
 app.include_router(stylebook_permissions.router)

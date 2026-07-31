@@ -2,6 +2,7 @@
  * Stylebook service (org catalog admin). Same session cookie as Core; base defaults to
  * `/api/stylebook` (Vite proxy to stylebook-api).
  */
+import { handleTenantResponse } from "@backfield/ui/tenantSession"
 
 const stylebookBase = () => import.meta.env.VITE_STYLEBOOK_API_BASE ?? "/api/stylebook"
 
@@ -38,14 +39,14 @@ async function stylebookJsonFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const r = await fetch(`${stylebookBase()}${path}`, {
+  const r = await handleTenantResponse(await fetch(`${stylebookBase()}${path}`, {
     ...init,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...init?.headers,
     },
-  })
+  }))
   if (!r.ok) {
     let msg = r.statusText
     try {
@@ -257,10 +258,10 @@ export async function previewBundleManifest(
 ): Promise<StylebookBundleManifestPreview> {
   const form = new FormData()
   form.append("bundle", file)
-  const r = await fetch(
+  const r = await handleTenantResponse(await fetch(
     `${stylebookBase()}/v1/organizations/${orgId}/stylebook-bundles/manifest-preview`,
     { method: "POST", credentials: "include", body: form },
-  )
+  ))
   if (!r.ok) {
     let msg = r.statusText
     try {
@@ -305,10 +306,10 @@ export async function uploadBundleZipViaApi(
 ): Promise<void> {
   const form = new FormData()
   form.append("bundle", file)
-  const r = await fetch(
+  const r = await handleTenantResponse(await fetch(
     `${stylebookBase()}/v1/organizations/${orgId}/stylebook-bundle-jobs/${encodeURIComponent(jobId)}/upload`,
     { method: "POST", credentials: "include", body: form },
-  )
+  ))
   if (!r.ok) {
     let msg = r.statusText
     try {

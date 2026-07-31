@@ -111,16 +111,23 @@ as type-specific pages while sharing their common shells and form classes.
 
 ## Candidate queues
 
-Candidate queues are project-scoped; link and create actions target the Stylebook
-in the path. The shared shell provides:
+Candidate queues are Stylebook-wide inboxes across all accessible projects assigned to that
+Stylebook. “All accessible projects” is the default; when several projects contribute, the page
+shows each candidate's project and offers a project filter. The filter stays hidden when only one
+project contributes. Link and create actions use the candidate's own project. The shared shell
+provides:
 
 - Open and deferred queues with server-side filtering and pagination.
+- Project provenance and optional project filtering.
 - Product-readable review reasons and inline editor notes.
 - Suggested-canonical lookup plus manual Stylebook search.
 - Create-new confirmation with a similar-canonical warning.
 - Link, create, and defer recommendations from AI review.
 - Incremental AI-review polling and bulk acceptance.
 - Post-action notices and an optional related-candidates follow-up.
+
+For rolling deployments, deploy the Stylebook-scoped candidate list, count, and type endpoints
+before deploying this UI. The combined inbox intentionally has no project-route fallback.
 
 Location, person, and organization pages all use this shell. New types must extend
 the configuration seams instead of copying a page body.
@@ -165,7 +172,9 @@ flagged item links to its canonical detail page.
 ## Cross-app navigation
 
 Agate builds Stylebook links through `apps/agate-ui/src/lib/platformUrls.ts` and
-passes the selected workspace Stylebook slug plus optional project context.
+passes the project's own Stylebook slug plus optional project context. Never pass a
+workspace Stylebook slug: a workspace only supplies the default offered at project
+creation, so it points at the wrong Stylebook for any project created with a choice.
 Stylebook workspace and project links return to Agate through its own platform URL
 helpers. Leave origins unset for Backfield Cloud split hosts (sibling origins are
 derived from the current hostname) or same-origin local deploys; set the paired

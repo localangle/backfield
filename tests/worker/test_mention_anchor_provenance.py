@@ -24,6 +24,8 @@ from worker.substrate.entities.person.mentions import (
     _upsert_mention_and_occurrence as upsert_person_mention,
 )
 
+from tests.project_helpers import project_ownership_fields
+
 
 def test_raw_entry_id_is_scoped_to_each_article_mention() -> None:
     engine = create_engine("sqlite://")
@@ -34,6 +36,7 @@ def test_raw_entry_id_is_scoped_to_each_article_mention() -> None:
         session.commit()
         session.refresh(organization)
         project = BackfieldProject(
+            **project_ownership_fields(session, int(organization.id)),
             organization_id=int(organization.id),
             name="Project",
             slug="mention-provenance",
@@ -132,6 +135,7 @@ def test_smart_merge_preserves_editorial_fields_but_refreshes_anchor() -> None:
         session.commit()
         session.refresh(organization)
         project = BackfieldProject(
+            **project_ownership_fields(session, int(organization.id)),
             organization_id=int(organization.id),
             name="Project",
             slug="mention-preserve",

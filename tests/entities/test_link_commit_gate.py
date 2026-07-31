@@ -36,6 +36,8 @@ from backfield_entities.entities.person.recall import canonical_ids_from_person_
 from backfield_entities.entities.person.types import normalize_person_text
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _engine():
     engine = create_engine("sqlite://", echo=False)
@@ -58,7 +60,12 @@ def _seed_stylebook(session: Session) -> tuple[int, int]:
     session.add(sb)
     session.commit()
     session.refresh(sb)
-    proj = BackfieldProject(name="Demo", slug="demo-link-commit-gate", organization_id=oid)
+    proj = BackfieldProject(
+        **project_ownership_fields(session, oid),
+        name="Demo",
+        slug="demo-link-commit-gate",
+        organization_id=oid,
+    )
     session.add(proj)
     session.commit()
     session.refresh(proj)

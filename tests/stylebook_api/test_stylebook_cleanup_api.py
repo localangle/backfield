@@ -32,6 +32,8 @@ from stylebook_api.deps import get_auth as get_auth_dep
 from stylebook_api.deps import get_session
 from stylebook_api.main import app
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _session_auth_for_user(user: BackfieldUser, *, org_id: int) -> dict[str, Any]:
     return {
@@ -403,9 +405,7 @@ def test_cancel_cleanup_check_run_no_active(
     cleanup_client: tuple[TestClient, Engine],
 ) -> None:
     client, _engine = cleanup_client
-    resp = client.post(
-        "/v1/stylebooks/default/cleanup/checks/duplicate-locations/runs/cancel"
-    )
+    resp = client.post("/v1/stylebooks/default/cleanup/checks/duplicate-locations/runs/cancel")
     assert resp.status_code == 400
     assert "No active check run" in resp.json()["detail"]
 
@@ -459,9 +459,7 @@ def test_delete_empty_cleanup_canonical(cleanup_client: tuple[TestClient, Engine
             )
         ).one()
         canonical_id = str(empty.id)
-    response = client.delete(
-        f"/v1/stylebooks/default/cleanup/canonical-locations/{canonical_id}"
-    )
+    response = client.delete(f"/v1/stylebooks/default/cleanup/canonical-locations/{canonical_id}")
     assert response.status_code == 200
     assert response.json()["id"] == canonical_id
     with Session(engine) as session:
@@ -478,6 +476,7 @@ def test_merge_cleanup_canonical_relinks_and_deletes_source(
         ).one()
         session.add(
             BackfieldProject(
+                **project_ownership_fields(session, int(org.id)),
                 organization_id=int(org.id),
                 name="Demo",
                 slug="demo-proj",
@@ -611,18 +610,14 @@ def test_dismiss_duplicate_person_cluster_after_member_deleted(
 def test_duplicate_organization_clusters(cleanup_client: tuple[TestClient, Engine]) -> None:
     client, _engine = cleanup_client
     _run_cleanup_check(client, "duplicate-organizations")
-    response = client.get(
-        "/v1/stylebooks/default/cleanup/checks/duplicate-organizations?limit=10"
-    )
+    response = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-organizations?limit=10")
     assert response.status_code == 200
     body = response.json()
     assert body["total"] == 2
     # Exact matches sort first ("City Hall"); the cross-form cluster follows.
     assert body["clusters"][0]["label"] == "City Hall"
     assert len(body["clusters"][0]["canonicals"]) == 2
-    cross_form_labels = {
-        canonical["label"] for canonical in body["clusters"][1]["canonicals"]
-    }
+    cross_form_labels = {canonical["label"] for canonical in body["clusters"][1]["canonicals"]}
     assert cross_form_labels == {
         "Cook County State's Attorney's Office",
         "Office of the Cook County State's Attorney",
@@ -646,9 +641,7 @@ def test_dismiss_duplicate_organization_cluster(
 
     _run_cleanup_check(client, "duplicate-organizations")
 
-    before = client.get(
-        "/v1/stylebooks/default/cleanup/checks/duplicate-organizations?limit=10"
-    )
+    before = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-organizations?limit=10")
     assert before.status_code == 200
     assert before.json()["total"] == 2
 
@@ -662,9 +655,7 @@ def test_dismiss_duplicate_organization_cluster(
     assert dismiss.status_code == 200
     assert dismiss.json()["dismissed_pair_count"] == 1
 
-    after = client.get(
-        "/v1/stylebooks/default/cleanup/checks/duplicate-organizations?limit=10"
-    )
+    after = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-organizations?limit=10")
     assert after.status_code == 200
     assert after.json()["total"] == 1
     labels = {
@@ -690,6 +681,7 @@ def test_merge_cleanup_person_relinks_and_deletes_source(
         ).one()
         session.add(
             BackfieldProject(
+                **project_ownership_fields(session, int(org.id)),
                 organization_id=int(org.id),
                 name="Demo",
                 slug="demo-proj",
@@ -700,14 +692,10 @@ def test_merge_cleanup_person_relinks_and_deletes_source(
             select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")
         ).one()
         source = session.exec(
-            select(StylebookPersonCanonical).where(
-                StylebookPersonCanonical.slug == "person-dupe-a"
-            )
+            select(StylebookPersonCanonical).where(StylebookPersonCanonical.slug == "person-dupe-a")
         ).one()
         target = session.exec(
-            select(StylebookPersonCanonical).where(
-                StylebookPersonCanonical.slug == "person-dupe-b"
-            )
+            select(StylebookPersonCanonical).where(StylebookPersonCanonical.slug == "person-dupe-b")
         ).one()
         session.add(
             SubstratePerson(
@@ -751,6 +739,7 @@ def test_merge_cleanup_organization_relinks_and_deletes_source(
         ).one()
         session.add(
             BackfieldProject(
+                **project_ownership_fields(session, int(org.id)),
                 organization_id=int(org.id),
                 name="Demo",
                 slug="demo-proj-org",
@@ -810,6 +799,7 @@ def test_distant_linked_geography_issue(cleanup_client: tuple[TestClient, Engine
         ).one()
         session.add(
             BackfieldProject(
+                **project_ownership_fields(session, int(org.id)),
                 organization_id=int(org.id),
                 name="Geo Demo",
                 slug="geo-demo",
@@ -820,9 +810,7 @@ def test_distant_linked_geography_issue(cleanup_client: tuple[TestClient, Engine
             select(BackfieldProject).where(BackfieldProject.slug == "geo-demo")
         ).one()
         canon = session.exec(
-            select(StylebookLocationCanonical).where(
-                StylebookLocationCanonical.slug == "has-geom"
-            )
+            select(StylebookLocationCanonical).where(StylebookLocationCanonical.slug == "has-geom")
         ).one()
         session.add(
             SubstrateLocation(
@@ -928,7 +916,12 @@ def test_mismatched_people_check(cleanup_client: tuple[TestClient, Engine]) -> N
     with Session(engine) as session:
         org = session.exec(select(BackfieldOrganization)).one()
         sb = session.exec(select(Stylebook)).one()
-        project = BackfieldProject(organization_id=int(org.id), name="Demo", slug="demo")
+        project = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
+            organization_id=int(org.id),
+            name="Demo",
+            slug="demo",
+        )
         session.add(project)
         session.commit()
         session.refresh(project)
@@ -975,7 +968,12 @@ def test_dismiss_mismatched_person(cleanup_client: tuple[TestClient, Engine]) ->
     with Session(engine) as session:
         org = session.exec(select(BackfieldOrganization)).one()
         sb = session.exec(select(Stylebook)).one()
-        project = BackfieldProject(organization_id=int(org.id), name="Demo", slug="demo")
+        project = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
+            organization_id=int(org.id),
+            name="Demo",
+            slug="demo",
+        )
         session.add(project)
         session.commit()
         session.refresh(project)
@@ -1028,7 +1026,12 @@ def test_mismatched_organizations_check(cleanup_client: tuple[TestClient, Engine
     with Session(engine) as session:
         org = session.exec(select(BackfieldOrganization)).one()
         sb = session.exec(select(Stylebook)).one()
-        project = BackfieldProject(organization_id=int(org.id), name="Demo", slug="demo-org")
+        project = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
+            organization_id=int(org.id),
+            name="Demo",
+            slug="demo-org",
+        )
         session.add(project)
         session.commit()
         session.refresh(project)
@@ -1218,9 +1221,7 @@ def test_dismiss_questionable_organization_canonical(
     )
     assert dismiss.status_code == 200
 
-    after = client.get(
-        "/v1/stylebooks/default/cleanup/checks/questionable-organization-canonicals"
-    )
+    after = client.get("/v1/stylebooks/default/cleanup/checks/questionable-organization-canonicals")
     assert after.status_code == 200
     assert after.json()["total"] == before.json()["total"] - 1
     labels = {item["label"] for item in after.json()["canonicals"]}
@@ -1392,9 +1393,7 @@ def test_cleanup_ai_review_start_and_proposal_accept(
     assert start.status_code == 200
     assert start.json()["status"] == "queued"
 
-    latest = client.get(
-        "/v1/stylebooks/default/cleanup/ai-review/latest?check_id=duplicate-people"
-    )
+    latest = client.get("/v1/stylebooks/default/cleanup/ai-review/latest?check_id=duplicate-people")
     assert latest.status_code == 200
     assert latest.json() is not None
 

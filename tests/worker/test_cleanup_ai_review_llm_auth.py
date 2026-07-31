@@ -24,6 +24,8 @@ from worker.substrate.cleanup.cleanup_llm_auth import (
     resolve_cleanup_llm_auth,
 )
 
+from tests.project_helpers import project_ownership_fields
+
 
 @pytest.fixture
 def session_with_org(tmp_path, monkeypatch):
@@ -40,7 +42,12 @@ def session_with_org(tmp_path, monkeypatch):
         session.commit()
         session.refresh(org)
         oid = int(org.id)  # type: ignore[arg-type]
-        proj = BackfieldProject(organization_id=oid, name="P", slug="cleanup-proj")
+        proj = BackfieldProject(
+            **project_ownership_fields(session, oid),
+            organization_id=oid,
+            name="P",
+            slug="cleanup-proj",
+        )
         session.add(proj)
         session.commit()
         session.refresh(proj)

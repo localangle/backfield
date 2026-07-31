@@ -31,6 +31,8 @@ from backfield_entities.public.mentions import (
 )
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _seed_mentions(session: Session) -> tuple[int, int, int, int, int]:
     org = BackfieldOrganization(name="Org", slug="org-public-mentions")
@@ -40,7 +42,9 @@ def _seed_mentions(session: Session) -> tuple[int, int, int, int, int]:
     oid = int(org.id)  # type: ignore[arg-type]
     stylebook = ensure_default_stylebook_for_organization(session, oid)
     stylebook_id = int(stylebook.id)  # type: ignore[arg-type]
-    proj = BackfieldProject(name="News", slug="news", organization_id=oid)
+    proj = BackfieldProject(
+        **project_ownership_fields(session, oid), name="News", slug="news", organization_id=oid
+    )
     session.add(proj)
     session.commit()
     session.refresh(proj)
@@ -60,7 +64,7 @@ def _seed_mentions(session: Session) -> tuple[int, int, int, int, int]:
     session.add(
         SubstrateArticleMeta(
             article_id=article_id,
-                meta_type="topic",
+            meta_type="topic",
             category="local_government_politics",
             rationale="test",
             confidence=0.9,

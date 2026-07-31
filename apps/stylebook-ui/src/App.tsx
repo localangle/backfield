@@ -4,10 +4,17 @@ import {
   Route,
   Routes,
   useLocation,
+  useNavigate,
   useParams,
 } from "react-router-dom"
 import { AppMessageProvider } from "@/components/AppMessageProvider"
 import { AuthProvider, useAuth } from "@/lib/auth"
+import {
+  ForcedPasswordChange,
+  scopeOrganizationPath,
+  shouldForcePasswordChange,
+} from "@backfield/ui"
+import { changePassword } from "@/lib/core-api"
 import {
   parseLegacyStylebookQuery,
   stripLegacyStylebookFromSearch,
@@ -139,8 +146,66 @@ function LegacyImportRedirect() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppMessageProvider>
-        <Routes>
+      <OrganizationApp />
+    </AuthProvider>
+  )
+}
+
+function OrganizationApp() {
+  const { organizationId } = useAuth()
+  return (
+    <AppMessageProvider key={organizationId ?? "signed-out"}>
+      <OrganizationScopedRoutes />
+    </AppMessageProvider>
+  )
+}
+
+function OrganizationScopedRoutes() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const {
+    isAuthenticated,
+    loading,
+    organizationSlug,
+    mustChangePassword,
+    checkAuth,
+    logout,
+  } = useAuth()
+  const pathScope = organizationSlug
+    ? scopeOrganizationPath(location.pathname, location.search, organizationSlug)
+    : null
+  const scopedPathname = pathScope?.scopedPathname ?? location.pathname
+
+  if (shouldForcePasswordChange({ loading, isAuthenticated, mustChangePassword })) {
+    return (
+      <ForcedPasswordChange
+        changePassword={changePassword}
+        onLogout={logout}
+        onComplete={async () => {
+          await checkAuth()
+          navigate(
+            organizationSlug
+              ? `/org/${encodeURIComponent(organizationSlug)}/`
+              : "/",
+            { replace: true },
+          )
+        }}
+      />
+    )
+  }
+
+  if (
+    !loading &&
+    isAuthenticated &&
+    organizationSlug &&
+    location.pathname !== "/login" &&
+    pathScope?.redirectPath
+  ) {
+    return <Navigate to={pathScope.redirectPath} replace />
+  }
+
+  return (
+        <Routes location={{ ...location, pathname: scopedPathname }}>
           <Route path="/login" element={<Login />} />
 
           <Route element={<ProtectedLayout />}>
@@ -247,7 +312,5 @@ export default function App() {
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
-      </AppMessageProvider>
-    </AuthProvider>
   )
 }

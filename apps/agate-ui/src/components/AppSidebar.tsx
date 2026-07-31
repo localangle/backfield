@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { matchPath, NavLink, useLocation } from 'react-router-dom'
+import { matchPath, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   ChevronDown,
   ChevronRight,
@@ -7,7 +7,12 @@ import {
   Settings,
   TerminalSquare,
 } from 'lucide-react'
-import { AgateProductMark, ShellSidebar, StylebookProductMark } from '@backfield/ui'
+import {
+  AgateProductMark,
+  OrganizationSwitcher,
+  ShellSidebar,
+  StylebookProductMark,
+} from '@backfield/ui'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { listProjects, type Project } from '@/lib/api'
@@ -49,7 +54,14 @@ function pickProjectSlugForStylebookLinks(
 
 export default function AppSidebar() {
   const location = useLocation()
-  const { organizationId, isOrgAdmin, organizationName } = useAuth()
+  const navigate = useNavigate()
+  const {
+    organizationId,
+    isOrgAdmin,
+    organizationName,
+    organizations,
+    switchOrganization,
+  } = useAuth()
   const organizationLabel = organizationName?.trim() || 'Backfield'
   const [workspaceRows, setWorkspaceRows] = useState<WorkspaceWithProjects[]>([])
   const [apiProjects, setApiProjects] = useState<Project[]>([])
@@ -247,19 +259,29 @@ export default function AppSidebar() {
         storageKey={STORAGE_EXPANDED}
         asideAriaLabel="Platform"
         headerLeading={
-          <NavLink
-            to={headerTo}
-            title={organizationLabel}
-            aria-label={organizationLabel}
-            className={cn(
-              'flex min-w-0 flex-1 items-center rounded-md px-1 py-1 -ml-1',
-              'hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            )}
-          >
-            <span className="truncate text-sm font-semibold tracking-tight text-foreground">
-              {organizationLabel}
-            </span>
-          </NavLink>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <NavLink
+              to={headerTo}
+              title={organizationLabel}
+              aria-label={organizationLabel}
+              className={cn(
+                'flex min-w-0 flex-1 items-center rounded-md px-1 py-1 -ml-1',
+                'hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              )}
+            >
+              <span className="truncate text-sm font-semibold tracking-tight text-foreground">
+                {organizationLabel}
+              </span>
+            </NavLink>
+            <OrganizationSwitcher
+              organizations={organizations}
+              organizationId={organizationId}
+              onSwitch={async (nextOrganizationId) => {
+                const slug = await switchOrganization(nextOrganizationId)
+                navigate(`/org/${encodeURIComponent(slug)}/`, { replace: true })
+              }}
+            />
+          </div>
         }
       >
         {(expanded: boolean, { expand }: { expand: () => void }) => (

@@ -23,6 +23,8 @@ from sqlalchemy import delete
 from sqlmodel import Session, create_engine, select
 from worker import tasks as worker_tasks
 
+from tests.project_helpers import project_ownership_fields
+
 _DATABASE_URL = os.getenv("BACKFIELD_DATABASE_URL_DIRECT", "")
 
 
@@ -53,6 +55,7 @@ def test_cancel_wins_before_worker_stores_completion() -> None:
             session.refresh(organization)
             organization_id = int(organization.id)
             project = BackfieldProject(
+                **project_ownership_fields(session, organization_id),
                 organization_id=organization_id,
                 name=f"Cancellation race {suffix}",
                 slug=f"cancellation-race-{suffix}",
@@ -157,14 +160,10 @@ def test_cancel_wins_before_worker_stores_completion() -> None:
             if graph_id is not None:
                 session.execute(delete(AgateGraph).where(AgateGraph.id == graph_id))
             if project_id is not None:
-                session.execute(
-                    delete(BackfieldProject).where(BackfieldProject.id == project_id)
-                )
+                session.execute(delete(BackfieldProject).where(BackfieldProject.id == project_id))
             if organization_id is not None:
                 session.execute(
-                    delete(BackfieldOrganization).where(
-                        BackfieldOrganization.id == organization_id
-                    )
+                    delete(BackfieldOrganization).where(BackfieldOrganization.id == organization_id)
                 )
             session.commit()
         engine.dispose()

@@ -2,6 +2,7 @@ import {
   parseLegacyStylebookQuery,
   parseStylebookSlugFromPath,
 } from "@/lib/stylebookPaths"
+import { handleTenantResponse } from "@backfield/ui/tenantSession"
 
 export const stylebookApiBase = (): string =>
   import.meta.env.VITE_STYLEBOOK_API_BASE ?? "/api/stylebook"
@@ -83,14 +84,14 @@ export function isStylebookApiNotFoundError(error: unknown): boolean {
 
 export async function stylebookJsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const resolvedPath = augmentStylebookApiPath(path)
-  const response = await fetch(`${stylebookApiBase()}${resolvedPath}`, {
+  const response = await handleTenantResponse(await fetch(`${stylebookApiBase()}${resolvedPath}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
       ...init?.headers,
     },
     credentials: "include",
-  })
+  }))
   if (!response.ok) {
     const errorText = await response.text()
     let errorMessage = `API error: ${response.statusText}`

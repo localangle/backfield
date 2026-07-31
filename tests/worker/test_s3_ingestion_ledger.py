@@ -24,9 +24,13 @@ from worker import tasks as worker_tasks
 from worker.s3_ingestion_ledger import (
     S3_INGESTION_EXTERNAL_SOURCE,
     claim_ledger_revision,
+    find_row_for_fingerprint,
+    find_succeeded_matching_metadata,
     mark_ledger_succeeded,
 )
 from worker.substrate.content.article import _upsert_article
+
+from tests.project_helpers import project_ownership_fields
 
 
 def _spec(source_id: str | None = None) -> str:
@@ -107,7 +111,9 @@ def ledger_engine(tmp_path, monkeypatch):
         session.refresh(org)
         oid = int(org.id)  # type: ignore[arg-type]
         ensure_default_stylebook_for_organization(session, oid)
-        proj = BackfieldProject(organization_id=oid, name="P", slug="p-ledger")
+        proj = BackfieldProject(
+            **project_ownership_fields(session, oid), organization_id=oid, name="P", slug="p-ledger"
+        )
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -175,6 +181,128 @@ def test_first_scan_processes_second_unchanged_skips(ledger_engine, monkeypatch)
         assert summary["s3_batch"]["skipped_unchanged"] == 1
         assert summary["s3_batch"]["valid_executed"] == 0
         assert len(session.exec(select(AgateS3IngestionLedger)).all()) == 1
+
+
+def test_ledger_identity_lookups_are_project_scoped(ledger_engine):
+    engine, _graph_id, project_id = ledger_engine
+    listing = S3ObjectListing(
+        key="p/good.json",
+        etag='"v1"',
+        size_bytes=10,
+        last_modified=datetime(2024, 1, 1),
+    )
+    with Session(engine) as session:
+        project = session.get(BackfieldProject, project_id)
+        assert project is not None
+        other_project = BackfieldProject(
+            **project_ownership_fields(session, int(project.organization_id)),
+            organization_id=int(project.organization_id),
+            name="Other",
+            slug="other-ledger-project",
+        )
+        session.add(other_project)
+        session.flush()
+        other_project_id = int(other_project.id)  # type: ignore[arg-type]
+        row = AgateS3IngestionLedger(
+            project_id=project_id,
+            source_id="shared-source",
+            logical_item_id="my-bucket/p/good.json",
+            bucket="my-bucket",
+            key="p/good.json",
+            content_fingerprint="shared-fingerprint",
+            etag="v1",
+            size_bytes=10,
+            last_modified=datetime(2024, 1, 1, tzinfo=UTC),
+            status="succeeded",
+            attempt_count=1,
+        )
+        session.add(row)
+        session.commit()
+
+        assert (
+            find_succeeded_matching_metadata(
+                session,
+                project_id=project_id,
+                source_id="shared-source",
+                item_id="my-bucket/p/good.json",
+                listing=listing,
+            )
+            is not None
+        )
+        assert (
+            find_row_for_fingerprint(
+                session,
+                project_id=project_id,
+                source_id="shared-source",
+                item_id="my-bucket/p/good.json",
+                content_fingerprint="shared-fingerprint",
+            )
+            is not None
+        )
+        assert (
+            find_succeeded_matching_metadata(
+                session,
+                project_id=other_project_id,
+                source_id="shared-source",
+                item_id="my-bucket/p/good.json",
+                listing=listing,
+            )
+            is None
+        )
+        assert (
+            find_row_for_fingerprint(
+                session,
+                project_id=other_project_id,
+                source_id="shared-source",
+                item_id="my-bucket/p/good.json",
+                content_fingerprint="shared-fingerprint",
+            )
+            is None
+        )
+
+
+def test_identical_revisions_are_processed_independently_by_project(ledger_engine, monkeypatch):
+    engine, graph_id, project_id = ledger_engine
+    s3 = _MutableS3()
+    first_run_id = _run_setup(engine, graph_id, s3, monkeypatch)
+
+    with Session(engine) as session:
+        project = session.get(BackfieldProject, project_id)
+        assert project is not None
+        other_project = BackfieldProject(
+            **project_ownership_fields(session, int(project.organization_id)),
+            organization_id=int(project.organization_id),
+            name="Other",
+            slug="other-ledger-project",
+        )
+        session.add(other_project)
+        session.flush()
+        other_project_id = int(other_project.id)  # type: ignore[arg-type]
+        other_graph = AgateGraph(
+            name="Other graph",
+            spec_json=_spec("src-fixed"),
+            project_id=other_project_id,
+        )
+        session.add(other_graph)
+        session.commit()
+        session.refresh(other_graph)
+        other_graph_id = str(other_graph.id)
+
+    second_run_id = _run_setup(engine, other_graph_id, s3, monkeypatch)
+
+    with Session(engine) as session:
+        first_items = session.exec(
+            select(AgateProcessedItem).where(AgateProcessedItem.run_id == first_run_id)
+        ).all()
+        second_items = session.exec(
+            select(AgateProcessedItem).where(AgateProcessedItem.run_id == second_run_id)
+        ).all()
+        ledgers = session.exec(select(AgateS3IngestionLedger)).all()
+
+        assert len(first_items) == 1
+        assert len(second_items) == 1
+        assert len(ledgers) == 2
+        assert {row.project_id for row in ledgers} == {project_id, other_project_id}
 
 
 def test_changed_contents_start_new_revision(ledger_engine, monkeypatch):

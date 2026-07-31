@@ -3,6 +3,8 @@
  * Proxied via ``/api/stylebook`` (see ``vite.config.ts``).
  */
 
+import { handleTenantResponse } from '@backfield/ui/tenantSession'
+
 const stylebookBase = () => import.meta.env.VITE_STYLEBOOK_API_BASE ?? '/api/stylebook'
 
 function formatDetail(detail: unknown): string {
@@ -35,14 +37,14 @@ function formatDetail(detail: unknown): string {
 }
 
 async function stylebookJsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(`${stylebookBase()}${path}`, {
+  const r = await handleTenantResponse(await fetch(`${stylebookBase()}${path}`, {
     ...init,
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...init?.headers,
     },
-  })
+  }))
   if (!r.ok) {
     let msg = r.statusText
     try {

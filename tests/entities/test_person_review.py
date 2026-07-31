@@ -39,6 +39,8 @@ from backfield_entities.entities.person.review import (
 from backfield_entities.entities.person.types import person_identity_fingerprint
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _engine():
     engine = create_engine("sqlite://", echo=False)
@@ -57,7 +59,12 @@ def _seed(session: Session) -> tuple[int, int]:
     session.commit()
     session.refresh(sb)
     sb_id = int(sb.id)  # type: ignore[arg-type]
-    proj = BackfieldProject(name="Demo", slug="demo-review", organization_id=oid)
+    proj = BackfieldProject(
+        **project_ownership_fields(session, oid),
+        name="Demo",
+        slug="demo-review",
+        organization_id=oid,
+    )
     session.add(proj)
     session.commit()
     session.refresh(proj)
@@ -122,9 +129,7 @@ def test_deterministic_does_not_override_llm_auto_defer() -> None:
 
 
 def test_inferred_surname_from_review_message_legacy_rows() -> None:
-    assert inferred_surname_from_review_message(
-        "Inferred surname Bowser from son Drew Bowser"
-    )
+    assert inferred_surname_from_review_message("Inferred surname Bowser from son Drew Bowser")
     details = {
         "review_reason_code": REASON_FIRST_NAME_ONLY,
         "review_message": "Inferred surname Bowser from son Drew Bowser",
@@ -275,9 +280,9 @@ def test_policy_non_person_ai_review_recommends_defer() -> None:
             session.refresh(person)
             raw = person.canonical_review_reasons_json
             assert isinstance(raw, list)
-            assert any(
-                isinstance(x, dict) and x.get("suggested_action") == "defer" for x in raw
-            ), name
+            assert any(isinstance(x, dict) and x.get("suggested_action") == "defer" for x in raw), (
+                name
+            )
             assert not any(
                 isinstance(x, dict) and x.get("suggested_action") == "materialize_new" for x in raw
             ), name
@@ -339,9 +344,7 @@ def test_policy_pseudonym_defers_with_defer_suggestion() -> None:
         session.refresh(person)
         raw = person.canonical_review_reasons_json
         assert isinstance(raw, list)
-        assert any(
-            isinstance(x, dict) and x.get("suggested_action") == "defer" for x in raw
-        )
+        assert any(isinstance(x, dict) and x.get("suggested_action") == "defer" for x in raw)
 
 
 def test_policy_flag_review_runs_recall_and_ai_review_suggests_create() -> None:
@@ -407,9 +410,7 @@ def test_policy_first_name_only_defers_with_defer_suggestion() -> None:
         session.refresh(person)
         raw = person.canonical_review_reasons_json
         assert isinstance(raw, list)
-        assert any(
-            isinstance(x, dict) and x.get("suggested_action") == "defer" for x in raw
-        )
+        assert any(isinstance(x, dict) and x.get("suggested_action") == "defer" for x in raw)
 
 
 def test_policy_and_apply_child_auto_waive() -> None:
@@ -475,9 +476,7 @@ def test_child_ai_review_recommends_defer() -> None:
         session.refresh(person)
         raw = person.canonical_review_reasons_json
         assert isinstance(raw, list)
-        assert any(
-            isinstance(x, dict) and x.get("suggested_action") == "defer" for x in raw
-        )
+        assert any(isinstance(x, dict) and x.get("suggested_action") == "defer" for x in raw)
 
 
 def test_policy_flag_review_stays_pending_on_apply() -> None:

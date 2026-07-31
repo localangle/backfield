@@ -19,6 +19,8 @@ from backfield_entities.entities.location.delete import (
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _engine(tmp_path) -> Engine:
     path = tmp_path / "delete-canonical.db"
@@ -47,6 +49,7 @@ def test_delete_location_canonical_and_requeue(tmp_path) -> None:
         session.commit()
         session.refresh(sb)
         project = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
             organization_id=int(org.id),
             name="Demo",
             slug="demo",
@@ -117,7 +120,10 @@ def test_delete_stale_substrate_guard(tmp_path) -> None:
         session.commit()
         session.refresh(sb)
         project = BackfieldProject(
-            organization_id=int(org.id), name="P", slug="p"
+            **project_ownership_fields(session, int(org.id)),
+            organization_id=int(org.id),
+            name="P",
+            slug="p",
         )
         session.add(project)
         session.commit()

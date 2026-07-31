@@ -242,9 +242,10 @@ wiring is automatic.
 guidance, tab navigation, invalid-connection messaging, and lazy panel loading.
 Package panels render only inner content.
 
-`GraphPanelContext` provides organization and project IDs, workspace Stylebook
-defaults, and project AI-model loading. Reuse that context and existing helpers
-instead of calling Core directly from a package panel.
+`GraphPanelContext` provides organization and project IDs and project AI-model
+loading. Nodes inherit the project's Stylebook, so panels never select one. Reuse
+that context and existing helpers instead of calling Core directly from a package
+panel.
 
 Tab IDs and labels are centralized in `src/lib/nodePanelTabs.ts`. Current routing:
 

@@ -9,10 +9,13 @@ Processed-item editing contracts are documented in [`processed-item-review.md`](
 Authenticated routes accept:
 
 - the signed browser `session` cookie;
-- `Authorization: Bearer <SERVICE_API_TOKEN>`;
-- a project-bound `bfk_…` API key.
+- `Authorization: Bearer <SERVICE_API_TOKEN>`.
 
-Project, flow, and run access is checked against the resource's project. Organization admins see every project in their organization. Members see projects from workspace membership plus any explicit project grants that remain in use. A project API key can access only its bound project; the service token has automation-wide access.
+Project, flow, and run access is checked against the resource's project. Organization admins see
+every project in their organization. Members see projects from workspace membership plus any
+explicit project grants that remain in use. The service token has automation-wide access.
+Project-bound `bfk_…` credentials are rejected throughout Agate API; consumer access belongs on
+Core API's documented `/public/v1` routes.
 
 `GET /health` and `GET /nodes/metadata` are intentionally unauthenticated.
 
@@ -22,18 +25,37 @@ Project, flow, and run access is checked against the resource's project. Organiz
 
 `/projects` owns project creation, listing, detail, updates, deletion, statistics, tracked AI cost, and encrypted project secrets.
 
+The trusted offline `backfield organization create` command is the only project-creation exception.
+It uses a shared database transaction because a starter project must be committed atomically with
+its organization, Stylebook, workspace, administrators, and curated model snapshot. It is not an
+HTTP endpoint and does not change Agate API ownership of interactive project lifecycle operations.
+
 - List responses are filtered to visible projects.
-- When `workspace_id` is provided, the project inherits that workspace's `organization_id`.
-  Session users must belong to that organization; members need workspace membership, and
-  org admins may assign any workspace in their org. API keys cannot create projects.
-- When `workspace_id` is omitted (legacy / service / scripts), session creates use the
-  session's organization; service tokens fall back to the seeded `default` organization.
+- Project creation requires `workspace_id`. Session users must belong to the workspace
+  organization; members need workspace membership, and org admins may assign any workspace in
+  their org. The required workspace is the explicit organization context for service-token
+  callers; the endpoint never falls back to a default organization.
+- Project creation accepts an optional `stylebook_id`. It must belong to the workspace's
+  organization, and any other value is rejected with `400`. When it is omitted, the workspace's
+  Stylebook is copied into the project's direct ownership field. Assigning a Stylebook does not
+  require Stylebook editor membership. There is no endpoint for changing a project's Stylebook
+  after creation.
 - Secret responses contain metadata, never secret values.
-- Project responses expose the assigned workspace and effective workspace Stylebook context when available.
+- Project responses expose the authoritative `stylebook_id`, `stylebook_name`, and
+  `stylebook_slug` fields. Use them for every read, write, and Stylebook UI route.
+- The `workspace_stylebook_*` response fields remain, but they now report the workspace's own
+  Stylebook rather than the project's. For a project created with an explicit choice the two
+  differ, so a caller that treats them as interchangeable will target the wrong Stylebook. They
+  are null when the workspace or its Stylebook cannot be resolved, which is logged and degraded
+  rather than failing the request. A later workspace Stylebook change does not alter existing
+  projects.
 
 ### Flows and templates
 
-`/graphs` creates, lists, validates, updates, and deletes saved `GraphSpec` flows. Referenced node Stylebook identifiers must exist in the flow project's organization. Graph responses include descriptive and public-run settings used by Agate UI and Core API.
+`/graphs` creates, lists, validates, updates, and deletes saved `GraphSpec` flows. Graph create and
+update normalize Backfield Output and GeocodeAgent compatibility parameters to the project's
+Stylebook. Completed run snapshots are not rewritten. Graph responses include descriptive and
+public-run settings used by Agate UI and Core API.
 
 `/templates` lists flow templates and instantiates a template into a project after project-access checks.
 
@@ -93,6 +115,9 @@ Backfield Output persists consolidated article content and the domains present i
 - semantic mention documents when enabled;
 - automatic entity connections when configured.
 
-Entity reconciliation supports `add_only`, `smart_merge`, and `replace`. The policy applies to each current entity domain represented in the consolidated payload, and the node returns per-domain reconciliation summaries. Catalog matching resolves an explicit node Stylebook when configured, otherwise the organization's default Stylebook (or its first Stylebook by id).
+Entity reconciliation supports `add_only`, `smart_merge`, and `replace`. The policy applies to
+each current entity domain represented in the consolidated payload, and the node returns
+per-domain reconciliation summaries. Catalog matching always uses the project's Stylebook; a
+legacy node value is accepted only when it matches.
 
 Backfield Output persistence runs in the worker. The package-level runner is a no-op outside that worker context so local graph execution can still return the node's output shape.

@@ -17,6 +17,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     Numeric,
@@ -70,6 +71,12 @@ class BackfieldWorkspace(SQLModel, table=True):
     __tablename__ = "backfield_workspace"
     __table_args__ = (
         UniqueConstraint("organization_id", "slug", name="uq_backfield_workspace_org_slug"),
+        UniqueConstraint("organization_id", "id", name="uq_backfield_workspace_org_id"),
+        ForeignKeyConstraint(
+            ["organization_id", "stylebook_id"],
+            ["stylebook.organization_id", "stylebook.id"],
+            name="fk_backfield_workspace_org_stylebook",
+        ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -91,6 +98,10 @@ class BackfieldUser(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     email: str = Field(sa_column=Column(Text, unique=True, nullable=False, index=True))
     password_hash: str = Field(sa_column=Column(Text, nullable=False))
+    must_change_password: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
     display_name: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     disabled_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     created_at: datetime = Field(
@@ -123,16 +134,36 @@ class BackfieldProject(SQLModel, table=True):
     """Canonical project for Agate, Stylebook vault, and future Core import APIs."""
 
     __tablename__ = "backfield_project"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "slug",
+            name="uq_backfield_project_org_slug",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id"],
+            ["backfield_workspace.organization_id", "backfield_workspace.id"],
+            name="fk_backfield_project_org_workspace",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "stylebook_id"],
+            ["stylebook.organization_id", "stylebook.id"],
+            name="fk_backfield_project_org_stylebook",
+        ),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     organization_id: int = Field(foreign_key="backfield_organization.id", index=True)
-    workspace_id: int | None = Field(
-        default=None,
+    workspace_id: int = Field(
         foreign_key="backfield_workspace.id",
         index=True,
     )
+    stylebook_id: int = Field(
+        foreign_key="stylebook.id",
+        index=True,
+    )
     name: str = Field(sa_column=Column(Text, nullable=False))
-    slug: str = Field(sa_column=Column(Text, unique=True, nullable=False, index=True))
+    slug: str = Field(sa_column=Column(Text, nullable=False, index=True))
     settings_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -227,6 +258,7 @@ class Stylebook(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint("organization_id", "slug", name="uq_stylebook_organization_slug"),
         UniqueConstraint("organization_id", "name", name="uq_stylebook_organization_name"),
+        UniqueConstraint("organization_id", "id", name="uq_stylebook_organization_id"),
         Index(
             "uq_stylebook_org_one_default",
             "organization_id",
@@ -2096,12 +2128,18 @@ class AgateS3IngestionLedger(SQLModel, table=True):
     __tablename__ = "agate_s3_ingestion_ledger"
     __table_args__ = (
         UniqueConstraint(
+            "project_id",
             "source_id",
             "logical_item_id",
             "content_fingerprint",
             name="uq_agate_s3_ingestion_ledger_revision",
         ),
-        Index("ix_agate_s3_ingestion_ledger_source_item", "source_id", "logical_item_id"),
+        Index(
+            "ix_agate_s3_ingestion_ledger_source_item",
+            "project_id",
+            "source_id",
+            "logical_item_id",
+        ),
         Index("ix_agate_s3_ingestion_ledger_status_lease", "status", "lease_expires_at"),
         Index("ix_agate_s3_ingestion_ledger_project", "project_id"),
     )

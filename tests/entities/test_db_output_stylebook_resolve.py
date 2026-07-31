@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from backfield_db import (
     BackfieldOrganization,
     BackfieldProject,
@@ -44,9 +45,7 @@ def test_db_output_settings_stylebook_matching_can_be_disabled() -> None:
 
 
 def test_db_output_settings_validate_reconciliation_policy() -> None:
-    settings = DbOutputCanonicalSettings.from_node_params(
-        {"reconciliation_policy": "add_only"}
-    )
+    settings = DbOutputCanonicalSettings.from_node_params({"reconciliation_policy": "add_only"})
     assert settings.reconciliation_policy == "add_only"
 
 
@@ -55,7 +54,7 @@ def test_db_output_settings_semantic_indexing_defaults_off() -> None:
     assert settings.semantic_indexing_enabled is False
 
 
-def test_db_output_delegates_override_to_shared_resolver() -> None:
+def test_db_output_accepts_matching_legacy_value_and_rejects_mismatch() -> None:
     engine = _engine()
     with Session(engine) as session:
         org = BackfieldOrganization(slug="org-dbo", name="O")
@@ -77,17 +76,24 @@ def test_db_output_delegates_override_to_shared_resolver() -> None:
         proj = BackfieldProject(
             organization_id=int(org.id),
             workspace_id=int(ws.id),
+            stylebook_id=int(sb_b.id),
             name="P",
             slug="p-dbo",
         )
         session.add(proj)
         session.commit()
 
+        with pytest.raises(ValueError, match="STYLEBOOK_OVERRIDE_CONFLICT"):
+            resolve_effective_stylebook_id(
+                session,
+                project_id=int(proj.id),
+                stylebook_id_override=int(sb_a.id),
+            )
         assert resolve_effective_stylebook_id(
             session,
             project_id=int(proj.id),
-            stylebook_id_override=int(sb_a.id),
-        ) == int(sb_a.id)
+            stylebook_id_override=int(sb_b.id),
+        ) == int(sb_b.id)
         assert resolve_effective_stylebook_id(
             session,
             project_id=int(proj.id),

@@ -17,6 +17,8 @@
     "./axisAlignedRectangle": "./src/axisAlignedRectangle.ts",
     "./ShellSidebar": "./src/ShellSidebar.tsx",
     "./UserAccountMenu": "./src/UserAccountMenu.tsx",
+    "./tenantSession": "./src/tenantSession.ts",
+    "./passwordChangeGate": "./src/passwordChangeGate.ts",
     "./AgateProductMark": "./src/AgateProductMark.tsx",
     "./StylebookProductMark": "./src/StylebookProductMark.tsx",
     "./cn": "./src/cn.ts"

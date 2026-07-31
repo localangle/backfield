@@ -23,6 +23,8 @@ from backfield_entities.ingest.geocode_cache.resolve import (
 )
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.project_helpers import project_ownership_fields
+
 
 def test_fingerprint_stable_payload() -> None:
     a = substrate_location_cache_query_fingerprint(
@@ -63,6 +65,7 @@ def _seed_org_sb_project(session: Session) -> tuple[int, int, int]:
     session.commit()
     session.refresh(ws)
     proj = BackfieldProject(
+        **project_ownership_fields(session, oid, workspace_id=int(ws.id)),
         organization_id=oid,
         name="P",
         slug="p-gcc",

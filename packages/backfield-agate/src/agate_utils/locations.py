@@ -12,6 +12,7 @@ def match_canonical_location(
     city: Optional[str] = None,
     state: Optional[str] = None,
     service_token: Optional[str] = None,
+    organization_id: Optional[int] = None,
     timeout: float = 5.0,
 ) -> Optional[Dict[str, Any]]:
     """
@@ -42,7 +43,10 @@ def match_canonical_location(
 
         headers = {}
         if service_token:
+            if organization_id is None:
+                raise ValueError("organization_id is required with a service token")
             headers["Authorization"] = f"Bearer {service_token}"
+            headers["X-Backfield-Organization-ID"] = str(organization_id)
 
         logging.info(
             f"Stylebook canonical location match: name={name}, project_slug={project_slug}"

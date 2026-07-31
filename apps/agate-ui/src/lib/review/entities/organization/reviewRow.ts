@@ -55,9 +55,9 @@ export function getMergedRowStylebookSlug(row: Record<string, unknown>): string 
 
 export function resolveStylebookSlugForLinkedRow(
   row: Record<string, unknown>,
-  workspaceStylebookSlug: string | null | undefined,
+  projectStylebookSlug: string | null | undefined,
 ): string | null {
-  return getMergedRowStylebookSlug(row) ?? (workspaceStylebookSlug?.trim() || null)
+  return getMergedRowStylebookSlug(row) ?? (projectStylebookSlug?.trim() || null)
 }
 
 export function isMergedRowLinkedToStylebook(row: Record<string, unknown>): boolean {

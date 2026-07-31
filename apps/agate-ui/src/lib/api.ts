@@ -18,6 +18,7 @@ import {
   normalizeProcessedItemSemanticIndexing,
   type ProcessedItemSemanticIndexing,
 } from '@/lib/review/content/semanticIndexingDisplay'
+import { handleTenantResponse } from '@backfield/ui/tenantSession'
 
 export type {
   ProcessedItemArticleEmbedding,
@@ -51,9 +52,17 @@ export interface Project {
   created_at: string
   updated_at?: string
   workspace_id?: number | null
+  /** The project's own Stylebook: authoritative for reads, writes, and Stylebook UI routes. */
+  stylebook_id?: number | null
+  stylebook_name?: string | null
+  stylebook_slug?: string | null
+  /**
+   * The workspace's current Stylebook, which is only the default offered at project creation.
+   * It differs from the project's Stylebook whenever the project was created with an explicit
+   * choice, so never use it to read or write catalog data. Null when it cannot be resolved.
+   */
   workspace_stylebook_id?: number | null
   workspace_stylebook_name?: string | null
-  /** Stable catalog slug for Stylebook UI routes when the workspace resolves a Stylebook. */
   workspace_stylebook_slug?: string | null
 }
 
@@ -294,7 +303,9 @@ export interface RunCreate {
 export interface ProjectCreate {
   name: string
   slug?: string
-  workspace_id?: number | null
+  workspace_id: number
+  /** Omit to inherit the workspace's Stylebook. */
+  stylebook_id?: number | null
 }
 
 export interface ProjectUpdate {
@@ -697,14 +708,14 @@ function normalizeRunStatus(raw: RawRunStatus): Run {
 }
 
 async function fetchAPI(path: string, options?: RequestInit): Promise<unknown> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await handleTenantResponse(await fetch(`${API_BASE}${path}`, {
     ...options,
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...options?.headers,
     },
-  })
+  }))
 
   if (response.status === 401) {
     throw new Error('Unauthorized')
@@ -1168,7 +1179,8 @@ export async function createProject(data: ProjectCreate): Promise<Project> {
     body: JSON.stringify({
       name: data.name,
       slug: data.slug,
-      workspace_id: data.workspace_id ?? null,
+      workspace_id: data.workspace_id,
+      ...(data.stylebook_id != null ? { stylebook_id: data.stylebook_id } : {}),
     }),
   }) as Promise<Project>
 }

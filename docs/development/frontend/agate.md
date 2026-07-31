@@ -127,6 +127,16 @@ can sync reviewed S3 Output content back to its object.
 - Core session helpers are in `src/lib/core-api.ts`; Agate API helpers are in
   `src/lib/api.ts`.
 - Workspace and project navigation is sourced from Core access data.
+- The create-project dialog offers a Stylebook choice only when the organization has more than
+  one Stylebook, defaulting to the selected workspace's Stylebook. It lists them through
+  `listStylebookCatalogs` in `src/lib/stylebook-org-api.ts`, which any member of the
+  organization may call; the Core admin listing would hide the choice from non-admins. Only a
+  deliberate pick is submitted, so the server stays the source of truth for the workspace
+  default. Project settings then show the project's Stylebook read-only, because it cannot
+  change after creation.
+- Story review reads, writes, and deep-links using the project's own `stylebook_slug`. The
+  `workspace_stylebook_*` fields describe the workspace, not the project, and must not be used
+  as a catalog target.
 - Organization administrators use the Settings hub for AI models, integrations,
   users, and Stylebooks.
 - Current settings routes are `/settings/models` and `/settings/integrations`.

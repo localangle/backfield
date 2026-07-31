@@ -1,5 +1,9 @@
 # Public API
 
+Project API keys resolve their bound project first and then validate the project slug in the path.
+Trusted service-token calls to slug routes must also send `X-Backfield-Organization-ID`; project
+slugs are unique only inside an organization.
+
 Backfield's consumer-facing HTTP API is owned and served by **Core API**. Its
 public namespace is:
 
@@ -49,12 +53,23 @@ Create and revoke keys from Core API under
 `read` scope when minted. Starting a run additionally requires `runs:trigger`;
 that scope is limited to service-type project keys.
 
+Personal keys remain valid only while the owner is enabled, belongs to the project's organization,
+and can currently access the project. Revocation, account disablement, organization removal, or
+project-access removal takes effect on the next request. Ownerless legacy personal keys are
+rejected; ownerless service keys are reserved for trusted administrator-managed automation.
+
 Public resources are project-scoped under
 `/public/v1/projects/{project_slug}`. The authentication dependency validates
 the key and verifies that it belongs to the requested project. Browser session
 cookies are rejected on this surface. Internal service Bearer tokens remain
 runtime-compatible for trusted automation, but are not part of the public
 credential contract.
+
+The project and organization context come from the validated key. Tenant headers cannot redirect a
+project key, and a path project slug must match the bound project even when another organization
+uses the same slug. Shared canonical identity fields remain visible from the project's assigned
+Stylebook. Article bodies, mentions, evidence, runs, processed items, candidates, and other
+project-owned records are always filtered to the bound project.
 
 The current checks live in
 [`public/deps.py`](../../apps/core-api/src/core_api/routers/public/deps.py), with

@@ -7,7 +7,6 @@ import {
   getPersonCandidateContext,
   getSuggestedPersonCanonicals,
   linkPersonSubstrateToCanonical,
-  listPersonCandidates,
   updatePersonCandidateNote,
 } from "@/lib/api"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
@@ -17,6 +16,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import type { CandidateQueueLinkModalProps, CandidateQueuePageConfig } from "@/lib/entityConfigs/candidateQueueTypes"
 import { truncateCellText } from "@/lib/candidateQueueTableLayout"
+import {
+  countStylebookCandidates,
+  listStylebookCandidates,
+} from "@/lib/stylebook-api/stylebookCandidates"
 
 function PersonLinkModal({
   substrateId,
@@ -55,7 +58,7 @@ export const personCandidateQueueConfig: CandidateQueuePageConfig<PersonCandidat
     breadcrumbEntityLabel: "People",
     canonicalButtonLabel: "Canonical people",
     reviewQueueDescription:
-      "Unlinked people for this project. Use Link to attach to an existing person, or Create new to add one.",
+      "Unlinked people from projects using this Stylebook. Link an existing person or create a new one.",
     searchInputId: "person-candidate-search",
     searchPlaceholder: "Search name…",
     emptyState: "No unlinked people.",
@@ -103,8 +106,13 @@ export const personCandidateQueueConfig: CandidateQueuePageConfig<PersonCandidat
   },
 
   api: {
-    list: async (projectSlug, status, options) => {
-      const res = await listPersonCandidates(projectSlug, status, options)
+    list: async (stylebookSlug, projectSlug, status, options) => {
+      const res = await listStylebookCandidates<PersonCandidate>(
+        stylebookSlug,
+        "people",
+        status,
+        { ...options, project_slug: projectSlug },
+      )
       return {
         candidates: res.candidates,
         total: res.total,
@@ -112,18 +120,28 @@ export const personCandidateQueueConfig: CandidateQueuePageConfig<PersonCandidat
         has_prev: res.has_prev,
       }
     },
+    count: (stylebookSlug, projectSlug, status, options) =>
+      countStylebookCandidates(stylebookSlug, "people", status, {
+        ...options,
+        project_slug: projectSlug,
+      }),
     getContext: getPersonCandidateContext,
-    defer: async (projectSlug, candidateId) => {
-      await deferPersonCandidate(projectSlug, candidateId)
+    defer: async (projectSlug, candidateId, stylebookSlug) => {
+      await deferPersonCandidate(projectSlug, candidateId, stylebookSlug)
     },
-    clearRecommendation: async (projectSlug, candidateId) => {
-      await clearPersonCandidateRecommendation(projectSlug, candidateId)
+    clearRecommendation: async (projectSlug, candidateId, stylebookSlug) => {
+      await clearPersonCandidateRecommendation(projectSlug, candidateId, stylebookSlug)
     },
-    updateNote: async (projectSlug, candidateId, note) => {
-      await updatePersonCandidateNote(projectSlug, candidateId, note)
+    updateNote: async (projectSlug, candidateId, note, stylebookSlug) => {
+      await updatePersonCandidateNote(projectSlug, candidateId, note, stylebookSlug)
     },
-    linkToCanonical: async (candidateId, projectSlug, canonicalId) => {
-      await linkPersonSubstrateToCanonical(candidateId, projectSlug, canonicalId)
+    linkToCanonical: async (candidateId, projectSlug, canonicalId, stylebookSlug) => {
+      await linkPersonSubstrateToCanonical(
+        candidateId,
+        projectSlug,
+        canonicalId,
+        stylebookSlug,
+      )
     },
     getSuggestedCanonicalId: (c) => {
       const cid = (c.canonical_suggestion?.stylebook_person_canonical_id ?? "").trim()
@@ -142,11 +160,12 @@ export const personCandidateQueueConfig: CandidateQueuePageConfig<PersonCandidat
       const canon = await getCanonicalPerson(canonicalId, stylebookSlug, projectSlug)
       return (canon.label ?? "").trim() || canonicalId
     },
-    acceptCreateNew: async (projectSlug, candidateId, body) => {
+    acceptCreateNew: async (projectSlug, candidateId, body, stylebookSlug) => {
       const acceptRes = await acceptPersonCandidate(
         projectSlug,
         candidateId,
         body as Parameters<typeof acceptPersonCandidate>[2],
+        stylebookSlug,
       )
       const cid = acceptRes.stylebook_person_canonical_id
       return { canonicalId: typeof cid === "string" ? cid.trim() : "" }

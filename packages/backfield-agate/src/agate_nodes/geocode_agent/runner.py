@@ -104,7 +104,6 @@ def attach_geocode_cache_bundle(
         return
     try:
         pid = int(raw_pid)
-        sid = stylebook_id
     except (TypeError, ValueError):
         logger.debug(
             "Geocode DB cache skipped: invalid BACKFIELD_PROJECT_ID or stylebook id (%r, %r)",
@@ -113,18 +112,16 @@ def attach_geocode_cache_bundle(
         )
         return
 
-    if sid is not None:
-        from backfield_db import Stylebook
-        from backfield_db.session import get_engine
-        from sqlmodel import Session
+    from backfield_db.session import get_engine
+    from backfield_entities.catalog.resolve import resolve_stylebook_id_for_project_id
+    from sqlmodel import Session
 
-        with Session(get_engine()) as session:
-            sb = session.get(Stylebook, sid)
-        if sb is None:
-            raise ValueError(
-                "This flow uses a Stylebook that no longer exists. "
-                "Open the Geocode step and choose a Stylebook that is still available."
-            )
+    with Session(get_engine()) as session:
+        sid = resolve_stylebook_id_for_project_id(session, pid)
+    if stylebook_id is not None and int(stylebook_id) != sid:
+        raise ValueError(
+            "GeocodeAgent Stylebook does not match the project's assigned Stylebook"
+        )
 
     ctx.metadata["geocode_cache_bundle"] = _build_geocode_cache_bundle(pid, sid)
 

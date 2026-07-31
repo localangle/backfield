@@ -98,6 +98,18 @@ backfield seed \
 `backfield seed` is idempotent: it ensures the organization and administrator exist, but re-runs do
 not change an existing administrator’s password or role.
 
+### Complete organization provisioning
+
+For a distinct client tenant, use `backfield organization create` instead of `seed`. It requires
+explicit names and slugs for the organization, Stylebook, workspace, and project; a client
+administrator; a caller-owned JSON temporary-password file; and one or more explicit
+`--curated-model` selections. An optional support administrator can be attached at the same time.
+The complete hierarchy, administrator memberships, and selected model snapshot are committed
+atomically. Exact reruns reuse it; partial or conflicting state fails without being changed.
+
+See [organization provisioning](../operations/organization-provisioning.md) for the full command,
+password-file format, conflict rules, and machine-readable output.
+
 ## Root environment file
 
 Copy `.env.example` to `.env` when configuring the stack manually:

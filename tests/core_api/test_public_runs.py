@@ -28,6 +28,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from tests.core_api.auth_helpers import attach_test_engine, seed_and_login
+from tests.project_helpers import project_ownership_fields
 
 
 @pytest.fixture
@@ -58,6 +59,7 @@ def public_runs_client(tmp_path) -> Generator[TestClient, None, None]:
         s.refresh(ws)
         s.add(
             BackfieldProject(
+                **project_ownership_fields(s, oid, workspace_id=int(ws.id)),
                 name="General",
                 slug="general",
                 organization_id=oid,
@@ -335,6 +337,46 @@ def test_public_run_get_missing_run_404(
         headers={"Authorization": f"Bearer {raw_key}"},
     )
     assert r.status_code == 404
+
+
+def test_public_run_get_hides_same_org_sibling_project_run(
+    public_runs_client: TestClient,
+) -> None:
+    raw_key = _service_key_with_trigger(public_runs_client)
+    with Session(public_runs_client.test_engine) as session:  # type: ignore[attr-defined]
+        workspace = session.exec(select(BackfieldWorkspace)).one()
+        sibling = BackfieldProject(
+            **project_ownership_fields(
+                session,
+                int(workspace.organization_id),
+                workspace_id=int(workspace.id),
+            ),
+            organization_id=int(workspace.organization_id),
+            workspace_id=int(workspace.id),
+            name="Sibling",
+            slug="sibling",
+        )
+        session.add(sibling)
+        session.flush()
+        graph = AgateGraph(
+            id="graph-sibling-private",
+            name="Sibling private flow",
+            spec_json=GraphSpec(name="sibling", nodes=[], edges=[]).model_dump_json(),
+            project_id=int(sibling.id),
+            public_run_enabled=True,
+        )
+        session.add(graph)
+        session.flush()
+        run = AgateRun(graph_id=graph.id, status="succeeded")
+        session.add(run)
+        session.commit()
+        run_id = str(run.id)
+
+    response = public_runs_client.get(
+        f"/public/v1/projects/general/runs/{run_id}",
+        headers={"Authorization": f"Bearer {raw_key}"},
+    )
+    assert response.status_code == 404
 
 
 def test_public_run_idempotency_replays_nested_canonical_body(

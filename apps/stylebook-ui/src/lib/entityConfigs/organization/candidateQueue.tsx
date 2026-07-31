@@ -7,7 +7,6 @@ import {
   getOrganizationCandidateContext,
   getSuggestedOrganizationCanonicals,
   linkOrganizationSubstrateToCanonical,
-  listOrganizationCandidates,
   updateOrganizationCandidateNote,
 } from "@/lib/api"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
@@ -16,6 +15,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import type { CandidateQueueLinkModalProps, CandidateQueuePageConfig } from "@/lib/entityConfigs/candidateQueueTypes"
 import { truncateCellText } from "@/lib/candidateQueueTableLayout"
+import {
+  countStylebookCandidates,
+  listStylebookCandidates,
+} from "@/lib/stylebook-api/stylebookCandidates"
 
 function OrganizationLinkModal({
   substrateId,
@@ -47,7 +50,7 @@ export const organizationCandidateQueueConfig: CandidateQueuePageConfig<Organiza
     breadcrumbEntityLabel: "Organizations",
     canonicalButtonLabel: "Canonical organizations",
     reviewQueueDescription:
-      "Unlinked organizations for this project. Use Link to attach to an existing organization, or Create new to add one.",
+      "Unlinked organizations from projects using this Stylebook. Link an existing organization or create a new one.",
     searchInputId: "organization-candidate-search",
     searchPlaceholder: "Search name…",
     emptyState: "No unlinked organizations.",
@@ -95,8 +98,13 @@ export const organizationCandidateQueueConfig: CandidateQueuePageConfig<Organiza
   },
 
   api: {
-    list: async (projectSlug, status, options) => {
-      const res = await listOrganizationCandidates(projectSlug, status, options)
+    list: async (stylebookSlug, projectSlug, status, options) => {
+      const res = await listStylebookCandidates<OrganizationCandidate>(
+        stylebookSlug,
+        "organizations",
+        status,
+        { ...options, project_slug: projectSlug },
+      )
       return {
         candidates: res.candidates,
         total: res.total,
@@ -104,18 +112,28 @@ export const organizationCandidateQueueConfig: CandidateQueuePageConfig<Organiza
         has_prev: res.has_prev,
       }
     },
+    count: (stylebookSlug, projectSlug, status, options) =>
+      countStylebookCandidates(stylebookSlug, "organizations", status, {
+        ...options,
+        project_slug: projectSlug,
+      }),
     getContext: getOrganizationCandidateContext,
-    defer: async (projectSlug, candidateId) => {
-      await deferOrganizationCandidate(projectSlug, candidateId)
+    defer: async (projectSlug, candidateId, stylebookSlug) => {
+      await deferOrganizationCandidate(projectSlug, candidateId, stylebookSlug)
     },
-    clearRecommendation: async (projectSlug, candidateId) => {
-      await clearOrganizationCandidateRecommendation(projectSlug, candidateId)
+    clearRecommendation: async (projectSlug, candidateId, stylebookSlug) => {
+      await clearOrganizationCandidateRecommendation(projectSlug, candidateId, stylebookSlug)
     },
-    updateNote: async (projectSlug, candidateId, note) => {
-      await updateOrganizationCandidateNote(projectSlug, candidateId, note)
+    updateNote: async (projectSlug, candidateId, note, stylebookSlug) => {
+      await updateOrganizationCandidateNote(projectSlug, candidateId, note, stylebookSlug)
     },
-    linkToCanonical: async (candidateId, projectSlug, canonicalId) => {
-      await linkOrganizationSubstrateToCanonical(candidateId, projectSlug, canonicalId)
+    linkToCanonical: async (candidateId, projectSlug, canonicalId, stylebookSlug) => {
+      await linkOrganizationSubstrateToCanonical(
+        candidateId,
+        projectSlug,
+        canonicalId,
+        stylebookSlug,
+      )
     },
     getSuggestedCanonicalId: (c) => {
       const cid = (c.canonical_suggestion?.stylebook_organization_canonical_id ?? "").trim()
@@ -134,11 +152,12 @@ export const organizationCandidateQueueConfig: CandidateQueuePageConfig<Organiza
       const canon = await getCanonicalOrganization(canonicalId, stylebookSlug, projectSlug)
       return (canon.label ?? "").trim() || canonicalId
     },
-    acceptCreateNew: async (projectSlug, candidateId, body) => {
+    acceptCreateNew: async (projectSlug, candidateId, body, stylebookSlug) => {
       const acceptRes = await acceptOrganizationCandidate(
         projectSlug,
         candidateId,
         body as Parameters<typeof acceptOrganizationCandidate>[2],
+        stylebookSlug,
       )
       const cid = acceptRes.stylebook_organization_canonical_id
       return { canonicalId: typeof cid === "string" ? cid.trim() : "" }

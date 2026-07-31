@@ -21,6 +21,8 @@ from backfield_entities.public.articles import (
 )
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.project_helpers import project_ownership_fields
+
 
 def test_article_preview_truncates_long_text() -> None:
     long_text = "word " * 200
@@ -68,6 +70,7 @@ def test_search_public_articles_matches_body_text() -> None:
         session.commit()
         session.refresh(org)
         proj = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
             name="News",
             slug="news",
             organization_id=int(org.id),  # type: ignore[arg-type]
@@ -114,6 +117,7 @@ def test_search_public_articles_filters_metadata_and_dates() -> None:
         session.commit()
         session.refresh(org)
         proj = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
             name="News",
             slug="news",
             organization_id=int(org.id),  # type: ignore[arg-type]
@@ -197,6 +201,7 @@ def test_search_public_articles_excludes_metadata() -> None:
         session.commit()
         session.refresh(org)
         proj = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
             name="News",
             slug="news",
             organization_id=int(org.id),  # type: ignore[arg-type]
@@ -274,6 +279,7 @@ def test_search_public_articles_filters_author_section_and_mentions() -> None:
         session.commit()
         session.refresh(org)
         proj = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
             name="News",
             slug="news",
             organization_id=int(org.id),  # type: ignore[arg-type]
@@ -350,6 +356,7 @@ def test_search_public_articles_meta_clauses() -> None:
         session.commit()
         session.refresh(org)
         proj = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
             name="News",
             slug="news",
             organization_id=int(org.id),  # type: ignore[arg-type]
@@ -458,9 +465,7 @@ def test_search_public_articles_meta_clauses() -> None:
             params=PublicArticleSearchParams(
                 meta_type="format",
                 meta_category="news_story",
-                meta_clauses=(
-                    ArticleMetaClause(meta_type="topic", categories=("pro_sports",)),
-                ),
+                meta_clauses=(ArticleMetaClause(meta_type="topic", categories=("pro_sports",)),),
             ),
         )
         assert total == 2

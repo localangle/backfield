@@ -7,6 +7,8 @@ from backfield_entities.canonical.link import CANONICAL_LINK_PENDING, CANONICAL_
 from sqlmodel import Session, SQLModel, create_engine, select
 from worker.substrate import persist_from_consolidated
 
+from tests.project_helpers import project_ownership_fields
+
 CHICAGO_POINT = {"type": "Point", "coordinates": [-87.6298, 41.8781]}
 
 
@@ -32,6 +34,7 @@ def _bootstrap_project(session: Session, *, org_slug: str, project_slug: str) ->
     session.refresh(ws)
 
     proj = BackfieldProject(
+        **project_ownership_fields(session, oid, workspace_id=int(ws.id)),
         organization_id=oid,
         name="Proj",
         slug=project_slug,

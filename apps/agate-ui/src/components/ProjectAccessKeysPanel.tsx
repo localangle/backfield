@@ -91,6 +91,7 @@ const ProjectAccessKeysPanel = forwardRef<
   }, [load])
 
   const canRevoke = (row: ProjectAccessCredential): boolean => {
+    if (row.revoked_at) return false
     if (row.credential_type === "service") {
       return isOrgAdmin
     }
@@ -99,6 +100,7 @@ const ProjectAccessKeysPanel = forwardRef<
   }
 
   const canRotate = (row: ProjectAccessCredential): boolean => {
+    if (row.revoked_at) return false
     if (row.credential_type === "service") {
       return isOrgAdmin
     }
@@ -313,6 +315,11 @@ const ProjectAccessKeysPanel = forwardRef<
                       <Badge variant="secondary" className="text-xs">
                         {row.credential_type}
                       </Badge>
+                      {row.revoked_at ? (
+                        <Badge variant="outline" className="text-xs">
+                          Revoked
+                        </Badge>
+                      ) : null}
                       {row.credential_type === "user" &&
                       userId != null &&
                       row.user_id === userId ? (
@@ -333,6 +340,9 @@ const ProjectAccessKeysPanel = forwardRef<
                     </div>
                     <p className="text-xs text-muted-foreground">
                       Created {format(new Date(row.created_at), "MMM d, yyyy HH:mm")}
+                      {row.revoked_at
+                        ? ` · Revoked ${format(new Date(row.revoked_at), "MMM d, yyyy HH:mm")}`
+                        : ""}
                     </p>
                   </div>
                   <div className="flex gap-1 shrink-0">

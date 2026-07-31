@@ -21,6 +21,8 @@ from worker.substrate.entities.organization.adjudication import (
     adjudicate_ambiguous_organization_plan_with_llm,
 )
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _adj_json_link(canonical_id: str, confidence: float, rationale: str) -> str:
     return (
@@ -55,7 +57,12 @@ def _seed(session: Session) -> tuple[int, int]:
     session.commit()
     session.refresh(sb)
     sb_id = int(sb.id)  # type: ignore[arg-type]
-    proj = BackfieldProject(name="Demo", slug="demo-org-policy", organization_id=oid)
+    proj = BackfieldProject(
+        **project_ownership_fields(session, oid),
+        name="Demo",
+        slug="demo-org-policy",
+        organization_id=oid,
+    )
     session.add(proj)
     session.commit()
     session.refresh(proj)
@@ -108,9 +115,7 @@ def test_adjudicate_ambiguous_organization_upgrades_when_llm_confident(monkeypat
         )
 
         def _fake_llm(*_a, **_k) -> str:
-            return _adj_json_link(
-                id1, ADJUDICATION_LINK_MIN_CONFIDENCE, "Same police department."
-            )
+            return _adj_json_link(id1, ADJUDICATION_LINK_MIN_CONFIDENCE, "Same police department.")
 
         monkeypatch.setattr(
             "worker.substrate.entities.organization.adjudication.call_llm",

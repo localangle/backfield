@@ -19,6 +19,8 @@ from backfield_db import (
 )
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from tests.project_helpers import project_ownership_fields
+
 
 @pytest.fixture
 def bootstrap_engine(tmp_path) -> Generator:
@@ -47,6 +49,7 @@ def test_ensure_default_workspace_preserves_organization_name(bootstrap_engine) 
         session.refresh(org)
         session.add(
             BackfieldProject(
+                **project_ownership_fields(session, int(org.id)),
                 name="General",
                 slug="general",
                 organization_id=int(org.id),
@@ -88,6 +91,7 @@ def test_ensure_default_workspace_preserves_workspace_name(bootstrap_engine) -> 
         session.flush()
         session.add(
             BackfieldProject(
+                **project_ownership_fields(session, int(org.id), workspace_id=int(ws.id)),
                 name="General",
                 slug="general",
                 organization_id=int(org.id),
@@ -121,6 +125,7 @@ def test_run_local_bootstrap_preserves_organization_name(
         session.refresh(org)
         session.add(
             BackfieldProject(
+                **project_ownership_fields(session, int(org.id)),
                 name="General",
                 slug="general",
                 organization_id=int(org.id),
