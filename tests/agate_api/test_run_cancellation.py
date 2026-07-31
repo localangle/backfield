@@ -22,6 +22,7 @@ from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from tests.integration_helpers import patch_test_engine
+from tests.project_helpers import project_ownership_fields
 
 _CANCELLED = "Run cancelled by user"
 
@@ -44,6 +45,7 @@ def cancel_client(
         session.commit()
         session.refresh(organization)
         project = BackfieldProject(
+            **project_ownership_fields(session, int(organization.id)),
             organization_id=int(organization.id),
             name="Cancellation",
             slug="cancellation",
@@ -169,8 +171,7 @@ def test_cancel_bulk_updates_active_items_and_returns_compact_status(cancel_clie
         assert all(
             forbidden not in statement
             for statement in statements
-            if statement.lstrip().startswith("select")
-            and "from agate_processed_item" in statement
+            if statement.lstrip().startswith("select") and "from agate_processed_item" in statement
         )
 
 

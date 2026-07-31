@@ -9,7 +9,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { listOrgStylebooks, type OrgStylebook } from '@/lib/core-api'
 import {
   autoConnectionsEligibility,
   autoConnectionsIneligibleCopy,
@@ -32,7 +31,6 @@ import {
   catalogToSelectOptions,
   hasExplicitAiModelChoice,
   resolvedAiModelSelectValue,
-  resolvedStylebookId,
 } from '@/lib/nodePanelAiModel'
 
 interface DBOutputPanelProps {
@@ -44,7 +42,6 @@ interface DBOutputPanelProps {
 
 const DEFAULTS = {
   stylebook_matching_enabled: true,
-  stylebook_id: null as number | null,
   canonicalization_mode: 'ai_assisted' as 'rules' | 'ai_assisted',
   reconciliation_policy: 'smart_merge' as 'add_only' | 'smart_merge' | 'replace',
   auto_apply_canonicalization: true,
@@ -53,8 +50,6 @@ const DEFAULTS = {
   semantic_indexing_enabled: false,
   auto_connections_enabled: true,
 }
-
-const ORG_DEFAULT_STYLEBOOK_SELECT = '__org_default_stylebook__'
 
 const ADJUDICATION_MODEL_KEYS = {
   configIdKey: 'adjudication_ai_model_config_id',
@@ -83,48 +78,16 @@ export default function DBOutputPanel({
   graphContext,
 }: DBOutputPanelProps) {
   const merged = { ...DEFAULTS, ...(node.data || {}) }
-  const legacyCamel = (node.data as Record<string, unknown> | undefined)?.stylebookId
-  if (merged.stylebook_id == null && legacyCamel != null && legacyCamel !== '') {
-    ;(merged as Record<string, unknown>).stylebook_id = legacyCamel
-  }
-
-  const paramStylebookId = resolvedStylebookId(merged as Record<string, unknown>)
 
   const disabled = !(editMode && setNodes)
-  const orgId = graphContext?.organizationId ?? null
   const projectId = graphContext?.projectId ?? null
 
-  const [stylebooks, setStylebooks] = useState<OrgStylebook[]>([])
-  const [stylebooksError, setStylebooksError] = useState<string | null>(null)
   const [catalogRows, setCatalogRows] = useState<ProjectAiModelOption[]>([])
   const [catalogLoading, setCatalogLoading] = useState(false)
   const [catalogError, setCatalogError] = useState<string | null>(null)
   const [semanticIndexingConfigured, setSemanticIndexingConfigured] = useState<boolean | null>(
     null,
   )
-
-  useEffect(() => {
-    if (!orgId) {
-      setStylebooks([])
-      setStylebooksError(null)
-      return
-    }
-    let cancelled = false
-    setStylebooksError(null)
-    listOrgStylebooks(orgId)
-      .then((rows) => {
-        if (!cancelled) setStylebooks(rows)
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) {
-          setStylebooks([])
-          setStylebooksError(e instanceof Error ? e.message : 'Could not load catalogs.')
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [orgId])
 
   useEffect(() => {
     const fetcher = graphContext?.fetchProjectAiModels
@@ -267,47 +230,6 @@ export default function DBOutputPanel({
     })
   }
 
-  const missingFromList = paramStylebookId != null && !stylebooks.some((s) => s.id === paramStylebookId)
-
-  useEffect(() => {
-    if (!editMode || !setNodes || !missingFromList || paramStylebookId == null) return
-    if (stylebooks.length === 0) return
-    setNodes((nodes: any[]) =>
-      nodes.map((n) =>
-        n.id === node.id
-          ? { ...n, data: mergeData({ ...(n.data || {}), stylebook_id: null }) }
-          : n,
-      ),
-    )
-  }, [editMode, setNodes, missingFromList, paramStylebookId, stylebooks.length, node.id])
-
-  const orgDefaultStylebook = stylebooks.find((sb) => sb.is_default)
-  const usesOrgDefault =
-    paramStylebookId == null ||
-    (orgDefaultStylebook != null && paramStylebookId === orgDefaultStylebook.id)
-
-  const stylebookSelectValue = usesOrgDefault
-    ? ORG_DEFAULT_STYLEBOOK_SELECT
-    : String(paramStylebookId)
-
-  const handleStylebookSelect = (value: string) => {
-    if (!setNodes) return
-    const nextId = value === ORG_DEFAULT_STYLEBOOK_SELECT ? null : Number(value)
-    setNodes((nodes: any[]) =>
-      nodes.map((n) =>
-        n.id === node.id ? { ...n, data: mergeData({ ...(n.data || {}), stylebook_id: nextId }) } : n,
-      ),
-    )
-  }
-
-  const defaultOptionLabel = orgDefaultStylebook?.name
-    ? `${orgDefaultStylebook.name} (Default)`
-    : 'Default'
-
-  const selectableStylebooks = orgDefaultStylebook
-    ? stylebooks.filter((sb) => sb.id !== orgDefaultStylebook.id)
-    : stylebooks
-
   const data = merged
   const stylebookMatchingEnabled = Boolean(data.stylebook_matching_enabled)
   const semanticIndexingEnabled = Boolean(data.semantic_indexing_enabled)
@@ -446,48 +368,6 @@ export default function DBOutputPanel({
           </p>
         ) : (
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="dbout-stylebook">Stylebook</Label>
-              <Select
-                value={stylebookSelectValue}
-                onValueChange={handleStylebookSelect}
-                disabled={disabled || orgId == null}
-              >
-                <SelectTrigger id="dbout-stylebook" className="text-xs">
-                  <SelectValue placeholder="Choose a Stylebook" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ORG_DEFAULT_STYLEBOOK_SELECT}>{defaultOptionLabel}</SelectItem>
-                  {missingFromList && paramStylebookId != null ? (
-                    <SelectItem value={String(paramStylebookId)}>
-                      {stylebooks.length === 0 && !stylebooksError
-                        ? `Saved selection (ID ${paramStylebookId})`
-                        : `Saved Stylebook unavailable (ID ${paramStylebookId})`}
-                    </SelectItem>
-                  ) : null}
-                  {selectableStylebooks.map((sb) => (
-                    <SelectItem key={sb.id} value={String(sb.id)}>
-                      {sb.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {orgId == null && (
-                <p className="text-xs text-muted-foreground">
-                  Save the flow to a project (or open an existing project flow) to choose a Stylebook
-                  for your organization.
-                </p>
-              )}
-              {orgId != null && stylebooks.length === 0 && !stylebooksError && (
-                <p className="text-xs text-muted-foreground">Loading Stylebooks…</p>
-              )}
-              {stylebooksError && <p className="text-xs text-destructive">{stylebooksError}</p>}
-              <p className="text-xs text-muted-foreground">
-                Default uses your organization&apos;s default Stylebook. Choose another to match and
-                write against a different catalog.
-              </p>
-            </div>
-
             <div className="space-y-2">
               <Label htmlFor="dbout-mode">Matching strategy</Label>
               <Select

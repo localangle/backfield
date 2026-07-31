@@ -10,7 +10,9 @@ Routes accept the signed browser `session` cookie, `SERVICE_API_TOKEN` Bearer au
 
 Two scopes are used:
 
-- Project-scoped routes take `project_slug`, resolve it to a project, and require project access. An optional `stylebook_slug` selects another Stylebook in the same organization; when omitted, the organization's default Stylebook is used (or its first Stylebook by id when none is marked default).
+- Project-scoped routes take `project_slug`, resolve it to a project, and require project access.
+  They always use the project's assigned Stylebook. A temporary `stylebook_slug` parameter remains
+  accepted only when it matches that assignment; conflicting values are rejected.
 - Stylebook-scoped routes take `stylebook_slug` and require the Stylebook to belong to the authenticated organization. Reads follow the caller's catalog access. Writes require an organization admin, a Stylebook editor membership, or the service token. Project API keys cannot edit a Stylebook.
 
 Organization library routes compare `org_id` with the session organization. The service token is allowed for automation across organizations.
@@ -40,6 +42,10 @@ Location geometry uses GeoJSON `Point`, `Polygon`, or `MultiPolygon` with longit
 Canonical metadata is Stylebook-wide editorial data. Its rows retain a project association for storage and bundle transfer, but reads are not filtered to that project. Writes use the organization's first project as that association, so the organization must contain at least one project.
 
 ## Saved entities and candidate review
+
+Candidate reads require project access. Location, person, and organization candidate mutations
+(notes, deferral, recommendation clearing, and acceptance/linking or canonical creation) also
+require edit permission for the project's Stylebook.
 
 Project-scoped saved entity routes manage article evidence before or after a canonical decision:
 

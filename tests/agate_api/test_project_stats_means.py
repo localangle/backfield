@@ -17,6 +17,8 @@ from api.routers.projects import (
 from backfield_db import AgateGraph, AgateRun, BackfieldOrganization, BackfieldProject
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.project_helpers import project_ownership_fields
+
 
 def test_mean_ms_empty() -> None:
     assert _mean_ms([]) is None
@@ -50,7 +52,12 @@ def test_project_stats_and_ai_cost_with_succeeded_run() -> None:
         session.add(org)
         session.commit()
         session.refresh(org)
-        project = BackfieldProject(organization_id=org.id, name="General", slug="general")
+        project = BackfieldProject(
+            **project_ownership_fields(session, org.id),
+            organization_id=org.id,
+            name="General",
+            slug="general",
+        )
         session.add(project)
         session.commit()
         session.refresh(project)

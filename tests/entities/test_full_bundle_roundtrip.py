@@ -34,6 +34,8 @@ from backfield_entities.catalog.full_bundle import (
 )
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _engine():
     engine = create_engine("sqlite://", echo=False)
@@ -311,16 +313,6 @@ def test_export_import_roundtrip_includes_aliases_meta_connections(tmp_path: Pat
         session.refresh(org)
         oid = int(org.id)  # type: ignore[arg-type]
 
-        project = BackfieldProject(
-            organization_id=oid,
-            name="Demo Project",
-            slug="demo-proj-sidecars",
-        )
-        session.add(project)
-        session.commit()
-        session.refresh(project)
-        project_id = int(project.id)  # type: ignore[arg-type]
-
         sb = Stylebook(
             organization_id=oid,
             name="Sidecar Book",
@@ -331,6 +323,17 @@ def test_export_import_roundtrip_includes_aliases_meta_connections(tmp_path: Pat
         session.commit()
         session.refresh(sb)
         sb_id = int(sb.id)  # type: ignore[arg-type]
+        project = BackfieldProject(
+            **project_ownership_fields(session, oid, stylebook_id=sb_id),
+            organization_id=oid,
+            stylebook_id=sb_id,
+            name="Demo Project",
+            slug="demo-proj-sidecars",
+        )
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+        project_id = int(project.id)  # type: ignore[arg-type]
 
         loc_id = str(uuid4())
         person_id = str(uuid4())

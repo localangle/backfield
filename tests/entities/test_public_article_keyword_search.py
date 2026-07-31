@@ -15,6 +15,8 @@ from backfield_entities.public.keyword_query import article_keyword_tsquery
 from sqlalchemy import func
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from tests.project_helpers import project_ownership_fields
+
 POSTGRES_TEST_URL = os.getenv("TEST_POSTGRES_URL", "").strip()
 
 
@@ -24,6 +26,7 @@ def _seed_sqlite_project(session: Session) -> int:
     session.commit()
     session.refresh(org)
     proj = BackfieldProject(
+        **project_ownership_fields(session, int(org.id)),
         name="News",
         slug="news",
         organization_id=int(org.id),  # type: ignore[arg-type]
@@ -176,7 +179,5 @@ def test_postgres_exclude_search(postgres_engine) -> None:
 
 def test_postgres_websearch_to_tsquery_parses_phrase(postgres_engine) -> None:
     with Session(postgres_engine) as session:
-        parsed = session.exec(
-            select(func.websearch_to_tsquery("english", '"long debate"'))
-        ).one()
+        parsed = session.exec(select(func.websearch_to_tsquery("english", '"long debate"'))).one()
     assert parsed is not None

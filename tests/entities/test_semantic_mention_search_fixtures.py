@@ -20,6 +20,8 @@ from backfield_db.semantic_indexing import (
 from sqlalchemy import text
 from sqlmodel import Session, select
 
+from tests.project_helpers import project_ownership_fields
+
 
 def set_person_semantic_doc_embedding(
     session: Session,
@@ -55,7 +57,12 @@ def seed_person_semantic_search_rows(
             select(BackfieldOrganization).where(BackfieldOrganization.slug == "org-sem-search")
         ).one()
         session.add(
-            BackfieldProject(organization_id=int(org.id), name="Proj", slug="proj-sem-search")
+            BackfieldProject(
+                **project_ownership_fields(session, int(org.id)),
+                organization_id=int(org.id),
+                name="Proj",
+                slug="proj-sem-search",
+            )
         )
         session.commit()
         proj = session.exec(

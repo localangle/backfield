@@ -9,6 +9,7 @@ import pytest
 from backfield_db import (
     BackfieldOrganization,
     BackfieldProject,
+    BackfieldProjectMembership,
     BackfieldUser,
     BackfieldWorkspace,
     Stylebook,
@@ -98,6 +99,7 @@ def _stylebook_test_stack(
                 name="Demo",
                 slug="demo-proj",
                 workspace_id=wid,
+                stylebook_id=sb_id,
             )
         )
         s.add(
@@ -105,7 +107,8 @@ def _stylebook_test_stack(
                 organization_id=oid,
                 name="No workspace",
                 slug="no-ws-proj",
-                workspace_id=None,
+                workspace_id=wid,
+                stylebook_id=sb_id,
             )
         )
         s.commit()
@@ -147,6 +150,35 @@ def _session_auth_for_user(user: BackfieldUser, *, org_id: int, org_role: str) -
     }
 
 
+def test_location_candidate_reads_need_project_access_but_writes_need_editor(
+    member_client: TestClient,
+    stylebook_test_engine: Engine,
+) -> None:
+    with Session(stylebook_test_engine) as session:
+        project = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")
+        ).one()
+        location = SubstrateLocation(
+            project_id=int(project.id),
+            name="Candidate",
+            normalized_name="candidate",
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        session.add(location)
+        session.commit()
+        session.refresh(location)
+        location_id = int(location.id)
+
+    read = member_client.get("/v1/candidates?project_slug=demo-proj")
+    write = member_client.post(
+        f"/v1/candidates/{location_id}/note?project_slug=demo-proj",
+        json={"note": "reviewed"},
+    )
+
+    assert read.status_code == 200
+    assert write.status_code == 403
+
+
 @pytest.fixture
 def member_client(
     _stylebook_test_stack: tuple[TestClient, Engine],
@@ -156,6 +188,15 @@ def member_client(
     with Session(engine) as s:
         user = BackfieldUser(email="member@example.com", password_hash="x")
         s.add(user)
+        s.flush()
+        project = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        s.add(
+            BackfieldProjectMembership(
+                user_id=int(user.id),
+                project_id=int(project.id),
+                role="member",
+            )
+        )
         s.commit()
 
     def _get_auth_override() -> dict[str, Any]:
@@ -656,8 +697,7 @@ def test_create_location_creates_standalone_canonical_and_alias_no_substrate(
         assert "west garfield park chicago il" in norms
 
 
-def test_list_canonical_locations_type_filter(
-    editor_client: TestClient) -> None:
+def test_list_canonical_locations_type_filter(editor_client: TestClient) -> None:
     r_city = editor_client.post(
         "/v1/stylebooks/default/canonical-locations",
         json={"label": "Filter City Row", "location_type": "city"},
@@ -690,11 +730,12 @@ def test_list_canonical_locations_type_filter(
 
 
 def test_list_canonical_locations_orders_by_label_case_insensitive(
-    editor_client: TestClient) -> None:
+    editor_client: TestClient,
+) -> None:
     for label in ("Zebra", "alpha", "Mike"):
         r = editor_client.post(
             "/v1/stylebooks/default/canonical-locations",
-                json={"label": label},
+            json={"label": label},
         )
         assert r.status_code == 200
     r = editor_client.get(
@@ -719,7 +760,7 @@ def test_list_canonical_locations_search_prefers_exact_then_prefix_then_contains
     for lb in (a, b, c):
         r = editor_client.post(
             "/v1/stylebooks/default/canonical-locations",
-                json={"label": lb},
+            json={"label": lb},
         )
         assert r.status_code == 200
 
@@ -740,7 +781,7 @@ def test_list_canonical_locations_search_prefers_exact_then_prefix_then_contains
     for lb in (a2, b2, c2):
         r = editor_client.post(
             "/v1/stylebooks/default/canonical-locations",
-                json={"label": lb},
+            json={"label": lb},
         )
         assert r.status_code == 200
 
@@ -755,8 +796,7 @@ def test_list_canonical_locations_search_prefers_exact_then_prefix_then_contains
     assert labels2.index(b2) < labels2.index(c2)
 
 
-def test_list_canonical_locations_returns_catalog_not_substrate(
-    editor_client: TestClient) -> None:
+def test_list_canonical_locations_returns_catalog_not_substrate(editor_client: TestClient) -> None:
     r = editor_client.post(
         "/v1/stylebooks/default/canonical-locations",
         json={"label": "Catalog Test Place", "location_type": "city"},
@@ -1496,9 +1536,7 @@ def test_create_person_from_article_evidence(
         assert occurrence.end_char == end
 
 
-def test_candidates_needs_review_facet(
-    client: TestClient, stylebook_test_engine: object
-) -> None:
+def test_candidates_needs_review_facet(client: TestClient, stylebook_test_engine: object) -> None:
     engine = stylebook_test_engine
     with Session(engine) as s:
         proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
@@ -1557,9 +1595,7 @@ def test_candidates_needs_review_facet(
     assert r_open.json()["total"] == 1
 
 
-def test_accept_candidate_create_new(
-    client: TestClient, stylebook_test_engine: Engine
-) -> None:
+def test_accept_candidate_create_new(client: TestClient, stylebook_test_engine: Engine) -> None:
     engine = stylebook_test_engine
     with Session(engine) as s:
         proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
@@ -2190,10 +2226,9 @@ def test_delete_location_article_scoped_keeps_link_when_other_stories_mention(
         assert int(active[0].article_id) == aid_b
 
 
-def test_delete_location_article_scoped_unlinks_when_canonical_in_non_default_stylebook(
+def test_project_scoped_delete_rejects_conflicting_stylebook_override(
     client: TestClient, stylebook_test_engine: Engine
 ) -> None:
-    """Delete must unlink using the canonical's stylebook, not only the project default."""
     engine = stylebook_test_engine
     with Session(engine) as s:
         org = s.exec(
@@ -2263,16 +2298,14 @@ def test_delete_location_article_scoped_unlinks_when_canonical_in_non_default_st
         s.commit()
 
     r_del = client.delete(
-        f"/v1/locations/{sid}?project_slug=demo-proj"
-        f"&article_id={aid}&stylebook_slug=regional",
+        f"/v1/locations/{sid}?project_slug=demo-proj&article_id={aid}&stylebook_slug=regional",
         headers=_service_headers(),
     )
-    assert r_del.status_code == 200, r_del.text
-    assert r_del.json()["location_deleted"] is True
-    assert r_del.json()["candidates_created"] == 0
+    assert r_del.status_code == 400, r_del.text
+    assert "does not match project assignment" in r_del.json()["detail"]
 
     with Session(engine) as s:
-        assert s.get(SubstrateLocation, sid) is None
+        assert s.get(SubstrateLocation, sid) is not None
 
 
 def test_delete_location_without_article_id_requeues_linked_substrate(
@@ -2575,9 +2608,7 @@ def test_post_link_canonical_idempotent_same_target(
     assert r2.json()["changed"] is False
 
 
-def test_get_canonical_linked_substrates(
-    client: TestClient, stylebook_test_engine: Engine
-) -> None:
+def test_get_canonical_linked_substrates(client: TestClient, stylebook_test_engine: Engine) -> None:
     engine = stylebook_test_engine
     with Session(engine) as s:
         proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
@@ -2714,9 +2745,7 @@ def test_stylebook_canonical_linked_substrates_include_project_fields(
 
     app.dependency_overrides[get_auth_dep] = _get_auth_override
     try:
-        r_all = client.get(
-            f"/v1/stylebooks/default/canonical-locations/{cid}/linked-substrates"
-        )
+        r_all = client.get(f"/v1/stylebooks/default/canonical-locations/{cid}/linked-substrates")
         assert r_all.status_code == 200
         all_rows = r_all.json()["substrates"]
         assert [row["project_slug"] for row in all_rows] == ["demo-proj", "no-ws-proj"]
@@ -2724,8 +2753,7 @@ def test_stylebook_canonical_linked_substrates_include_project_fields(
         assert [row["project_id"] for row in all_rows] == [demo_proj_id, other_proj_id]
 
         r_filtered = client.get(
-            f"/v1/stylebooks/default/canonical-locations/{cid}/linked-substrates"
-            "?project=demo-proj"
+            f"/v1/stylebooks/default/canonical-locations/{cid}/linked-substrates?project=demo-proj"
         )
         assert r_filtered.status_code == 200
         filtered_rows = r_filtered.json()["substrates"]
@@ -2831,15 +2859,11 @@ def test_stylebook_canonical_location_meta_crud(
     assert r3.json()["meta_type"] == "note"
     assert r3.json()["data"] == {"shared": "everywhere"}
 
-    r4 = editor_client.delete(
-        f"/v1/stylebooks/default/canonical-locations/{cid}/meta/{mid}"
-    )
+    r4 = editor_client.delete(f"/v1/stylebooks/default/canonical-locations/{cid}/meta/{mid}")
     assert r4.status_code == 200
 
     with Session(engine) as s:
-        row = s.exec(
-            select(StylebookLocationMeta).where(StylebookLocationMeta.id == mid)
-        ).first()
+        row = s.exec(select(StylebookLocationMeta).where(StylebookLocationMeta.id == mid)).first()
         assert row is None
 
 
@@ -2873,9 +2897,7 @@ def test_stylebook_canonical_location_connections_roundtrip(
         aid = str(ca.id)
         bid = str(cb.id)
 
-    r0 = editor_client.get(
-        f"/v1/stylebooks/default/canonical-locations/{aid}/connections"
-    )
+    r0 = editor_client.get(f"/v1/stylebooks/default/canonical-locations/{aid}/connections")
     assert r0.status_code == 200
     assert r0.json()["connections"] == []
 
@@ -2889,9 +2911,7 @@ def test_stylebook_canonical_location_connections_roundtrip(
     assert body["nature"] == "near"
     assert body.get("evidence_json") is None
 
-    r2 = editor_client.get(
-        f"/v1/stylebooks/default/canonical-locations/{aid}/connections"
-    )
+    r2 = editor_client.get(f"/v1/stylebooks/default/canonical-locations/{aid}/connections")
     assert r2.status_code == 200
     assert len(r2.json()["connections"]) == 1
     assert r2.json()["connections"][0]["to_display_name"] == "Shared Conn B"
@@ -3030,9 +3050,7 @@ def test_stylebook_person_connection_crud(
     assert body["to_display_name"] == "Manual Conn Place"
     assert body.get("evidence_json") is None
 
-    list_res = editor_client.get(
-        f"/v1/stylebooks/default/canonical-people/{person_id}/connections"
-    )
+    list_res = editor_client.get(f"/v1/stylebooks/default/canonical-people/{person_id}/connections")
     assert list_res.status_code == 200
     assert len(list_res.json()["connections"]) == 1
 
@@ -3111,9 +3129,7 @@ def test_stylebook_connection_lists_auto_connection_evidence(
         )
         s.commit()
 
-    response = editor_client.get(
-        f"/v1/stylebooks/default/canonical-locations/{aid}/connections"
-    )
+    response = editor_client.get(f"/v1/stylebooks/default/canonical-locations/{aid}/connections")
     assert response.status_code == 200
     rows = response.json()["connections"]
     assert len(rows) == 1

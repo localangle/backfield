@@ -33,6 +33,8 @@ from backfield_entities.entities.person import (
 )
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _engine():
     engine = create_engine("sqlite://", echo=False)
@@ -51,7 +53,12 @@ def _seed_stylebook(session: Session) -> tuple[int, int]:
     session.commit()
     session.refresh(sb)
     sb_id = int(sb.id)  # type: ignore[arg-type]
-    proj = BackfieldProject(name="Demo", slug="demo-person", organization_id=oid)
+    proj = BackfieldProject(
+        **project_ownership_fields(session, oid),
+        name="Demo",
+        slug="demo-person",
+        organization_id=oid,
+    )
     session.add(proj)
     session.commit()
     session.refresh(proj)
@@ -62,9 +69,7 @@ def test_allocate_unique_person_canonical_slug_suffixes_on_collision() -> None:
     engine = _engine()
     with Session(engine) as session:
         sb_id, _pid = _seed_stylebook(session)
-        slug = allocate_unique_person_canonical_slug(
-            session, stylebook_id=sb_id, label="Jane Doe"
-        )
+        slug = allocate_unique_person_canonical_slug(session, stylebook_id=sb_id, label="Jane Doe")
         assert slug == "jane-doe"
         session.add(
             StylebookPersonCanonical(
@@ -352,11 +357,7 @@ def test_decide_person_defers_when_alias_matches_but_affiliation_differs() -> No
 
         plan = decide_person_canonical_persist_plan(session, stylebook_id=sb_id, person=person)
         assert plan.decision == CanonicalPersistDecision.DEFER
-        codes = [
-            str(r.get("code"))
-            for r in plan.resolution_reasons
-            if isinstance(r, dict)
-        ]
+        codes = [str(r.get("code")) for r in plan.resolution_reasons if isinstance(r, dict)]
         assert "ambiguous_person_canonical_match" in codes
         recall = next(
             r.get("recall_canonical_ids")

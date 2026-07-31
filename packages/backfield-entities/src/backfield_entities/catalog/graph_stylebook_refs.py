@@ -139,6 +139,65 @@ def _is_geocode_agent_node_type(node_type: Any) -> bool:
     return normalized in ("geocodeagent", "geocode_agent")
 
 
+def validate_runtime_stylebook_refs_for_project(
+    spec: Mapping[str, Any],
+    *,
+    project_stylebook_id: int,
+) -> None:
+    """Reject explicit runtime-node Stylebook refs that differ from project ownership."""
+    nodes = spec.get("nodes")
+    if not isinstance(nodes, list):
+        return
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        node_type = node.get("type")
+        if not (_is_db_output_node_type(node_type) or _is_geocode_agent_node_type(node_type)):
+            continue
+        params = node.get("params")
+        if not isinstance(params, dict):
+            continue
+        for param_key in (STYLEBOOK_NODE_PARAM_KEY, _LEGACY_STYLEBOOK_PARAM_KEY):
+            if param_key not in params or params[param_key] is None:
+                continue
+            explicit_stylebook_id = _coerce_stylebook_param(params[param_key])
+            if explicit_stylebook_id != project_stylebook_id:
+                node_id = str(node.get("id") or "unknown")
+                raise StylebookGraphRefsError(
+                    f"Node {node_id} references a Stylebook that does not match the "
+                    "project's assigned Stylebook."
+                )
+
+
+def normalize_runtime_stylebook_refs(
+    spec: dict[str, Any],
+    *,
+    project_stylebook_id: int,
+) -> bool:
+    """Persist the project Stylebook on legacy catalog-aware runtime nodes."""
+    nodes = spec.get("nodes")
+    if not isinstance(nodes, list):
+        return False
+    changed = False
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        node_type = node.get("type")
+        if not (_is_db_output_node_type(node_type) or _is_geocode_agent_node_type(node_type)):
+            continue
+        params = node.get("params")
+        if not isinstance(params, dict):
+            params = {}
+            node["params"] = params
+        if (
+            params.get(STYLEBOOK_NODE_PARAM_KEY) != project_stylebook_id
+            or _LEGACY_STYLEBOOK_PARAM_KEY in params
+        ):
+            _apply_stylebook_ref_replacement(params, replacement=project_stylebook_id)
+            changed = True
+    return changed
+
+
 def sanitize_stylebook_refs_for_organization(
     session: Session,
     *,

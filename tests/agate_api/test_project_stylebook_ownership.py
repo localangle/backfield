@@ -157,51 +157,100 @@ def test_workspace_stylebook_change_does_not_mutate_existing_project(
         assert project.stylebook_id == ownership_fixture.original_stylebook_id
 
 
-def test_project_response_falls_back_to_workspace_stylebook(
+def test_graph_write_normalizes_runtime_nodes_to_project_stylebook(
     ownership_fixture: ProjectOwnershipFixture,
 ) -> None:
-    with Session(ownership_fixture.engine) as session:
-        workspace = session.get(BackfieldWorkspace, ownership_fixture.workspace_id)
-        assert workspace is not None
-        workspace.stylebook_id = ownership_fixture.replacement_stylebook_id
-        project = BackfieldProject(
-            organization_id=ownership_fixture.organization_id,
-            workspace_id=ownership_fixture.workspace_id,
-            stylebook_id=None,
-            name="Legacy workspace project",
-            slug="legacy-workspace-project",
-        )
-        session.add(workspace)
-        session.add(project)
-        session.commit()
-        session.refresh(project)
-        project_id = int(project.id)
+    project = ownership_fixture.client.post(
+        "/projects",
+        json={
+            "name": "Normalized project",
+            "slug": "normalized-project",
+            "workspace_id": ownership_fixture.workspace_id,
+        },
+    ).json()
 
-    response = ownership_fixture.client.get(f"/projects/{project_id}")
+    response = ownership_fixture.client.post(
+        "/graphs",
+        json={
+            "name": "Normalized flow",
+            "project_id": project["id"],
+            "spec": {
+                "name": "normalized",
+                "nodes": [
+                    {
+                        "id": "geo",
+                        "type": "GeocodeAgent",
+                        "params": {"stylebookId": ownership_fixture.original_stylebook_id},
+                    },
+                    {
+                        "id": "out",
+                        "type": "DBOutput",
+                        "params": {"stylebook_id": ownership_fixture.original_stylebook_id},
+                    },
+                ],
+                "edges": [],
+            },
+        },
+    )
 
-    assert response.status_code == 200
-    assert response.json()["stylebook_id"] == ownership_fixture.replacement_stylebook_id
-    assert response.json()["stylebook_name"] == "Replacement"
+    assert response.status_code == 200, response.text
+    params = [node["params"] for node in response.json()["spec"]["nodes"]]
+    assert params == [
+        {"stylebook_id": ownership_fixture.original_stylebook_id},
+        {"stylebook_id": ownership_fixture.original_stylebook_id},
+    ]
 
 
-def test_project_response_falls_back_to_organization_default(
+def test_graph_create_and_update_reject_conflicting_runtime_stylebook(
     ownership_fixture: ProjectOwnershipFixture,
 ) -> None:
-    with Session(ownership_fixture.engine) as session:
-        project = BackfieldProject(
-            organization_id=ownership_fixture.organization_id,
-            workspace_id=None,
-            stylebook_id=None,
-            name="Legacy orphan project",
-            slug="legacy-orphan-project",
-        )
-        session.add(project)
-        session.commit()
-        session.refresh(project)
-        project_id = int(project.id)
+    project = ownership_fixture.client.post(
+        "/projects",
+        json={
+            "name": "Strict project",
+            "slug": "strict-project",
+            "workspace_id": ownership_fixture.workspace_id,
+        },
+    ).json()
+    mismatch_spec = {
+        "name": "mismatch",
+        "nodes": [
+            {
+                "id": "out",
+                "type": "DBOutput",
+                "params": {"stylebook_id": ownership_fixture.replacement_stylebook_id},
+            },
+        ],
+        "edges": [],
+    }
 
-    response = ownership_fixture.client.get(f"/projects/{project_id}")
+    rejected_create = ownership_fixture.client.post(
+        "/graphs",
+        json={
+            "name": "Rejected flow",
+            "project_id": project["id"],
+            "spec": mismatch_spec,
+        },
+    )
+    assert rejected_create.status_code == 400
+    assert "does not match" in rejected_create.json()["detail"]
 
-    assert response.status_code == 200
-    assert response.json()["stylebook_id"] == ownership_fixture.original_stylebook_id
-    assert response.json()["stylebook_name"] == "Original"
+    created = ownership_fixture.client.post(
+        "/graphs",
+        json={
+            "name": "Accepted flow",
+            "project_id": project["id"],
+            "spec": {"name": "accepted", "nodes": [], "edges": []},
+        },
+    )
+    assert created.status_code == 200
+    rejected_update = ownership_fixture.client.put(
+        f"/graphs/{created.json()['id']}",
+        json={
+            "name": "Rejected update",
+            "project_id": project["id"],
+            "spec": mismatch_spec,
+        },
+    )
+    assert rejected_update.status_code == 400
+    assert "does not match" in rejected_update.json()["detail"]

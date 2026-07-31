@@ -41,6 +41,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from tests.core_api.auth_helpers import attach_test_engine, seed_first_admin
+from tests.project_helpers import project_ownership_fields
 
 
 @pytest.fixture
@@ -71,6 +72,7 @@ def public_client(tmp_path) -> Generator[TestClient, None, None]:
         s.refresh(ws)
         s.add(
             BackfieldProject(
+                **project_ownership_fields(s, oid, workspace_id=int(ws.id)),
                 name="General",
                 slug="general",
                 organization_id=oid,
@@ -79,6 +81,7 @@ def public_client(tmp_path) -> Generator[TestClient, None, None]:
         )
         s.add(
             BackfieldProject(
+                **project_ownership_fields(s, oid, workspace_id=int(ws.id)),
                 name="Other",
                 slug="other",
                 organization_id=oid,
@@ -1008,9 +1011,7 @@ def test_public_article_detail_include_text(public_client: TestClient) -> None:
     body = r.json()
     assert "text" in body
     assert body["preview"]
-    assert body["text"] == (
-        "The council approved the budget after a long debate downtown."
-    )
+    assert body["text"] == ("The council approved the budget after a long debate downtown.")
     assert body.get("counts") is None
 
 
@@ -1551,7 +1552,9 @@ def test_public_organization_not_found(public_client: TestClient) -> None:
     assert r.status_code == 404
 
 
-def test_public_entity_search_stylebook_slug_override(public_client: TestClient) -> None:
+def test_public_entity_search_rejects_stylebook_slug_override(
+    public_client: TestClient,
+) -> None:
     engine = public_client.test_engine  # type: ignore[attr-defined]
     with Session(engine) as session:
         org = session.exec(
@@ -1604,19 +1607,16 @@ def test_public_entity_search_stylebook_slug_override(public_client: TestClient)
         headers=headers,
         params={"q": "Newsroom", "stylebook_slug": "mnn-stylebook"},
     )
-    assert overridden.status_code == 200
-    body = overridden.json()
-    assert body["pagination"]["total"] == 1
-    assert body["items"][0]["label"] == "MNN Newsroom"
-    assert body["items"][0]["stylebook_slug"] == "mnn-stylebook"
+    assert overridden.status_code == 400
+    assert "does not match" in overridden.json()["error"]["message"]
 
     types = public_client.get(
         "/public/v1/projects/general/organizations/types",
         headers=headers,
         params={"stylebook_slug": "mnn-stylebook"},
     )
-    assert types.status_code == 200
-    assert "media" in types.json()["types"]
+    assert types.status_code == 400
+    assert "does not match" in types.json()["error"]["message"]
 
     missing = public_client.get(
         "/public/v1/projects/general/organizations/search",
@@ -1828,8 +1828,7 @@ def test_public_mentions_search_facets_and_detail(public_client: TestClient) -> 
     entity_types = {item["entity_type"] for item in body["items"]}
     assert entity_types == {"location", "person", "organization"}
     assert all(
-        item["article"]["headline"] == "City council votes on budget"
-        for item in body["items"]
+        item["article"]["headline"] == "City council votes on budget" for item in body["items"]
     )
 
     by_person = public_client.get(

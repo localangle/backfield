@@ -24,6 +24,8 @@ from worker.substrate.entities.person.adjudication import (
     prepare_person_adjudication,
 )
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _adj_json_link(canonical_id: str, confidence: float, rationale: str) -> str:
     return (
@@ -59,6 +61,7 @@ def _bootstrap(session: Session) -> tuple[int, int]:
     session.commit()
     session.refresh(ws)
     proj = BackfieldProject(
+        **project_ownership_fields(session, oid, workspace_id=int(ws.id)),
         organization_id=oid,
         name="P",
         slug="p-adj",
@@ -124,9 +127,7 @@ def test_adjudicate_ambiguous_upgrades_when_llm_confident(monkeypatch) -> None:
         )
 
         def _fake_llm(*_a, **_k) -> str:
-            return (
-                _adj_json_link(id1, 0.92, "Name matches Alpha.")
-            )
+            return _adj_json_link(id1, 0.92, "Name matches Alpha.")
 
         monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
 
@@ -191,9 +192,7 @@ def test_adjudicate_ambiguous_materialize_when_llm_rejects_link(monkeypatch) -> 
         )
 
         def _fake_llm(*_a, **_k) -> str:
-            return (
-                _adj_json_reject(0.15, "AR vs TX; no fit.")
-            )
+            return _adj_json_reject(0.15, "AR vs TX; no fit.")
 
         monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
 
@@ -255,9 +254,7 @@ def test_adjudicate_ambiguous_person_materialize_when_llm_rejects_link(monkeypat
         )
 
         def _fake_llm(*_a, **_k) -> str:
-            return (
-                _adj_json_reject(0.33, "None match Greg Abbott, Governor of Texas.")
-            )
+            return _adj_json_reject(0.33, "None match Greg Abbott, Governor of Texas.")
 
         monkeypatch.setattr(
             "worker.substrate.entities.person.adjudication.call_llm",
@@ -325,9 +322,7 @@ def test_adjudicate_ambiguous_person_athlete_materializes_on_llm_reject(monkeypa
         )
 
         def _fake_llm(*_a, **_k) -> str:
-            return (
-                _adj_json_reject(0.4, "Different team but likely same athlete.")
-            )
+            return _adj_json_reject(0.4, "Different team but likely same athlete.")
 
         monkeypatch.setattr(
             "worker.substrate.entities.person.adjudication.call_llm",
@@ -510,9 +505,7 @@ def test_adjudicate_rejects_link_when_confidence_below_floor(monkeypatch) -> Non
         )
 
         def _fake_llm(*_a, **_k) -> str:
-            return (
-                _adj_json_link(id1, 0.85, "Probably the same POI.")
-            )
+            return _adj_json_link(id1, 0.85, "Probably the same POI.")
 
         monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
 
@@ -573,9 +566,7 @@ def test_adjudicate_accepts_link_at_exact_min_confidence(monkeypatch) -> None:
         )
 
         def _fake_llm(*_a, **_k) -> str:
-            return (
-                _adj_json_link(id1, ADJUDICATION_LINK_MIN_CONFIDENCE, "Exact label match.")
-            )
+            return _adj_json_link(id1, ADJUDICATION_LINK_MIN_CONFIDENCE, "Exact label match.")
 
         monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
 
@@ -639,9 +630,7 @@ def test_adjudicate_rejects_llm_choice_when_link_pair_denied(monkeypatch) -> Non
         )
 
         def _fake_llm(*_a, **_k) -> str:
-            return (
-                _adj_json_link(cid, 0.95, "Name overlap.")
-            )
+            return _adj_json_link(cid, 0.95, "Name overlap.")
 
         monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
 
@@ -709,9 +698,7 @@ def test_adjudicate_rejects_llm_choice_when_content_sanity_blocks(monkeypatch) -
         )
 
         def _fake_llm(*_a, **_k) -> str:
-            return (
-                _adj_json_link(park_id, 0.92, "Substrate mentions Jackson Park.")
-            )
+            return _adj_json_link(park_id, 0.92, "Substrate mentions Jackson Park.")
 
         monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
 
@@ -786,9 +773,7 @@ def test_adjudicate_political_district_fuzzy_plan_runs_llm(monkeypatch) -> None:
         def _fake_llm(prompt: str, *_a, **_k) -> str:
             assert "District identity key" in prompt
             assert "US-WARD-IL-8" in prompt
-            return (
-                _adj_json_link(id1, 0.95, "Same ward number and city.")
-            )
+            return _adj_json_link(id1, 0.95, "Same ward number and city.")
 
         monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
 
@@ -858,9 +843,7 @@ def test_adjudicate_political_district_coerces_when_district_key_mismatch(monkey
         )
 
         def _fake_llm(*_a, **_k) -> str:
-            return (
-                _adj_json_link(id1, 0.95, "LLM wrongly picks nearby ward.")
-            )
+            return _adj_json_link(id1, 0.95, "LLM wrongly picks nearby ward.")
 
         monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
 
@@ -931,9 +914,7 @@ def test_adjudicate_political_district_coerces_when_district_kind_conflicts(monk
         )
 
         def _fake_llm(*_a, **_k) -> str:
-            return (
-                _adj_json_link(id1, 0.95, "Name matches Congressional District 13.")
-            )
+            return _adj_json_link(id1, 0.95, "Name matches Congressional District 13.")
 
         monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
 

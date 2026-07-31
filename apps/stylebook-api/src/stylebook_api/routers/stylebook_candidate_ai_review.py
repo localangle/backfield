@@ -118,12 +118,18 @@ def _require_project_in_stylebook_org(
     *,
     project_slug: str,
     organization_id: int,
+    stylebook_id: int,
     auth: dict[str, Any],
 ) -> BackfieldProject:
     proj = _project_by_slug(session, project_slug)
     if int(proj.organization_id) != organization_id:
         raise HTTPException(status_code=400, detail="Project is not in this organization")
     require_project_access(session, auth, int(proj.id))
+    if int(proj.stylebook_id) != stylebook_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Stylebook does not match the project's assigned Stylebook",
+        )
     return proj
 
 
@@ -175,6 +181,7 @@ def start_candidate_ai_review(
         session,
         project_slug=body.project_slug.strip(),
         organization_id=int(sb.organization_id),
+        stylebook_id=int(sb.id),
         auth=auth,
     )
     _validate_model_selection(
@@ -226,6 +233,7 @@ def cancel_candidate_ai_review(
     review = session.get(StylebookCandidateAiReview, review_id)
     if review is None or int(review.stylebook_id) != int(sb.id):
         raise HTTPException(status_code=404, detail="Review not found")
+    require_project_access(session, auth, int(review.project_id))
     if review.status not in ("queued", "running"):
         raise HTTPException(
             status_code=400,
@@ -261,6 +269,7 @@ def get_latest_candidate_ai_review(
         session,
         project_slug=project_slug.strip(),
         organization_id=int(sb.organization_id),
+        stylebook_id=int(sb.id),
         auth=auth,
     )
     row = session.exec(
@@ -294,4 +303,5 @@ def get_candidate_ai_review(
     review = session.get(StylebookCandidateAiReview, review_id)
     if review is None or int(review.stylebook_id) != int(sb.id):
         raise HTTPException(status_code=404, detail="Review not found")
+    require_project_access(session, auth, int(review.project_id))
     return CandidateAiReviewOut.from_row(review)

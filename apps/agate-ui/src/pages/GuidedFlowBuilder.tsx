@@ -460,7 +460,6 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   }, [isRunVariant, scaffoldModel])
 
   const flowProjectId = resolvedFlowProject?.id ?? null
-  const workspaceStylebookId = resolvedFlowProject?.workspace_stylebook_id ?? null
 
   useEffect(() => {
     if (resolvedFlowProject?.workspace_id == null) {
@@ -712,7 +711,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       const data = (
         isInput
           ? getInputBookendDefaultData(type)
-          : getOutputBookendDefaultData(type, workspaceStylebookId)
+          : getOutputBookendDefaultData(type)
       ) as Record<string, unknown>
       const node: Node = { id, type, data, position: currentBookend?.position ?? { x: 0, y: 0 } }
 
@@ -789,7 +788,6 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       inputNode,
       outputNode,
       scaffoldModel,
-      workspaceStylebookId,
       resetStepsAfterInput,
       resetStepsAfterOutput,
       clearScaffold,
@@ -1538,7 +1536,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       const newNode = {
         id: nextNodeId(),
         type,
-        data: getMiddleNodeDefaultData(type, workspaceStylebookId),
+        data: getMiddleNodeDefaultData(type),
       }
       setScaffoldModel((model) => {
         if (!model) return model
@@ -1559,7 +1557,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       setAddFromParentId(null)
       setAddIntoEdge(null)
     },
-    [addFromParentId, addIntoEdge, scaffoldModel, workspaceStylebookId],
+    [addFromParentId, addIntoEdge, scaffoldModel],
   )
 
   /**

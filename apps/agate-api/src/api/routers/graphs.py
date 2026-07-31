@@ -18,7 +18,8 @@ from backfield_db import (
 )
 from backfield_entities.catalog.graph_stylebook_refs import (
     StylebookGraphRefsError,
-    sanitize_stylebook_refs_for_organization,
+    normalize_runtime_stylebook_refs,
+    validate_runtime_stylebook_refs_for_project,
     validate_stylebook_refs_for_organization,
 )
 from fastapi import APIRouter, Depends, HTTPException
@@ -39,12 +40,11 @@ def _prepare_spec_stylebook_refs(
         return spec
     org_id = int(proj.organization_id)
     spec_dict = spec.model_dump()
-    sanitize_stylebook_refs_for_organization(
-        session,
-        organization_id=org_id,
-        spec=spec_dict,
-    )
     try:
+        validate_runtime_stylebook_refs_for_project(
+            spec_dict,
+            project_stylebook_id=int(proj.stylebook_id),
+        )
         validate_stylebook_refs_for_organization(
             session,
             organization_id=org_id,
@@ -52,6 +52,10 @@ def _prepare_spec_stylebook_refs(
         )
     except StylebookGraphRefsError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    normalize_runtime_stylebook_refs(
+        spec_dict,
+        project_stylebook_id=int(proj.stylebook_id),
+    )
     return GraphSpec.model_validate(spec_dict)
 
 

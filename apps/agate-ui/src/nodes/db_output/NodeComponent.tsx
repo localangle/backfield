@@ -34,7 +34,6 @@ const nodeMetadata = {
   ],
   "defaultParams": {
     "stylebook_matching_enabled": true,
-    "stylebook_id": null,
     "canonicalization_mode": "ai_assisted",
     "reconciliation_policy": "smart_merge",
     "auto_apply_canonicalization": true,

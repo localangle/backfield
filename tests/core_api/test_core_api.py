@@ -22,6 +22,7 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from tests.core_api.auth_helpers import attach_test_engine, seed_first_admin
 from tests.integration_helpers import patch_test_engine
+from tests.project_helpers import project_ownership_fields
 
 
 @pytest.fixture
@@ -62,6 +63,7 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, N
         s.refresh(ws)
         s.add(
             BackfieldProject(
+                **project_ownership_fields(s, int(org.id), workspace_id=int(ws.id)),
                 name="General",
                 slug="general",
                 organization_id=int(org.id),
@@ -70,6 +72,7 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, N
         )
         s.add(
             BackfieldProject(
+                **project_ownership_fields(s, int(org.id), workspace_id=int(ws.id)),
                 name="Other",
                 slug="other",
                 organization_id=int(org.id),
@@ -87,6 +90,7 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, N
         s.refresh(ws2)
         s.add(
             BackfieldProject(
+                **project_ownership_fields(s, int(org.id), workspace_id=int(ws2.id)),
                 name="Alpha",
                 slug="alpha-proj",
                 organization_id=int(org.id),

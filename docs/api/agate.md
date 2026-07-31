@@ -30,14 +30,16 @@ Project, flow, and run access is checked against the resource's project. Organiz
   endpoint never falls back to a default organization. API keys cannot create projects.
 - Secret responses contain metadata, never secret values.
 - Project responses expose direct `stylebook_id`, `stylebook_name`, and `stylebook_slug` fields
-  while retaining the `workspace_stylebook_*` response fields for compatibility. During rollout,
-  reads resolve the direct project Stylebook first, then the workspace Stylebook, then the
-  organization default (or first catalog by id for a legacy organization with no marked default).
-  A later workspace Stylebook change does not alter existing projects.
+  while retaining the `workspace_stylebook_*` response fields for compatibility. The direct
+  project Stylebook is authoritative. A later workspace Stylebook change does not alter existing
+  projects.
 
 ### Flows and templates
 
-`/graphs` creates, lists, validates, updates, and deletes saved `GraphSpec` flows. Referenced node Stylebook identifiers must exist in the flow project's organization. Graph responses include descriptive and public-run settings used by Agate UI and Core API.
+`/graphs` creates, lists, validates, updates, and deletes saved `GraphSpec` flows. Graph create and
+update normalize Backfield Output and GeocodeAgent compatibility parameters to the project's
+Stylebook. Completed run snapshots are not rewritten. Graph responses include descriptive and
+public-run settings used by Agate UI and Core API.
 
 `/templates` lists flow templates and instantiates a template into a project after project-access checks.
 
@@ -97,6 +99,9 @@ Backfield Output persists consolidated article content and the domains present i
 - semantic mention documents when enabled;
 - automatic entity connections when configured.
 
-Entity reconciliation supports `add_only`, `smart_merge`, and `replace`. The policy applies to each current entity domain represented in the consolidated payload, and the node returns per-domain reconciliation summaries. Catalog matching resolves an explicit node Stylebook when configured, otherwise the organization's default Stylebook (or its first Stylebook by id).
+Entity reconciliation supports `add_only`, `smart_merge`, and `replace`. The policy applies to
+each current entity domain represented in the consolidated payload, and the node returns
+per-domain reconciliation summaries. Catalog matching always uses the project's Stylebook; a
+legacy node value is accepted only when it matches.
 
 Backfield Output persistence runs in the worker. The package-level runner is a no-op outside that worker context so local graph execution can still return the node's output shape.

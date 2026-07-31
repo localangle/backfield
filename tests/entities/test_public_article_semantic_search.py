@@ -17,6 +17,8 @@ from backfield_entities.public.article_semantic_search import (
 )
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _seed_project_with_embeddings(session: Session) -> tuple[int, str, str]:
     org = BackfieldOrganization(name="Org", slug="org-public-semantic-articles")
@@ -24,6 +26,7 @@ def _seed_project_with_embeddings(session: Session) -> tuple[int, str, str]:
     session.commit()
     session.refresh(org)
     proj = BackfieldProject(
+        **project_ownership_fields(session, int(org.id)),
         name="News",
         slug="news",
         organization_id=int(org.id),  # type: ignore[arg-type]

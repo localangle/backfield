@@ -67,8 +67,28 @@ def _add_pending_person(
     return int(person.id)  # type: ignore[arg-type]
 
 
-def test_list_canonical_people_empty(
-    editor_client: TestClient) -> None:
+def test_person_candidate_writes_require_stylebook_editor(
+    member_client: TestClient,
+    stylebook_test_engine: Engine,
+) -> None:
+    with Session(stylebook_test_engine) as session:
+        project = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")
+        ).one()
+        person_id = _add_pending_person(
+            session,
+            project_id=int(project.id),
+            name="Candidate Person",
+            normalized_name="candidate person",
+            fingerprint="candidate-person-permission",
+        )
+
+    assert member_client.get("/v1/people/candidates?project_slug=demo-proj").status_code == 200
+    response = member_client.post(f"/v1/people/candidates/{person_id}/defer?project_slug=demo-proj")
+    assert response.status_code == 403
+
+
+def test_list_canonical_people_empty(editor_client: TestClient) -> None:
     r = editor_client.get(
         "/v1/stylebooks/default/canonical-people?limit=10&offset=0",
     )

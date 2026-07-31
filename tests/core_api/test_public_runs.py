@@ -28,6 +28,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from tests.core_api.auth_helpers import attach_test_engine, seed_and_login
+from tests.project_helpers import project_ownership_fields
 
 
 @pytest.fixture
@@ -58,6 +59,7 @@ def public_runs_client(tmp_path) -> Generator[TestClient, None, None]:
         s.refresh(ws)
         s.add(
             BackfieldProject(
+                **project_ownership_fields(s, oid, workspace_id=int(ws.id)),
                 name="General",
                 slug="general",
                 organization_id=oid,

@@ -54,6 +54,31 @@ def _add_pending_organization(
     return int(organization.id)  # type: ignore[arg-type]
 
 
+def test_organization_candidate_writes_require_stylebook_editor(
+    member_client: TestClient,
+    stylebook_test_engine: Engine,
+) -> None:
+    with Session(stylebook_test_engine) as session:
+        project = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")
+        ).one()
+        organization_id = _add_pending_organization(
+            session,
+            project_id=int(project.id),
+            name="Candidate Organization",
+            normalized_name="candidate organization",
+        )
+
+    assert (
+        member_client.get("/v1/organizations/candidates?project_slug=demo-proj").status_code == 200
+    )
+    response = member_client.post(
+        f"/v1/organizations/candidates/{organization_id}/clear-recommendation"
+        "?project_slug=demo-proj"
+    )
+    assert response.status_code == 403
+
+
 def test_list_canonical_organizations_empty(editor_client: TestClient) -> None:
     r = editor_client.get(
         "/v1/stylebooks/default/canonical-organizations?limit=10&offset=0",
@@ -493,11 +518,7 @@ def test_import_csv_organizations_analyze_rejects_malformed(editor_client: TestC
 def test_import_csv_organizations_creates_canonicals(
     editor_client: TestClient, stylebook_test_engine: Engine
 ) -> None:
-    csv_data = (
-        "label,organization_type\n"
-        "City Hall,government\n"
-        "Acme Corp,company\n"
-    )
+    csv_data = "label,organization_type\nCity Hall,government\nAcme Corp,company\n"
     r = editor_client.post(
         "/v1/stylebooks/default/import/csv/organizations",
         json={

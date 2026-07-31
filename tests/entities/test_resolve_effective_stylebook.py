@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from backfield_db import (
     BackfieldOrganization,
     BackfieldProject,
@@ -22,7 +23,7 @@ def _engine():
     return engine
 
 
-def test_effective_uses_workspace_stylebook_when_project_is_unpinned() -> None:
+def test_effective_requires_direct_project_stylebook() -> None:
     engine = _engine()
     with Session(engine) as session:
         org = BackfieldOrganization(slug="org-eff", name="Org Eff")
@@ -47,6 +48,7 @@ def test_effective_uses_workspace_stylebook_when_project_is_unpinned() -> None:
         proj = BackfieldProject(
             organization_id=int(org.id),
             workspace_id=int(ws.id),
+            stylebook_id=int(sb_a.id),
             name="Proj",
             slug="proj-eff",
         )
@@ -104,7 +106,7 @@ def test_effective_project_stylebook_wins_after_workspace_default_changes() -> N
         assert resolve_stylebook_id_for_project_id(session, int(project.id)) == int(pinned.id)
 
 
-def test_effective_override_by_slug_same_org() -> None:
+def test_conflicting_slug_override_is_rejected() -> None:
     engine = _engine()
     with Session(engine) as session:
         org = BackfieldOrganization(slug="org-eff2", name="Org Eff2")
@@ -129,14 +131,15 @@ def test_effective_override_by_slug_same_org() -> None:
         proj = BackfieldProject(
             organization_id=int(org.id),
             workspace_id=int(ws.id),
+            stylebook_id=int(sb_b.id),
             name="Proj",
             slug="proj-eff2",
         )
         session.add(proj)
         session.commit()
 
-        got = resolve_effective_stylebook_id_for_project(session, proj, stylebook_slug="alpha")
-        assert got == int(sb_a.id)
+        with pytest.raises(ValueError, match="STYLEBOOK_OVERRIDE_CONFLICT"):
+            resolve_effective_stylebook_id_for_project(session, proj, stylebook_slug="alpha")
 
 
 def test_unknown_slug_raises() -> None:
@@ -162,6 +165,7 @@ def test_unknown_slug_raises() -> None:
         proj = BackfieldProject(
             organization_id=int(org.id),
             workspace_id=int(ws.id),
+            stylebook_id=int(sb.id),
             name="Proj",
             slug="proj-eff3",
         )
@@ -176,7 +180,7 @@ def test_unknown_slug_raises() -> None:
             raise AssertionError("expected LookupError")
 
 
-def test_catalog_id_override_wins_workspace_default() -> None:
+def test_conflicting_catalog_id_override_is_rejected() -> None:
     engine = _engine()
     with Session(engine) as session:
         org = BackfieldOrganization(slug="org-cat", name="Org Cat")
@@ -201,22 +205,22 @@ def test_catalog_id_override_wins_workspace_default() -> None:
         proj = BackfieldProject(
             organization_id=int(org.id),
             workspace_id=int(ws.id),
+            stylebook_id=int(sb_b.id),
             name="Proj",
             slug="proj-cat",
         )
         session.add(proj)
         session.commit()
 
-        got = resolve_effective_stylebook_id_for_project(
-            session,
-            proj,
-            catalog_stylebook_id=int(sb_a.id),
-        )
-        assert got == int(sb_a.id)
+        with pytest.raises(ValueError, match="STYLEBOOK_OVERRIDE_CONFLICT"):
+            resolve_effective_stylebook_id_for_project(
+                session,
+                proj,
+                catalog_stylebook_id=int(sb_a.id),
+            )
 
 
-def test_catalog_id_override_wins_slug() -> None:
-    """Explicit integer catalog wins over ``stylebook_slug`` when both are set."""
+def test_matching_catalog_id_and_conflicting_slug_is_rejected() -> None:
     engine = _engine()
     with Session(engine) as session:
         org = BackfieldOrganization(slug="org-both", name="Org Both")
@@ -241,19 +245,20 @@ def test_catalog_id_override_wins_slug() -> None:
         proj = BackfieldProject(
             organization_id=int(org.id),
             workspace_id=int(ws.id),
+            stylebook_id=int(sb_a.id),
             name="Proj",
             slug="proj-both",
         )
         session.add(proj)
         session.commit()
 
-        got = resolve_effective_stylebook_id_for_project(
-            session,
-            proj,
-            stylebook_slug="beta",
-            catalog_stylebook_id=int(sb_a.id),
-        )
-        assert got == int(sb_a.id)
+        with pytest.raises(ValueError, match="STYLEBOOK_OVERRIDE_CONFLICT"):
+            resolve_effective_stylebook_id_for_project(
+                session,
+                proj,
+                stylebook_slug="beta",
+                catalog_stylebook_id=int(sb_a.id),
+            )
 
 
 def test_catalog_id_wrong_organization_raises() -> None:
@@ -293,6 +298,7 @@ def test_catalog_id_wrong_organization_raises() -> None:
         proj = BackfieldProject(
             organization_id=int(org1.id),
             workspace_id=int(ws.id),
+            stylebook_id=int(sb_home.id),
             name="Proj",
             slug="proj-both-o",
         )

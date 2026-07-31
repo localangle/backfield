@@ -8,6 +8,7 @@ from backfield_db import (
     AgateGraph,
     BackfieldOrganization,
     BackfieldProject,
+    BackfieldWorkspace,
     Stylebook,
 )
 from backfield_entities.catalog.graph_stylebook_refs import (
@@ -15,9 +16,11 @@ from backfield_entities.catalog.graph_stylebook_refs import (
     StylebookGraphRefsError,
     count_stylebook_usage_in_graphs,
     iter_stylebook_refs_from_spec_dict,
+    normalize_runtime_stylebook_refs,
     reassign_stylebook_id_in_spec_dict,
     sanitize_stylebook_refs_for_organization,
     unique_stylebook_ids_from_spec_dict,
+    validate_runtime_stylebook_refs_for_project,
     validate_stylebook_refs_for_organization,
 )
 from sqlmodel import Session, SQLModel, create_engine
@@ -54,6 +57,58 @@ def test_iter_legacy_stylebookId_param() -> None:
     }
     assert iter_stylebook_refs_from_spec_dict(spec) == [("a", 7)]
     assert unique_stylebook_ids_from_spec_dict(spec) == [7]
+
+
+def test_normalize_runtime_nodes_to_project_stylebook() -> None:
+    spec = {
+        "name": "x",
+        "nodes": [
+            {"id": "a", "type": "DBOutput", "params": {}},
+            {"id": "b", "type": "GeocodeAgent", "params": {"stylebookId": 7}},
+            {"id": "c", "type": "PlaceExtract", "params": {}},
+        ],
+        "edges": [],
+    }
+
+    assert normalize_runtime_stylebook_refs(spec, project_stylebook_id=7) is True
+    assert spec["nodes"][0]["params"]["stylebook_id"] == 7
+    assert spec["nodes"][1]["params"] == {"stylebook_id": 7}
+    assert spec["nodes"][2]["params"] == {}
+
+
+def test_validate_runtime_nodes_rejects_conflicting_explicit_stylebook() -> None:
+    spec = {
+        "name": "x",
+        "nodes": [
+            {"id": "a", "type": "DBOutput", "params": {"stylebook_id": 8}},
+            {"id": "b", "type": "GeocodeAgent", "params": {"stylebookId": 7}},
+        ],
+        "edges": [],
+    }
+
+    try:
+        validate_runtime_stylebook_refs_for_project(spec, project_stylebook_id=7)
+    except StylebookGraphRefsError as error:
+        assert "does not match" in str(error)
+        assert "Node a" in str(error)
+    else:
+        raise AssertionError("expected StylebookGraphRefsError")
+
+
+def test_validate_runtime_nodes_accepts_matching_legacy_keys() -> None:
+    spec = {
+        "name": "x",
+        "nodes": [
+            {"id": "a", "type": "DBOutput", "params": {"stylebook_id": 7}},
+            {"id": "b", "type": "GeocodeAgent", "params": {"stylebookId": "7"}},
+        ],
+        "edges": [],
+    }
+
+    validate_runtime_stylebook_refs_for_project(spec, project_stylebook_id=7)
+    assert normalize_runtime_stylebook_refs(spec, project_stylebook_id=7) is True
+    assert spec["nodes"][0]["params"] == {"stylebook_id": 7}
+    assert spec["nodes"][1]["params"] == {"stylebook_id": 7}
 
 
 def test_reassign_stylebook_id_in_spec_dict() -> None:
@@ -116,12 +171,22 @@ def test_count_usage_across_graphs() -> None:
         session.refresh(sb_b)
         aid = int(sb_a.id)  # type: ignore[arg-type]
         bid = int(sb_b.id)  # type: ignore[arg-type]
+        workspace = BackfieldWorkspace(
+            organization_id=oid,
+            stylebook_id=aid,
+            name="Workspace",
+            slug="workspace-gref",
+        )
+        session.add(workspace)
+        session.commit()
+        session.refresh(workspace)
 
         proj = BackfieldProject(
             organization_id=oid,
             name="P",
             slug="p-gref",
-            workspace_id=None,
+            workspace_id=int(workspace.id),
+            stylebook_id=aid,
         )
         session.add(proj)
         session.commit()
@@ -206,9 +271,7 @@ def test_sanitize_missing_stylebook_to_org_default() -> None:
         session.refresh(sb)
 
         spec = _minimal_spec_with_stylebook("n", 99999)
-        changed = sanitize_stylebook_refs_for_organization(
-            session, organization_id=oid, spec=spec
-        )
+        changed = sanitize_stylebook_refs_for_organization(session, organization_id=oid, spec=spec)
         assert changed is True
         assert spec["nodes"][0]["params"].get(STYLEBOOK_NODE_PARAM_KEY) is None
         validate_stylebook_refs_for_organization(session, organization_id=oid, spec=spec)
@@ -243,9 +306,7 @@ def test_sanitize_db_output_clears_missing_stylebook() -> None:
             ],
             "edges": [],
         }
-        changed = sanitize_stylebook_refs_for_organization(
-            session, organization_id=oid, spec=spec
-        )
+        changed = sanitize_stylebook_refs_for_organization(session, organization_id=oid, spec=spec)
         assert changed is True
         assert STYLEBOOK_NODE_PARAM_KEY not in spec["nodes"][0]["params"] or (
             spec["nodes"][0]["params"].get(STYLEBOOK_NODE_PARAM_KEY) is None

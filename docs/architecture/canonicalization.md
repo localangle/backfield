@@ -121,16 +121,8 @@ occurrence evidence; canonical identity is resolved through the substrate link a
 
 ## Catalog selection
 
-Catalog selection follows one current rule:
-
-1. An explicit Stylebook row id, validated against the project's organization.
-2. A supplied Stylebook slug, including slug redirects.
-3. The project's direct Stylebook ownership.
-4. The project's workspace Stylebook during the rolling-compatibility window.
-5. The organization's default Stylebook, falling back to the first catalog by id when no row is
-   marked default.
-
-Backfield Output uses an explicit id or the project ownership chain. Stylebook routes can use a
-slug or that same ownership chain. GeocodeAgent does not use this fallback: its project-scoped
-substrate cache works without a Stylebook id, while canonical lookup, adjudication, and
-materialization require the node's explicit Stylebook id.
+The project's direct Stylebook ownership is authoritative. Temporary explicit-id and slug
+parameters remain compatible only when they identify that same Stylebook; conflicting values are
+rejected. Backfield Output and GeocodeAgent inherit the project assignment. Graph writes persist
+that id on those nodes for rolling worker compatibility, while completed run snapshots remain
+unchanged.

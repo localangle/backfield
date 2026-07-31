@@ -23,6 +23,8 @@ from backfield_entities.public.article_processing import list_public_article_pro
 from sqlalchemy.exc import OperationalError
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _seed_project(session: Session) -> tuple[int, int]:
     org = BackfieldOrganization(name="Backfield", slug="default")
@@ -40,6 +42,7 @@ def _seed_project(session: Session) -> tuple[int, int]:
     session.commit()
     session.refresh(ws)
     project = BackfieldProject(
+        **project_ownership_fields(session, int(org.id), workspace_id=int(ws.id)),
         name="General",
         slug="general",
         organization_id=int(org.id),
@@ -308,9 +311,7 @@ def test_list_public_article_processing_dedupes_pointer_and_scan_paths() -> None
             article_id=article_id,
         )
         meta_rows = [
-            row
-            for row in rows
-            if row.run_id == "run-meta" and row.processed_item_id == 42
+            row for row in rows if row.run_id == "run-meta" and row.processed_item_id == 42
         ]
         assert len(meta_rows) == 1
 

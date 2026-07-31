@@ -13,6 +13,8 @@ from backfield_db import (
 from backfield_entities.public.article_facets import get_public_article_facets
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.project_helpers import project_ownership_fields
+
 
 def test_get_public_article_facets_returns_distinct_values() -> None:
     engine = create_engine("sqlite://", echo=False)
@@ -23,6 +25,7 @@ def test_get_public_article_facets_returns_distinct_values() -> None:
         session.commit()
         session.refresh(org)
         proj = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
             name="News",
             slug="news",
             organization_id=int(org.id),  # type: ignore[arg-type]

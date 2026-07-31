@@ -26,6 +26,8 @@ from worker.substrate import _find_mention_span, persist_from_consolidated
 from worker.substrate.content.article import _upsert_article
 from worker.substrate.content.geography_reset import replace_machine_geography_for_article
 
+from tests.project_helpers import project_ownership_fields
+
 CHICAGO_POINT = {"type": "Point", "coordinates": [-87.6298, 41.8781]}
 WGP_POINT = {"type": "Point", "coordinates": [-87.703, 41.914]}
 
@@ -154,6 +156,7 @@ def _bootstrap_project(session: Session, *, org_slug: str, project_slug: str) ->
     session.refresh(ws)
 
     proj = BackfieldProject(
+        **project_ownership_fields(session, oid, workspace_id=int(ws.id)),
         organization_id=oid,
         name="Proj",
         slug=project_slug,
@@ -584,9 +587,7 @@ def test_shared_geocoder_address_id_does_not_collapse_distinct_pois() -> None:
             f"{shared_geocoder_id}:kohl-s-lincolnwood-town-center-lincolnwood-il",
         }
         active_mentions = session.exec(
-            select(SubstrateLocationMention).where(
-                col(SubstrateLocationMention.deleted).is_(False)
-            )
+            select(SubstrateLocationMention).where(col(SubstrateLocationMention.deleted).is_(False))
         ).all()
         assert len(active_mentions) == 2
 
@@ -599,12 +600,8 @@ def test_add_only_does_not_remove_stale_saved_places() -> None:
         project_id = _bootstrap_project(
             session, org_slug="org-add-stale", project_slug="proj-add-stale"
         )
-        session.add(
-            AgateRun(id="run-add-stale-1", graph_id="graph-add-stale", status="pending")
-        )
-        session.add(
-            AgateRun(id="run-add-stale-2", graph_id="graph-add-stale", status="pending")
-        )
+        session.add(AgateRun(id="run-add-stale-1", graph_id="graph-add-stale", status="pending"))
+        session.add(AgateRun(id="run-add-stale-2", graph_id="graph-add-stale", status="pending"))
         session.commit()
 
         persist_from_consolidated(
@@ -634,9 +631,7 @@ def test_add_only_does_not_remove_stale_saved_places() -> None:
         session.commit()
 
         active = session.exec(
-            select(SubstrateLocationMention).where(
-                col(SubstrateLocationMention.deleted).is_(False)
-            )
+            select(SubstrateLocationMention).where(col(SubstrateLocationMention.deleted).is_(False))
         ).all()
         assert len(active) == 1
         assert result.reconciliation_summary.removed == 0
@@ -700,9 +695,7 @@ def test_smart_merge_preserves_editor_touched_stale_places() -> None:
         session.commit()
 
         active = session.exec(
-            select(SubstrateLocationMention).where(
-                col(SubstrateLocationMention.deleted).is_(False)
-            )
+            select(SubstrateLocationMention).where(col(SubstrateLocationMention.deleted).is_(False))
         ).all()
         assert len(active) == 1
         assert active[0].edited is True
@@ -755,9 +748,7 @@ def test_replace_clears_editor_touched_places_and_allows_future_readd() -> None:
 
         assert result.reconciliation_summary.removed == 1
         active = session.exec(
-            select(SubstrateLocationMention).where(
-                col(SubstrateLocationMention.deleted).is_(False)
-            )
+            select(SubstrateLocationMention).where(col(SubstrateLocationMention.deleted).is_(False))
         ).all()
         assert active == []
         assert session.exec(select(SubstrateLocation)).all() == []
@@ -838,9 +829,7 @@ def test_reconciliation_failure_rolls_back_prior_saved_places(monkeypatch) -> No
         assert location is not None
         assert location.external_id == "pelias:chicago"
         active_mentions = session.exec(
-            select(SubstrateLocationMention).where(
-                col(SubstrateLocationMention.deleted).is_(False)
-            )
+            select(SubstrateLocationMention).where(col(SubstrateLocationMention.deleted).is_(False))
         ).all()
         assert len(active_mentions) == 1
 
@@ -1408,9 +1397,7 @@ def test_rerun_retires_stale_article_mentions_when_geocode_identity_changes() ->
         ).all()
         assert len(old_locs) == 0
         midway_new = session.exec(
-            select(SubstrateLocation).where(
-                SubstrateLocation.external_id == "pelias:midway-new"
-            )
+            select(SubstrateLocation).where(SubstrateLocation.external_id == "pelias:midway-new")
         ).one()
         assert midway_new.external_id == "pelias:midway-new"
 
@@ -2884,12 +2871,8 @@ def test_replace_article_geography_keeps_substrate_when_other_stories_mention() 
         session.commit()
         session.refresh(loc)
         lid = int(loc.id)
-        session.add(
-            SubstrateLocationMention(article_id=aid_a, location_id=lid, deleted=False)
-        )
-        session.add(
-            SubstrateLocationMention(article_id=aid_b, location_id=lid, deleted=False)
-        )
+        session.add(SubstrateLocationMention(article_id=aid_a, location_id=lid, deleted=False))
+        session.add(SubstrateLocationMention(article_id=aid_b, location_id=lid, deleted=False))
         session.commit()
 
         stats = replace_machine_geography_for_article(

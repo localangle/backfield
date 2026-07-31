@@ -30,6 +30,8 @@ from worker.s3_ingestion_ledger import (
 )
 from worker.substrate.content.article import _upsert_article
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _spec(source_id: str | None = None) -> str:
     params: dict[str, Any] = {"bucket": "my-bucket", "folder_path": "p", "max_files": 10}
@@ -109,7 +111,9 @@ def ledger_engine(tmp_path, monkeypatch):
         session.refresh(org)
         oid = int(org.id)  # type: ignore[arg-type]
         ensure_default_stylebook_for_organization(session, oid)
-        proj = BackfieldProject(organization_id=oid, name="P", slug="p-ledger")
+        proj = BackfieldProject(
+            **project_ownership_fields(session, oid), organization_id=oid, name="P", slug="p-ledger"
+        )
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -191,6 +195,7 @@ def test_ledger_identity_lookups_are_project_scoped(ledger_engine):
         project = session.get(BackfieldProject, project_id)
         assert project is not None
         other_project = BackfieldProject(
+            **project_ownership_fields(session, int(project.organization_id)),
             organization_id=int(project.organization_id),
             name="Other",
             slug="other-ledger-project",
@@ -265,6 +270,7 @@ def test_identical_revisions_are_processed_independently_by_project(ledger_engin
         project = session.get(BackfieldProject, project_id)
         assert project is not None
         other_project = BackfieldProject(
+            **project_ownership_fields(session, int(project.organization_id)),
             organization_id=int(project.organization_id),
             name="Other",
             slug="other-ledger-project",

@@ -27,6 +27,8 @@ from backfield_entities.public.article_geo_cells_batch import (
 from h3 import get_resolution
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.project_helpers import project_ownership_fields
+
 CHICAGO_POINT = {"type": "Point", "coordinates": [-87.6298, 41.8781]}
 NEARBY_POINT = {"type": "Point", "coordinates": [-87.63, 41.8785]}
 
@@ -45,6 +47,7 @@ def _seed_project(session: Session) -> int:
     session.commit()
     session.refresh(org)
     proj = BackfieldProject(
+        **project_ownership_fields(session, int(org.id)),
         name="News",
         slug="news",
         organization_id=int(org.id),  # type: ignore[arg-type]

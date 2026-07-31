@@ -13,6 +13,8 @@ from backfield_entities.ingest.article_metadata.persist import (
 )
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _engine():
     engine = create_engine("sqlite://", echo=False)
@@ -26,6 +28,7 @@ def _seed_article(session: Session) -> int:
     session.commit()
     session.refresh(org)
     proj = BackfieldProject(
+        **project_ownership_fields(session, int(org.id)),
         name="Demo",
         slug="demo-article-meta",
         organization_id=int(org.id),  # type: ignore[arg-type]

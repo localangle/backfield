@@ -21,6 +21,8 @@ from backfield_entities.ingest.semantic_indexing.processed_item import (
 from sqlalchemy import create_engine
 from sqlmodel import Session, SQLModel, select
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _seed_project(session: Session) -> tuple[int, int]:
     session.add(BackfieldOrganization(name="Org", slug="org-pi-sem"))
@@ -29,7 +31,14 @@ def _seed_project(session: Session) -> tuple[int, int]:
         select(BackfieldOrganization).where(BackfieldOrganization.slug == "org-pi-sem")
     ).one()
     oid = int(org.id)
-    session.add(BackfieldProject(organization_id=oid, name="Proj", slug=f"proj-pi-sem-{oid}"))
+    session.add(
+        BackfieldProject(
+            **project_ownership_fields(session, oid),
+            organization_id=oid,
+            name="Proj",
+            slug=f"proj-pi-sem-{oid}",
+        )
+    )
     session.commit()
     proj = session.exec(
         select(BackfieldProject).where(BackfieldProject.slug == f"proj-pi-sem-{oid}")

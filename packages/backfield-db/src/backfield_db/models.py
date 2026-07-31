@@ -17,6 +17,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     Numeric,
@@ -70,6 +71,12 @@ class BackfieldWorkspace(SQLModel, table=True):
     __tablename__ = "backfield_workspace"
     __table_args__ = (
         UniqueConstraint("organization_id", "slug", name="uq_backfield_workspace_org_slug"),
+        UniqueConstraint("organization_id", "id", name="uq_backfield_workspace_org_id"),
+        ForeignKeyConstraint(
+            ["organization_id", "stylebook_id"],
+            ["stylebook.organization_id", "stylebook.id"],
+            name="fk_backfield_workspace_org_stylebook",
+        ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -123,16 +130,26 @@ class BackfieldProject(SQLModel, table=True):
     """Canonical project for Agate, Stylebook vault, and future Core import APIs."""
 
     __tablename__ = "backfield_project"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id"],
+            ["backfield_workspace.organization_id", "backfield_workspace.id"],
+            name="fk_backfield_project_org_workspace",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "stylebook_id"],
+            ["stylebook.organization_id", "stylebook.id"],
+            name="fk_backfield_project_org_stylebook",
+        ),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     organization_id: int = Field(foreign_key="backfield_organization.id", index=True)
-    workspace_id: int | None = Field(
-        default=None,
+    workspace_id: int = Field(
         foreign_key="backfield_workspace.id",
         index=True,
     )
-    stylebook_id: int | None = Field(
-        default=None,
+    stylebook_id: int = Field(
         foreign_key="stylebook.id",
         index=True,
     )
@@ -232,6 +249,7 @@ class Stylebook(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint("organization_id", "slug", name="uq_stylebook_organization_slug"),
         UniqueConstraint("organization_id", "name", name="uq_stylebook_organization_name"),
+        UniqueConstraint("organization_id", "id", name="uq_stylebook_organization_id"),
         Index(
             "uq_stylebook_org_one_default",
             "organization_id",

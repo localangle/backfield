@@ -21,6 +21,11 @@ projects or graphs, or change canonical links. Canonical-link mismatches are agg
 project, entity type, expected Stylebook, and actual Stylebook, with an affected count and a
 five-id sample so large datasets still produce practical reports.
 
+The strict project runtime migration validates retained projects before making `workspace_id` and
+`stylebook_id` required. It stops with the first project or workspace that has a null, missing, or
+cross-organization assignment. Repair those rows and rerun the migration; it does not guess a
+replacement catalog.
+
 ## Local workflow
 
 With the Compose stack configuration:

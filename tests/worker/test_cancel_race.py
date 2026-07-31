@@ -18,6 +18,8 @@ from sqlmodel import Session, SQLModel, create_engine
 from worker import tasks as worker_tasks
 from worker.terminal_transitions import apply_item_terminal_status
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _text_flow_spec() -> str:
     return json.dumps(
@@ -54,6 +56,7 @@ def race_engine(tmp_path, monkeypatch):
         ).ensure_default_stylebook_for_organization
         ensure_default(s, organization_id=int(org.id))
         project = BackfieldProject(
+            **project_ownership_fields(s, int(org.id)),
             organization_id=int(org.id),
             name="Cancel",
             slug="cancel-race",

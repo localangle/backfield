@@ -23,6 +23,8 @@ from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_or
 from sqlmodel import Session, SQLModel, create_engine, select
 from worker import tasks as worker_tasks
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _spec_with_s3() -> str:
     return json.dumps(
@@ -128,6 +130,7 @@ def main() -> int:
 
             ensure_default_stylebook_for_organization(session, int(org.id))
             project = BackfieldProject(
+                **project_ownership_fields(session, int(org.id)),
                 organization_id=int(org.id),
                 name="Smoke Project",
                 slug="smoke-proj",

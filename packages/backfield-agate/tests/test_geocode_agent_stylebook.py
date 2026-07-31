@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -36,18 +36,17 @@ def test_geocode_params_accepts_stylebook_id_snake_case() -> None:
     assert params.stylebookId == 2
 
 
-def test_geocode_raises_when_stylebook_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_geocode_raises_when_project_stylebook_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from agate_runtime.nodes.geocode_agent import run_geocode_agent
 
     monkeypatch.setenv("BACKFIELD_PROJECT_ID", "1")
-    mock_cm = MagicMock()
-    mock_sess = MagicMock()
-    mock_sess.get.return_value = None
-    mock_cm.__enter__.return_value = mock_sess
-    mock_cm.__exit__.return_value = None
-
-    with patch("sqlmodel.Session", return_value=mock_cm):
-        with pytest.raises(ValueError, match="Stylebook that no longer exists"):
+    with patch(
+        "backfield_entities.catalog.resolve.resolve_stylebook_id_for_project_id",
+        side_effect=ValueError("project Stylebook does not belong to the project's organization"),
+    ):
+        with pytest.raises(ValueError, match="does not belong"):
             run_geocode_agent({"useCache": True, "stylebook_id": 99999}, {})
 
 
@@ -65,14 +64,11 @@ def test_geocode_agent_run_attaches_cache_bundle(monkeypatch: pytest.MonkeyPatch
     ctx = AgateEnvContext()
     params = GeocodeAgentParams.model_validate({"useCache": True, "stylebook_id": 2})
 
-    mock_cm = MagicMock()
-    mock_sess = MagicMock()
-    mock_sess.get.return_value = MagicMock()
-    mock_cm.__enter__.return_value = mock_sess
-    mock_cm.__exit__.return_value = None
-
     async def run_agent() -> None:
-        with patch("sqlmodel.Session", return_value=mock_cm):
+        with patch(
+            "backfield_entities.catalog.resolve.resolve_stylebook_id_for_project_id",
+            return_value=2,
+        ):
             with patch(
                 "agate_nodes.geocode_agent.node.run_geocode_agent_pipeline",
                 new_callable=AsyncMock,
@@ -100,12 +96,6 @@ def test_geocode_agent_async_runner_attaches_cache_bundle(
     from agate_runtime.runners import run_geocode_agent_async
 
     monkeypatch.setenv("BACKFIELD_PROJECT_ID", "1")
-    mock_cm = MagicMock()
-    mock_sess = MagicMock()
-    mock_sess.get.return_value = MagicMock()
-    mock_cm.__enter__.return_value = mock_sess
-    mock_cm.__exit__.return_value = None
-
     captured_ctx: AgateEnvContext | None = None
 
     async def capture_pipeline(
@@ -118,7 +108,10 @@ def test_geocode_agent_async_runner_attaches_cache_bundle(
         return GeocodeAgentOutput(places=_EMPTY_PLACES)
 
     async def run_runner() -> None:
-        with patch("sqlmodel.Session", return_value=mock_cm):
+        with patch(
+            "backfield_entities.catalog.resolve.resolve_stylebook_id_for_project_id",
+            return_value=2,
+        ):
             with patch(
                 "agate_nodes.geocode_agent.node.run_geocode_agent_pipeline",
                 side_effect=capture_pipeline,

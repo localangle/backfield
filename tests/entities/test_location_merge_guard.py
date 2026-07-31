@@ -20,6 +20,8 @@ from backfield_entities.entities.linking.substrate_actions import (
 from backfield_entities.entities.location.merge import merge_location_canonical_into
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _seed(session: Session, *, slug: str) -> tuple[int, int, int]:
     org = BackfieldOrganization(name="Org", slug=slug)
@@ -29,7 +31,12 @@ def _seed(session: Session, *, slug: str) -> tuple[int, int, int]:
     org_id = int(org.id)  # type: ignore[arg-type]
     stylebook = ensure_default_stylebook_for_organization(session, org_id)
     stylebook_id = int(stylebook.id)  # type: ignore[arg-type]
-    proj = BackfieldProject(name="News", slug="news", organization_id=org_id)
+    proj = BackfieldProject(
+        **project_ownership_fields(session, org_id),
+        name="News",
+        slug="news",
+        organization_id=org_id,
+    )
     session.add(proj)
     session.commit()
     session.refresh(proj)

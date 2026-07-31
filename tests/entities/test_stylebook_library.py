@@ -36,6 +36,8 @@ from sqlalchemy import event
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _engine():
     engine = create_engine("sqlite://", echo=False)
@@ -182,10 +184,11 @@ def test_delete_reassigns_graph_node_stylebook_refs() -> None:
         bid = int(b.id)  # type: ignore[arg-type]
 
         proj = BackfieldProject(
+            **project_ownership_fields(session, oid, stylebook_id=aid),
             organization_id=oid,
+            stylebook_id=aid,
             name="P",
             slug="p-graph",
-            workspace_id=None,
         )
         session.add(proj)
         session.commit()
@@ -335,7 +338,9 @@ def test_delete_stylebook_resets_linked_substrate_to_pending() -> None:
                 status="active",
             )
         )
-        proj = BackfieldProject(organization_id=oid, name="P", slug="p-sub")
+        proj = BackfieldProject(
+            **project_ownership_fields(session, oid), organization_id=oid, name="P", slug="p-sub"
+        )
         session.add(proj)
         session.commit()
         session.refresh(proj)

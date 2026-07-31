@@ -12,6 +12,8 @@ from backfield_db import (
 )
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.project_helpers import project_ownership_fields
+
 
 @dataclass
 class _GeocodeParams:
@@ -39,7 +41,12 @@ def test_resolve_geocode_models_estimation_falls_back_to_reasoning() -> None:
         session.commit()
         session.refresh(org)
         org_id = int(org.id)  # type: ignore[arg-type]
-        proj = BackfieldProject(name="P", slug="p-geo-est-fb", organization_id=org_id)
+        proj = BackfieldProject(
+            **project_ownership_fields(session, org_id),
+            name="P",
+            slug="p-geo-est-fb",
+            organization_id=org_id,
+        )
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -49,9 +56,7 @@ def test_resolve_geocode_models_estimation_falls_back_to_reasoning() -> None:
             geographicReasoningModel="gpt-4o",
             geographicEstimationModel="",
         )
-        eval_m, router_m, geo_m, est_m = resolve_geocode_litellm_models(
-            session, project_id, params
-        )
+        eval_m, router_m, geo_m, est_m = resolve_geocode_litellm_models(session, project_id, params)
         assert eval_m == "gpt-4o-mini"
         assert router_m == "gpt-4o-mini"
         assert geo_m == "gpt-4o"
@@ -77,7 +82,12 @@ def test_resolve_geocode_models_estimation_catalog_pin() -> None:
                 capabilities_json=["text"],
             )
         )
-        proj = BackfieldProject(name="P", slug="p-geo-est-pin", organization_id=org_id)
+        proj = BackfieldProject(
+            **project_ownership_fields(session, org_id),
+            name="P",
+            slug="p-geo-est-pin",
+            organization_id=org_id,
+        )
         session.add(proj)
         session.commit()
         session.refresh(proj)

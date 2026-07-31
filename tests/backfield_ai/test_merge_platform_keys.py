@@ -17,6 +17,8 @@ from backfield_db.crypto import encrypt_secret
 from cryptography.fernet import Fernet
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.project_helpers import project_ownership_fields
+
 
 @pytest.fixture
 def session_with_project(tmp_path, monkeypatch):
@@ -32,7 +34,9 @@ def session_with_project(tmp_path, monkeypatch):
         session.commit()
         session.refresh(org)
         oid = int(org.id)  # type: ignore[arg-type]
-        proj = BackfieldProject(organization_id=oid, name="P", slug="p-plat")
+        proj = BackfieldProject(
+            **project_ownership_fields(session, oid), organization_id=oid, name="P", slug="p-plat"
+        )
         session.add(proj)
         session.commit()
         session.refresh(proj)

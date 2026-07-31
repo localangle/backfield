@@ -15,6 +15,8 @@ from backfield_db.semantic_indexing import SEMANTIC_EMBEDDING_STATUS_PENDING
 from backfield_entities.ingest.semantic_indexing.cleanup import delete_semantic_documents_for_person
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from tests.project_helpers import project_ownership_fields
+
 
 def test_delete_semantic_documents_for_person_allows_substrate_delete() -> None:
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
@@ -25,7 +27,12 @@ def test_delete_semantic_documents_for_person_allows_substrate_delete() -> None:
         session.add(org)
         session.commit()
         session.refresh(org)
-        proj = BackfieldProject(organization_id=int(org.id), name="P", slug="p-sem-clean")
+        proj = BackfieldProject(
+            **project_ownership_fields(session, int(org.id)),
+            organization_id=int(org.id),
+            name="P",
+            slug="p-sem-clean",
+        )
         session.add(proj)
         session.commit()
         session.refresh(proj)

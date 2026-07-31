@@ -16,6 +16,8 @@ from sqlmodel import Session, SQLModel, create_engine
 from stylebook_api.deps import get_session
 from stylebook_api.main import app
 
+from tests.project_helpers import project_ownership_fields
+
 
 @pytest.fixture
 def _library_client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None, None]:
@@ -61,6 +63,7 @@ def _library_client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[Test
         wid = int(ws.id)
         s.add(
             BackfieldProject(
+                **project_ownership_fields(s, oid, workspace_id=wid),
                 organization_id=oid,
                 name="Demo",
                 slug="demo-proj",

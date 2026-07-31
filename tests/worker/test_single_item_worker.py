@@ -12,6 +12,7 @@ from backfield_db import (
     AgateRun,
     BackfieldOrganization,
     BackfieldProject,
+    BackfieldWorkspace,
 )
 from sqlmodel import Session, SQLModel, create_engine
 from worker import tasks as worker_tasks
@@ -51,9 +52,19 @@ def single_engine(tmp_path, monkeypatch):
             "backfield_entities.catalog.bootstrap",
             fromlist=["ensure_default_stylebook_for_organization"],
         ).ensure_default_stylebook_for_organization
-        ensure_default(s, organization_id=int(org.id))
+        stylebook = ensure_default(s, organization_id=int(org.id))
+        workspace = BackfieldWorkspace(
+            organization_id=int(org.id),
+            stylebook_id=int(stylebook.id),
+            name="Workspace",
+            slug="single-item-worker",
+        )
+        s.add(workspace)
+        s.flush()
         project = BackfieldProject(
             organization_id=int(org.id),
+            workspace_id=int(workspace.id),
+            stylebook_id=int(stylebook.id),
             name="Single",
             slug="single-item-worker",
         )

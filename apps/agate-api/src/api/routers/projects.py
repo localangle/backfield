@@ -92,13 +92,13 @@ class ProjectOut(BaseModel):
     system_prompt: str | None = None
     created_at: datetime
     updated_at: datetime
-    workspace_id: int | None = None
-    stylebook_id: int | None = None
-    stylebook_name: str | None = None
-    stylebook_slug: str | None = None
-    workspace_stylebook_id: int | None = None
-    workspace_stylebook_name: str | None = None
-    workspace_stylebook_slug: str | None = None
+    workspace_id: int
+    stylebook_id: int
+    stylebook_name: str
+    stylebook_slug: str
+    workspace_stylebook_id: int
+    workspace_stylebook_name: str
+    workspace_stylebook_slug: str
 
 
 def _project_to_out(session: Session, p: BackfieldProject) -> ProjectOut:
@@ -106,14 +106,14 @@ def _project_to_out(session: Session, p: BackfieldProject) -> ProjectOut:
         raise HTTPException(500, "Project row missing id")
     try:
         sid = resolve_stylebook_id_for_project_id(session, int(p.id))
-    except LookupError:
-        sid = None
-    except ValueError as error:
+    except (LookupError, ValueError) as error:
         raise HTTPException(500, "Invalid project Stylebook ownership") from error
-    stylebook = session.get(Stylebook, sid) if sid is not None else None
-    sname = str(stylebook.name) if stylebook is not None else None
-    sslug = str(stylebook.slug) if stylebook is not None else None
-    wid = int(p.workspace_id) if p.workspace_id is not None else None
+    stylebook = session.get(Stylebook, sid)
+    if stylebook is None:
+        raise HTTPException(500, "Invalid project Stylebook ownership")
+    sname = str(stylebook.name)
+    sslug = str(stylebook.slug)
+    wid = int(p.workspace_id)
     d = _settings_dict(p)
     return ProjectOut(
         id=int(p.id),
@@ -173,6 +173,9 @@ def create_project(
         raise HTTPException(400, "Workspace not found")
     workspace_id = int(ws.id)
     organization_id = int(ws.organization_id)
+    stylebook = session.get(Stylebook, int(ws.stylebook_id))
+    if stylebook is None or int(stylebook.organization_id) != organization_id:
+        raise HTTPException(400, "Workspace has an invalid Stylebook assignment")
     require_session_may_assign_project_to_workspace(
         session,
         auth,

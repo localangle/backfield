@@ -29,6 +29,8 @@ from backfield_entities.entities.organization.types import organization_identity
 from backfield_entities.entities.person.types import person_identity_fingerprint
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _context(session: Session, *, suffix: str) -> tuple[int, int, int]:
     organization = BackfieldOrganization(name=f"Org {suffix}", slug=f"org-{suffix}")
@@ -41,12 +43,19 @@ def _context(session: Session, *, suffix: str) -> tuple[int, int, int]:
         slug=f"stylebook-{suffix}",
         is_default=True,
     )
+    session.add(stylebook)
+    session.flush()
     project = BackfieldProject(
+        **project_ownership_fields(
+            session,
+            int(organization.id),
+            stylebook_id=int(stylebook.id),
+        ),
         organization_id=int(organization.id),
+        stylebook_id=int(stylebook.id),
         name=f"Project {suffix}",
         slug=f"project-{suffix}",
     )
-    session.add(stylebook)
     session.add(project)
     session.commit()
     session.refresh(stylebook)

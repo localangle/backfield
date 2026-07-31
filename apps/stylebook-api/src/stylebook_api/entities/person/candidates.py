@@ -46,6 +46,7 @@ from stylebook_api.helpers.project_scope import (
     require_stylebook_id as _require_stylebook_id,
 )
 from stylebook_api.mention_serialization import article_fields_for_linked_mention
+from stylebook_api.stylebook_permissions import require_stylebook_edit_access_by_id
 
 router = APIRouter(prefix="/v1/people", tags=["person-candidates"])
 
@@ -471,7 +472,8 @@ def candidate_update_note(
     """Attach a short editor note to a review queue item (stored on the person row)."""
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    _ = _require_stylebook_id(session, proj, stylebook_slug)
+    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
+    require_stylebook_edit_access_by_id(session, auth=auth, stylebook_id=stylebook_id)
 
     person = session.get(SubstratePerson, substrate_person_id)
     if person is None or int(person.project_id) != int(proj.id):
@@ -600,7 +602,8 @@ def defer_candidate(
     """Defer canonical linking for a substrate row (remove from open queue without linking)."""
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    _ = _require_stylebook_id(session, proj, stylebook_slug)
+    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
+    require_stylebook_edit_access_by_id(session, auth=auth, stylebook_id=stylebook_id)
 
     person = session.get(SubstratePerson, substrate_person_id)
     if person is None or int(person.project_id) != int(proj.id):
@@ -632,7 +635,8 @@ def clear_candidate_recommendation(
 ) -> dict[str, str]:
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    _ = _require_stylebook_id(session, proj, stylebook_slug)
+    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
+    require_stylebook_edit_access_by_id(session, auth=auth, stylebook_id=stylebook_id)
 
     person = session.get(SubstratePerson, substrate_person_id)
     if person is None or int(person.project_id) != int(proj.id):
@@ -665,6 +669,7 @@ def accept_candidate(
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
+    require_stylebook_edit_access_by_id(session, auth=auth, stylebook_id=stylebook_id)
 
     person = session.get(SubstratePerson, substrate_person_id)
     if person is None or int(person.project_id) != int(proj.id):

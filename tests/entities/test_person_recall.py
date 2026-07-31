@@ -22,6 +22,8 @@ from backfield_entities.entities.person.recall import (
 )
 from sqlmodel import Session, SQLModel, create_engine
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _engine():
     engine = create_engine("sqlite://", echo=False)
@@ -40,7 +42,12 @@ def _seed(session: Session) -> tuple[int, int]:
     session.commit()
     session.refresh(sb)
     sb_id = int(sb.id)  # type: ignore[arg-type]
-    proj = BackfieldProject(name="Demo", slug="demo-recall", organization_id=oid)
+    proj = BackfieldProject(
+        **project_ownership_fields(session, oid),
+        name="Demo",
+        slug="demo-recall",
+        organization_id=oid,
+    )
     session.add(proj)
     session.commit()
     session.refresh(proj)
@@ -154,9 +161,7 @@ def test_recall_caps_at_default_limit() -> None:
             normalized_name="alex smith",
             affiliation="Org",
         )
-        recall = retrieve_person_canonical_candidates(
-            session, stylebook_id=sb_id, person=person
-        )
+        recall = retrieve_person_canonical_candidates(session, stylebook_id=sb_id, person=person)
         assert len(recall) <= PERSON_RECALL_DEFAULT_LIMIT
         assert len(recall) > 0
 

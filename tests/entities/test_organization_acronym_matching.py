@@ -30,6 +30,8 @@ from backfield_entities.entities.organization.types import (
 )
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _engine():
     engine = create_engine("sqlite://", echo=False)
@@ -48,7 +50,12 @@ def _seed(session: Session) -> tuple[int, int]:
     session.commit()
     session.refresh(sb)
     sb_id = int(sb.id)  # type: ignore[arg-type]
-    proj = BackfieldProject(name="Demo", slug="demo-org-acronym", organization_id=oid)
+    proj = BackfieldProject(
+        **project_ownership_fields(session, oid),
+        name="Demo",
+        slug="demo-org-acronym",
+        organization_id=oid,
+    )
     session.add(proj)
     session.commit()
     session.refresh(proj)

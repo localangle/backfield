@@ -34,7 +34,6 @@ const nodeMetadata = {
     "maxLocations": 200,
     "perLocationTimeout": 300,
     "useCache": true,
-    "stylebook_id": null,
     "stylebookApiUrl": "",
     "projectSlug": "",
     "evaluationModel": "",

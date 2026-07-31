@@ -23,8 +23,7 @@ class DbOutputCanonicalSettings(BaseModel):
     )
     stylebook_id: int | None = Field(
         default=None,
-        description="When set, canonical policy uses this Stylebook (same org as project). "
-        "When null, use the organization's default Stylebook.",
+        description="Legacy compatibility value; when set it must match the project Stylebook.",
     )
     canonicalization_mode: CanonicalizationMode = "ai_assisted"
     reconciliation_policy: ReconciliationPolicy = Field(
@@ -80,11 +79,7 @@ def resolve_effective_stylebook_id(
     project_id: int,
     stylebook_id_override: int | None,
 ) -> int:
-    """Return catalog id for DBOutput persistence (node override, else org default).
-
-    Delegates to :func:`resolve_effective_stylebook_id_for_project` so precedence matches
-    the documented bridge order (explicit id → slug — unused here — → organization default).
-    """
+    """Return the project catalog, rejecting a conflicting legacy node value."""
     proj = session.get(BackfieldProject, project_id)
     if proj is None:
         msg = f"project {project_id} not found"

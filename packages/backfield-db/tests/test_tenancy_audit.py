@@ -28,9 +28,18 @@ from sqlalchemy import text
 from sqlmodel import Session, SQLModel, create_engine
 
 
-def _engine():
+def _engine(*, legacy_nullable_project_ownership: bool = False):
     engine = create_engine("sqlite://")
-    SQLModel.metadata.create_all(engine)
+    workspace_column = BackfieldProject.__table__.c.workspace_id
+    stylebook_column = BackfieldProject.__table__.c.stylebook_id
+    if legacy_nullable_project_ownership:
+        workspace_column.nullable = True
+        stylebook_column.nullable = True
+    try:
+        SQLModel.metadata.create_all(engine)
+    finally:
+        workspace_column.nullable = False
+        stylebook_column.nullable = False
     return engine
 
 
@@ -128,7 +137,7 @@ def test_tenancy_audit_clean_report_is_read_only() -> None:
 
 
 def test_tenancy_audit_reports_cross_layer_blockers() -> None:
-    engine = _engine()
+    engine = _engine(legacy_nullable_project_ownership=True)
     with Session(engine) as session:
         organization_one = BackfieldOrganization(name="One", slug="audit-one")
         organization_two = BackfieldOrganization(name="Two", slug="audit-two")

@@ -22,6 +22,8 @@ from stylebook_api.mention_occurrences import (
     replace_person_mention_occurrences_for_article,
 )
 
+from tests.project_helpers import project_ownership_fields
+
 
 def _bootstrap_project(session: Session) -> int:
     organization = BackfieldOrganization(name="Org", slug="org-occurrence-spans")
@@ -39,6 +41,7 @@ def _bootstrap_project(session: Session) -> int:
     session.commit()
     session.refresh(workspace)
     project = BackfieldProject(
+        **project_ownership_fields(session, int(organization.id), workspace_id=int(workspace.id)),
         organization_id=int(organization.id),
         workspace_id=int(workspace.id),
         name="Project",
