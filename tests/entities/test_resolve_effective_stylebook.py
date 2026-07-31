@@ -22,7 +22,7 @@ def _engine():
     return engine
 
 
-def test_effective_uses_org_default_when_slug_missing() -> None:
+def test_effective_uses_workspace_stylebook_when_project_is_unpinned() -> None:
     engine = _engine()
     with Session(engine) as session:
         org = BackfieldOrganization(slug="org-eff", name="Org Eff")
@@ -39,7 +39,7 @@ def test_effective_uses_org_default_when_slug_missing() -> None:
             organization_id=int(org.id),
             name="WS",
             slug="ws-eff",
-            stylebook_id=int(sb_b.id),
+            stylebook_id=int(sb_a.id),
         )
         session.add(ws)
         session.flush()
@@ -54,8 +54,54 @@ def test_effective_uses_org_default_when_slug_missing() -> None:
         session.commit()
 
         got = resolve_effective_stylebook_id_for_project(session, proj, stylebook_slug=None)
-        assert got == int(sb_b.id)
-        assert resolve_stylebook_id_for_project_id(session, int(proj.id)) == int(sb_b.id)
+        assert got == int(sb_a.id)
+        assert resolve_stylebook_id_for_project_id(session, int(proj.id)) == int(sb_a.id)
+
+
+def test_effective_project_stylebook_wins_after_workspace_default_changes() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        org = BackfieldOrganization(slug="org-pinned", name="Org Pinned")
+        session.add(org)
+        session.flush()
+        pinned = Stylebook(
+            organization_id=int(org.id),
+            slug="pinned",
+            name="Pinned",
+            is_default=True,
+        )
+        replacement = Stylebook(
+            organization_id=int(org.id),
+            slug="replacement",
+            name="Replacement",
+            is_default=False,
+        )
+        session.add(pinned)
+        session.add(replacement)
+        session.flush()
+        workspace = BackfieldWorkspace(
+            organization_id=int(org.id),
+            name="WS",
+            slug="ws-pinned",
+            stylebook_id=int(pinned.id),
+        )
+        session.add(workspace)
+        session.flush()
+        project = BackfieldProject(
+            organization_id=int(org.id),
+            workspace_id=int(workspace.id),
+            stylebook_id=int(pinned.id),
+            name="Project",
+            slug="project-pinned",
+        )
+        session.add(project)
+        session.flush()
+
+        workspace.stylebook_id = int(replacement.id)
+        session.add(workspace)
+        session.commit()
+
+        assert resolve_stylebook_id_for_project_id(session, int(project.id)) == int(pinned.id)
 
 
 def test_effective_override_by_slug_same_org() -> None:

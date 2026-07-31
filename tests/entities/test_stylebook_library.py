@@ -377,6 +377,25 @@ def test_delete_default_with_replacement() -> None:
         session.refresh(b)
         aid = int(a.id)  # type: ignore[arg-type]
         bid = int(b.id)  # type: ignore[arg-type]
+        workspace = BackfieldWorkspace(
+            organization_id=oid,
+            stylebook_id=aid,
+            name="Workspace",
+            slug="workspace-delete-reassign",
+        )
+        session.add(workspace)
+        session.flush()
+        project = BackfieldProject(
+            organization_id=oid,
+            workspace_id=int(workspace.id),
+            stylebook_id=aid,
+            name="Project",
+            slug="project-delete-reassign",
+        )
+        session.add(project)
+        session.commit()
+        project_id = int(project.id)
+        workspace_id = int(workspace.id)
 
         delete_stylebook(session, aid, replacement_default_id=bid)
         session.commit()
@@ -385,6 +404,12 @@ def test_delete_default_with_replacement() -> None:
         assert len(rest) == 1
         assert rest[0].id == bid
         assert rest[0].is_default is True
+        reassigned_project = session.get(BackfieldProject, project_id)
+        reassigned_workspace = session.get(BackfieldWorkspace, workspace_id)
+        assert reassigned_project is not None
+        assert reassigned_project.stylebook_id == bid
+        assert reassigned_workspace is not None
+        assert reassigned_workspace.stylebook_id == bid
 
 
 def test_ensure_default_still_idempotent() -> None:

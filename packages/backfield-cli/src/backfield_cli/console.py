@@ -38,6 +38,7 @@ CLI_COMMANDS: tuple[tuple[str, str], ...] = (
     ("backfield ps", "List running containers"),
     ("backfield restart", "Restart services"),
     ("backfield doctor", "Check your local setup"),
+    ("backfield tenancy-audit --json", "Report tenancy migration blockers"),
     ("backfield migrate", "Apply database migrations"),
     ("backfield seed", "Ensure org and admin user exist"),
     ("backfield reset-db", "Wipe local database and volumes"),

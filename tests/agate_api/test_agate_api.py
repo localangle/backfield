@@ -30,9 +30,45 @@ from backfield_db import (
 )
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from fastapi.testclient import TestClient
-from sqlmodel import Session, SQLModel, create_engine
+from httpx import Response
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from tests.integration_helpers import patch_test_engine
+
+
+def _post_project(client: TestClient, *, name: str, slug: str) -> Response:
+    """Create a workspace explicitly for tests whose focus is downstream of project creation."""
+    dependency = app.dependency_overrides.get(get_session)
+    assert dependency is not None
+    session_generator = dependency()
+    session = next(session_generator)
+    try:
+        workspace = session.exec(
+            select(BackfieldWorkspace).order_by(BackfieldWorkspace.id)
+        ).first()
+        if workspace is None:
+            organization = session.exec(
+                select(BackfieldOrganization).order_by(BackfieldOrganization.id)
+            ).first()
+            assert organization is not None and organization.id is not None
+            stylebook = ensure_default_stylebook_for_organization(session, int(organization.id))
+            workspace = BackfieldWorkspace(
+                organization_id=int(organization.id),
+                stylebook_id=int(stylebook.id),
+                name="Test Workspace",
+                slug="test-workspace",
+            )
+            session.add(workspace)
+            session.commit()
+            session.refresh(workspace)
+        assert workspace.id is not None
+        workspace_id = int(workspace.id)
+    finally:
+        session_generator.close()
+    return client.post(
+        "/projects",
+        json={"name": name, "slug": slug, "workspace_id": workspace_id},
+    )
 
 
 def _minimal_text_input_spec(
@@ -146,9 +182,8 @@ def test_project_estimated_ai_cost_includes_model_breakdown(tmp_path):
             app,
             headers={"Authorization": "Bearer backfield-dev"},
         )
-        project = client.post(
-            "/projects",
-            json={"name": "AI Cost Project", "slug": "ai-cost-project"},
+        project = _post_project(
+            client, name="AI Cost Project", slug="ai-cost-project"
         ).json()
 
         with Session(engine) as s:
@@ -232,10 +267,7 @@ def test_run_estimated_ai_cost_node_breakdown_includes_node_type(tmp_path):
             app,
             headers={"Authorization": "Bearer backfield-dev"},
         )
-        project = client.post(
-            "/projects",
-            json={"name": "Run AI Cost", "slug": "run-ai-cost"},
-        ).json()
+        project = _post_project(client, name="Run AI Cost", slug="run-ai-cost").json()
         graph = client.post(
             "/graphs",
             json={
@@ -319,7 +351,7 @@ def test_projects_require_auth(tmp_path):
 
 
 def test_create_run_rejects_graph_without_ingress(client: TestClient):
-    project = client.post("/projects", json={"name": "No ingress", "slug": "no-ingress"}).json()
+    project = _post_project(client, name="No ingress", slug="no-ingress").json()
     graph = client.post(
         "/graphs",
         json={
@@ -347,7 +379,7 @@ def test_project_graph_and_run_creation(monkeypatch, client: TestClient):
 
     monkeypatch.setattr(runs.celery_app, "send_task", fake_send_task)
 
-    project_response = client.post("/projects", json={"name": "Smoke Project", "slug": "smoke"})
+    project_response = _post_project(client, name="Smoke Project", slug="smoke")
     assert project_response.status_code == 200
     project = project_response.json()
 
@@ -431,7 +463,7 @@ def test_project_graph_and_run_creation(monkeypatch, client: TestClient):
 
 
 def test_list_graphs_summary_and_project_filter(client: TestClient):
-    project = client.post("/projects", json={"name": "General", "slug": "general-perf"}).json()
+    project = _post_project(client, name="General", slug="general-perf").json()
     client.post(
         "/graphs",
         json={
@@ -454,7 +486,7 @@ def test_list_graphs_summary_and_project_filter(client: TestClient):
 def test_list_runs_supports_lightweight_list(monkeypatch, client: TestClient):
     monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
 
-    project = client.post("/projects", json={"name": "Runs", "slug": "runs-perf"}).json()
+    project = _post_project(client, name="Runs", slug="runs-perf").json()
     graph = client.post(
         "/graphs",
         json={
@@ -477,7 +509,7 @@ def test_list_runs_supports_lightweight_list(monkeypatch, client: TestClient):
 def test_run_graph_spec_snapshot_and_flow_changed(monkeypatch, client: TestClient):
     monkeypatch.setattr(runs.celery_app, "send_task", lambda *args, **kwargs: None)
 
-    project = client.post("/projects", json={"name": "Snap Project", "slug": "snap-proj"}).json()
+    project = _post_project(client, name="Snap Project", slug="snap-proj").json()
     base_spec = {
         "name": "snap_flow",
         "nodes": [
@@ -548,10 +580,7 @@ def test_replay_run_uses_source_snapshot_not_live_graph(monkeypatch, client: Tes
 
     monkeypatch.setattr(runs.celery_app, "send_task", capture_send_task)
 
-    project = client.post(
-        "/projects",
-        json={"name": "Replay Project", "slug": "replay-proj"},
-    ).json()
+    project = _post_project(client, name="Replay Project", slug="replay-proj").json()
     base_spec = {
         "name": "replay_flow",
         "nodes": [
@@ -613,7 +642,7 @@ def test_replay_run_uses_source_snapshot_not_live_graph(monkeypatch, client: Tes
 
 
 def test_graph_description_round_trip(client: TestClient):
-    project_response = client.post("/projects", json={"name": "Desc Project", "slug": "desc-proj"})
+    project_response = _post_project(client, name="Desc Project", slug="desc-proj")
     assert project_response.status_code == 200
     project = project_response.json()
 
@@ -700,14 +729,8 @@ def test_project_api_key_scopes_agate_api_access(tmp_path):
             app,
             headers={"Authorization": "Bearer backfield-dev"},
         )
-        project_one = tc.post(
-            "/projects",
-            json={"name": "Project One", "slug": "project-one"},
-        ).json()
-        project_two = tc.post(
-            "/projects",
-            json={"name": "Project Two", "slug": "project-two"},
-        ).json()
+        project_one = _post_project(tc, name="Project One", slug="project-one").json()
+        project_two = _post_project(tc, name="Project Two", slug="project-two").json()
 
         raw_key = "bfk_project_scope_test_key_1234567890abcdef"
         with Session(engine) as s:
@@ -763,7 +786,7 @@ def test_list_runs_includes_processed_item_counts(monkeypatch, tmp_path):
             app,
             headers={"Authorization": "Bearer backfield-dev"},
         )
-        project = tc.post("/projects", json={"name": "Run Counts", "slug": "run-counts"}).json()
+        project = _post_project(tc, name="Run Counts", slug="run-counts").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -862,7 +885,7 @@ def test_delete_graph_cleans_up_run_dependencies(monkeypatch, tmp_path):
             app,
             headers={"Authorization": "Bearer backfield-dev"},
         )
-        project = tc.post("/projects", json={"name": "Delete Graph", "slug": "delete-graph"}).json()
+        project = _post_project(tc, name="Delete Graph", slug="delete-graph").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -947,7 +970,7 @@ def test_s3_graph_run_enqueues_batch_setup(monkeypatch, client: TestClient):
 
     monkeypatch.setattr(runs.celery_app, "send_task", fake_send_task)
 
-    project = client.post("/projects", json={"name": "S3 Project", "slug": "s3-proj"}).json()
+    project = _post_project(client, name="S3 Project", slug="s3-proj").json()
     graph = client.post(
         "/graphs",
         json={
@@ -995,7 +1018,7 @@ def test_get_run_includes_processed_items_array(monkeypatch, client: TestClient)
 
     monkeypatch.setattr(runs.celery_app, "send_task", fake_send_task)
 
-    project = client.post("/projects", json={"name": "Runs API", "slug": "runs-api"}).json()
+    project = _post_project(client, name="Runs API", slug="runs-api").json()
     graph = client.post(
         "/graphs",
         json={
@@ -1029,7 +1052,7 @@ def test_get_run_processed_item_not_found(monkeypatch, client: TestClient):
 
     monkeypatch.setattr(runs.celery_app, "send_task", fake_send_task)
 
-    project = client.post("/projects", json={"name": "Item 404", "slug": "item-404"}).json()
+    project = _post_project(client, name="Item 404", slug="item-404").json()
     graph = client.post(
         "/graphs",
         json={
@@ -1075,7 +1098,7 @@ def test_get_run_processed_item_synthetic_whole_run_pending(monkeypatch, tmp_pat
 
     try:
         tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
-        project = tc.post("/projects", json={"name": "Synth Item", "slug": "synth-item"}).json()
+        project = _post_project(tc, name="Synth Item", slug="synth-item").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -1110,7 +1133,7 @@ def test_get_run_processed_item_synthetic_whole_run_pending(monkeypatch, tmp_pat
 def test_get_run_processed_item_synthetic_second_item_404(monkeypatch, client: TestClient):
     monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
 
-    project = client.post("/projects", json={"name": "Synth 404", "slug": "synth-404"}).json()
+    project = _post_project(client, name="Synth 404", slug="synth-404").json()
     graph = client.post(
         "/graphs",
         json={
@@ -1155,7 +1178,7 @@ def test_rerun_processed_item_resets_row_and_enqueues_task(monkeypatch, tmp_path
             app,
             headers={"Authorization": "Bearer backfield-dev"},
         )
-        project = tc.post("/projects", json={"name": "Rerun API", "slug": "rerun-api"}).json()
+        project = _post_project(tc, name="Rerun API", slug="rerun-api").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -1247,9 +1270,7 @@ def test_rerun_synthetic_whole_graph_run_resets_run_and_enqueues_task(
             app,
             headers={"Authorization": "Bearer backfield-dev"},
         )
-        project = tc.post(
-            "/projects", json={"name": "Rerun Synth", "slug": "rerun-synth"}
-        ).json()
+        project = _post_project(tc, name="Rerun Synth", slug="rerun-synth").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -1308,9 +1329,7 @@ def test_create_run_with_replace_article_geography_flag(monkeypatch, tmp_path):
     app.dependency_overrides[get_session] = get_test_session
     try:
         tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
-        project = tc.post(
-            "/projects", json={"name": "Replace flag", "slug": "replace-flag"}
-        ).json()
+        project = _post_project(tc, name="Replace flag", slug="replace-flag").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -1337,7 +1356,7 @@ def test_create_run_with_replace_article_geography_flag(monkeypatch, tmp_path):
 def test_rerun_processed_item_404_when_no_such_row(monkeypatch, client: TestClient):
     monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
 
-    project = client.post("/projects", json={"name": "Rerun 404", "slug": "rerun-404"}).json()
+    project = _post_project(client, name="Rerun 404", slug="rerun-404").json()
     graph = client.post(
         "/graphs",
         json={
@@ -1374,7 +1393,7 @@ def test_get_run_processed_item_synthetic_with_run_result_json(tmp_path, monkeyp
             app,
             headers={"Authorization": "Bearer backfield-dev"},
         )
-        project = client.post("/projects", json={"name": "Synth OK", "slug": "synth-ok"}).json()
+        project = _post_project(client, name="Synth OK", slug="synth-ok").json()
         graph = client.post(
             "/graphs",
             json={
@@ -1428,7 +1447,7 @@ def test_patch_processed_item_overlay_success_and_409(tmp_path, monkeypatch):
 
     try:
         tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
-        project = tc.post("/projects", json={"name": "Overlay API", "slug": "overlay-api"}).json()
+        project = _post_project(tc, name="Overlay API", slug="overlay-api").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -1542,7 +1561,7 @@ def test_patch_processed_item_overlay_materializes_reviewed_output(tmp_path, mon
 
     try:
         tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
-        project = tc.post("/projects", json={"name": "Reviewed Out", "slug": "reviewed-out"}).json()
+        project = _post_project(tc, name="Reviewed Out", slug="reviewed-out").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -1611,7 +1630,7 @@ def test_patch_processed_item_overlay_geometry_400(tmp_path, monkeypatch):
 
     try:
         tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
-        project = tc.post("/projects", json={"name": "Geom API", "slug": "geom-api"}).json()
+        project = _post_project(tc, name="Geom API", slug="geom-api").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -1684,7 +1703,7 @@ def test_patch_processed_item_overlay_requires_if_match(tmp_path, monkeypatch):
 
     try:
         tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
-        project = tc.post("/projects", json={"name": "IfMatch", "slug": "ifmatch"}).json()
+        project = _post_project(tc, name="IfMatch", slug="ifmatch").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -1738,7 +1757,7 @@ def test_patch_processed_item_overlay_synthetic_404(monkeypatch, tmp_path):
     app.dependency_overrides[get_session] = get_test_session
     try:
         tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
-        project = tc.post("/projects", json={"name": "Synth PATCH", "slug": "synth-patch"}).json()
+        project = _post_project(tc, name="Synth PATCH", slug="synth-patch").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -1781,7 +1800,7 @@ def test_get_run_processed_item_merged_locations_and_stale(tmp_path, monkeypatch
 
     try:
         tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
-        project = tc.post("/projects", json={"name": "Merge lane", "slug": "merge-lane"}).json()
+        project = _post_project(tc, name="Merge lane", slug="merge-lane").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -1898,7 +1917,7 @@ def test_get_run_processed_item_failed_does_not_bleed_batch_substrate(tmp_path, 
 
     try:
         tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
-        project = tc.post("/projects", json={"name": "Batch bleed", "slug": "batch-bleed"}).json()
+        project = _post_project(tc, name="Batch bleed", slug="batch-bleed").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -2012,7 +2031,7 @@ def test_get_run_processed_item_article_context_substrate(tmp_path, monkeypatch)
 
     try:
         tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
-        project = tc.post("/projects", json={"name": "Art Ctx", "slug": "art-ctx-sub"}).json()
+        project = _post_project(tc, name="Art Ctx", slug="art-ctx-sub").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -2094,7 +2113,7 @@ def test_get_run_processed_item_article_context_inline_only(tmp_path, monkeypatc
 
     try:
         tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
-        project = tc.post("/projects", json={"name": "Art Inline", "slug": "art-inline"}).json()
+        project = _post_project(tc, name="Art Inline", slug="art-inline").json()
         graph = tc.post(
             "/graphs",
             json={

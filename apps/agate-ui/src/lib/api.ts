@@ -51,6 +51,9 @@ export interface Project {
   created_at: string
   updated_at?: string
   workspace_id?: number | null
+  stylebook_id?: number | null
+  stylebook_name?: string | null
+  stylebook_slug?: string | null
   workspace_stylebook_id?: number | null
   workspace_stylebook_name?: string | null
   /** Stable catalog slug for Stylebook UI routes when the workspace resolves a Stylebook. */
@@ -294,7 +297,7 @@ export interface RunCreate {
 export interface ProjectCreate {
   name: string
   slug?: string
-  workspace_id?: number | null
+  workspace_id: number
 }
 
 export interface ProjectUpdate {
@@ -1168,7 +1171,7 @@ export async function createProject(data: ProjectCreate): Promise<Project> {
     body: JSON.stringify({
       name: data.name,
       slug: data.slug,
-      workspace_id: data.workspace_id ?? null,
+      workspace_id: data.workspace_id,
     }),
   }) as Promise<Project>
 }

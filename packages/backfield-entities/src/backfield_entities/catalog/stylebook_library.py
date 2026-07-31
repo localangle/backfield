@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from backfield_db import (
+    BackfieldProject,
     BackfieldWorkspace,
     Stylebook,
     StylebookActivity,
@@ -431,8 +432,8 @@ def delete_stylebook(
 ) -> None:
     """Delete a stylebook when guards pass (see StylebookLibraryError).
 
-    Workspaces still referencing this stylebook are repointed to the org default (or the
-    replacement default when deleting the current default). Deleting the current default
+    Projects and workspaces still referencing this stylebook are repointed to the org default
+    (or the replacement default when deleting the current default). Deleting the current default
     requires ``replacement_default_id`` for another book in the same org.
 
     Non-cascading dependents (activity, bundle jobs, cleanup/candidate review rows) are
@@ -477,6 +478,14 @@ def delete_stylebook(
         organization_id=org_id,
         from_stylebook_id=int(stylebook_id),
         to_stylebook_id=int(reassign_target_id),
+    )
+    session.exec(
+        update(BackfieldProject)
+        .where(
+            BackfieldProject.organization_id == org_id,
+            BackfieldProject.stylebook_id == int(stylebook_id),
+        )
+        .values(stylebook_id=int(reassign_target_id))
     )
     reassign_stylebook_refs_in_org_graphs(
         session,

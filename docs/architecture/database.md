@@ -22,6 +22,9 @@ All schema changes use the single Alembic chain under `packages/backfield-db/ale
 
 - Organizations, workspaces, projects, and users:
   `backfield_organization`, `backfield_workspace`, `backfield_project`, `backfield_user`.
+  Projects store both their workspace and a direct Stylebook ownership reference. The direct
+  reference is nullable during rollout, indexed for project-to-catalog joins, and is copied from
+  the selected workspace when a project is created.
 - Access grants and API keys: `backfield_organization_membership`,
   `backfield_workspace_membership`, `backfield_project_membership`,
   `backfield_api_credential`.
@@ -89,12 +92,14 @@ shared entity rows are not trusted because sibling batch items may reuse the sam
   `stylebook_candidate_ai_review`.
 
 Canonical ids are UUID strings. Canonical slugs are unique within a Stylebook, and aliases are
-unique by canonical plus normalized alias. A Stylebook belongs to one organization; projects use
-an explicit same-organization Stylebook or the organization's default.
+unique by canonical plus normalized alias. A Stylebook belongs to one organization. Catalog reads
+prefer the project's direct Stylebook, then its workspace Stylebook for rolling compatibility,
+then the organization's default. Changing a workspace's Stylebook affects future project creation
+but does not rewrite existing project ownership.
 
-Deleting a Stylebook reassigns workspaces and graph Stylebook refs, resets linked substrate rows
-to pending, removes non-cascading dependents (activity, bundle jobs, cleanup and candidate AI
-review rows), and deletes canonical trees before the catalog row itself.
+Deleting a Stylebook reassigns projects, workspaces, and graph Stylebook refs, resets linked
+substrate rows to pending, removes non-cascading dependents (activity, bundle jobs, cleanup and
+candidate AI review rows), and deletes canonical trees before the catalog row itself.
 
 ## Shared entity field contracts
 

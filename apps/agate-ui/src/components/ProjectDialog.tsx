@@ -94,6 +94,7 @@ export default function ProjectDialog({
           : NaN
       const wid =
         widLocked ?? (Number.isFinite(widSelect) ? widSelect : null)
+      if (wid == null) return
       await onSave({ name: name.trim(), workspace_id: wid })
       onOpenChange(false)
       setName('')

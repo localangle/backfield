@@ -23,13 +23,17 @@ Project, flow, and run access is checked against the resource's project. Organiz
 `/projects` owns project creation, listing, detail, updates, deletion, statistics, tracked AI cost, and encrypted project secrets.
 
 - List responses are filtered to visible projects.
-- When `workspace_id` is provided, the project inherits that workspace's `organization_id`.
-  Session users must belong to that organization; members need workspace membership, and
-  org admins may assign any workspace in their org. API keys cannot create projects.
-- When `workspace_id` is omitted (legacy / service / scripts), session creates use the
-  session's organization; service tokens fall back to the seeded `default` organization.
+- Project creation requires `workspace_id` and copies that workspace's Stylebook into the
+  project's direct ownership field. Session users must belong to the workspace organization;
+  members need workspace membership, and org admins may assign any workspace in their org.
+  The required workspace is the explicit organization context for service-token callers; the
+  endpoint never falls back to a default organization. API keys cannot create projects.
 - Secret responses contain metadata, never secret values.
-- Project responses expose the assigned workspace and effective workspace Stylebook context when available.
+- Project responses expose direct `stylebook_id`, `stylebook_name`, and `stylebook_slug` fields
+  while retaining the `workspace_stylebook_*` response fields for compatibility. During rollout,
+  reads resolve the direct project Stylebook first, then the workspace Stylebook, then the
+  organization default (or first catalog by id for a legacy organization with no marked default).
+  A later workspace Stylebook change does not alter existing projects.
 
 ### Flows and templates
 

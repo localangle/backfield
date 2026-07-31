@@ -3,6 +3,24 @@
 Backfield has one Alembic chain in `packages/backfield-db/alembic`. Run it once as a standalone
 operation; API and worker processes do not migrate on startup.
 
+## Tenancy preflight
+
+Before applying organization-tenancy migrations to retained data, run the read-only audit:
+
+```bash
+backfield tenancy-audit --json
+```
+
+The command supports databases before the additive project `stylebook_id` column exists, emits a
+typed JSON report, and exits `1` when it finds blockers. It checks orphaned projects;
+project/workspace and workspace/Stylebook organization mismatches; unresolved or
+cross-organization direct project Stylebooks; conflicting or multi-Stylebook graph node
+references; linked location, person, and organization canonicals from another Stylebook; and
+duplicate project slugs within an organization. The audit does not create workspaces, rewrite
+projects or graphs, or change canonical links. Canonical-link mismatches are aggregated by
+project, entity type, expected Stylebook, and actual Stylebook, with an affected count and a
+five-id sample so large datasets still produce practical reports.
+
 ## Local workflow
 
 With the Compose stack configuration:

@@ -17,7 +17,11 @@ from backfield_db import (
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 
-from tests.agate_api.test_agate_api import _insert_pending_run, _minimal_text_input_spec
+from tests.agate_api.test_agate_api import (
+    _insert_pending_run,
+    _minimal_text_input_spec,
+    _post_project,
+)
 
 
 def _seed_article_with_meta(session: Session, *, project_id: int) -> tuple[int, int]:
@@ -66,7 +70,7 @@ def test_get_processed_item_includes_article_meta_rows(tmp_path, monkeypatch) ->
 
     try:
         tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
-        project = tc.post("/projects", json={"name": "Meta Get", "slug": "meta-get-api"}).json()
+        project = _post_project(tc, name="Meta Get", slug="meta-get-api").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -132,7 +136,7 @@ def test_patch_article_meta_category_updates_substrate_and_overlay(tmp_path, mon
 
     try:
         tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
-        project = tc.post("/projects", json={"name": "Meta Patch", "slug": "meta-patch-api"}).json()
+        project = _post_project(tc, name="Meta Patch", slug="meta-patch-api").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -209,10 +213,7 @@ def test_patch_article_meta_category_overlay_only_json_output(tmp_path, monkeypa
 
     try:
         tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
-        project = tc.post(
-            "/projects",
-            json={"name": "Meta Overlay", "slug": "meta-overlay-api"},
-        ).json()
+        project = _post_project(tc, name="Meta Overlay", slug="meta-overlay-api").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -282,10 +283,7 @@ def test_delete_article_meta_overlay_only_json_output(tmp_path, monkeypatch) -> 
 
     try:
         tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
-        project = tc.post(
-            "/projects",
-            json={"name": "Meta Delete", "slug": "meta-delete-api"},
-        ).json()
+        project = _post_project(tc, name="Meta Delete", slug="meta-delete-api").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -352,9 +350,10 @@ def test_delete_article_meta_removes_substrate_row(tmp_path, monkeypatch) -> Non
 
     try:
         tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
-        project = tc.post(
-            "/projects",
-            json={"name": "Meta Delete Substrate", "slug": "meta-delete-substrate-api"},
+        project = _post_project(
+            tc,
+            name="Meta Delete Substrate",
+            slug="meta-delete-substrate-api",
         ).json()
         graph = tc.post(
             "/graphs",
@@ -426,10 +425,7 @@ def test_create_article_meta_overlay_only_json_output(tmp_path, monkeypatch) -> 
 
     try:
         tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
-        project = tc.post(
-            "/projects",
-            json={"name": "Meta Create", "slug": "meta-create-api"},
-        ).json()
+        project = _post_project(tc, name="Meta Create", slug="meta-create-api").json()
         graph = tc.post(
             "/graphs",
             json={
@@ -496,9 +492,10 @@ def test_create_article_meta_persists_substrate_row(tmp_path, monkeypatch) -> No
 
     try:
         tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
-        project = tc.post(
-            "/projects",
-            json={"name": "Meta Create Substrate", "slug": "meta-create-substrate-api"},
+        project = _post_project(
+            tc,
+            name="Meta Create Substrate",
+            slug="meta-create-substrate-api",
         ).json()
         graph = tc.post(
             "/graphs",

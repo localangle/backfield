@@ -131,6 +131,11 @@ class BackfieldProject(SQLModel, table=True):
         foreign_key="backfield_workspace.id",
         index=True,
     )
+    stylebook_id: int | None = Field(
+        default=None,
+        foreign_key="stylebook.id",
+        index=True,
+    )
     name: str = Field(sa_column=Column(Text, nullable=False))
     slug: str = Field(sa_column=Column(Text, unique=True, nullable=False, index=True))
     settings_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
