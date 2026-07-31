@@ -13,6 +13,8 @@ export interface OrganizationCanonicalSuggestion {
 export interface OrganizationCandidate {
   id: number
   project_id: number
+  project_slug: string
+  project_name: string
   suggested_name?: string
   suggested_type?: string | null
   created_at?: string | null
@@ -91,8 +93,10 @@ export async function acceptOrganizationCandidate(
   projectSlug: string,
   substrateOrganizationId: number,
   body: AcceptOrganizationCandidateBody,
+  stylebookSlug?: string,
 ): Promise<AcceptOrganizationCandidateResponse> {
   const params = new URLSearchParams({ project_slug: projectSlug })
+  if (stylebookSlug) params.set("stylebook_slug", stylebookSlug)
   return stylebookJsonFetch<AcceptOrganizationCandidateResponse>(
     `/v1/organizations/candidates/${substrateOrganizationId}/accept?${params}`,
     {
@@ -105,8 +109,10 @@ export async function acceptOrganizationCandidate(
 export async function deferOrganizationCandidate(
   projectSlug: string,
   substrateOrganizationId: number,
+  stylebookSlug?: string,
 ): Promise<{ message: string }> {
   const params = new URLSearchParams({ project_slug: projectSlug })
+  if (stylebookSlug) params.set("stylebook_slug", stylebookSlug)
   return stylebookJsonFetch<{ message: string }>(
     `/v1/organizations/candidates/${substrateOrganizationId}/defer?${params}`,
     { method: "POST" },
@@ -116,8 +122,10 @@ export async function deferOrganizationCandidate(
 export async function clearOrganizationCandidateRecommendation(
   projectSlug: string,
   substrateOrganizationId: number,
+  stylebookSlug?: string,
 ): Promise<{ message: string }> {
   const params = new URLSearchParams({ project_slug: projectSlug })
+  if (stylebookSlug) params.set("stylebook_slug", stylebookSlug)
   return stylebookJsonFetch<{ message: string }>(
     `/v1/organizations/candidates/${substrateOrganizationId}/clear-recommendation?${params}`,
     { method: "POST" },
@@ -156,8 +164,10 @@ export async function updateOrganizationCandidateNote(
   projectSlug: string,
   substrateOrganizationId: number,
   note: string | null,
+  stylebookSlug?: string,
 ): Promise<{ message: string }> {
   const params = new URLSearchParams({ project_slug: projectSlug })
+  if (stylebookSlug) params.set("stylebook_slug", stylebookSlug)
   return stylebookJsonFetch<{ message: string }>(
     `/v1/organizations/candidates/${substrateOrganizationId}/note?${params}`,
     { method: "POST", body: JSON.stringify({ note }) },

@@ -8,7 +8,7 @@ from backfield_auth.gate import require_project_access, visible_project_ids
 from backfield_db import BackfieldProject, Stylebook
 from backfield_entities.catalog.stylebook_library import resolve_stylebook_by_slug
 from fastapi import HTTPException
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 
 def require_stylebook_by_slug_in_auth_org(
@@ -41,8 +41,9 @@ def optional_project_filter_to_ids(
     auth: dict[str, Any],
     project_slug: str | None,
     organization_id: int,
+    stylebook_id: int | None = None,
 ) -> list[int]:
-    """Return project ids visible to the caller, optionally narrowed to one project slug."""
+    """Return visible project ids assigned to one Stylebook."""
 
     if project_slug:
         proj = session.exec(
@@ -54,14 +55,16 @@ def optional_project_filter_to_ids(
         if proj is None or proj.id is None:
             raise HTTPException(status_code=404, detail="Project not found")
         require_project_access(session, auth, int(proj.id))
+        if stylebook_id is not None and int(proj.stylebook_id) != stylebook_id:
+            raise HTTPException(status_code=404, detail="Project not found")
         return [int(proj.id)]
 
     visible = visible_project_ids(session, auth)
-    if visible is None:
-        rows = session.exec(
-            select(BackfieldProject.id).where(BackfieldProject.organization_id == organization_id)
-        ).all()
-        return [int(r) for r in rows if r is not None]
-
-    return [int(pid) for pid in visible]
+    filters = [BackfieldProject.organization_id == organization_id]
+    if stylebook_id is not None:
+        filters.append(BackfieldProject.stylebook_id == stylebook_id)
+    if visible is not None:
+        filters.append(col(BackfieldProject.id).in_([int(pid) for pid in visible]))
+    rows = session.exec(select(BackfieldProject.id).where(*filters)).all()
+    return [int(r) for r in rows if r is not None]
 

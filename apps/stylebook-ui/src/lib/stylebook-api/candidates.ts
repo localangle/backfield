@@ -13,6 +13,8 @@ export interface CanonicalSuggestion {
 export interface Candidate {
   id: number
   project_id: number
+  project_slug: string
+  project_name: string
   suggested_name?: string
   suggested_type?: string
   suggested_formatted_address?: string | null
@@ -127,8 +129,10 @@ export async function acceptCandidate(
   projectSlug: string,
   substrateLocationId: number,
   body: AcceptCandidateBody,
+  stylebookSlug?: string,
 ): Promise<AcceptCandidateResponse> {
   const params = new URLSearchParams({ project_slug: projectSlug })
+  if (stylebookSlug) params.set("stylebook_slug", stylebookSlug)
   return stylebookJsonFetch<AcceptCandidateResponse>(
     `/v1/candidates/${substrateLocationId}/accept?${params}`,
     {
@@ -141,8 +145,10 @@ export async function acceptCandidate(
 export async function deferCandidate(
   projectSlug: string,
   substrateLocationId: number,
+  stylebookSlug?: string,
 ): Promise<{ message: string }> {
   const params = new URLSearchParams({ project_slug: projectSlug })
+  if (stylebookSlug) params.set("stylebook_slug", stylebookSlug)
   return stylebookJsonFetch<{ message: string }>(
     `/v1/candidates/${substrateLocationId}/defer?${params}`,
     { method: "POST" },
@@ -152,8 +158,10 @@ export async function deferCandidate(
 export async function clearLocationCandidateRecommendation(
   projectSlug: string,
   substrateLocationId: number,
+  stylebookSlug?: string,
 ): Promise<{ message: string }> {
   const params = new URLSearchParams({ project_slug: projectSlug })
+  if (stylebookSlug) params.set("stylebook_slug", stylebookSlug)
   return stylebookJsonFetch<{ message: string }>(
     `/v1/candidates/${substrateLocationId}/clear-recommendation?${params}`,
     { method: "POST" },
@@ -192,8 +200,10 @@ export async function updateCandidateNote(
   projectSlug: string,
   substrateLocationId: number,
   note: string | null,
+  stylebookSlug?: string,
 ): Promise<{ message: string }> {
   const params = new URLSearchParams({ project_slug: projectSlug })
+  if (stylebookSlug) params.set("stylebook_slug", stylebookSlug)
   return stylebookJsonFetch<{ message: string }>(
     `/v1/candidates/${substrateLocationId}/note?${params}`,
     { method: "POST", body: JSON.stringify({ note }) },

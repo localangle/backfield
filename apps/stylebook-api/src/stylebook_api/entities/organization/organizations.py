@@ -35,6 +35,7 @@ from sqlmodel import Session, col, func, select
 
 from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
+from stylebook_api.helpers.candidate_scope import require_candidate_project_in_stylebook
 from stylebook_api.helpers.project_scope import project_by_slug, require_stylebook_id
 from stylebook_api.mention_occurrences import replace_organization_mention_occurrences_for_article
 from stylebook_api.semantic_reindex import enqueue_semantic_reindex
@@ -80,6 +81,15 @@ def unlink_substrate_from_canonical_route(
     organization = session.get(SubstrateOrganization, organization_id)
     if organization is None or int(organization.project_id) != int(proj.id):
         raise HTTPException(status_code=404, detail="Organization not found")
+    _, guarded_stylebook = require_candidate_project_in_stylebook(
+        session,
+        auth=auth,
+        project_id=int(organization.project_id),
+        project_slug=project_slug,
+        stylebook_slug=stylebook_slug,
+        require_edit=True,
+    )
+    stylebook_id = int(guarded_stylebook.id)
     try:
         unlink_substrate_from_canonical(
             session,
@@ -111,6 +121,15 @@ def link_substrate_to_canonical_route(
     organization = session.get(SubstrateOrganization, organization_id)
     if organization is None or int(organization.project_id) != int(proj.id):
         raise HTTPException(status_code=404, detail="Organization not found")
+    _, guarded_stylebook = require_candidate_project_in_stylebook(
+        session,
+        auth=auth,
+        project_id=int(organization.project_id),
+        project_slug=project_slug,
+        stylebook_slug=stylebook_slug,
+        require_edit=True,
+    )
+    stylebook_id = int(guarded_stylebook.id)
     try:
         changed = link_substrate_to_canonical_atomic(
             session,

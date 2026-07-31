@@ -5,6 +5,9 @@ import type { LinkPickTableRow } from "@/components/LinkPickTable"
 /** Base candidate shape both entity types satisfy for queue behavior. */
 export type QueueCandidateBase = {
   id: number
+  project_id: number
+  project_slug: string
+  project_name: string
   suggested_name?: string
   suggested_type?: string | null
   created_at?: string | null
@@ -32,19 +35,53 @@ export type CandidateContextResult = {
 
 export type CandidateQueueApiAdapter<TCandidate extends QueueCandidateBase> = {
   list: (
-    projectSlug: string,
+    stylebookSlug: string,
+    projectSlug: string | undefined,
     status: CandidateQueueStatus,
     options: { limit: number; offset: number; q?: string; type_filter?: string },
   ) => Promise<PaginatedListResult<TCandidate>>
 
-  listTypes?: (projectSlug: string, status: CandidateQueueStatus) => Promise<{ types: string[] }>
+  count: (
+    stylebookSlug: string,
+    projectSlug: string | undefined,
+    status: CandidateQueueStatus,
+    options: { q?: string; type_filter?: string },
+  ) => Promise<{
+    total: number
+    projects: Array<{
+      project_id: number
+      project_slug: string
+      project_name: string
+      count: number
+    }>
+  }>
+
+  listTypes?: (
+    stylebookSlug: string,
+    projectSlug: string | undefined,
+    status: CandidateQueueStatus,
+  ) => Promise<{ types: string[] }>
 
   getContext: (projectSlug: string, candidateId: number, limit: number) => Promise<CandidateContextResult>
 
-  defer: (projectSlug: string, candidateId: number) => Promise<void>
-  clearRecommendation: (projectSlug: string, candidateId: number) => Promise<void>
-  updateNote: (projectSlug: string, candidateId: number, note: string | null) => Promise<void>
-  linkToCanonical: (candidateId: number, projectSlug: string, canonicalId: string) => Promise<void>
+  defer: (projectSlug: string, candidateId: number, stylebookSlug: string) => Promise<void>
+  clearRecommendation: (
+    projectSlug: string,
+    candidateId: number,
+    stylebookSlug: string,
+  ) => Promise<void>
+  updateNote: (
+    projectSlug: string,
+    candidateId: number,
+    note: string | null,
+    stylebookSlug: string,
+  ) => Promise<void>
+  linkToCanonical: (
+    candidateId: number,
+    projectSlug: string,
+    canonicalId: string,
+    stylebookSlug: string,
+  ) => Promise<void>
 
   getSuggestedCanonicalId: (candidate: TCandidate) => string | null
   getSuggestedCanonicals: (
@@ -58,6 +95,7 @@ export type CandidateQueueApiAdapter<TCandidate extends QueueCandidateBase> = {
     projectSlug: string,
     candidateId: number,
     body: unknown,
+    stylebookSlug: string,
   ) => Promise<{ canonicalId: string }>
 }
 

@@ -51,7 +51,13 @@ import {
 import Pagination from "@/components/Pagination"
 import { cn } from "@/lib/utils"
 import { candidateQueueNameKey } from "@/lib/candidateQueueSimilarity"
+import { updateCandidateProjectFilter } from "@/lib/candidateQueueState"
 import { isActiveReviewStatus } from "@/lib/cleanupAiReview"
+import {
+  canStartCandidateAiReview,
+  candidateProjectFilterState,
+  candidateProjectOptions,
+} from "@/lib/stylebook-api/stylebookCandidates"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
 import {
   CandidateReviewReasons,
@@ -142,6 +148,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
   } = page
 
   const aiReviewEnabled = Boolean(config.aiReviewEntityType && stylebookSlug && projectSlug)
+  const aiReviewProjectSelected = canStartCandidateAiReview(projectSlug)
   const [aiReviewDialogOpen, setAiReviewDialogOpen] = useState(false)
   const [stoppingAiReview, setStoppingAiReview] = useState(false)
   const candidateAiReview = useCandidateAiReviewPolling({
@@ -157,6 +164,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
   )
 
   async function handleAiReviewButtonClick() {
+    if (!aiReviewProjectSelected) return
     if (aiReviewActive) {
       setStoppingAiReview(true)
       try {
@@ -170,6 +178,10 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
   }
 
   const LinkModal = config.linkModal
+  const projectFilterState = candidateProjectFilterState(projectSlug, projects)
+  const projectOptions = candidateProjectOptions(projectSlug, projects)
+  const linkModalProjectSlug =
+    candidates.find((candidate) => candidate.id === linkModalId)?.project_slug ?? projectSlug
   const columnCount = config.columns.length + 2
   const tableColgroup = resolveCandidateQueueColgroup(columnCount, config.tableLayout)
   const canonicalBasePath = `${catalogBasePath}/${config.entitySlug}/canonical`
@@ -198,7 +210,12 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     rowActionsBusy ||
     aiReviewActive
   const reviewWithAiDisabled =
-    queueEmpty || loading || rowActionsBusy || candidateAiReview.loading || stoppingAiReview
+    !aiReviewProjectSelected ||
+    queueEmpty ||
+    loading ||
+    rowActionsBusy ||
+    candidateAiReview.loading ||
+    stoppingAiReview
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -242,37 +259,36 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
           />
           <h1 className="text-3xl font-bold">{config.copy.pageTitle}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Link candidates from{" "}
+            Review candidates from{" "}
             <span className="font-semibold text-foreground">{projectDisplayName}</span> to Stylebook{" "}
             <span className="font-semibold text-foreground">{stylebookLabel}</span>
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="hidden sm:flex items-center gap-2">
-            <Label className="text-sm text-muted-foreground">Project</Label>
-            <Select
-              value={projectSlug}
-              onValueChange={(slug) => {
-                setSearchParams((prev) => {
-                  const next = new URLSearchParams(prev)
-                  next.set("project_scope", slug)
-                  return next
-                })
-              }}
-              disabled={projectsLoading || projects.length === 0}
-            >
-              <SelectTrigger className="w-[16rem]">
-                <SelectValue placeholder={projectsLoading ? "Loading…" : "Choose a project"} />
-              </SelectTrigger>
-              <SelectContent>
-                {projects.map((p) => (
-                  <SelectItem key={p.id} value={p.slug}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {projectFilterState.visible ? (
+            <div className="hidden sm:flex items-center gap-2">
+              <Label className="text-sm text-muted-foreground">Project</Label>
+              <Select
+                value={projectFilterState.value}
+                onValueChange={(slug) => {
+                  setSearchParams((prev) => updateCandidateProjectFilter(prev, slug))
+                }}
+                disabled={projectsLoading || projects.length === 0}
+              >
+                <SelectTrigger className="w-[16rem]">
+                  <SelectValue placeholder={projectsLoading ? "Loading…" : "Choose a project"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All accessible projects</SelectItem>
+                  {projectOptions.map((project) => (
+                    <SelectItem key={project.project_id} value={project.project_slug}>
+                      {project.project_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
           <Link to={`${canonicalBasePath}${filterScopeSuffix}`}>
             <Button variant="outline">{config.copy.canonicalButtonLabel}</Button>
           </Link>
@@ -294,6 +310,11 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                       type="button"
                       size="sm"
                       variant={aiReviewActive ? "destructive" : "outline"}
+                      title={
+                        aiReviewProjectSelected
+                          ? undefined
+                          : "Choose a project to review with AI"
+                      }
                       disabled={!aiReviewActive && reviewWithAiDisabled}
                       onClick={() => void handleAiReviewButtonClick()}
                     >
@@ -567,6 +588,9 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                                   </span>
                                 </div>
                               ) : null}
+                              <Badge variant="outline" className="ml-10 font-normal text-xs">
+                                {c.project_name}
+                              </Badge>
                               <CandidateReviewReasons lines={candidateReviewLines(c)} />
                             </div>
                           </TableCell>
@@ -770,7 +794,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
         onOpenChange={(o) => {
           if (!o) closeLinkModal()
         }}
-        projectSlug={projectSlug}
+        projectSlug={linkModalProjectSlug}
         stylebookSlug={stylebookSlug}
         substrateId={linkModalId}
         initialCanonicalId={linkModalInitialCanonicalId}

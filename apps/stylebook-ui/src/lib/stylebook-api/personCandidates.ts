@@ -13,6 +13,8 @@ export interface PersonCanonicalSuggestion {
 export interface PersonCandidate {
   id: number
   project_id: number
+  project_slug: string
+  project_name: string
   suggested_name?: string
   suggested_title?: string | null
   suggested_affiliation?: string | null
@@ -96,8 +98,10 @@ export async function acceptPersonCandidate(
   projectSlug: string,
   substratePersonId: number,
   body: AcceptPersonCandidateBody,
+  stylebookSlug?: string,
 ): Promise<AcceptPersonCandidateResponse> {
   const params = new URLSearchParams({ project_slug: projectSlug })
+  if (stylebookSlug) params.set("stylebook_slug", stylebookSlug)
   return stylebookJsonFetch<AcceptPersonCandidateResponse>(
     `/v1/people/candidates/${substratePersonId}/accept?${params}`,
     {
@@ -110,8 +114,10 @@ export async function acceptPersonCandidate(
 export async function deferPersonCandidate(
   projectSlug: string,
   substratePersonId: number,
+  stylebookSlug?: string,
 ): Promise<{ message: string }> {
   const params = new URLSearchParams({ project_slug: projectSlug })
+  if (stylebookSlug) params.set("stylebook_slug", stylebookSlug)
   return stylebookJsonFetch<{ message: string }>(
     `/v1/people/candidates/${substratePersonId}/defer?${params}`,
     { method: "POST" },
@@ -121,8 +127,10 @@ export async function deferPersonCandidate(
 export async function clearPersonCandidateRecommendation(
   projectSlug: string,
   substratePersonId: number,
+  stylebookSlug?: string,
 ): Promise<{ message: string }> {
   const params = new URLSearchParams({ project_slug: projectSlug })
+  if (stylebookSlug) params.set("stylebook_slug", stylebookSlug)
   return stylebookJsonFetch<{ message: string }>(
     `/v1/people/candidates/${substratePersonId}/clear-recommendation?${params}`,
     { method: "POST" },
@@ -161,8 +169,10 @@ export async function updatePersonCandidateNote(
   projectSlug: string,
   substratePersonId: number,
   note: string | null,
+  stylebookSlug?: string,
 ): Promise<{ message: string }> {
   const params = new URLSearchParams({ project_slug: projectSlug })
+  if (stylebookSlug) params.set("stylebook_slug", stylebookSlug)
   return stylebookJsonFetch<{ message: string }>(
     `/v1/people/candidates/${substratePersonId}/note?${params}`,
     { method: "POST", body: JSON.stringify({ note }) },

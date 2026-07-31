@@ -24,6 +24,7 @@ from backfield_db import (
     SubstrateLocation,
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
+    SubstrateOrganization,
     SubstratePerson,
     SubstratePersonMention,
     SubstratePersonMentionOccurrence,
@@ -35,6 +36,7 @@ from backfield_entities.canonical.link import (
     CANONICAL_LINK_WAIVED,
 )
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine, select
 from stylebook_api.deps import get_auth as get_auth_dep
@@ -246,6 +248,390 @@ def editor_client(
         yield client
     finally:
         app.dependency_overrides.pop(get_auth_dep, None)
+
+
+def test_stylebook_candidate_inbox_combines_accessible_projects(
+    editor_client: TestClient,
+    stylebook_test_engine: Engine,
+) -> None:
+    with Session(stylebook_test_engine) as session:
+        default_stylebook = session.exec(
+            select(Stylebook).where(Stylebook.slug == "default")
+        ).one()
+        workspace = session.exec(
+            select(BackfieldWorkspace).where(BackfieldWorkspace.slug == "default-ws")
+        ).one()
+        demo = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")
+        ).one()
+        second = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "no-ws-proj")
+        ).one()
+        editor = session.exec(
+            select(BackfieldUser).where(BackfieldUser.email == "editor@example.com")
+        ).one()
+        inaccessible = BackfieldProject(
+            organization_id=int(default_stylebook.organization_id),
+            workspace_id=int(workspace.id),
+            stylebook_id=int(default_stylebook.id),
+            name="Hidden Project",
+            slug="hidden-proj",
+        )
+        other_stylebook = Stylebook(
+            organization_id=int(default_stylebook.organization_id),
+            slug="other",
+            name="Other Stylebook",
+        )
+        external_org = BackfieldOrganization(name="External", slug="external")
+        session.add(inaccessible)
+        session.add(other_stylebook)
+        session.add(external_org)
+        session.flush()
+        session.add(
+            Stylebook(
+                organization_id=int(external_org.id),
+                slug="external",
+                name="External Stylebook",
+                is_default=True,
+            )
+        )
+        other_project = BackfieldProject(
+            organization_id=int(default_stylebook.organization_id),
+            workspace_id=int(workspace.id),
+            stylebook_id=int(other_stylebook.id),
+            name="Other Project",
+            slug="other-proj",
+        )
+        session.add(other_project)
+        session.flush()
+        for project in (demo, second, other_project):
+            session.add(
+                BackfieldProjectMembership(
+                    user_id=int(editor.id),
+                    project_id=int(project.id),
+                    role="member",
+                )
+            )
+        for project, suffix in (
+            (demo, "demo"),
+            (second, "second"),
+            (inaccessible, "hidden"),
+            (other_project, "other"),
+        ):
+            session.add(
+                SubstrateLocation(
+                    project_id=int(project.id),
+                    name=f"Location {suffix}",
+                    normalized_name=f"location {suffix}",
+                    location_type={
+                        "demo": "city",
+                        "second": "county",
+                        "hidden": "state",
+                        "other": "country",
+                    }[suffix],
+                    identity_fingerprint=f"candidate-location-{suffix}",
+                    canonical_link_status=CANONICAL_LINK_PENDING,
+                )
+            )
+            session.add(
+                SubstratePerson(
+                    project_id=int(project.id),
+                    name=f"Person {suffix}",
+                    normalized_name=f"person {suffix}",
+                    identity_fingerprint=f"candidate-person-{suffix}",
+                    canonical_link_status=CANONICAL_LINK_PENDING,
+                )
+            )
+            session.add(
+                SubstrateOrganization(
+                    project_id=int(project.id),
+                    name=f"Organization {suffix}",
+                    normalized_name=f"organization {suffix}",
+                    identity_fingerprint=f"candidate-organization-{suffix}",
+                    canonical_link_status=CANONICAL_LINK_PENDING,
+                )
+            )
+        session.add(
+            SubstrateLocation(
+                project_id=int(second.id),
+                name="Deferred neighborhood",
+                normalized_name="deferred neighborhood",
+                location_type="neighborhood",
+                canonical_link_status=CANONICAL_LINK_WAIVED,
+            )
+        )
+        session.commit()
+
+    for entity_type in ("locations", "people", "organizations"):
+        response = editor_client.get(
+            f"/v1/stylebooks/default/candidates/{entity_type}?limit=1"
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 2
+        assert len(body["candidates"]) == 1
+        assert body["has_next"] is True
+        assert {
+            "project_id",
+            "project_slug",
+            "project_name",
+        }.issubset(body["candidates"][0])
+
+        count = editor_client.get(
+            f"/v1/stylebooks/default/candidates/{entity_type}/count"
+        )
+        assert count.status_code == 200
+        count_body = count.json()
+        assert count_body["total"] == 2
+        assert {project["project_slug"] for project in count_body["projects"]} == {
+            "demo-proj",
+            "no-ws-proj",
+        }
+
+        filtered = editor_client.get(
+            f"/v1/stylebooks/default/candidates/{entity_type}?project_slug=demo-proj"
+        )
+        assert filtered.status_code == 200
+        assert filtered.json()["total"] == 1
+        assert filtered.json()["candidates"][0]["project_slug"] == "demo-proj"
+
+        wrong_assignment = editor_client.get(
+            f"/v1/stylebooks/default/candidates/{entity_type}?project_slug=other-proj"
+        )
+        assert wrong_assignment.status_code == 404
+
+    cross_stylebook = editor_client.get("/v1/stylebooks/external/candidates/locations")
+    assert cross_stylebook.status_code == 404
+
+    types = editor_client.get("/v1/stylebooks/default/candidates/locations/types")
+    assert types.status_code == 200
+    assert types.json() == {"types": ["city", "county"]}
+    filtered_types = editor_client.get(
+        "/v1/stylebooks/default/candidates/locations/types?project_slug=demo-proj"
+    )
+    assert filtered_types.status_code == 200
+    assert filtered_types.json() == {"types": ["city"]}
+    deferred_types = editor_client.get(
+        "/v1/stylebooks/default/candidates/locations/types?status=deferred"
+    )
+    assert deferred_types.status_code == 200
+    assert deferred_types.json() == {"types": ["neighborhood"]}
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "candidate_model"),
+    [
+        ("/v1/candidates", SubstrateLocation),
+        ("/v1/people/candidates", SubstratePerson),
+        ("/v1/organizations/candidates", SubstrateOrganization),
+    ],
+)
+def test_legacy_candidate_lists_load_project_once(
+    client: TestClient,
+    stylebook_test_engine: Engine,
+    endpoint: str,
+    candidate_model: type[Any],
+) -> None:
+    with Session(stylebook_test_engine) as session:
+        project = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")
+        ).one()
+        for index in range(3):
+            session.add(
+                candidate_model(
+                    project_id=int(project.id),
+                    name=f"Query count {index}",
+                    normalized_name=f"query count {index}",
+                    canonical_link_status=CANONICAL_LINK_PENDING,
+                )
+            )
+        session.commit()
+
+    project_selects: list[str] = []
+
+    def track_project_selects(
+        _connection: object,
+        _cursor: object,
+        statement: str,
+        _parameters: object,
+        _context: object,
+        _executemany: bool,
+    ) -> None:
+        normalized = statement.lower()
+        if normalized.startswith("select") and "from backfield_project" in normalized:
+            project_selects.append(statement)
+
+    event.listen(stylebook_test_engine, "before_cursor_execute", track_project_selects)
+    try:
+        response = client.get(
+            f"{endpoint}?project_slug=demo-proj",
+            headers=_service_headers(),
+        )
+    finally:
+        event.remove(stylebook_test_engine, "before_cursor_execute", track_project_selects)
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 3
+    assert len(project_selects) == 1
+
+
+def test_candidate_mutation_rejects_conflicting_stylebook(
+    editor_client: TestClient,
+    stylebook_test_engine: Engine,
+) -> None:
+    with Session(stylebook_test_engine) as session:
+        project = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")
+        ).one()
+        editor = session.exec(
+            select(BackfieldUser).where(BackfieldUser.email == "editor@example.com")
+        ).one()
+        session.add(
+            BackfieldProjectMembership(
+                user_id=int(editor.id),
+                project_id=int(project.id),
+                role="member",
+            )
+        )
+        other = Stylebook(
+            organization_id=int(project.organization_id),
+            slug="other",
+            name="Other Stylebook",
+        )
+        candidate = SubstrateLocation(
+            project_id=int(project.id),
+            name="Guarded candidate",
+            normalized_name="guarded candidate",
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        session.add(other)
+        session.add(candidate)
+        session.commit()
+        session.refresh(candidate)
+        candidate_id = int(candidate.id)
+
+    response = editor_client.post(
+        f"/v1/candidates/{candidate_id}/defer"
+        "?project_slug=demo-proj&stylebook_slug=other"
+    )
+    assert response.status_code in {400, 403, 404}
+    with Session(stylebook_test_engine) as session:
+        candidate = session.get(SubstrateLocation, candidate_id)
+        assert candidate is not None
+        assert candidate.canonical_link_status == CANONICAL_LINK_PENDING
+
+
+@pytest.mark.parametrize("entity_type", ["locations", "people", "organizations"])
+@pytest.mark.parametrize("auth_type", ["member", "api_key"])
+def test_unlink_requires_stylebook_edit_access(
+    _stylebook_test_stack: tuple[TestClient, Engine],
+    entity_type: str,
+    auth_type: str,
+) -> None:
+    client, engine = _stylebook_test_stack
+    with Session(engine) as session:
+        project = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")
+        ).one()
+        stylebook = session.get(Stylebook, int(project.stylebook_id))
+        assert stylebook is not None
+        user = BackfieldUser(
+            email=f"{entity_type}-{auth_type}@example.com",
+            password_hash="x",
+        )
+        session.add(user)
+        session.flush()
+        session.add(
+            BackfieldProjectMembership(
+                user_id=int(user.id),
+                project_id=int(project.id),
+                role="member",
+            )
+        )
+
+        if entity_type == "locations":
+            canonical = StylebookLocationCanonical(
+                stylebook_id=int(stylebook.id),
+                label="Guarded location",
+                slug=f"guarded-location-{auth_type}",
+                location_type="city",
+                status="active",
+            )
+            session.add(canonical)
+            session.flush()
+            candidate: Any = SubstrateLocation(
+                project_id=int(project.id),
+                name="Guarded location",
+                normalized_name="guarded location",
+                stylebook_location_canonical_id=str(canonical.id),
+                canonical_link_status=CANONICAL_LINK_LINKED,
+            )
+        elif entity_type == "people":
+            canonical = StylebookPersonCanonical(
+                stylebook_id=int(stylebook.id),
+                label="Guarded person",
+                slug=f"guarded-person-{auth_type}",
+                status="active",
+            )
+            session.add(canonical)
+            session.flush()
+            candidate = SubstratePerson(
+                project_id=int(project.id),
+                name="Guarded person",
+                normalized_name="guarded person",
+                stylebook_person_canonical_id=str(canonical.id),
+                canonical_link_status=CANONICAL_LINK_LINKED,
+            )
+        else:
+            canonical = StylebookOrganizationCanonical(
+                stylebook_id=int(stylebook.id),
+                label="Guarded organization",
+                slug=f"guarded-organization-{auth_type}",
+                status="active",
+            )
+            session.add(canonical)
+            session.flush()
+            candidate = SubstrateOrganization(
+                project_id=int(project.id),
+                name="Guarded organization",
+                normalized_name="guarded organization",
+                stylebook_organization_canonical_id=str(canonical.id),
+                canonical_link_status=CANONICAL_LINK_LINKED,
+            )
+        session.add(candidate)
+        session.commit()
+        session.refresh(candidate)
+        candidate_id = int(candidate.id)
+        user_id = int(user.id)
+        project_id = int(project.id)
+
+    def get_test_auth() -> dict[str, Any]:
+        if auth_type == "api_key":
+            return {"type": "api_key", "project_id": project_id}
+        with Session(engine) as session:
+            user = session.get(BackfieldUser, user_id)
+            assert user is not None
+            return _session_auth_for_user(user, org_id=1, org_role="member")
+
+    app.dependency_overrides[get_auth_dep] = get_test_auth
+    try:
+        response = client.post(
+            f"/v1/{entity_type}/{candidate_id}/unlink-canonical"
+            "?project_slug=demo-proj"
+        )
+    finally:
+        app.dependency_overrides.pop(get_auth_dep, None)
+
+    assert response.status_code == 403
+    with Session(engine) as session:
+        model = {
+            "locations": SubstrateLocation,
+            "people": SubstratePerson,
+            "organizations": SubstrateOrganization,
+        }[entity_type]
+        candidate = session.get(model, candidate_id)
+        assert candidate is not None
+        assert candidate.canonical_link_status == CANONICAL_LINK_LINKED
 
 
 def test_health(client: TestClient) -> None:
