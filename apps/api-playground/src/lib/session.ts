@@ -1,9 +1,17 @@
+export interface SessionOrganization {
+  id: number
+  name: string
+  slug: string
+}
+
 export interface SessionUser {
   authenticated: boolean
   email: string
   organizationId: number
   organizationName: string
+  organizationSlug: string
   orgRole: string | null
+  organizations: SessionOrganization[]
 }
 
 export interface PlatformProject {
@@ -32,12 +40,20 @@ export interface PlatformContext {
   stylebooks: PlatformStylebook[]
 }
 
+interface MeOrganization {
+  id?: number
+  name?: string
+  slug?: string
+}
+
 interface MeResponse {
   authenticated?: boolean
   email?: string
   organization_id?: number
   organization_name?: string | null
+  organization_slug?: string | null
   org_role?: string | null
+  organizations?: MeOrganization[]
 }
 
 /** Thrown when the browser has no usable Backfield session; callers redirect to Agate login. */
@@ -75,6 +91,42 @@ export async function logoutSession(coreOrigin: string): Promise<void> {
   }
 }
 
+export async function switchOrganization(
+  coreOrigin: string,
+  organizationId: number,
+): Promise<void> {
+  const response = await fetch(`${coreOrigin}/v1/auth/switch-organization`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    referrerPolicy: "no-referrer",
+    body: JSON.stringify({ organization_id: organizationId }),
+  })
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new SessionAuthRequiredError()
+    }
+    throw new Error("Could not switch organizations.")
+  }
+}
+
+function parseOrganizations(raw: MeOrganization[] | undefined): SessionOrganization[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((item) => {
+      if (item.id == null || !item.name?.trim() || !item.slug?.trim()) return null
+      return {
+        id: item.id,
+        name: item.name.trim(),
+        slug: item.slug.trim().toLowerCase(),
+      }
+    })
+    .filter((item): item is SessionOrganization => item != null)
+}
+
 export async function fetchPlatformContext(
   coreOrigin: string,
   stylebookApiOrigin: string,
@@ -98,7 +150,9 @@ export async function fetchPlatformContext(
       email: me.email,
       organizationId: me.organization_id,
       organizationName: me.organization_name?.trim() || "Backfield",
+      organizationSlug: me.organization_slug?.trim().toLowerCase() || "",
       orgRole: me.org_role ?? null,
+      organizations: parseOrganizations(me.organizations),
     },
     workspaces,
     stylebooks,

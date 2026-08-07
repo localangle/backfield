@@ -8,11 +8,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from backfield_auth.gate import require_project_access
-from backfield_db import StylebookLocationMeta
+from backfield_db import BackfieldProject, StylebookLocationMeta
 from backfield_entities.entities.location.persist import create_standalone_canonical
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
@@ -169,6 +169,20 @@ def _meta_value_skipped_as_empty(raw: Any) -> bool:
     if isinstance(raw, str) and not raw.strip():
         return True
     return False
+
+
+def _stylebook_storage_project_id(session: Session, *, organization_id: int) -> int:
+    project_id = session.exec(
+        select(BackfieldProject.id)
+        .where(BackfieldProject.organization_id == organization_id)
+        .order_by(BackfieldProject.id.asc())
+    ).first()
+    if project_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="This stylebook needs at least one project before metadata can be imported.",
+        )
+    return int(project_id)
 
 
 class _GeoJsonLocationsImporter:
@@ -543,9 +557,14 @@ def import_geojson_stylebook(
     exploded_features = _explode_geometry_collections(features)
 
     allowed_prop_keys = _property_keys_union_from_features(exploded_features)
-    _ = _normalize_and_validate_meta_mappings_or_400(
+    normalized_meta = _normalize_and_validate_meta_mappings_or_400(
         payload.meta_property_mappings,
         allowed_keys=allowed_prop_keys,
+    )
+    metadata_project_id = (
+        _stylebook_storage_project_id(session, organization_id=int(sb.organization_id))
+        if normalized_meta
+        else None
     )
 
     mappings = payload.mappings
@@ -604,13 +623,38 @@ def import_geojson_stylebook(
                     provenance="stylebook_ui_import_geojson",
                 )
                 session.flush()
+                canon_id = str(canon.id)
+                for meta_type, property_key in normalized_meta:
+                    if metadata_project_id is None:
+                        raise RuntimeError("metadata storage project was not resolved")
+                    raw_value = props.get(property_key)
+                    if _meta_value_skipped_as_empty(raw_value):
+                        continue
+                    data_payload: dict[str, Any] = {property_key: raw_value}
+                    try:
+                        validate_meta_json(data_payload)
+                    except HTTPException as exc:
+                        raise _ImportMetaJsonError(str(exc.detail)) from exc
+                    session.add(
+                        StylebookLocationMeta(
+                            project_id=metadata_project_id,
+                            stylebook_location_canonical_id=canon_id,
+                            meta_type=meta_type,
+                            data_json=data_payload,
+                            added=True,
+                            created_at=datetime.now(UTC),
+                        )
+                    )
+                session.flush()
                 created.append(
                     ImportGeoJSONCreatedRow(
                         feature_index=i,
-                        canonical_id=str(canon.id),
+                        canonical_id=canon_id,
                         label=str(canon.label),
                     )
                 )
+        except _ImportMetaJsonError as e:
+            failed.append(ImportGeoJSONFailedRow(feature_index=i, error=e.message))
         except Exception as e:  # noqa: BLE001 - per-row boundary
             failed.append(ImportGeoJSONFailedRow(feature_index=i, error=str(e)))
 

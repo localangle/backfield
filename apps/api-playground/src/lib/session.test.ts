@@ -4,6 +4,7 @@ import {
   fetchPlatformContext,
   logoutSession,
   SessionAuthRequiredError,
+  switchOrganization,
 } from "./session"
 
 describe("Playground session", () => {
@@ -51,5 +52,28 @@ describe("Playground session", () => {
         "https://stylebook-api.newsroom.backfield.news",
       ),
     ).rejects.toBeInstanceOf(SessionAuthRequiredError)
+  })
+
+  it("switches the active organization through the tenant session host", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({ success: true }), { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await switchOrganization("https://agate.newsroom.backfield.news", 2)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://agate.newsroom.backfield.news/v1/auth/switch-organization",
+      {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        referrerPolicy: "no-referrer",
+        body: JSON.stringify({ organization_id: 2 }),
+      },
+    )
   })
 })

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   deriveApiOrigin,
+  derivePlaygroundOrigin,
   deriveProductOrigin,
   deriveStylebookApiOrigin,
   normalizeOrganizationSlug,
@@ -24,6 +25,9 @@ describe("organization API origin", () => {
     )
     expect(deriveStylebookApiOrigin("canary", "stg.backfield.news")).toBe(
       "https://stylebook.canary.stg.backfield.news/api/stylebook",
+    )
+    expect(derivePlaygroundOrigin("canary", "stg.backfield.news")).toBe(
+      "https://playground.canary.stg.backfield.news",
     )
   })
 

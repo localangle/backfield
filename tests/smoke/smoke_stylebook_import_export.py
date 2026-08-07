@@ -70,6 +70,7 @@ def main() -> int:
                     "name": label,
                     "type": "city",
                     "formatted_address": f"{label}, IL, USA",
+                    "import_details": {"source": "stylebook-import-smoke"},
                 },
             }
         ],
@@ -94,6 +95,12 @@ def main() -> int:
                             "location_type_property": "type",
                             "formatted_address_property": "formatted_address",
                         },
+                        "meta_property_mappings": [
+                            {
+                                "property_key": "import_details",
+                                "meta_type": "import_details",
+                            }
+                        ],
                     },
                 ),
                 "import geojson",
@@ -111,6 +118,12 @@ def main() -> int:
                 ),
                 "get imported canonical",
             )
+            fetched_meta = assert_object(
+                client.get(
+                    f"/v1/stylebooks/{stylebook_slug}/canonical-locations/{canonical_id}/meta"
+                ),
+                "get imported canonical metadata",
+            )
 
         if int(analyzed.get("feature_count", -1)) != 1:
             raise RuntimeError(f"Unexpected analyze payload: {analyzed}")
@@ -121,6 +134,19 @@ def main() -> int:
             raise RuntimeError(f"Unexpected import payload: {imported}")
         if fetched.get("label") != label:
             raise RuntimeError(f"Imported canonical label mismatch: {fetched}")
+        meta_rows = fetched_meta.get("meta")
+        if not isinstance(meta_rows, list) or len(meta_rows) != 1:
+            raise RuntimeError(f"Imported canonical metadata mismatch: {fetched_meta}")
+        imported_meta = meta_rows[0]
+        if (
+            not isinstance(imported_meta, dict)
+            or imported_meta.get("meta_type") != "import_details"
+        ):
+            raise RuntimeError(f"Imported canonical metadata type mismatch: {fetched_meta}")
+        if imported_meta.get("data") != {
+            "import_details": {"source": "stylebook-import-smoke"}
+        }:
+            raise RuntimeError(f"Imported canonical metadata payload mismatch: {fetched_meta}")
 
         log("Smoke stylebook import passed.")
         log(f"Stylebook: {stylebook_slug!r}")

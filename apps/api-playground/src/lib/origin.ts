@@ -59,6 +59,13 @@ export function deriveProductOrigin(
   return `https://${product}.${requireSlug(organizationSlug)}.${parentDomain}`
 }
 
+export function derivePlaygroundOrigin(
+  organizationSlug: string,
+  parentDomain: ParentDomain = "backfield.news",
+): string {
+  return `https://playground.${requireSlug(organizationSlug)}.${parentDomain}`
+}
+
 /**
  * Parse a tenant Playground hostname.
  *

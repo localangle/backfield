@@ -371,14 +371,6 @@ export default function Layout({ children, headerContent }: LayoutProps) {
           />
           <div className="flex items-center gap-2 flex-wrap justify-end flex-1 min-w-0">
             {headerContent}
-            <OrganizationSwitcher
-              organizations={organizations}
-              organizationId={organizationId}
-              onSwitch={async (nextOrganizationId) => {
-                const slug = await switchOrganization(nextOrganizationId)
-                navigate(`/org/${encodeURIComponent(slug)}/`, { replace: true })
-              }}
-            />
             {username ? (
               <UserAccountMenu
                 userLabel={username}
@@ -396,22 +388,35 @@ export default function Layout({ children, headerContent }: LayoutProps) {
           storageKey="stylebook-sidebar-expanded"
           asideAriaLabel="Platform"
           headerLeading={
-            <NavLink
-              to={indexPath}
-              title={organizationLabel}
-              aria-label={organizationLabel}
-              className={({ isActive }) =>
-                cn(
-                  "flex min-w-0 flex-1 items-center rounded-md px-1 py-1 -ml-1",
-                  "hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  isActive && "bg-transparent",
-                )
-              }
-            >
-              <span className="truncate text-sm font-semibold tracking-tight text-foreground">
-                {organizationLabel}
-              </span>
-            </NavLink>
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              {organizations.length >= 2 ? (
+                <OrganizationSwitcher
+                  organizations={organizations}
+                  organizationId={organizationId}
+                  onSwitch={async (nextOrganizationId) => {
+                    const slug = await switchOrganization(nextOrganizationId)
+                    navigate(`/org/${encodeURIComponent(slug)}/`, { replace: true })
+                  }}
+                />
+              ) : (
+                <NavLink
+                  to={indexPath}
+                  title={organizationLabel}
+                  aria-label={organizationLabel}
+                  className={({ isActive }) =>
+                    cn(
+                      "flex min-w-0 flex-1 items-center rounded-md px-1 py-1 -ml-1",
+                      "hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      isActive && "bg-transparent",
+                    )
+                  }
+                >
+                  <span className="truncate text-sm font-semibold tracking-tight text-foreground">
+                    {organizationLabel}
+                  </span>
+                </NavLink>
+              )}
+            </div>
           }
         >
           {(expanded: boolean, { expand }: { expand: () => void }) => (

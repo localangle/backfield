@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Link, useParams, useSearchParams } from "react-router-dom"
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
 import { CleanupAiReviewDialog } from "@/components/CleanupAiReviewDialog"
 import { DuplicateClusterList } from "@/components/DuplicateClusterList"
@@ -122,7 +122,8 @@ export default function CleanupCheck() {
   /** Cleanup APIs key runs by `project`; use filter when set, else workflow scope. */
   const cleanupProjectSlug = projectFilterSlug || projectScopeSlug || undefined
   const crumbRoot = useScopeBreadcrumbRoot()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const urlQuery = searchParams.get("q") ?? ""
   const [searchQuery, setSearchQuery] = useState(() => urlQuery)
   const [loading, setLoading] = useState(true)
@@ -216,16 +217,24 @@ export default function CleanupCheck() {
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
-      setSearchParams((prev) => {
-        const next = new URLSearchParams(prev)
-        const trimmed = searchQuery.trim()
-        if (trimmed) next.set("q", trimmed)
-        else next.delete("q")
-        return next
-      })
+      const trimmed = searchQuery.trim()
+      if (trimmed === urlQuery) return
+      const next = new URLSearchParams(searchParams)
+      if (trimmed) next.set("q", trimmed)
+      else next.delete("q")
+      const query = next.toString()
+      navigate(
+        {
+          // App routing exposes the path without ``/org/{slug}``; keep the real browser
+          // path so changing the search query does not trigger an organization redirect.
+          pathname: window.location.pathname,
+          search: query ? `?${query}` : "",
+        },
+        { replace: true },
+      )
     }, 300)
     return () => window.clearTimeout(handle)
-  }, [searchQuery, setSearchParams])
+  }, [navigate, searchParams, searchQuery, urlQuery])
 
   const loadResults = useCallback(async () => {
     if (!stylebookSlug || !config) return

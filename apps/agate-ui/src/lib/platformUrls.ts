@@ -25,13 +25,13 @@ export function stylebookUiOrigin(): string {
   })
 }
 
-/** External docs or fallback to Agate `/help`. */
+/** Product docs (override with `VITE_HELP_URL`). */
 export function helpHref(): string {
   const raw = import.meta.env.VITE_HELP_URL
   if (typeof raw === 'string' && raw.trim() !== '') {
     return raw.trim()
   }
-  return `${agateUiOrigin()}/help`
+  return 'https://docs.backfield.org'
 }
 
 function tenantSlug(currentOrigin: string): string {

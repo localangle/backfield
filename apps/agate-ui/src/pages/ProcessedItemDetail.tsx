@@ -67,15 +67,18 @@ export default function ProcessedItemDetail() {
   const { runId, itemId } = useParams<{ runId: string; itemId: string }>()
   const navigate = useNavigate()
   const location = useLocation()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
   const verificationDirtyRef = useRef(false)
   /** Set once a rerun reaches pending/running; gates clearing ``rerunRequested``. */
   const rerunSawInFlightRef = useRef(false)
+  /** True after the first successful item load; avoids full-page spinner on soft reloads. */
+  const hasLoadedItemRef = useRef(false)
   const [reviewDirty, setReviewDirty] = useState(false)
   const [run, setRun] = useState<Run | null>(null)
   const [graph, setGraph] = useState<Graph | null>(null)
   const [item, setItem] = useState<ProcessedItem | null>(null)
   const [loading, setLoading] = useState(true)
+  const [tabContentLoading, setTabContentLoading] = useState(false)
   const [rerunning, setRerunning] = useState(false)
   /** True after the user confirms rerun until the item leaves pending/running. */
   const [rerunRequested, setRerunRequested] = useState(false)
@@ -120,8 +123,17 @@ export default function ProcessedItemDetail() {
     const hash = location.hash.replace(/^#/, '').trim()
     if (!hash) return
     const tab = parseProcessedItemDetailTab(hash, { synthetic: itemSynthetic })
-    navigate({ pathname: location.pathname, search: `?tab=${encodeURIComponent(tab)}` }, { replace: true })
-  }, [location.pathname, location.hash, searchParams, itemSynthetic, navigate])
+    // Use the real browser pathname: ``Routes`` in App.tsx rewrites ``useLocation().pathname``
+    // to drop ``/org/{slug}``, and navigating with that scoped path triggers an org redirect
+    // remount (full-page loading flash) on every tab change.
+    navigate(
+      {
+        pathname: window.location.pathname,
+        search: `?tab=${encodeURIComponent(tab)}`,
+      },
+      { replace: true },
+    )
+  }, [location.hash, searchParams, itemSynthetic, navigate])
 
   const handleTabChange = useCallback(
     async (next: string) => {
@@ -138,14 +150,24 @@ export default function ProcessedItemDetail() {
         )
         if (!leave) return
       }
-      setSearchParams({ tab: next }, { replace: true })
+      navigate(
+        {
+          pathname: window.location.pathname,
+          search: `?tab=${encodeURIComponent(next)}`,
+        },
+        { replace: true },
+      )
     },
-    [activeTab, setSearchParams, showConfirm],
+    [activeTab, navigate, showConfirm],
   )
 
   useEffect(() => {
+    hasLoadedItemRef.current = false
+    setItem(null)
+    setLoading(true)
+    setTabContentLoading(false)
     if (runId && itemId) {
-      loadItemData()
+      void loadItemData()
     }
   }, [runId, itemId])
 
@@ -269,12 +291,19 @@ export default function ProcessedItemDetail() {
     const parsedItemId = parseInt(itemId, 10)
     if (Number.isNaN(parsedItemId)) {
       setItem(null)
+      hasLoadedItemRef.current = false
       setLoading(false)
+      setTabContentLoading(false)
       return
     }
 
+    const softReload = hasLoadedItemRef.current
     try {
-      setLoading(true)
+      if (softReload) {
+        setTabContentLoading(true)
+      } else {
+        setLoading(true)
+      }
       const runData = await getRun(runId)
       const graphData = await getGraph(runData.graph_id)
       setRun(runData)
@@ -283,6 +312,7 @@ export default function ProcessedItemDetail() {
       try {
         const itemData = await getProcessedItem(runId, parsedItemId)
         setItem(itemData)
+        hasLoadedItemRef.current = true
       } catch {
         const syn = runData.items?.find((i) => i.id === parsedItemId && i.synthetic)
         if (syn) {
@@ -311,15 +341,19 @@ export default function ProcessedItemDetail() {
             estimated_ai_cost_incomplete: syn.estimated_ai_cost_incomplete,
             estimated_ai_cost_currency: syn.estimated_ai_cost_currency,
           })
+          hasLoadedItemRef.current = true
         } else {
           setItem(null)
+          hasLoadedItemRef.current = false
         }
       }
     } catch (error) {
       console.error('Failed to load item data:', error)
       setItem(null)
+      hasLoadedItemRef.current = false
     } finally {
       setLoading(false)
+      setTabContentLoading(false)
     }
   }
 
@@ -535,7 +569,7 @@ export default function ProcessedItemDetail() {
     })
   }, [item, graph])
 
-  if (loading) {
+  if (loading && !item) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -689,6 +723,12 @@ export default function ProcessedItemDetail() {
           ))}
         </TabsList>
 
+        {tabContentLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <>
         <TabsContent value="info" className="space-y-4">
           <ProcessedItemInformationCard
             runId={runId!}
@@ -996,6 +1036,8 @@ export default function ProcessedItemDetail() {
             </Card>
           )}
         </TabsContent>
+          </>
+        )}
       </Tabs>
     </div>
   )
