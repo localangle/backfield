@@ -717,6 +717,56 @@ def test_stylebook_scoped_import_requires_editor(member_client: TestClient) -> N
     assert r.status_code == 403
 
 
+def test_stylebook_scoped_import_persists_canonical_metadata(
+    editor_client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    response = editor_client.post(
+        "/v1/stylebooks/default/import/geojson",
+        json={
+            "geojson": {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [-87.62, 41.88]},
+                        "properties": {
+                            "name": "Import metadata test",
+                            "type": "place",
+                            "details": {"agency": "parks", "priority": 2},
+                        },
+                    }
+                ],
+            },
+            "mappings": {
+                "label_property": "name",
+                "location_type_property": "type",
+            },
+            "meta_property_mappings": [
+                {"property_key": "details", "meta_type": "import_details"}
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["created_count"] == 1
+    canonical_id = body["created"][0]["canonical_id"]
+
+    with Session(stylebook_test_engine) as session:
+        metadata_rows = session.exec(
+            select(StylebookLocationMeta).where(
+                StylebookLocationMeta.stylebook_location_canonical_id == canonical_id
+            )
+        ).all()
+
+    assert len(metadata_rows) == 1
+    assert metadata_rows[0].meta_type == "import_details"
+    assert metadata_rows[0].data_json == {
+        "details": {"agency": "parks", "priority": 2}
+    }
+    assert metadata_rows[0].added is True
+
+
 def test_list_stylebooks_service(client: TestClient) -> None:
     r = client.get(
         "/v1/organizations/1/stylebooks",
