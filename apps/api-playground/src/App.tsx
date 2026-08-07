@@ -9,6 +9,7 @@ import { fetchPublicSchema } from "./lib/api"
 import { listOperations, type OpenApiDocument, type PlaygroundOperation } from "./lib/openapi"
 import {
   deriveApiOrigin,
+  derivePlaygroundOrigin,
   deriveStylebookApiOrigin,
   deriveProductOrigin,
   isLocalPlaygroundHost,
@@ -21,6 +22,7 @@ import {
   fetchPlatformContext,
   logoutSession,
   SessionAuthRequiredError,
+  switchOrganization,
   type PlatformContext,
 } from "./lib/session"
 
@@ -301,6 +303,25 @@ function PlaygroundHome() {
     redirectToLogin()
   }
 
+  async function handleSwitchOrganization(nextOrganizationId: number) {
+    if (!sessionOrigin || !platformContext) {
+      throw new Error("Could not switch organizations.")
+    }
+    const selected = platformContext.user.organizations.find(
+      (organization) => organization.id === nextOrganizationId,
+    )
+    if (!selected) {
+      throw new Error("Could not switch organizations.")
+    }
+    await switchOrganization(sessionOrigin, nextOrganizationId)
+    clearApiKey()
+    if (localAvailable) {
+      window.location.reload()
+      return
+    }
+    window.location.assign(`${derivePlaygroundOrigin(selected.slug, parentDomain)}/`)
+  }
+
   function clearApiKey() {
     setApiKey("")
     setApiKeyDraft("")
@@ -346,6 +367,7 @@ function PlaygroundHome() {
             organizationSlug={organizationSlug}
             parentDomain={parentDomain}
             local={localAvailable}
+            onSwitchOrganization={handleSwitchOrganization}
           />
         ) : sessionLoading ? (
           <aside

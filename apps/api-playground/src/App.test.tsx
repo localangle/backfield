@@ -56,7 +56,9 @@ function sessionResponse(input: RequestInfo | URL): Response | undefined {
         email: "developer@example.test",
         organization_id: 1,
         organization_name: "Newsroom",
+        organization_slug: "newsroom",
         org_role: "org_admin",
+        organizations: [{ id: 1, name: "Newsroom", slug: "newsroom" }],
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     )

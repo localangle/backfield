@@ -17,6 +17,7 @@
     "./axisAlignedRectangle": "./src/axisAlignedRectangle.ts",
     "./ShellSidebar": "./src/ShellSidebar.tsx",
     "./UserAccountMenu": "./src/UserAccountMenu.tsx",
+    "./OrganizationSwitcher": "./src/OrganizationSwitcher.tsx",
     "./tenantSession": "./src/tenantSession.ts",
     "./passwordChangeGate": "./src/passwordChangeGate.ts",
     "./AgateProductMark": "./src/AgateProductMark.tsx",

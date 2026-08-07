@@ -7,6 +7,7 @@ import {
   TerminalSquare,
 } from "lucide-react"
 import { AgateProductMark } from "@backfield/ui/AgateProductMark"
+import { OrganizationSwitcher } from "@backfield/ui/OrganizationSwitcher"
 import { StylebookProductMark } from "@backfield/ui/StylebookProductMark"
 import { ShellSidebar } from "@backfield/ui/ShellSidebar"
 import { cn } from "@backfield/ui/cn"
@@ -39,6 +40,7 @@ interface PlatformSidebarProps {
   organizationSlug: string
   parentDomain: ParentDomain
   local: boolean
+  onSwitchOrganization: (organizationId: number) => Promise<void>
 }
 
 export default function PlatformSidebar({
@@ -46,6 +48,7 @@ export default function PlatformSidebar({
   organizationSlug,
   parentDomain,
   local,
+  onSwitchOrganization,
 }: PlatformSidebarProps) {
   const [expandedWorkspaceSlugs, setExpandedWorkspaceSlugs] = useState<Set<string>>(
     readExpandedWorkspaceSlugs,
@@ -116,19 +119,29 @@ export default function PlatformSidebar({
       storageKey={STORAGE_EXPANDED}
       asideAriaLabel="Platform"
       headerLeading={
-        <a
-          href={agateOrigin}
-          title={context.user.organizationName}
-          aria-label={context.user.organizationName}
-          className={cn(
-            "flex min-w-0 flex-1 items-center rounded-md px-1 py-1 -ml-1",
-            "hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {context.user.organizations.length >= 2 ? (
+            <OrganizationSwitcher
+              organizations={context.user.organizations}
+              organizationId={context.user.organizationId}
+              onSwitch={onSwitchOrganization}
+            />
+          ) : (
+            <a
+              href={agateOrigin}
+              title={context.user.organizationName}
+              aria-label={context.user.organizationName}
+              className={cn(
+                "flex min-w-0 flex-1 items-center rounded-md px-1 py-1 -ml-1",
+                "hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              )}
+            >
+              <span className="truncate text-sm font-semibold tracking-tight text-foreground">
+                {context.user.organizationName}
+              </span>
+            </a>
           )}
-        >
-          <span className="truncate text-sm font-semibold tracking-tight text-foreground">
-            {context.user.organizationName}
-          </span>
-        </a>
+        </div>
       }
     >
       {(expanded: boolean, { expand }: { expand: () => void }) => (
