@@ -260,27 +260,30 @@ export default function AppSidebar() {
         asideAriaLabel="Platform"
         headerLeading={
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <NavLink
-              to={headerTo}
-              title={organizationLabel}
-              aria-label={organizationLabel}
-              className={cn(
-                'flex min-w-0 flex-1 items-center rounded-md px-1 py-1 -ml-1',
-                'hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              )}
-            >
-              <span className="truncate text-sm font-semibold tracking-tight text-foreground">
-                {organizationLabel}
-              </span>
-            </NavLink>
-            <OrganizationSwitcher
-              organizations={organizations}
-              organizationId={organizationId}
-              onSwitch={async (nextOrganizationId) => {
-                const slug = await switchOrganization(nextOrganizationId)
-                navigate(`/org/${encodeURIComponent(slug)}/`, { replace: true })
-              }}
-            />
+            {organizations.length >= 2 ? (
+              <OrganizationSwitcher
+                organizations={organizations}
+                organizationId={organizationId}
+                onSwitch={async (nextOrganizationId) => {
+                  const slug = await switchOrganization(nextOrganizationId)
+                  navigate(`/org/${encodeURIComponent(slug)}/`, { replace: true })
+                }}
+              />
+            ) : (
+              <NavLink
+                to={headerTo}
+                title={organizationLabel}
+                aria-label={organizationLabel}
+                className={cn(
+                  'flex min-w-0 flex-1 items-center rounded-md px-1 py-1 -ml-1',
+                  'hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                )}
+              >
+                <span className="truncate text-sm font-semibold tracking-tight text-foreground">
+                  {organizationLabel}
+                </span>
+              </NavLink>
+            )}
           </div>
         }
       >

@@ -308,7 +308,7 @@ export default function PlatformSidebar({
               </a>
             ) : null}
             <a
-              href={`${agateOrigin}/help`}
+              href="https://docs.backfield.org"
               className={hubLinkClass}
               title={!expanded ? "Help" : undefined}
             >
