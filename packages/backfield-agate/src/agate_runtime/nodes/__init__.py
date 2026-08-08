@@ -3,6 +3,7 @@
 from agate_runtime.nodes.article_metadata import run_article_metadata
 from agate_runtime.nodes.custom_extract import run_custom_extract
 from agate_runtime.nodes.db_output import run_db_output
+from agate_runtime.nodes.document_chunker import run_document_chunker
 from agate_runtime.nodes.embed_images import run_embed_images
 from agate_runtime.nodes.embed_text import run_embed_text
 from agate_runtime.nodes.gather import run_gather
@@ -20,6 +21,7 @@ NODE_RUNNERS: dict[str, callable] = {
     "TextInput": run_text_input,
     "JSONInput": run_json_input,
     "S3Input": run_s3_input,
+    "DocumentChunker": run_document_chunker,
     "PlaceExtract": run_place_extract,
     "PersonExtract": run_person_extract,
     "OrganizationExtract": run_organization_extract,

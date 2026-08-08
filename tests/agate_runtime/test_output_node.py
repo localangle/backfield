@@ -121,3 +121,24 @@ def test_dboutput_consolidates_all_node_outputs_not_only_direct_upstreams() -> N
     assert len(body["article_metadata_all"]) == 2
     assert body["article_embedding"]["embedded_text"] == "Story body from S3."
     assert body["image_embeddings"][0]["image_id"] == "image:abc"
+
+
+def test_consolidated_body_strips_transient_chunk_envelope() -> None:
+    body = consolidated_body_from_dboutput(
+        {},
+        {
+            "chunker": {
+                "text": "Full story text",
+                "headline": "Headline",
+                "__document_chunk_envelope": {
+                    "version": "1",
+                    "text": "Full story text",
+                    "chunks": [],
+                },
+                "chunking_summary": {"chunk_count": 2},
+            }
+        },
+    )
+    assert body["text"] == "Full story text"
+    assert "__document_chunk_envelope" not in body
+    assert body.get("chunking_summary", {"chunk_count": 2})["chunk_count"] == 2

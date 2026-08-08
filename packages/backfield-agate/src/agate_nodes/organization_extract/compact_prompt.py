@@ -33,6 +33,8 @@ Rules for compact output:
 - Do NOT emit nature_secondary_tags or organization_boundary in the core array.
 - Put organization_boundary in extras.b only for borderline cousin mentions.
 - Put nature_secondary_tags in extras.st only when non-empty.
+- Put extras.ea with a short exact evidence quote from the owned analysis segment
+  for every row (required when the prompt includes an owned segment).
 - If no organizations qualify, return {"organizations": []}.
 
 """ + ORG_COMPACT_LEGEND

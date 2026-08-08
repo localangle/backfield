@@ -6,12 +6,27 @@ import json
 from collections import OrderedDict
 from typing import Any
 
+from agate_utils.text_chunking import TRANSIENT_CHUNK_ENVELOPE_KEY
 from pydantic import BaseModel
 
 from agate_runtime.upstream_input import (
     expand_gathered_payload as _expand_gathered_payload,
+)
+from agate_runtime.upstream_input import (
     merge_upstream_payload as _merge_upstream_payload,
 )
+
+# Keys that must never enter durable consolidated / exported bodies.
+TRANSIENT_OUTPUT_KEYS: frozenset[str] = frozenset(
+    {
+        TRANSIENT_CHUNK_ENVELOPE_KEY,
+    }
+)
+
+
+def strip_transient_output_keys(data: dict[str, Any]) -> dict[str, Any]:
+    """Drop reserved transient execution keys from a consolidated payload."""
+    return {key: value for key, value in data.items() if key not in TRANSIENT_OUTPUT_KEYS}
 
 PREFERRED_KEY_ORDER = [
     "publication",
@@ -144,4 +159,4 @@ class OutputConsolidator:
         if p.exclude or p.include:
             filtered_data = self._apply_filters(filtered_data, p)
         filtered_data = self._reorder_keys(filtered_data)
-        return filtered_data
+        return strip_transient_output_keys(filtered_data)

@@ -33,7 +33,7 @@ Health endpoints are `GET /health` on Agate API, Stylebook API, and Core API.
 
 Frontend cross-app destinations are build-time Vite settings. `VITE_AGATE_UI_ORIGIN` and
 `VITE_STYLEBOOK_UI_ORIGIN` override tenant sibling-app discovery, `VITE_HELP_URL` overrides the Help
-destination (default `https://docs.backfield.org`), and `VITE_PLAYGROUND_URL` overrides the hosted
+destination (default `https://docs.backfield.news`), and `VITE_PLAYGROUND_URL` overrides the hosted
 API Playground destination. Local Agate and Stylebook builds otherwise link to
 `http://localhost:5176`; production builds derive
 `https://playground.{organization-slug}.backfield.news`. A custom `VITE_PLAYGROUND_URL` may contain

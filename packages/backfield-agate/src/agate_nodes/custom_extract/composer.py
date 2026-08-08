@@ -81,9 +81,9 @@ def compose_custom_extract_prompt(
         'and optionally "confidence".\n'
         '- "fields" holds the field values listed above; use null when a value is not '
         "stated in the article. Never guess.\n"
-        '- "mentions" must contain at least one object with "text" (a verbatim snippet '
-        "from the article that supports this record). Records without supporting text in "
-        "the article must be omitted.\n"
+        '- "mentions" must contain at least one object with "text": prefer the first '
+        "verbatim mention from the article that grounds this record (an evidence anchor). "
+        "Records without supporting text in the article must be omitted.\n"
         '- "confidence" is a number from 0.0 to 1.0.\n'
         "- Return an empty array when no records of this type appear in the article.\n\n"
         "Example shape:\n"

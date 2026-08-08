@@ -77,6 +77,7 @@ nature (column 6):
 extras (optional trailing object; omit when empty):
   st — array of nature codes for nature_secondary_tags
   si — 1 when surname_inferred_from_relative is true
+  ea — short exact evidence quote from the owned analysis segment
   review — {"handling","reason_code","message"} when review_handling != "none"
 """
 

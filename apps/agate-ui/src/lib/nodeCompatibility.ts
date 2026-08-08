@@ -24,7 +24,14 @@ export type CompatibleNextNodesResult = {
 export type CompatibleNodesOptions = {
   /** Capability name → true when at least one project model is enabled (e.g. embedding). */
   projectModelCapabilities?: Record<string, boolean>
+  /** Node types already present in the flow (including bookends). */
+  existingNodeTypes?: readonly string[]
+  /** When true, Document Chunker is already in the graph. */
+  hasDocumentChunker?: boolean
 }
+
+/** Must sit directly after the content source; at most one per flow. */
+export const DOCUMENT_CHUNKER_TYPE = 'DocumentChunker'
 
 function requiredProjectModelCapabilities(meta: NodeMetadataEntry): string[] {
   const caps = (meta as { requiredProjectModelCapabilities?: string[] })
@@ -219,6 +226,30 @@ function sameTypeChainFailureReason(meta: NodeMetadataEntry): string {
   return `${label} cannot follow another ${label} step.`
 }
 
+function graphHasDocumentChunker(options?: CompatibleNodesOptions): boolean {
+  if (options?.hasDocumentChunker === true) return true
+  return (options?.existingNodeTypes ?? []).includes(DOCUMENT_CHUNKER_TYPE)
+}
+
+function documentChunkerAvailability(
+  sourceType: string,
+  options?: CompatibleNodesOptions,
+): { ok: true } | { ok: false; reason: string } {
+  if (graphHasDocumentChunker(options)) {
+    return {
+      ok: false,
+      reason: 'This flow already has a Document Chunker.',
+    }
+  }
+  if (!isInputBookendType(sourceType)) {
+    return {
+      ok: false,
+      reason: 'Document Chunker must be placed directly after the content source.',
+    }
+  }
+  return { ok: true }
+}
+
 // Each instance classifies/extracts a different dimension or record type, so
 // serial chains of the same step are intentional.
 export const SAME_TYPE_CHAIN_EXEMPT_NODE_TYPES = new Set(['ArticleMetadata', 'CustomExtract'])
@@ -268,6 +299,14 @@ export function getCompatibleNextNodes(
     const ancestryWithParent = branchAncestryTypes.includes(parentType)
       ? branchAncestryTypes
       : [...branchAncestryTypes, parentType]
+
+    if (meta.type === DOCUMENT_CHUNKER_TYPE) {
+      const chunkerCheck = documentChunkerAvailability(parentType, options)
+      if (!chunkerCheck.ok) {
+        disabled.push(toEntry(meta, false, chunkerCheck.reason))
+        continue
+      }
+    }
 
     const required = meta.requiredUpstreamNodes ?? []
     if (!upstreamRequirementsMet(required, ancestryWithParent)) {
@@ -321,6 +360,14 @@ export function getCompatibleInsertNodes(
   for (const meta of nodeMetadata) {
     if (isBookendType(meta.type)) continue
     if ((meta as { enabled?: boolean }).enabled === false) continue
+
+    if (meta.type === DOCUMENT_CHUNKER_TYPE) {
+      const chunkerCheck = documentChunkerAvailability(sourceType, options)
+      if (!chunkerCheck.ok) {
+        disabled.push(toEntry(meta, false, chunkerCheck.reason))
+        continue
+      }
+    }
 
     const candidateRequired = meta.requiredUpstreamNodes ?? []
     if (!upstreamRequirementsMet(candidateRequired, ancestryWithSource)) {

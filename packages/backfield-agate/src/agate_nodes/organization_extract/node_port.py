@@ -12,8 +12,21 @@ from typing import Any
 from agate_runtime.context import AgateEnvContext
 from agate_runtime.upstream_input import flatten_upstream_inputs
 from agate_utils.llm import call_llm
+from agate_utils.text_chunking import DocumentChunk, envelope_from_payload
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from agate_nodes.extraction.chunked_entity_extract import (
+    evidence_from_person_or_org,
+    extract_entities_over_chunks,
+    strip_transient_chunk_keys,
+)
+from agate_nodes.extraction.grounding import ChunkCandidate
+from agate_nodes.extraction.shared_llm import (
+    effective_llm_timeout,
+    model_config_id_from_params,
+    preflight_unchunked_prompt,
+    resolve_extract_litellm_model,
+)
 from agate_nodes.organization_extract.compact_expand import (
     expand_compact_organization_row,
     is_skippable_compact_row_error,
@@ -25,11 +38,9 @@ from agate_nodes.organization_extract.prompt_template import (
     resolve_organization_extract_prompt,
     substitute_prompt_placeholders,
 )
+from agate_nodes.organization_extract.reconcile import stitch_organization_candidates
 
 logger = logging.getLogger(__name__)
-
-TASK_SOFT_TIME_LIMIT = int(os.getenv("TASK_SOFT_TIME_LIMIT", "3600"))
-CELERY_TIMEOUT_BUFFER = 300
 
 
 class OrganizationExtractInput(BaseModel):
@@ -140,17 +151,11 @@ class OrganizationExtractNode:
             )
         return str(text)
 
-    async def run(
+    def _compose_prompt(
         self,
-        inp: OrganizationExtractInput,
+        flattened_input: dict[str, Any],
         params: OrganizationExtractParams,
-        ctx: AgateEnvContext,
-    ) -> OrganizationExtractOutput:
-        start_time = time.time()
-        input_dict = inp.model_dump()
-        flattened_input = self._flatten_input(input_dict)
-        text = self._resolve_text(input_dict, flattened_input)
-
+    ) -> tuple[str, bool]:
         bundled_prompt = self._load_prompt_template(params.prompt_file)
         prompt_template = resolve_organization_extract_prompt(
             bundled=bundled_prompt,
@@ -166,44 +171,256 @@ class OrganizationExtractNode:
             output_instructions = (
                 "The results should be returned in a JSON that looks like the following."
             )
-        prompt = f"{prompt}\n\n{output_instructions}\n\n{output_format}"
+        return f"{prompt}\n\n{output_instructions}\n\n{output_format}", use_compact
 
-        elapsed_time = time.time() - start_time
-        max_safe_runtime = TASK_SOFT_TIME_LIMIT - CELERY_TIMEOUT_BUFFER
-        if elapsed_time > max_safe_runtime:
-            raise TimeoutError(
-                f"Node exceeded safe runtime limit ({max_safe_runtime}s) before LLM call"
+    def _parse_organizations_payload(
+        self,
+        response_data: Any,
+        *,
+        use_compact: bool,
+    ) -> list[ExtractedOrganization]:
+        organizations_data: list[Any]
+        if isinstance(response_data, list):
+            organizations_data = response_data
+        elif isinstance(response_data, dict) and "organizations" in response_data:
+            raw_organizations = response_data["organizations"]
+            if raw_organizations is None:
+                organizations_data = []
+            elif isinstance(raw_organizations, list):
+                organizations_data = raw_organizations
+            else:
+                raise ValueError("'organizations' must be an array")
+        else:
+            raise ValueError(
+                "Expected a list of organizations or an object with 'organizations' field"
             )
-        remaining_safe_time = max_safe_runtime - elapsed_time
-        effective_timeout = min(params.llmTimeout, remaining_safe_time)
-        if effective_timeout < 60:
-            raise TimeoutError(
-                f"Insufficient time remaining ({effective_timeout:.1f}s) for "
-                "OrganizationExtract LLM call"
-            )
 
-        resolved_model = params.model
-        raw_pid = os.getenv("BACKFIELD_PROJECT_ID")
-        if raw_pid:
-            try:
-                from backfield_ai.model_resolve import resolve_place_extract_litellm_model
-                from backfield_db.session import get_engine
-                from sqlmodel import Session
-
-                with Session(get_engine()) as res_sess:
-                    resolved_model = resolve_place_extract_litellm_model(
-                        res_sess,
-                        int(raw_pid),
-                        params,
+        organizations: list[ExtractedOrganization] = []
+        if not organizations_data:
+            return organizations
+        parse_errors: list[str] = []
+        for raw_entry in organizations_data:
+            entry: dict[str, Any]
+            if use_compact:
+                if isinstance(raw_entry, list) and not raw_entry:
+                    logger.warning(
+                        "[OrganizationExtract] skipping empty compact organization row"
                     )
-            except Exception as exc:
+                    continue
+                if isinstance(raw_entry, list):
+                    try:
+                        entry = expand_compact_organization_row(raw_entry)
+                    except (ValueError, TypeError) as expand_err:
+                        msg = str(expand_err)
+                        if is_skippable_compact_row_error(msg):
+                            logger.warning(
+                                "[OrganizationExtract] skipping placeholder compact "
+                                "organization row: %s",
+                                msg,
+                            )
+                            continue
+                        parse_errors.append(msg)
+                        logger.warning(
+                            "[OrganizationExtract] skipping invalid compact "
+                            "organization row: %s",
+                            msg,
+                        )
+                        continue
+                elif isinstance(raw_entry, dict):
+                    logger.warning(
+                        "[OrganizationExtract] compact mode received object entry; "
+                        "using full dict parse fallback"
+                    )
+                    entry = raw_entry
+                else:
+                    parse_errors.append("organization entry must be an array or object")
+                    continue
+            else:
+                if not isinstance(raw_entry, dict):
+                    parse_errors.append("organization entry must be an object")
+                    continue
+                entry = raw_entry
+            try:
+                organizations.append(organization_from_llm_entry(entry))
+            except (ValueError, TypeError) as entry_err:
+                msg = str(entry_err)
+                if is_skippable_compact_row_error(msg):
+                    logger.warning(
+                        "[OrganizationExtract] skipping placeholder organization entry: %s",
+                        msg,
+                    )
+                    continue
+                parse_errors.append(msg)
                 logger.warning(
-                    "[OrganizationExtract] could not resolve catalog AI model; using legacy id: %s",
-                    exc,
+                    "[OrganizationExtract] skipping invalid LLM organization entry: %s",
+                    msg,
+                )
+        if not organizations and parse_errors:
+            detail = parse_errors[0] if len(parse_errors) == 1 else "; ".join(parse_errors[:5])
+            raise ValueError(
+                "Failed to parse LLM response as organizations data: "
+                f"no valid organizations. {detail}"
+            )
+        if not organizations and organizations_data:
+            logger.info(
+                "[OrganizationExtract] LLM returned no qualifying organizations after "
+                "skipping placeholder rows"
+            )
+        return organizations
+
+    def _parse_chunk_candidates(
+        self,
+        response_data: Any,
+        chunk: DocumentChunk,
+        source_text: str,
+        *,
+        use_compact: bool,
+    ) -> list[ChunkCandidate[dict[str, Any]]]:
+        organizations = self._parse_organizations_payload(
+            response_data, use_compact=use_compact
+        )
+        raw_organizations: list[Any]
+        if isinstance(response_data, list):
+            raw_organizations = response_data
+        elif isinstance(response_data, dict):
+            raw_organizations = response_data.get("organizations") or []
+        else:
+            raw_organizations = []
+
+        candidates: list[ChunkCandidate[dict[str, Any]]] = []
+        for org, raw_entry in zip(organizations, raw_organizations, strict=False):
+            payload = org.model_dump()
+            if (
+                isinstance(raw_entry, list)
+                and len(raw_entry) > 5
+                and isinstance(raw_entry[5], dict)
+            ):
+                payload["extras"] = raw_entry[5]
+            elif isinstance(raw_entry, dict) and isinstance(raw_entry.get("extras"), dict):
+                payload["extras"] = raw_entry["extras"]
+            candidates.append(
+                evidence_from_person_or_org(
+                    payload,
+                    source_text=source_text,
+                    chunk=chunk,
+                )
+            )
+        return candidates
+
+    def _passthrough_output(
+        self,
+        *,
+        text: str,
+        organizations: list[dict[str, Any]],
+        flattened_input: dict[str, Any],
+        input_dict: dict[str, Any],
+        response_data: Any = None,
+        diagnostics: dict[str, Any] | None = None,
+    ) -> OrganizationExtractOutput:
+        output_data: dict[str, Any] = {
+            "text": text,
+            "organizations": organizations,
+        }
+        if diagnostics is not None:
+            output_data["extraction_diagnostics"] = diagnostics
+
+        llm_top_level_fields: dict[str, Any] = {}
+        if isinstance(response_data, dict):
+            for key, value in response_data.items():
+                if key != "organizations":
+                    llm_top_level_fields[key] = value
+
+        for key, value in flattened_input.items():
+            if key == "text":
+                continue
+            if key.startswith("meta_"):
+                output_data[key] = value
+            elif key not in output_data:
+                output_data[key] = value
+
+        for key, value in llm_top_level_fields.items():
+            meta_key = f"meta_{key}"
+            if meta_key not in flattened_input and key not in output_data:
+                output_data[key] = value
+
+        for node_data in input_dict.values():
+            if isinstance(node_data, dict):
+                for key, value in node_data.items():
+                    if key != "text" and key not in output_data:
+                        output_data[key] = value
+        return OrganizationExtractOutput(**strip_transient_chunk_keys(output_data))
+
+    async def run(
+        self,
+        inp: OrganizationExtractInput,
+        params: OrganizationExtractParams,
+        ctx: AgateEnvContext,
+    ) -> OrganizationExtractOutput:
+        start_time = time.time()
+        input_dict = inp.model_dump()
+        flattened_input = self._flatten_input(input_dict)
+        text = self._resolve_text(input_dict, flattened_input)
+        envelope = envelope_from_payload(flattened_input)
+        resolved_model = resolve_extract_litellm_model(
+            params, log_label="OrganizationExtract"
+        )
+        system_message = (
+            "You are a specialized AI assistant for extracting editorially relevant "
+            "organizations from news text. Return only valid JSON."
+        )
+
+        if envelope is not None:
+            use_compact = params.output_mode == "compact"
+
+            def build_prompt(state: dict[str, Any]) -> str:
+                prompt, _ = self._compose_prompt(state, params)
+                return prompt
+
+            def parse_chunk(
+                response_data: Any,
+                chunk: DocumentChunk,
+                source_text: str,
+            ) -> list[ChunkCandidate[dict[str, Any]]]:
+                return self._parse_chunk_candidates(
+                    response_data,
+                    chunk,
+                    source_text,
+                    use_compact=use_compact,
                 )
 
-        raw_mc = getattr(params, "aiModelConfigId", None)
-        model_config_id = str(raw_mc).strip() if raw_mc else None
+            organizations, diagnostics = await extract_entities_over_chunks(
+                envelope=envelope,
+                flattened=flattened_input,
+                params=params,
+                ctx=ctx,
+                start_time=start_time,
+                system_message=system_message,
+                log_label="OrganizationExtract",
+                build_prompt=build_prompt,
+                parse_chunk_response=parse_chunk,
+                stitch=stitch_organization_candidates,
+                resolved_model=resolved_model,
+            )
+            return self._passthrough_output(
+                text=envelope.text,
+                organizations=organizations,
+                flattened_input=flattened_input,
+                input_dict=input_dict,
+                diagnostics=diagnostics,
+            )
+
+        prompt, use_compact = self._compose_prompt(flattened_input, params)
+        effective_timeout = effective_llm_timeout(
+            start_time=start_time,
+            llm_timeout=params.llmTimeout,
+        )
+        preflight_unchunked_prompt(
+            litellm_model=resolved_model,
+            system_message=system_message,
+            user_prompt=prompt,
+            project_system_prompt=ctx.project_system_prompt,
+        )
+        model_config_id = model_config_id_from_params(params)
 
         try:
             response_text = await asyncio.wait_for(
@@ -211,10 +428,7 @@ class OrganizationExtractNode:
                     call_llm,
                     prompt=prompt,
                     model=resolved_model,
-                    system_message=(
-                        "You are a specialized AI assistant for extracting editorially relevant "
-                        "organizations from news text. Return only valid JSON."
-                    ),
+                    system_message=system_message,
                     force_json=True,
                     temperature=0.0,
                     timeout=effective_timeout,
@@ -242,123 +456,16 @@ class OrganizationExtractNode:
                 f"Failed to parse LLM response as organizations data: {e}. Preview: {preview!r}"
             ) from e
 
-        organizations_data: list[Any]
-        if isinstance(response_data, list):
-            organizations_data = response_data
-        elif isinstance(response_data, dict) and "organizations" in response_data:
-            raw_organizations = response_data["organizations"]
-            if raw_organizations is None:
-                organizations_data = []
-            elif isinstance(raw_organizations, list):
-                organizations_data = raw_organizations
-            else:
-                raise ValueError("'organizations' must be an array")
-        else:
-            raise ValueError(
-                "Expected a list of organizations or an object with 'organizations' field"
-            )
-
-        organizations: list[ExtractedOrganization] = []
-        if organizations_data:
-            parse_errors: list[str] = []
-            for raw_entry in organizations_data:
-                if use_compact:
-                    if isinstance(raw_entry, list) and not raw_entry:
-                        logger.warning(
-                            "[OrganizationExtract] skipping empty compact organization row"
-                        )
-                        continue
-                    if isinstance(raw_entry, list):
-                        try:
-                            entry = expand_compact_organization_row(raw_entry)
-                        except (ValueError, TypeError) as expand_err:
-                            msg = str(expand_err)
-                            if is_skippable_compact_row_error(msg):
-                                logger.warning(
-                                    "[OrganizationExtract] skipping placeholder compact "
-                                    "organization row: %s",
-                                    msg,
-                                )
-                                continue
-                            parse_errors.append(msg)
-                            logger.warning(
-                                "[OrganizationExtract] skipping invalid compact "
-                                "organization row: %s",
-                                msg,
-                            )
-                            continue
-                    elif isinstance(raw_entry, dict):
-                        logger.warning(
-                            "[OrganizationExtract] compact mode received object entry; "
-                            "using full dict parse fallback"
-                        )
-                        entry = raw_entry
-                    else:
-                        parse_errors.append("organization entry must be an array or object")
-                        continue
-                else:
-                    if not isinstance(raw_entry, dict):
-                        parse_errors.append("organization entry must be an object")
-                        continue
-                    entry = raw_entry
-                try:
-                    organizations.append(organization_from_llm_entry(entry))
-                except (ValueError, TypeError) as entry_err:
-                    msg = str(entry_err)
-                    if is_skippable_compact_row_error(msg):
-                        logger.warning(
-                            "[OrganizationExtract] skipping placeholder organization entry: %s",
-                            msg,
-                        )
-                        continue
-                    parse_errors.append(msg)
-                    logger.warning(
-                        "[OrganizationExtract] skipping invalid LLM organization entry: %s",
-                        msg,
-                    )
-            if not organizations and parse_errors:
-                detail = parse_errors[0] if len(parse_errors) == 1 else "; ".join(parse_errors[:5])
-                raise ValueError(
-                    "Failed to parse LLM response as organizations data: "
-                    f"no valid organizations. {detail}"
-                )
-            if not organizations and organizations_data:
-                logger.info(
-                    "[OrganizationExtract] LLM returned no qualifying organizations after "
-                    "skipping placeholder rows"
-                )
-
-        output_data: dict[str, Any] = {
-            "text": text,
-            "organizations": [org.model_dump() for org in organizations],
-        }
-
-        llm_top_level_fields: dict[str, Any] = {}
-        if isinstance(response_data, dict):
-            for key, value in response_data.items():
-                if key != "organizations":
-                    llm_top_level_fields[key] = value
-
-        for key, value in flattened_input.items():
-            if key == "text":
-                continue
-            if key.startswith("meta_"):
-                output_data[key] = value
-            elif key not in output_data:
-                output_data[key] = value
-
-        for key, value in llm_top_level_fields.items():
-            meta_key = f"meta_{key}"
-            if meta_key not in flattened_input and key not in output_data:
-                output_data[key] = value
-
-        for node_data in input_dict.values():
-            if isinstance(node_data, dict):
-                for key, value in node_data.items():
-                    if key != "text" and key not in output_data:
-                        output_data[key] = value
-
-        return OrganizationExtractOutput(**output_data)
+        organizations = self._parse_organizations_payload(
+            response_data, use_compact=use_compact
+        )
+        return self._passthrough_output(
+            text=text,
+            organizations=[org.model_dump() for org in organizations],
+            flattened_input=flattened_input,
+            input_dict=input_dict,
+            response_data=response_data,
+        )
 
     def _load_prompt_template(self, prompt_file_path: str) -> str:
         current_dir = os.path.dirname(os.path.abspath(__file__))

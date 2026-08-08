@@ -40,6 +40,7 @@ import {
   getNodeById,
   hydrateFromSpec,
   insertBetween,
+  insertInputAdjacentNode,
   modelToGraphSpec,
   TIDY_LAYOUT_X_STEP,
   updateMiddleNode,
@@ -57,7 +58,11 @@ import {
   type FlowBuilderStep,
 } from '@/lib/flowBuilderSteps'
 import { isJsonInputInvalidNodeData } from '@/lib/jsonInputValidation'
-import { getCompatibleInsertNodes, getCompatibleNextNodes } from '@/lib/nodeCompatibility'
+import {
+  DOCUMENT_CHUNKER_TYPE,
+  getCompatibleInsertNodes,
+  getCompatibleNextNodes,
+} from '@/lib/nodeCompatibility'
 import { getGuidedFlowCapabilities } from '@/lib/guidedFlowCapabilities'
 import { captureGuidedFlowSnapshot, type GuidedFlowSnapshot } from '@/lib/guidedFlowSnapshot'
 import { nodeOutputLookupFromReactFlow } from '@/lib/nodeOutputs'
@@ -1481,9 +1486,22 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     [exitingNodeIds, scaffoldModel],
   )
 
+  const existingNodeTypes = useMemo(() => {
+    if (!scaffoldModel) return [] as string[]
+    return [
+      scaffoldModel.inputNode.type,
+      scaffoldModel.outputNode.type,
+      ...scaffoldModel.middleNodes.map((node) => node.type),
+    ].filter((type): type is string => typeof type === 'string' && type.length > 0)
+  }, [scaffoldModel])
+
   const addNodeCompatibility = useMemo(() => {
     if (!scaffoldModel) {
       return { enabled: [], disabled: [] }
+    }
+    const compatibilityOptions = {
+      projectModelCapabilities,
+      existingNodeTypes,
     }
     if (addIntoEdge) {
       const source = getNodeById(scaffoldModel, addIntoEdge.sourceId)
@@ -1493,7 +1511,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         source.type,
         target.type,
         getBranchAncestry(scaffoldModel, addIntoEdge.sourceId),
-        { projectModelCapabilities },
+        compatibilityOptions,
       )
     }
     const parentId = addFromParentId
@@ -1502,10 +1520,18 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     }
     const parent = getNodeById(scaffoldModel, parentId)
     if (!parent?.type) return { enabled: [], disabled: [] }
-    return getCompatibleNextNodes(parent.type, getBranchAncestry(scaffoldModel, parentId), {
-      projectModelCapabilities,
-    })
-  }, [addFromParentId, addIntoEdge, scaffoldModel, projectModelCapabilities])
+    return getCompatibleNextNodes(
+      parent.type,
+      getBranchAncestry(scaffoldModel, parentId),
+      compatibilityOptions,
+    )
+  }, [
+    addFromParentId,
+    addIntoEdge,
+    existingNodeTypes,
+    scaffoldModel,
+    projectModelCapabilities,
+  ])
 
   const handleAddNodeTypeSelect = useCallback(
     (type: string) => {
@@ -1529,7 +1555,9 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       setScaffoldModel((model) => {
         if (!model) return model
         let next = model
-        if (addIntoEdge) {
+        if (type === DOCUMENT_CHUNKER_TYPE) {
+          next = insertInputAdjacentNode(model, newNode)
+        } else if (addIntoEdge) {
           next = insertBetween(model, addIntoEdge.sourceId, addIntoEdge.targetId, newNode)
         } else if (addFromParentId) {
           next = addSiblingBranch(model, addFromParentId, newNode)

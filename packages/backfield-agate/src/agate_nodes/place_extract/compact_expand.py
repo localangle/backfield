@@ -9,7 +9,10 @@ from agate_nodes.place_extract.compact_codes import (
     VALID_ADDRESS_PLACE_KINDS,
     expand_nature,
 )
-from agate_nodes.place_extract.components_build import build_components, normalize_journalistic_block_address
+from agate_nodes.place_extract.components_build import (
+    build_components,
+    normalize_journalistic_block_address,
+)
 from agate_nodes.place_extract.mentions_build import (
     build_mentions,
     build_mentions_for_evidence_anchor,

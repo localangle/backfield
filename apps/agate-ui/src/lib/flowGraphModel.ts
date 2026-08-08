@@ -5,7 +5,12 @@ import {
   BOOKEND_LAYOUT_X_STEP,
   BOOKEND_OUTPUT_POSITION,
 } from '@/lib/flowBuilderLayout'
-import { resolveEdgeHandles, SAME_TYPE_CHAIN_EXEMPT_NODE_TYPES, SYNC_BARRIER_NODE_TYPES } from '@/lib/nodeCompatibility'
+import {
+  DOCUMENT_CHUNKER_TYPE,
+  resolveEdgeHandles,
+  SAME_TYPE_CHAIN_EXEMPT_NODE_TYPES,
+  SYNC_BARRIER_NODE_TYPES,
+} from '@/lib/nodeCompatibility'
 
 export type FlowGraphNode = {
   id: string
@@ -113,6 +118,37 @@ export function getBranchTipIds(model: FlowGraphModel): string[] {
   return allIds.filter((id) => getMiddleSuccessors(model, id).length === 0)
 }
 
+function inputFirstHopChildIds(model: FlowGraphModel): string[] {
+  const inputId = model.inputNode.id
+  const kids = [...(model.branchChildren[inputId] ?? [])]
+  const serial = model.serialLinks[inputId]
+  if (serial && !kids.includes(serial)) {
+    kids.push(serial)
+  }
+  return kids
+}
+
+function markInvalidDocumentChunkerPlacement(model: FlowGraphModel, invalid: Set<string>): void {
+  const chunkers = model.middleNodes.filter((node) => node.type === DOCUMENT_CHUNKER_TYPE)
+  if (chunkers.length === 0) return
+
+  if (chunkers.length > 1) {
+    for (const chunker of chunkers) {
+      invalid.add(chunker.id)
+    }
+    return
+  }
+
+  const chunker = chunkers[0]
+  const firstHop = inputFirstHopChildIds(model)
+  const directlyAfterInput = firstHop.includes(chunker.id)
+  const hasBypass = firstHop.some((id) => id !== chunker.id)
+
+  if (!directlyAfterInput || hasBypass) {
+    invalid.add(chunker.id)
+  }
+}
+
 export function getInvalidFlowNodeIds(model: FlowGraphModel): Set<string> {
   const invalid = new Set<string>()
 
@@ -141,6 +177,8 @@ export function getInvalidFlowNodeIds(model: FlowGraphModel): Set<string> {
       invalid.add(node.id)
     }
   }
+
+  markInvalidDocumentChunkerPlacement(model, invalid)
 
   return invalid
 }
@@ -289,6 +327,77 @@ export function insertAfter(
     ...model,
     outputNode: outputAfterNodes(model.outputNode, [positionedNewNode, ...downstreamNodes]),
     middleNodes: [...middleNodes, positionedNewNode],
+    serialLinks,
+  })
+}
+
+/**
+ * Insert a node directly after the content source, rewiring every current first-hop
+ * child to hang off the new node (Document Chunker placement).
+ */
+export function insertInputAdjacentNode(
+  model: FlowGraphModel,
+  newNode: FlowGraphNode,
+): FlowGraphModel {
+  const inputId = model.inputNode.id
+  const existingBranchChildren = [...(model.branchChildren[inputId] ?? [])]
+  const existingSerial = model.serialLinks[inputId]
+  const firstHopIds: string[] = []
+  if (existingSerial) {
+    firstHopIds.push(existingSerial)
+  }
+  for (const childId of existingBranchChildren) {
+    if (!firstHopIds.includes(childId)) {
+      firstHopIds.push(childId)
+    }
+  }
+
+  const positionedNewNode = {
+    ...newNode,
+    position: newNode.position ?? positionForNewSerialNode(model, inputId),
+  }
+
+  const shiftedIds = new Set<string>()
+  for (const childId of firstHopIds) {
+    for (const id of collectDownstreamMiddleNodeIds(model, childId)) {
+      shiftedIds.add(id)
+    }
+  }
+  const firstDownstreamNode = firstHopIds[0] ? getNodeById(model, firstHopIds[0]) : null
+  const downstreamShift = shiftNeededAfterNode(positionedNewNode, firstDownstreamNode)
+  const middleNodes = model.middleNodes.map((node) =>
+    shiftedIds.has(node.id)
+      ? {
+          ...node,
+          position: {
+            x: (node.position?.x ?? 0) + downstreamShift,
+            y: node.position?.y ?? LAYOUT_INPUT_Y,
+          },
+        }
+      : node,
+  )
+
+  const branchChildren: Record<string, string[]> = { ...model.branchChildren }
+  const serialLinks: Record<string, string> = { ...model.serialLinks }
+  delete serialLinks[inputId]
+  branchChildren[inputId] = [positionedNewNode.id]
+
+  if (existingSerial && existingBranchChildren.length === 0) {
+    serialLinks[positionedNewNode.id] = existingSerial
+  } else if (firstHopIds.length > 0) {
+    branchChildren[positionedNewNode.id] = firstHopIds
+  }
+
+  const shiftedNodesById = new Map(middleNodes.map((node) => [node.id, node]))
+  const downstreamNodes = [...shiftedIds]
+    .map((id) => shiftedNodesById.get(id))
+    .filter((node): node is FlowGraphNode => node != null)
+
+  return applyLayoutToModel({
+    ...model,
+    outputNode: outputAfterNodes(model.outputNode, [positionedNewNode, ...downstreamNodes]),
+    middleNodes: [...middleNodes, positionedNewNode],
+    branchChildren,
     serialLinks,
   })
 }

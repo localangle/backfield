@@ -17,6 +17,10 @@ Routes are under `/runs/{run_id}/items/{item_id}` and require access to the run'
 - article metadata rows;
 - semantic indexing, article embedding, and automatic connection summaries.
 
+Document chunks from `DocumentChunker` are not a separate review surface. Review continues to
+show one story body and one merged entity set. Chunk texts and internal offsets are not part of
+durable processed-item output; node diagnostics may include a bounded chunking summary only.
+
 Synthetic `items/1` views are available for whole-flow runs without a stored processed-item row. Review mutations require a real processed item and return `404` for a synthetic view.
 
 ## Overlay writes and concurrency

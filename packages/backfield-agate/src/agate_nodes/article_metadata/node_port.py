@@ -11,6 +11,10 @@ from typing import Any
 
 from agate_runtime.context import AgateEnvContext
 from agate_utils.llm import call_llm
+from agate_utils.text_chunking import (
+    ARTICLE_METADATA_PROMPT_TOKENS,
+    TRANSIENT_CHUNK_ENVELOPE_KEY,
+)
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agate_nodes.article_metadata.category_labels import (
@@ -36,6 +40,7 @@ from agate_nodes.article_metadata.presets import (
     preset_prompt_relpath,
     resolve_meta_type,
 )
+from agate_nodes.extraction.prompt_text import truncate_flattened_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +165,10 @@ class ArticleMetadataNode:
         input_dict = inp.model_dump()
         flattened = flatten_input(input_dict)
         text = resolve_text(flattened)
+        prompt_flattened, _truncated = truncate_flattened_for_prompt(
+            flattened,
+            max_tokens=ARTICLE_METADATA_PROMPT_TOKENS,
+        )
 
         preset_id, prompt_template = self._resolve_prompt_template(params)
         resolved_meta_type = resolve_meta_type(
@@ -169,7 +178,7 @@ class ArticleMetadataNode:
         output_format = load_package_file(preset_output_format_relpath(preset_id))
         prompt, allowed_categories = compose_article_metadata_prompt(
             prompt_template=prompt_template,
-            flattened=flattened,
+            flattened=prompt_flattened,
             output_format_json=output_format,
             preset_id=preset_id,
         )
@@ -298,6 +307,7 @@ class ArticleMetadataNode:
                 article_metadata = build_metadata(fallback_to_other=True)
 
         output_data: dict[str, Any] = dict(flattened)
+        output_data.pop(TRANSIENT_CHUNK_ENVELOPE_KEY, None)
         output_data["text"] = text
         output_data["article_metadata"] = article_metadata
 

@@ -1,6 +1,28 @@
-# Backfield
+<p align="center">
+  <a href="https://localangle.co">
+    <img src="docs/assets/local-angle-icon.svg" alt="Local Angle" width="56" />
+  </a>
+</p>
 
-> **Turn journalism into durable, structured knowledge**
+<h1 align="center">
+  Backfield
+</h1>
+
+<p align="center">
+  An open platform for turning journalism into durable, structured knowledge
+</p>
+
+<p align="center">
+  <a href="https://docs.backfield.news">Docs</a> &bull;
+  <a href="https://github.com/localangle/backfield-hosting">Self-Hosting</a> &bull;
+  <a href="https://localangle.co">More info</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/localangle/backfield/actions/workflows/ci.yml">
+    <img src="https://github.com/localangle/backfield/actions/workflows/ci.yml/badge.svg" alt="CI" />
+  </a>
+</p>
 
 Backfield turns unstructured news stories into structured data at scale. Among other things, it extracts and geocodes the locations of news events; organizes people and their quotes; and connect people, places and organizations into a knowledge graph based on your coverage.
 

@@ -31,7 +31,7 @@ export function helpHref(): string {
   if (typeof raw === "string" && raw.trim() !== "") {
     return raw.trim()
   }
-  return "https://docs.backfield.org"
+  return "https://docs.backfield.news"
 }
 
 function tenantSlug(currentOrigin: string): string {

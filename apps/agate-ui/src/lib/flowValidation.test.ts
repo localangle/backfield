@@ -3,6 +3,7 @@ import {
   paramsForGraphSave,
   sanitizeNodeStylebookRef,
   validateCustomExtractRecordTypes,
+  validateDocumentChunkerPlacement,
   validateFlowInputOutputRules,
   validateGraphForSave,
   validateInputConnections,
@@ -279,6 +280,100 @@ describe('validateCustomExtractRecordTypes', () => {
   })
 })
 
+describe('validateDocumentChunkerPlacement', () => {
+  it('passes when Document Chunker sits directly after the content source', () => {
+    const result = validateDocumentChunkerPlacement(
+      graph({
+        nodes: [
+          { id: 'in', type: 'TextInput' },
+          { id: 'chunk', type: 'DocumentChunker' },
+          { id: 'pe', type: 'PlaceExtract' },
+          { id: 'out', type: 'Output' },
+        ],
+        edges: [
+          { source: 'in', target: 'chunk' },
+          { source: 'chunk', target: 'pe' },
+          { source: 'pe', target: 'out' },
+        ],
+      }),
+    )
+    expect(result.ok).toBe(true)
+  })
+
+  it('rejects more than one Document Chunker', () => {
+    const result = validateDocumentChunkerPlacement(
+      graph({
+        nodes: [
+          { id: 'in', type: 'TextInput' },
+          { id: 'c1', type: 'DocumentChunker' },
+          { id: 'c2', type: 'DocumentChunker' },
+          { id: 'out', type: 'Output' },
+        ],
+        edges: [
+          { source: 'in', target: 'c1' },
+          { source: 'c1', target: 'c2' },
+          { source: 'c2', target: 'out' },
+        ],
+      }),
+    )
+    expect(result).toMatchObject({
+      ok: false,
+      title: 'Too many Document Chunkers',
+      severity: 'error',
+    })
+  })
+
+  it('rejects a bypass branch that skips Document Chunker', () => {
+    const result = validateDocumentChunkerPlacement(
+      graph({
+        nodes: [
+          { id: 'in', type: 'TextInput' },
+          { id: 'chunk', type: 'DocumentChunker' },
+          { id: 'pe', type: 'PlaceExtract' },
+          { id: 'out', type: 'Output' },
+        ],
+        edges: [
+          { source: 'in', target: 'chunk' },
+          { source: 'in', target: 'pe' },
+          { source: 'chunk', target: 'out' },
+          { source: 'pe', target: 'out' },
+        ],
+      }),
+    )
+    expect(result).toMatchObject({
+      ok: false,
+      title: 'Document Chunker placement',
+      severity: 'error',
+    })
+    if (!result.ok) {
+      expect(result.description).toMatch(/every step after the content source/i)
+    }
+  })
+
+  it('rejects Document Chunker not connected from the content source', () => {
+    const result = validateDocumentChunkerPlacement(
+      graph({
+        nodes: [
+          { id: 'in', type: 'TextInput' },
+          { id: 'pe', type: 'PlaceExtract' },
+          { id: 'chunk', type: 'DocumentChunker' },
+          { id: 'out', type: 'Output' },
+        ],
+        edges: [
+          { source: 'in', target: 'pe' },
+          { source: 'pe', target: 'chunk' },
+          { source: 'chunk', target: 'out' },
+        ],
+      }),
+    )
+    expect(result).toMatchObject({
+      ok: false,
+      title: 'Document Chunker placement',
+      severity: 'error',
+    })
+  })
+})
+
 describe('validateGraphForSave', () => {
   it('passes for a valid single-bookend starter graph', () => {
     const result = validateGraphForSave(
@@ -295,6 +390,30 @@ describe('validateGraphForSave', () => {
       }),
     )
     expect(result.ok).toBe(true)
+  })
+
+  it('fails save when Document Chunker placement is invalid', () => {
+    const result = validateGraphForSave(
+      graph({
+        nodes: [
+          { id: 'in', type: 'TextInput' },
+          { id: 'chunk', type: 'DocumentChunker' },
+          { id: 'pe', type: 'PlaceExtract' },
+          { id: 'out', type: 'Output' },
+        ],
+        edges: [
+          { source: 'in', target: 'chunk' },
+          { source: 'in', target: 'pe' },
+          { source: 'chunk', target: 'out' },
+          { source: 'pe', target: 'out' },
+        ],
+      }),
+    )
+    expect(result).toMatchObject({
+      ok: false,
+      title: 'Document Chunker placement',
+      severity: 'error',
+    })
   })
 
   it('passes for S3 Input when the bucket name includes s3://', () => {
