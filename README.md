@@ -4,9 +4,9 @@
   </a>
 </p>
 
-<h3 align="center">
+<h1 align="center">
   Backfield
-</h3>
+</h1>
 
 <p align="center">
   An open platform for turning journalism into durable, structured knowledge
