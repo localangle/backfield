@@ -114,9 +114,37 @@ every required artifact is available and verified. Fork workflows do not publish
 
 ## Release aliases
 
-Pushing a tag matching `vX.Y.Z` runs the release-alias workflow. The tag must point to a commit on
-`main`. The workflow does not rebuild images or UIs; it aliases the existing immutable manifest after
-validating the source commit and artifact set.
+Product releases use SemVer tags (`vX.Y.Z`). The workspace `pyproject.toml` version is an internal
+monorepo stub and is **not** the product version.
+
+The first public baseline is **`v0.8.0`**. Earlier tags such as `v0.0.1` are pre-history artifact
+aliases only and are not advertised as product releases. Stay on `0.Y.Z` until you are ready to treat
+the public API and upgrade path as a `1.0.0` stability contract.
+
+### Cut a release
+
+1. Choose a commit already on `main` whose CI `publish-artifacts` job has produced a complete SHA
+   manifest (`main-<first-12-sha>-amd64`).
+2. Pick the SemVer bump (from the current public baseline, starting at `v0.8.0`):
+   - **patch** — fixes and small non-breaking changes (`0.8.0` → `0.8.1`)
+   - **minor** — backward-compatible features (`0.8.0` → `0.9.0`)
+   - **major** — breaking or ops-notable changes, or the jump to `1.0.0` when you are ready for a
+     stability contract (for example migrations that need a coordinated upgrade)
+3. Create and push an annotated tag:
+
+```bash
+git checkout main
+git pull
+git tag -a vX.Y.Z -m "Backfield vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+Pushing the tag runs the `Release` workflow, which:
+
+1. Creates a GitHub Release (auto-generated notes plus a short deploy preamble). Re-running is
+   idempotent if the release already exists.
+2. Aliases the existing immutable artifact manifest to `vX.Y.Z` (when artifact publisher credentials
+   are configured). Images and UIs are not rebuilt at tag time.
 
 Do not deploy an arbitrary mutable image tag or a partial artifact set. Use an immutable main version
 or validated SemVer alias backed by a complete manifest.
