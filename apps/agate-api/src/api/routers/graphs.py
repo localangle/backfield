@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from agate_runtime import GraphSpec
+from agate_runtime.graph_validation import GraphInvariantError, validate_graph_invariants
 from api.deps import get_auth, get_session
 from backfield_auth.gate import require_project_access, visible_project_ids
 from backfield_db import (
@@ -115,6 +116,10 @@ def create_graph(
     p = session.get(BackfieldProject, body.project_id)
     if not p:
         raise HTTPException(404, "Project not found")
+    try:
+        validate_graph_invariants(body.spec)
+    except GraphInvariantError as exc:
+        raise HTTPException(400, str(exc)) from exc
     prepared_spec = _prepare_spec_stylebook_refs(session, body.project_id, body.spec)
     g = AgateGraph(
         name=body.name,
@@ -184,6 +189,10 @@ def update_graph(
     p = session.get(BackfieldProject, body.project_id)
     if not p:
         raise HTTPException(404, "Project not found")
+    try:
+        validate_graph_invariants(body.spec)
+    except GraphInvariantError as exc:
+        raise HTTPException(400, str(exc)) from exc
     prepared_spec = _prepare_spec_stylebook_refs(session, body.project_id, body.spec)
     g.name = body.name
     g.description = (body.description or "").strip()

@@ -114,6 +114,31 @@ describe('getCompatibleNextNodes', () => {
     })
     expect(withModels.enabled.map((e) => e.type)).toContain('ArticleMetadata')
   })
+
+  it('enables Document Chunker from an input bookend when none exists yet', () => {
+    const result = getCompatibleNextNodes('TextInput', ['TextInput'], {
+      existingNodeTypes: ['TextInput', 'Output'],
+    })
+    expect(result.enabled.map((e) => e.type)).toContain('DocumentChunker')
+  })
+
+  it('disables Document Chunker after a middle step', () => {
+    const result = getCompatibleNextNodes('PlaceExtract', ['TextInput', 'PlaceExtract'], {
+      existingNodeTypes: ['TextInput', 'PlaceExtract', 'Output'],
+    })
+    expect(result.enabled.map((e) => e.type)).not.toContain('DocumentChunker')
+    const chunker = result.disabled.find((e) => e.type === 'DocumentChunker')
+    expect(chunker?.reason).toMatch(/directly after the content source/i)
+  })
+
+  it('disables Document Chunker when one already exists in the graph', () => {
+    const result = getCompatibleNextNodes('TextInput', ['TextInput'], {
+      existingNodeTypes: ['TextInput', 'DocumentChunker', 'Output'],
+    })
+    expect(result.enabled.map((e) => e.type)).not.toContain('DocumentChunker')
+    const chunker = result.disabled.find((e) => e.type === 'DocumentChunker')
+    expect(chunker?.reason).toMatch(/already has a Document Chunker/i)
+  })
 })
 
 describe('getCompatibleInsertNodes', () => {
@@ -143,6 +168,25 @@ describe('getCompatibleInsertNodes', () => {
   it('enables Gather before Backfield Output', () => {
     const result = getCompatibleInsertNodes('TextInput', 'DBOutput', ['TextInput'])
     expect(result.enabled.map((e) => e.type)).toContain('Gather')
+  })
+
+  it('enables Document Chunker between content source and a middle step', () => {
+    const result = getCompatibleInsertNodes('TextInput', 'PlaceExtract', ['TextInput'], {
+      existingNodeTypes: ['TextInput', 'PlaceExtract', 'Output'],
+    })
+    expect(result.enabled.map((e) => e.type)).toContain('DocumentChunker')
+  })
+
+  it('disables inserting Document Chunker after a middle step', () => {
+    const result = getCompatibleInsertNodes(
+      'PlaceExtract',
+      'GeocodeAgent',
+      ['TextInput', 'PlaceExtract'],
+      { existingNodeTypes: ['TextInput', 'PlaceExtract', 'GeocodeAgent', 'Output'] },
+    )
+    expect(result.enabled.map((e) => e.type)).not.toContain('DocumentChunker')
+    const chunker = result.disabled.find((e) => e.type === 'DocumentChunker')
+    expect(chunker?.reason).toMatch(/directly after the content source/i)
   })
 })
 

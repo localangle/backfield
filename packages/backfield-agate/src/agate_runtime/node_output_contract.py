@@ -30,12 +30,13 @@ FULL_OUTPUT_NODE_TYPES: frozenset[str] = INPUT_NODE_TYPES | frozenset({"DBOutput
 # Explicit owned keys for run JSON. When unset, non-passthrough keys are kept.
 NODE_CONTRIBUTION_KEYS: dict[str, frozenset[str]] = {
     "ArticleMetadata": frozenset({"article_metadata"}),
-    "CustomExtract": frozenset({"custom_records"}),
+    "CustomExtract": frozenset({"custom_records", "extraction_diagnostics"}),
+    "DocumentChunker": frozenset({"chunking_summary"}),
     "EmbedImages": frozenset({"image_embeddings"}),
     "EmbedText": frozenset({"article_embedding"}),
-    "PlaceExtract": frozenset({"locations"}),
-    "PersonExtract": frozenset({"people"}),
-    "OrganizationExtract": frozenset({"organizations"}),
+    "PlaceExtract": frozenset({"locations", "extraction_diagnostics"}),
+    "PersonExtract": frozenset({"people", "extraction_diagnostics"}),
+    "OrganizationExtract": frozenset({"organizations", "extraction_diagnostics"}),
     "GeocodeAgent": frozenset({"places"}),
     "Gather": frozenset({"gathered"}),
     "Output": frozenset({"consolidated"}),

@@ -11,6 +11,7 @@ from typing import Any
 from backfield_db import AgateGraph, AgateProcessedItem, AgateRun
 from sqlmodel import Session
 
+from agate_runtime.graph_validation import validate_graph_invariants
 from agate_runtime.nodes.json_input import json_input_output_from_dict
 from agate_runtime.run_graph_spec import merge_run_result_payload
 from agate_runtime.s3_batch import graph_spec_json_contains_s3_input, s3_max_files_from_params
@@ -160,6 +161,7 @@ def trigger_agate_run(
 ) -> TriggerRunResult:
     """Create a run, pin the effective graph spec, and enqueue the appropriate worker task."""
     spec = GraphSpec.model_validate_json(graph.spec_json)
+    validate_graph_invariants(spec)
     effective = apply_inputs_to_spec(spec, inputs)
     effective_json = effective.model_dump_json()
     is_s3_batch = graph_spec_json_contains_s3_input(effective_json)

@@ -70,6 +70,12 @@ Public result keys are stable snake_case names derived from node type and topolo
 `Output` maps to `json_output`, Backfield Output maps to `stylebook_output`, and repeated node
 types receive deterministic suffixes.
 
+Optional `DocumentChunker` keeps one processed item and one canonical article text per source
+document. Chunks are execution units inside extract nodes (bounded concurrency, ownership
+ranges, cross-chunk stitching). The transient chunk envelope is stripped from consolidated /
+exported bodies; only a bounded `chunking_summary` appears in projected run JSON. Replay
+regenerates chunks from the original `input_json` and pinned graph.
+
 ## Backfield Output
 
 Backfield Output consolidates article content and supported domains, then persists them through

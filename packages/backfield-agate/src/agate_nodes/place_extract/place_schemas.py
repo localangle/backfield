@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
-
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -58,25 +56,25 @@ class SpanEndpoint(BaseModel):
 class SpanInfo(BaseModel):
     """Span information for span types."""
 
-    start: Optional[SpanEndpoint] = Field(default=None, description="Span starting point")
-    end: Optional[SpanEndpoint] = Field(default=None, description="Span ending point")
+    start: SpanEndpoint | None = Field(default=None, description="Span starting point")
+    end: SpanEndpoint | None = Field(default=None, description="Span ending point")
 
 
 class LocationComponents(BaseModel):
     """Components of a location."""
 
-    place: Optional[PlaceInfo] = Field(default=None, description="Place information if applicable")
-    street_road: Optional[StreetRoadInfo] = Field(
+    place: PlaceInfo | None = Field(default=None, description="Place information if applicable")
+    street_road: StreetRoadInfo | None = Field(
         default=None, description="Street/road information if applicable"
     )
-    span: Optional[SpanInfo] = Field(default=None, description="Span information for span types")
-    address: Optional[str] = Field(default="", description="Street address if applicable")
-    neighborhood: Optional[str] = Field(default="", description="Neighborhood name if applicable")
-    city: Optional[str] = Field(default="", description="City name if applicable")
-    county: Optional[str] = Field(default="", description="County name if applicable")
-    postal_code: Optional[str] = Field(default="", description="Postal code if applicable")
-    state: Optional[StateInfo] = Field(default=None, description="State information if applicable")
-    country: Optional[CountryInfo] = Field(default=None, description="Country information if applicable")
+    span: SpanInfo | None = Field(default=None, description="Span information for span types")
+    address: str | None = Field(default="", description="Street address if applicable")
+    neighborhood: str | None = Field(default="", description="Neighborhood name if applicable")
+    city: str | None = Field(default="", description="City name if applicable")
+    county: str | None = Field(default="", description="County name if applicable")
+    postal_code: str | None = Field(default="", description="Postal code if applicable")
+    state: StateInfo | None = Field(default=None, description="State information if applicable")
+    country: CountryInfo | None = Field(default=None, description="Country information if applicable")
 
 
 class LocationInfo(BaseModel):
@@ -97,7 +95,7 @@ class Place(BaseModel):
     """A place extracted from text."""
 
     original_text: str = Field(description="The original text from which this location was extracted")
-    mentions: List[PlaceMention] = Field(
+    mentions: list[PlaceMention] = Field(
         default_factory=list,
         description="Every verbatim story mention of this same real-world place",
     )

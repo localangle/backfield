@@ -1,0 +1,35 @@
+{
+  "type": "DocumentChunker",
+  "name": "DocumentChunker",
+  "label": "Document Chunker",
+  "description": "Optionally split a long document into overlapping pieces so extraction can handle larger content while keeping one story for review.",
+  "category": "other",
+  "icon": "Split",
+  "color": "bg-cyan-500",
+  "requiredUpstreamNodes": [],
+  "dependencyHelperText": "Place this directly after Text Input, JSON Input, or S3 Input. Extraction nodes after it process each piece and combine the results.",
+  "inputs": [
+    {
+      "id": "text",
+      "label": "Text",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "outputs": [
+    {
+      "id": "text",
+      "label": "Text",
+      "type": "string"
+    },
+    {
+      "id": "chunking_summary",
+      "label": "Chunking summary",
+      "type": "object"
+    }
+  ],
+  "defaultParams": {
+    "target_tokens": 4000,
+    "overlap_tokens": 250
+  }
+}

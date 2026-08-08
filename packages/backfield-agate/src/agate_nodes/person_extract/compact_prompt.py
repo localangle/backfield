@@ -37,6 +37,11 @@ Rules for compact output:
 - Put review routing in extras.review only when review_handling is not "none".
 - Put nature_secondary_tags in extras.st only when non-empty.
 - Put surname_inferred_from_relative in extras.si as 1 only when true.
+- Put extras.ea with a short exact evidence quote from the owned analysis segment
+  for every row (required when the prompt includes an owned segment).
+- Keep incomplete named references such as surnames after a fuller introduction
+  ("Mayor Joe Smith" later called "Smith") as separate rows when they appear in
+  the owned segment; do not invent pronouns-only people.
 - If no people qualify, return {"people": []}.
 
 """ + PERSON_COMPACT_LEGEND

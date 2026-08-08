@@ -63,6 +63,15 @@ describe('getNodePanelTabs', () => {
     ])
   })
 
+  it('shows settings, info, and outputs for document chunker when a run exists', () => {
+    expect(getNodePanelTabs('DocumentChunker')).toEqual(['settings', 'info'])
+    expect(getNodePanelTabs('DocumentChunker', { hasRunOutput: true })).toEqual([
+      'settings',
+      'info',
+      'outputs',
+    ])
+  })
+
   it('splits article metadata configuration across settings, prompt, output, and info', () => {
     expect(getNodePanelTabs('ArticleMetadata')).toEqual(['settings', 'prompts', 'outputs', 'info'])
   })

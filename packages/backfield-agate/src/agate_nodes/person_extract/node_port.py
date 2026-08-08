@@ -12,8 +12,21 @@ from typing import Any
 from agate_runtime.context import AgateEnvContext
 from agate_runtime.upstream_input import flatten_upstream_inputs
 from agate_utils.llm import call_llm
+from agate_utils.text_chunking import DocumentChunk, envelope_from_payload
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from agate_nodes.extraction.chunked_entity_extract import (
+    evidence_from_person_or_org,
+    extract_entities_over_chunks,
+    strip_transient_chunk_keys,
+)
+from agate_nodes.extraction.grounding import ChunkCandidate
+from agate_nodes.extraction.shared_llm import (
+    effective_llm_timeout,
+    model_config_id_from_params,
+    preflight_unchunked_prompt,
+    resolve_extract_litellm_model,
+)
 from agate_nodes.person_extract.compact_expand import (
     expand_compact_person_row,
     is_skippable_compact_row_error,
@@ -25,6 +38,7 @@ from agate_nodes.person_extract.prompt_template import (
     resolve_person_extract_prompt,
     substitute_prompt_placeholders,
 )
+from agate_nodes.person_extract.reconcile import stitch_people_candidates
 
 logger = logging.getLogger(__name__)
 
@@ -140,17 +154,11 @@ class PersonExtractNode:
             )
         return str(text)
 
-    async def run(
+    def _compose_prompt(
         self,
-        inp: PersonExtractInput,
+        flattened_input: dict[str, Any],
         params: PersonExtractParams,
-        ctx: AgateEnvContext,
-    ) -> PersonExtractOutput:
-        start_time = time.time()
-        input_dict = inp.model_dump()
-        flattened_input = self._flatten_input(input_dict)
-        text = self._resolve_text(input_dict, flattened_input)
-
+    ) -> tuple[str, bool]:
         bundled_prompt = self._load_prompt_template(params.prompt_file)
         prompt_template = resolve_person_extract_prompt(
             bundled=bundled_prompt,
@@ -166,43 +174,211 @@ class PersonExtractNode:
             output_instructions = (
                 "The results should be returned in a JSON that looks like the following."
             )
-        prompt = f"{prompt}\n\n{output_instructions}\n\n{output_format}"
+        return f"{prompt}\n\n{output_instructions}\n\n{output_format}", use_compact
 
-        elapsed_time = time.time() - start_time
-        max_safe_runtime = TASK_SOFT_TIME_LIMIT - CELERY_TIMEOUT_BUFFER
-        if elapsed_time > max_safe_runtime:
-            raise TimeoutError(
-                f"Node exceeded safe runtime limit ({max_safe_runtime}s) before LLM call"
-            )
-        remaining_safe_time = max_safe_runtime - elapsed_time
-        effective_timeout = min(params.llmTimeout, remaining_safe_time)
-        if effective_timeout < 60:
-            raise TimeoutError(
-                f"Insufficient time remaining ({effective_timeout:.1f}s) for PersonExtract LLM call"
-            )
+    def _parse_people_payload(
+        self,
+        response_data: Any,
+        *,
+        use_compact: bool,
+    ) -> list[ExtractedPerson]:
+        people_data: list[Any]
+        if isinstance(response_data, list):
+            people_data = response_data
+        elif isinstance(response_data, dict) and "people" in response_data:
+            raw_people = response_data["people"]
+            if raw_people is None:
+                people_data = []
+            elif isinstance(raw_people, list):
+                people_data = raw_people
+            else:
+                raise ValueError("'people' must be an array")
+        else:
+            raise ValueError("Expected a list of people or an object with 'people' field")
 
-        resolved_model = params.model
-        raw_pid = os.getenv("BACKFIELD_PROJECT_ID")
-        if raw_pid:
+        people: list[ExtractedPerson] = []
+        if not people_data:
+            return people
+        parse_errors: list[str] = []
+        for raw_entry in people_data:
+            entry: dict[str, Any]
+            if use_compact:
+                if isinstance(raw_entry, list) and not raw_entry:
+                    logger.warning("[PersonExtract] skipping empty compact person row")
+                    continue
+                if isinstance(raw_entry, list):
+                    try:
+                        entry = expand_compact_person_row(raw_entry)
+                    except (ValueError, TypeError) as expand_err:
+                        msg = str(expand_err)
+                        if is_skippable_compact_row_error(msg):
+                            logger.warning(
+                                "[PersonExtract] skipping placeholder compact person row: %s",
+                                msg,
+                            )
+                            continue
+                        parse_errors.append(msg)
+                        continue
+                elif isinstance(raw_entry, dict):
+                    entry = raw_entry
+                else:
+                    parse_errors.append("person entry must be an array or object")
+                    continue
+            else:
+                if not isinstance(raw_entry, dict):
+                    parse_errors.append("person entry must be an object")
+                    continue
+                entry = raw_entry
             try:
-                from backfield_ai.model_resolve import resolve_place_extract_litellm_model
-                from backfield_db.session import get_engine
-                from sqlmodel import Session
+                people.append(person_from_llm_entry(entry))
+            except (ValueError, TypeError) as entry_err:
+                msg = str(entry_err)
+                if is_skippable_compact_row_error(msg):
+                    continue
+                parse_errors.append(msg)
+        if not people and parse_errors:
+            detail = parse_errors[0] if len(parse_errors) == 1 else "; ".join(parse_errors[:5])
+            raise ValueError(
+                f"Failed to parse LLM response as people data: no valid people. {detail}"
+            )
+        return people
 
-                with Session(get_engine()) as res_sess:
-                    resolved_model = resolve_place_extract_litellm_model(
-                        res_sess,
-                        int(raw_pid),
-                        params,
-                    )
-            except Exception as exc:
-                logger.warning(
-                    "[PersonExtract] could not resolve catalog AI model; using legacy id: %s",
-                    exc,
+    def _parse_chunk_candidates(
+        self,
+        response_data: Any,
+        chunk: DocumentChunk,
+        source_text: str,
+        *,
+        use_compact: bool,
+    ) -> list[ChunkCandidate[dict[str, Any]]]:
+        people = self._parse_people_payload(response_data, use_compact=use_compact)
+        # Re-parse raw entries for extras.ea before schema stripping.
+        raw_people: list[Any]
+        if isinstance(response_data, list):
+            raw_people = response_data
+        elif isinstance(response_data, dict):
+            raw_people = response_data.get("people") or []
+        else:
+            raw_people = []
+
+        candidates: list[ChunkCandidate[dict[str, Any]]] = []
+        for person, raw_entry in zip(people, raw_people, strict=False):
+            payload = person.model_dump()
+            if (
+                isinstance(raw_entry, list)
+                and len(raw_entry) > 8
+                and isinstance(raw_entry[8], dict)
+            ):
+                payload["extras"] = raw_entry[8]
+            elif isinstance(raw_entry, dict) and isinstance(raw_entry.get("extras"), dict):
+                payload["extras"] = raw_entry["extras"]
+            candidates.append(
+                evidence_from_person_or_org(
+                    payload,
+                    source_text=source_text,
+                    chunk=chunk,
+                )
+            )
+        return candidates
+
+    def _passthrough_output(
+        self,
+        *,
+        text: str,
+        people: list[dict[str, Any]],
+        flattened_input: dict[str, Any],
+        input_dict: dict[str, Any],
+        diagnostics: dict[str, Any] | None = None,
+    ) -> PersonExtractOutput:
+        output_data: dict[str, Any] = {
+            "text": text,
+            "people": people,
+        }
+        if diagnostics is not None:
+            output_data["extraction_diagnostics"] = diagnostics
+        for key, value in flattened_input.items():
+            if key == "text":
+                continue
+            if key.startswith("meta_"):
+                output_data[key] = value
+            elif key not in output_data:
+                output_data[key] = value
+        for node_data in input_dict.values():
+            if isinstance(node_data, dict):
+                for key, value in node_data.items():
+                    if key != "text" and key not in output_data:
+                        output_data[key] = value
+        return PersonExtractOutput(**strip_transient_chunk_keys(output_data))
+
+    async def run(
+        self,
+        inp: PersonExtractInput,
+        params: PersonExtractParams,
+        ctx: AgateEnvContext,
+    ) -> PersonExtractOutput:
+        start_time = time.time()
+        input_dict = inp.model_dump()
+        flattened_input = self._flatten_input(input_dict)
+        text = self._resolve_text(input_dict, flattened_input)
+        envelope = envelope_from_payload(flattened_input)
+        resolved_model = resolve_extract_litellm_model(params, log_label="PersonExtract")
+        system_message = (
+            "You are a specialized AI assistant for extracting editorially relevant "
+            "people from news text. Return only valid JSON."
+        )
+
+        if envelope is not None:
+            use_compact = params.output_mode == "compact"
+
+            def build_prompt(state: dict[str, Any]) -> str:
+                prompt, _ = self._compose_prompt(state, params)
+                return prompt
+
+            def parse_chunk(
+                response_data: Any,
+                chunk: DocumentChunk,
+                source_text: str,
+            ) -> list[ChunkCandidate[dict[str, Any]]]:
+                return self._parse_chunk_candidates(
+                    response_data,
+                    chunk,
+                    source_text,
+                    use_compact=use_compact,
                 )
 
-        raw_mc = getattr(params, "aiModelConfigId", None)
-        model_config_id = str(raw_mc).strip() if raw_mc else None
+            people, diagnostics = await extract_entities_over_chunks(
+                envelope=envelope,
+                flattened=flattened_input,
+                params=params,
+                ctx=ctx,
+                start_time=start_time,
+                system_message=system_message,
+                log_label="PersonExtract",
+                build_prompt=build_prompt,
+                parse_chunk_response=parse_chunk,
+                stitch=stitch_people_candidates,
+                resolved_model=resolved_model,
+            )
+            return self._passthrough_output(
+                text=envelope.text,
+                people=people,
+                flattened_input=flattened_input,
+                input_dict=input_dict,
+                diagnostics=diagnostics,
+            )
+
+        prompt, use_compact = self._compose_prompt(flattened_input, params)
+        effective_timeout = effective_llm_timeout(
+            start_time=start_time,
+            llm_timeout=params.llmTimeout,
+        )
+        preflight_unchunked_prompt(
+            litellm_model=resolved_model,
+            system_message=system_message,
+            user_prompt=prompt,
+            project_system_prompt=ctx.project_system_prompt,
+        )
+        model_config_id = model_config_id_from_params(params)
 
         try:
             response_text = await asyncio.wait_for(
@@ -210,10 +386,7 @@ class PersonExtractNode:
                     call_llm,
                     prompt=prompt,
                     model=resolved_model,
-                    system_message=(
-                        "You are a specialized AI assistant for extracting editorially relevant "
-                        "people from news text. Return only valid JSON."
-                    ),
+                    system_message=system_message,
                     force_json=True,
                     temperature=0.0,
                     timeout=effective_timeout,
@@ -241,113 +414,13 @@ class PersonExtractNode:
                 f"Failed to parse LLM response as people data: {e}. Preview: {preview!r}"
             ) from e
 
-        people_data: list[Any]
-        if isinstance(response_data, list):
-            people_data = response_data
-        elif isinstance(response_data, dict) and "people" in response_data:
-            raw_people = response_data["people"]
-            if raw_people is None:
-                people_data = []
-            elif isinstance(raw_people, list):
-                people_data = raw_people
-            else:
-                raise ValueError("'people' must be an array")
-        else:
-            raise ValueError("Expected a list of people or an object with 'people' field")
-
-        people: list[ExtractedPerson] = []
-        if people_data:
-            parse_errors: list[str] = []
-            for raw_entry in people_data:
-                if use_compact:
-                    if isinstance(raw_entry, list) and not raw_entry:
-                        logger.warning("[PersonExtract] skipping empty compact person row")
-                        continue
-                    if isinstance(raw_entry, list):
-                        try:
-                            entry = expand_compact_person_row(raw_entry)
-                        except (ValueError, TypeError) as expand_err:
-                            msg = str(expand_err)
-                            if is_skippable_compact_row_error(msg):
-                                logger.warning(
-                                    "[PersonExtract] skipping placeholder compact person row: %s",
-                                    msg,
-                                )
-                                continue
-                            parse_errors.append(msg)
-                            logger.warning(
-                                "[PersonExtract] skipping invalid compact person row: %s",
-                                msg,
-                            )
-                            continue
-                    elif isinstance(raw_entry, dict):
-                        logger.warning(
-                            "[PersonExtract] compact mode received object entry; "
-                            "using full dict parse fallback"
-                        )
-                        entry = raw_entry
-                    else:
-                        parse_errors.append("person entry must be an array or object")
-                        continue
-                else:
-                    if not isinstance(raw_entry, dict):
-                        parse_errors.append("person entry must be an object")
-                        continue
-                    entry = raw_entry
-                try:
-                    people.append(person_from_llm_entry(entry))
-                except (ValueError, TypeError) as entry_err:
-                    msg = str(entry_err)
-                    if is_skippable_compact_row_error(msg):
-                        logger.warning(
-                            "[PersonExtract] skipping placeholder person entry: %s",
-                            msg,
-                        )
-                        continue
-                    parse_errors.append(msg)
-                    logger.warning("[PersonExtract] skipping invalid LLM person entry: %s", msg)
-            if not people and parse_errors:
-                detail = parse_errors[0] if len(parse_errors) == 1 else "; ".join(parse_errors[:5])
-                raise ValueError(
-                    f"Failed to parse LLM response as people data: no valid people. {detail}"
-                )
-            if not people and people_data:
-                logger.info(
-                    "[PersonExtract] LLM returned no qualifying people after skipping "
-                    "placeholder rows"
-                )
-
-        output_data: dict[str, Any] = {
-            "text": text,
-            "people": [person.model_dump() for person in people],
-        }
-
-        llm_top_level_fields: dict[str, Any] = {}
-        if isinstance(response_data, dict):
-            for key, value in response_data.items():
-                if key != "people":
-                    llm_top_level_fields[key] = value
-
-        for key, value in flattened_input.items():
-            if key == "text":
-                continue
-            if key.startswith("meta_"):
-                output_data[key] = value
-            elif key not in output_data:
-                output_data[key] = value
-
-        for key, value in llm_top_level_fields.items():
-            meta_key = f"meta_{key}"
-            if meta_key not in flattened_input and key not in output_data:
-                output_data[key] = value
-
-        for node_data in input_dict.values():
-            if isinstance(node_data, dict):
-                for key, value in node_data.items():
-                    if key != "text" and key not in output_data:
-                        output_data[key] = value
-
-        return PersonExtractOutput(**output_data)
+        people = self._parse_people_payload(response_data, use_compact=use_compact)
+        return self._passthrough_output(
+            text=text,
+            people=[person.model_dump() for person in people],
+            flattened_input=flattened_input,
+            input_dict=input_dict,
+        )
 
     def _load_prompt_template(self, prompt_file_path: str) -> str:
         current_dir = os.path.dirname(os.path.abspath(__file__))

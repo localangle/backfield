@@ -11,6 +11,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from agate_runtime.context import AgateEnvContext
+from agate_runtime.graph_validation import validate_graph_invariants
 from agate_runtime.node_output_contract import (
     project_gathered_branch_refs,
     project_node_contribution,
@@ -648,6 +649,7 @@ def execute_graph(
     internal React Flow ids. Execution still uses internal ids for wiring; downstream
     runners receive namespaced inputs keyed by id.
     """
+    validate_graph_invariants(spec)
     runners = NODE_RUNNERS if node_runners is None else dict(NODE_RUNNERS) | dict(node_runners)
 
     if _parallel_levels_enabled():

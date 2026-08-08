@@ -343,12 +343,81 @@ export function validateInputConnections(graph: FlowGraph): FlowValidationResult
   }
 }
 
+const DOCUMENT_CHUNKER_TYPE = 'DocumentChunker'
+
+/** Document Chunker must sit directly after the content source with no bypass branches. */
+export function validateDocumentChunkerPlacement(graph: FlowGraph): FlowValidationResult {
+  const chunkers = graph.nodes.filter((n) => n.type === DOCUMENT_CHUNKER_TYPE)
+  if (chunkers.length === 0) {
+    return { ok: true }
+  }
+  if (chunkers.length > 1) {
+    return {
+      ok: false,
+      title: 'Too many Document Chunkers',
+      description: 'Your flow can include only one Document Chunker.',
+      severity: 'error',
+    }
+  }
+
+  const chunker = chunkers[0]
+  const nodeIds = new Set(graph.nodes.map((n) => n.id))
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]))
+  const incoming = graph.edges.filter(
+    (e) => e.target === chunker.id && nodeIds.has(e.source),
+  )
+  if (incoming.length !== 1) {
+    return {
+      ok: false,
+      title: 'Document Chunker placement',
+      description:
+        'Document Chunker must connect directly from the content source (Text Input, JSON Input, or S3 Input).',
+      severity: 'error',
+    }
+  }
+
+  const source = byId.get(incoming[0].source)
+  if (!source || !isInputBookendType(source.type)) {
+    return {
+      ok: false,
+      title: 'Document Chunker placement',
+      description:
+        'Document Chunker must be placed directly after Text Input, JSON Input, or S3 Input.',
+      severity: 'error',
+    }
+  }
+
+  const inputChildren = graph.edges
+    .filter((e) => e.source === source.id && nodeIds.has(e.target))
+    .map((e) => e.target)
+  if (inputChildren.length === 0) {
+    return {
+      ok: false,
+      title: 'Document Chunker placement',
+      description: 'Document Chunker must be connected from the content source.',
+      severity: 'error',
+    }
+  }
+  if (inputChildren.some((childId) => childId !== chunker.id)) {
+    return {
+      ok: false,
+      title: 'Document Chunker placement',
+      description:
+        'When a Document Chunker is present, every step after the content source must go through the Document Chunker.',
+      severity: 'error',
+    }
+  }
+
+  return { ok: true }
+}
+
 /** Run all graph save validations; returns the first failure or success. */
 export function validateGraphForSave(graph: FlowGraph): FlowValidationResult {
   const checks: Array<(g: FlowGraph) => FlowValidationResult> = [
     validateFlowInputOutputRules,
     validateNoOrphans,
     validateInputConnections,
+    validateDocumentChunkerPlacement,
     validateCustomExtractRecordTypes,
     (g) => validateJsonInputNodes(g.nodes),
     (g) => validateS3InputBuckets(g.nodes),

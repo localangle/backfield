@@ -55,6 +55,7 @@ const NODE_CHOOSER_BLURBS: Record<string, string> = {
   CustomExtract: 'Extract custom data',
   EmbedImages: 'Describe and semantically embed images',
   EmbedText: 'Semantically embed article text',
+  DocumentChunker: 'Split a long document into smaller pieces for extraction',
   Gather: 'Consolidate output from upstream nodes',
   GeocodeAgent: 'Assign coordinates to extracted places',
   OrganizationExtract: 'Extract and standardize organizations',

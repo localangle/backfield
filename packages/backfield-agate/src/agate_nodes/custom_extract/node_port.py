@@ -5,13 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import time
 from typing import Any
 
 from agate_runtime.context import AgateEnvContext
 from agate_utils.llm import call_llm
 from agate_utils.prompt_placeholders import substitute_prompt_placeholders
+from agate_utils.text_chunking import DocumentChunk, envelope_from_payload
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agate_nodes.custom_extract.composer import (
@@ -20,12 +20,25 @@ from agate_nodes.custom_extract.composer import (
     resolve_text,
 )
 from agate_nodes.custom_extract.parse import parse_custom_extract_response
+from agate_nodes.custom_extract.reconcile import stitch_custom_candidates
 from agate_nodes.custom_extract.schema import CustomFieldSpec, CustomRecordSchema
+from agate_nodes.extraction.chunked_entity_extract import (
+    extract_entities_over_chunks,
+    strip_transient_chunk_keys,
+)
+from agate_nodes.extraction.grounding import (
+    ChunkCandidate,
+    locate_evidence_span,
+    mark_ownership,
+)
+from agate_nodes.extraction.shared_llm import (
+    effective_llm_timeout,
+    model_config_id_from_params,
+    preflight_unchunked_prompt,
+    resolve_extract_litellm_model,
+)
 
 logger = logging.getLogger(__name__)
-
-TASK_SOFT_TIME_LIMIT = int(os.getenv("TASK_SOFT_TIME_LIMIT", "3600"))
-CELERY_TIMEOUT_BUFFER = 300
 
 
 class CustomExtractInput(BaseModel):
@@ -71,6 +84,68 @@ class CustomExtractNode:
     Output = CustomExtractOutput
     Params = CustomExtractParams
 
+    def _parse_chunk_candidates(
+        self,
+        response_data: Any,
+        chunk: DocumentChunk,
+        source_text: str,
+        *,
+        record_schema: CustomRecordSchema,
+    ) -> list[ChunkCandidate[dict[str, Any]]]:
+        result = parse_custom_extract_response(
+            response_data,
+            record_schema=record_schema,
+        )
+        candidates: list[ChunkCandidate[dict[str, Any]]] = []
+        for record in result.records:
+            payload = record.model_dump()
+            evidence_text = ""
+            mentions = payload.get("mentions") or []
+            if isinstance(mentions, list) and mentions:
+                first = mentions[0]
+                if isinstance(first, dict) and isinstance(first.get("text"), str):
+                    evidence_text = first["text"].strip()
+            if not evidence_text:
+                fields = payload.get("fields")
+                if isinstance(fields, dict):
+                    for value in fields.values():
+                        if isinstance(value, str) and value.strip():
+                            evidence_text = value.strip()
+                            break
+            span = locate_evidence_span(
+                source_text=source_text,
+                chunk=chunk,
+                evidence_text=evidence_text,
+                prefer_owned=True,
+            )
+            candidate = ChunkCandidate(
+                payload=payload,
+                chunk_index=chunk.index,
+                evidence=span,
+            )
+            candidates.append(mark_ownership(candidate, chunk=chunk))
+        return candidates
+
+    def _merge_custom_records(
+        self,
+        *,
+        flattened: dict[str, Any],
+        record_schema: CustomRecordSchema,
+        records: list[dict[str, Any]],
+        dropped_ungrounded: int,
+    ) -> dict[str, Any]:
+        upstream_records = flattened.get("custom_records")
+        merged_records: dict[str, Any] = (
+            dict(upstream_records) if isinstance(upstream_records, dict) else {}
+        )
+        merged_records[record_schema.record_type] = {
+            "label": record_schema.label,
+            "schema": [spec.model_dump() for spec in record_schema.fields],
+            "records": records,
+            "dropped_ungrounded": dropped_ungrounded,
+        }
+        return merged_records
+
     async def run(
         self,
         inp: CustomExtractInput,
@@ -81,51 +156,87 @@ class CustomExtractNode:
         input_dict = inp.model_dump()
         flattened = flatten_input(input_dict)
         text = resolve_text(flattened)
-
+        envelope = envelope_from_payload(flattened)
         record_schema = params.record_schema()
+        resolved_model = resolve_extract_litellm_model(params, log_label="CustomExtract")
+        system_message = (
+            "You are a specialized AI assistant for extracting structured records "
+            "from news text. Return only valid JSON."
+        )
+
+        if envelope is not None:
+
+            def build_prompt(state: dict[str, Any]) -> str:
+                chunk_text = resolve_text(state)
+                instructions = substitute_prompt_placeholders(params.instructions, state)
+                return compose_custom_extract_prompt(
+                    record_schema=record_schema,
+                    instructions=instructions,
+                    text=chunk_text,
+                )
+
+            def parse_chunk(
+                response_data: Any,
+                chunk: DocumentChunk,
+                source_text: str,
+            ) -> list[ChunkCandidate[dict[str, Any]]]:
+                return self._parse_chunk_candidates(
+                    response_data,
+                    chunk,
+                    source_text,
+                    record_schema=record_schema,
+                )
+
+            def stitch(
+                candidates: list[ChunkCandidate[dict[str, Any]]],
+            ) -> tuple[list[dict[str, Any]], int]:
+                # stitch_custom_candidates returns the merged list only.
+                return stitch_custom_candidates(
+                    candidates,
+                    record_type=record_schema.record_type,
+                ), 0
+
+            records, diagnostics = await extract_entities_over_chunks(
+                envelope=envelope,
+                flattened=flattened,
+                params=params,
+                ctx=ctx,
+                start_time=start_time,
+                system_message=system_message,
+                log_label="CustomExtract",
+                build_prompt=build_prompt,
+                parse_chunk_response=parse_chunk,
+                stitch=stitch,
+                resolved_model=resolved_model,
+            )
+            output_data: dict[str, Any] = dict(flattened)
+            output_data["text"] = envelope.text
+            output_data["custom_records"] = self._merge_custom_records(
+                flattened=flattened,
+                record_schema=record_schema,
+                records=records,
+                dropped_ungrounded=0,
+            )
+            output_data["extraction_diagnostics"] = diagnostics
+            return CustomExtractOutput(**strip_transient_chunk_keys(output_data))
+
         instructions = substitute_prompt_placeholders(params.instructions, flattened)
         prompt = compose_custom_extract_prompt(
             record_schema=record_schema,
             instructions=instructions,
             text=text,
         )
-
-        elapsed_time = time.time() - start_time
-        max_safe_runtime = TASK_SOFT_TIME_LIMIT - CELERY_TIMEOUT_BUFFER
-        if elapsed_time > max_safe_runtime:
-            raise TimeoutError(
-                f"Node exceeded safe runtime limit ({max_safe_runtime}s) before LLM call"
-            )
-        remaining_safe_time = max_safe_runtime - elapsed_time
-        effective_timeout = min(params.llmTimeout, remaining_safe_time)
-        if effective_timeout < 60:
-            raise TimeoutError(
-                "Insufficient time remaining "
-                f"({effective_timeout:.1f}s) for Custom Extract LLM call"
-            )
-
-        resolved_model = params.model
-        raw_pid = os.getenv("BACKFIELD_PROJECT_ID")
-        if raw_pid:
-            try:
-                from backfield_ai.model_resolve import resolve_place_extract_litellm_model
-                from backfield_db.session import get_engine
-                from sqlmodel import Session
-
-                with Session(get_engine()) as res_sess:
-                    resolved_model = resolve_place_extract_litellm_model(
-                        res_sess,
-                        int(raw_pid),
-                        params,
-                    )
-            except Exception as exc:
-                logger.warning(
-                    "[CustomExtract] could not resolve catalog AI model; using legacy id: %s",
-                    exc,
-                )
-
-        raw_mc = getattr(params, "aiModelConfigId", None)
-        model_config_id = str(raw_mc).strip() if raw_mc else None
+        effective_timeout = effective_llm_timeout(
+            start_time=start_time,
+            llm_timeout=params.llmTimeout,
+        )
+        preflight_unchunked_prompt(
+            litellm_model=resolved_model,
+            system_message=system_message,
+            user_prompt=prompt,
+            project_system_prompt=ctx.project_system_prompt,
+        )
+        model_config_id = model_config_id_from_params(params)
 
         try:
             response_text = await asyncio.wait_for(
@@ -133,10 +244,7 @@ class CustomExtractNode:
                     call_llm,
                     prompt=prompt,
                     model=resolved_model,
-                    system_message=(
-                        "You are a specialized AI assistant for extracting structured records "
-                        "from news text. Return only valid JSON."
-                    ),
+                    system_message=system_message,
                     force_json=True,
                     temperature=0.0,
                     timeout=effective_timeout,
@@ -169,19 +277,12 @@ class CustomExtractNode:
             record_schema=record_schema,
         )
 
-        output_data: dict[str, Any] = dict(flattened)
+        output_data = dict(flattened)
         output_data["text"] = text
-
-        # Serial chains of Custom Extract accumulate record types instead of clobbering.
-        upstream_records = flattened.get("custom_records")
-        merged_records: dict[str, Any] = (
-            dict(upstream_records) if isinstance(upstream_records, dict) else {}
+        output_data["custom_records"] = self._merge_custom_records(
+            flattened=flattened,
+            record_schema=record_schema,
+            records=[record.model_dump() for record in result.records],
+            dropped_ungrounded=result.dropped_ungrounded,
         )
-        merged_records[record_schema.record_type] = {
-            "label": record_schema.label,
-            "schema": [spec.model_dump() for spec in record_schema.fields],
-            "records": [record.model_dump() for record in result.records],
-            "dropped_ungrounded": result.dropped_ungrounded,
-        }
-        output_data["custom_records"] = merged_records
-        return CustomExtractOutput(**output_data)
+        return CustomExtractOutput(**strip_transient_chunk_keys(output_data))

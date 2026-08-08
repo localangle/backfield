@@ -50,7 +50,7 @@ export const organizationTypes = new Set([
 ])
 export const workTypes = new Set(['WorksExtract'])
 export const formattingTypes = new Set(['LLMFormat'])
-export const controlTypes = new Set(['ArraySplitter', 'ArrayGather', 'Gather'])
+export const controlTypes = new Set(['ArraySplitter', 'ArrayGather', 'Gather', 'DocumentChunker'])
 
 type MetadataCategory =
   | 'input'

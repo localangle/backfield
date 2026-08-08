@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from typing import Any
 
 from agate_nodes.place_extract.location_utils import split_location_parts
 

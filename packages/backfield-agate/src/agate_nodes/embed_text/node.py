@@ -32,12 +32,12 @@ def _resolve_model_config_id(params: dict[str, Any]) -> str:
 
 def run_embed_text(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
     flattened = _flatten_input(inputs if isinstance(inputs, dict) else {})
-    embedded_text = compose_article_embed_text(flattened)
+    embedded_text, truncated = compose_article_embed_text(flattened)
 
     project_id_raw = os.getenv("BACKFIELD_PROJECT_ID", "").strip()
     if not project_id_raw.isdigit():
         raise RuntimeError(
-            "Embed Text requires BACKFIELD_PROJECT_ID (run inside the Agate worker with a project)."
+            "EmbedText requires BACKFIELD_PROJECT_ID (run inside the Agate worker with a project)."
         )
     project_id = int(project_id_raw)
     model_config_id = _resolve_model_config_id(params if isinstance(params, dict) else {})
@@ -65,5 +65,6 @@ def run_embed_text(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, 
             "embedding_model": batch.provider_model_id,
             "embedding_dimensions": dimensions,
             "embedding_ai_model_config_id": model_config_id,
+            "truncated": truncated,
         }
     }

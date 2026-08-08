@@ -72,6 +72,7 @@ nature (column 3):
 extras (optional trailing object; omit when empty):
   b — boundary short name: brand_platform, work_title, place_business, event_competition
   st — array of nature codes for nature_secondary_tags
+  ea — short exact evidence quote from the owned analysis segment
 """
 
 

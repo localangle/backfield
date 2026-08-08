@@ -18,6 +18,7 @@ import {
   insertAfter,
   insertBetween,
   insertConvergingBeforeOutput,
+  insertInputAdjacentNode,
   isMiddleNodeId,
   LAYOUT_NODE_WIDTH,
   TIDY_LAYOUT_X_STEP,
@@ -179,6 +180,70 @@ describe('flowGraphModel serial chain', () => {
       ]),
     )
     expect(getInvalidFlowNodeIds(model)).toEqual(new Set())
+  })
+
+  it('inserts Document Chunker between input and all first-hop children', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    const place2: FlowGraphNode = { id: 'place-2', type: 'PlaceExtract', data: {} }
+    const chunker: FlowGraphNode = { id: 'chunk-1', type: 'DocumentChunker', data: {} }
+    let model = addSiblingBranch(bookends(), 'input-1', place)
+    model = addSiblingBranch(model, 'input-1', place2)
+
+    model = insertInputAdjacentNode(model, chunker)
+
+    expect(model.branchChildren['input-1']).toEqual(['chunk-1'])
+    expect(model.branchChildren['chunk-1']).toEqual(['place-1', 'place-2'])
+    expect(edgeSet(model)).toEqual(
+      new Set([
+        'input-1->chunk-1:branch',
+        'chunk-1->place-1:branch',
+        'chunk-1->place-2:branch',
+        'place-1->output-1:tip',
+        'place-2->output-1:tip',
+      ]),
+    )
+    expect(getInvalidFlowNodeIds(model)).toEqual(new Set())
+  })
+
+  it('restores parallel branches when Document Chunker is deleted', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    const place2: FlowGraphNode = { id: 'place-2', type: 'PlaceExtract', data: {} }
+    const chunker: FlowGraphNode = { id: 'chunk-1', type: 'DocumentChunker', data: {} }
+    let model = addSiblingBranch(bookends(), 'input-1', place)
+    model = addSiblingBranch(model, 'input-1', place2)
+    model = insertInputAdjacentNode(model, chunker)
+
+    model = deleteMiddleNode(model, 'chunk-1')
+
+    expect(model.branchChildren['input-1']).toEqual(['place-1', 'place-2'])
+    expect(model.middleNodes.map((node) => node.id)).toEqual(['place-1', 'place-2'])
+    expect(edgeSet(model)).toEqual(
+      new Set([
+        'input-1->place-1:branch',
+        'input-1->place-2:branch',
+        'place-1->output-1:tip',
+        'place-2->output-1:tip',
+      ]),
+    )
+  })
+
+  it('marks Document Chunker invalid when not directly after input', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    const chunker: FlowGraphNode = { id: 'chunk-1', type: 'DocumentChunker', data: {} }
+    let model = addSiblingBranch(bookends(), 'input-1', place)
+    model = insertAfter(model, 'place-1', chunker)
+
+    expect(getInvalidFlowNodeIds(model).has('chunk-1')).toBe(true)
+  })
+
+  it('marks Document Chunker invalid when a bypass branch skips it', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    const chunker: FlowGraphNode = { id: 'chunk-1', type: 'DocumentChunker', data: {} }
+    let model = insertInputAdjacentNode(bookends(), chunker)
+    model = addSiblingBranch(model, 'input-1', place)
+
+    expect(model.branchChildren['input-1']).toEqual(['chunk-1', 'place-1'])
+    expect(getInvalidFlowNodeIds(model).has('chunk-1')).toBe(true)
   })
 })
 

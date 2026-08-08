@@ -874,3 +874,41 @@ def test_gather_waits_in_sequential_mode(monkeypatch: pytest.MonkeyPatch):
     assert execution_order[-1] == "gather"
     gathered = out["gather"]["gathered"]
     assert gathered == ["text_input", "organization_extract", "place_extract"]
+
+
+def test_document_chunker_projects_summary_and_feeds_extract():
+    long_text = "\n\n".join(
+        f"Section {i} mentions Chicago, IL in the narrative. " + ("word " * 120)
+        for i in range(6)
+    )
+    spec = GraphSpec(
+        name="chunked",
+        nodes=[
+            NodeConfig(id="a", type="TextInput", params={"text": long_text}),
+            NodeConfig(
+                id="c",
+                type="DocumentChunker",
+                params={"target_tokens": 120, "overlap_tokens": 20},
+            ),
+            NodeConfig(id="b", type="PlaceExtract", params={}),
+        ],
+        edges=[
+            Edge(source="a", target="c", sourceHandle="text", targetHandle="text"),
+            Edge(source="c", target="b", sourceHandle="text", targetHandle="text"),
+        ],
+    )
+    with patch(
+        "agate_nodes.place_extract.node_port.call_llm",
+        return_value=_mock_place_extract_json("Chicago", "Illinois", "IL"),
+    ):
+        out = execute_graph(spec)
+
+    summary = out["document_chunker"]["chunking_summary"]
+    assert summary["split_required"] is True
+    assert summary["chunk_count"] >= 2
+    assert "__document_chunk_envelope" not in out["document_chunker"]
+    locations = out["place_extract"]["locations"]
+    assert locations
+    loc = locations[0]["location"]
+    full = loc["full"] if isinstance(loc, dict) else loc
+    assert "Chicago" in full
