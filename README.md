@@ -1,4 +1,14 @@
+<div align="center">
+
 # Backfield
+
+[Docs](https://docs.backfield.news) ·
+[Self-Hosting](https://github.com/localangle/backfield-hosting) ·
+[More info](https://localangle.co)
+
+[![CI](https://github.com/localangle/backfield/actions/workflows/ci.yml/badge.svg)](https://github.com/localangle/backfield/actions/workflows/ci.yml)
+
+</div>
 
 > **Turn journalism into durable, structured knowledge**
 
