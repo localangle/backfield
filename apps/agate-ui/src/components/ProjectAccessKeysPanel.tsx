@@ -253,6 +253,8 @@ const ProjectAccessKeysPanel = forwardRef<
     openCreateDialog,
   }))
 
+  const activeRows = rows.filter((row) => !row.revoked_at)
+
   return (
     <div className="w-full min-w-0 space-y-4 mb-10">
       <div>
@@ -291,7 +293,7 @@ const ProjectAccessKeysPanel = forwardRef<
 
       {loading ? (
         <div className="text-sm text-muted-foreground py-4">Loading keys…</div>
-      ) : rows.length === 0 ? (
+      ) : activeRows.length === 0 ? (
         <Card>
           <CardContent className="text-center py-8">
             <Key className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
@@ -303,7 +305,7 @@ const ProjectAccessKeysPanel = forwardRef<
         </Card>
       ) : (
         <div className="space-y-3">
-          {rows.map((row) => (
+          {activeRows.map((row) => (
             <Card key={row.id}>
               <CardContent className="p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -315,11 +317,6 @@ const ProjectAccessKeysPanel = forwardRef<
                       <Badge variant="secondary" className="text-xs">
                         {row.credential_type}
                       </Badge>
-                      {row.revoked_at ? (
-                        <Badge variant="outline" className="text-xs">
-                          Revoked
-                        </Badge>
-                      ) : null}
                       {row.credential_type === "user" &&
                       userId != null &&
                       row.user_id === userId ? (
@@ -340,9 +337,6 @@ const ProjectAccessKeysPanel = forwardRef<
                     </div>
                     <p className="text-xs text-muted-foreground">
                       Created {format(new Date(row.created_at), "MMM d, yyyy HH:mm")}
-                      {row.revoked_at
-                        ? ` · Revoked ${format(new Date(row.revoked_at), "MMM d, yyyy HH:mm")}`
-                        : ""}
                     </p>
                   </div>
                   <div className="flex gap-1 shrink-0">
