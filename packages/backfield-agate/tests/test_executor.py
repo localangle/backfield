@@ -898,7 +898,7 @@ def test_document_chunker_projects_summary_and_feeds_extract():
         ],
     )
     with patch(
-        "agate_nodes.place_extract.node_port.call_llm",
+        "agate_nodes.extraction.chunked_entity_extract.call_llm",
         return_value=_mock_place_extract_json("Chicago", "Illinois", "IL"),
     ):
         out = execute_graph(spec)
