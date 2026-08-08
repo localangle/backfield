@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: SemVer tag to process (e.g. v0.8.0). Required for manual docs-sync / release jobs.
+        required: true
+        type: string
 
 permissions:
   id-token: write
@@ -11,24 +17,39 @@ permissions:
 
 jobs:
   github-release:
-    if: github.repository == 'localangle/backfield'
+    if: >
+      github.repository == 'localangle/backfield' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
-      group: github-release-${{ github.ref_name }}
+      group: github-release-${{ github.event.inputs.tag || github.ref_name }}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
+      - name: Resolve release tag
+        id: tag
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] \
+            || { echo "::error::Tag must be SemVer vX.Y.Z"; exit 1; }
+          echo "name=$TAG" >> "$GITHUB_OUTPUT"
+
       - name: Validate release tag is on main
         run: |
           set -euo pipefail
-          [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] \
-            || { echo "::error::Tag must be SemVer vX.Y.Z"; exit 1; }
-          git fetch origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+          TAG="${{ steps.tag.outputs.name }}"
+          git fetch origin main --tags
+          TAG_SHA="$(git rev-list -n 1 "$TAG")"
+          git merge-base --is-ancestor "$TAG_SHA" origin/main \
             || { echo "::error::Release commit is not on main"; exit 1; }
 
       - name: Check whether GitHub Release already exists
@@ -37,7 +58,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+          TAG="${{ steps.tag.outputs.name }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -47,26 +69,131 @@ jobs:
         if: steps.existing.outputs.exists != 'true'
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: ${{ steps.tag.outputs.name }}
           generate_release_notes: true
           body: |
             ## Deploy
 
-            This SemVer tag aliases immutable CI artifacts for commit `${{ github.sha }}`.
+            This SemVer tag aliases immutable CI artifacts for commit associated with `${{ steps.tag.outputs.name }}`.
             Images and UIs are **not** rebuilt at tag time.
 
-            Promote the complete manifest alias `${{ github.ref_name }}` with the deployment
+            Promote the complete manifest alias `${{ steps.tag.outputs.name }}` with the deployment
             system. See [docs/operations/deployment.md](https://github.com/localangle/backfield/blob/main/docs/operations/deployment.md).
 
       - name: Summarize existing release
         if: steps.existing.outputs.exists == 'true'
         run: |
-          echo "GitHub Release ${GITHUB_REF_NAME} already exists; skipping create." >> "$GITHUB_STEP_SUMMARY"
+          echo "GitHub Release ${{ steps.tag.outputs.name }} already exists; skipping create." >> "$GITHUB_STEP_SUMMARY"
+
+  docs-sync:
+    if: >
+      github.repository == 'localangle/backfield' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: docs-sync-${{ github.event.inputs.tag || github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] \
+            || { echo "::error::Tag must be SemVer vX.Y.Z"; exit 1; }
+          echo "name=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Validate release tag is on main
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.name }}"
+          git fetch origin main --tags
+          TAG_SHA="$(git rev-list -n 1 "$TAG")"
+          git merge-base --is-ancestor "$TAG_SHA" origin/main \
+            || { echo "::error::Release commit is not on main"; exit 1; }
+
+      - name: Build release context for docs agent
+        id: context
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.name }}"
+          PREV="$(git tag -l 'v*.*.*' --sort=-v:refname | awk -v t="$TAG" '$0 != t { print; exit }')"
+          if [ -n "${PREV:-}" ]; then
+            SUMMARY="$(git log --pretty=format:'%h %s' "${PREV}..${TAG}")"
+          else
+            SUMMARY="$(git log --pretty=format:'%h %s' -n 80 "${TAG}")"
+          fi
+          NOTES=""
+          if gh release view "$TAG" --json body --jq .body >/tmp/release-notes.md 2>/dev/null; then
+            NOTES="$(cat /tmp/release-notes.md)"
+          fi
+          {
+            echo "previous_tag=${PREV:-}"
+            echo "release_url=https://github.com/localangle/backfield/releases/tag/${TAG}"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "commit_summary<<EOF"
+            echo "$SUMMARY"
+            echo "EOF"
+            echo "release_notes<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: scripts/release_docs_agent/package-lock.json
+
+      - name: Install docs agent dependencies
+        working-directory: scripts/release_docs_agent
+        run: npm ci
+
+      - name: Launch Cursor docs sync agent
+        working-directory: scripts/release_docs_agent
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          RELEASE_TAG: ${{ steps.tag.outputs.name }}
+          PREVIOUS_TAG: ${{ steps.context.outputs.previous_tag }}
+          COMMIT_SUMMARY: ${{ steps.context.outputs.commit_summary }}
+          RELEASE_NOTES: ${{ steps.context.outputs.release_notes }}
+          RELEASE_URL: ${{ steps.context.outputs.release_url }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CURSOR_API_KEY:-}" ]; then
+            echo "::error::CURSOR_API_KEY secret is required for docs-sync. Add a Cursor service-account key with GitHub access to localangle/backfield-docs."
+            exit 1
+          fi
+          node launch.mjs | tee /tmp/docs-sync.log
+          {
+            echo "## Docs sync"
+            echo
+            echo "Launched Cursor cloud agent for \`${{ steps.tag.outputs.name }}\` against \`localangle/backfield-docs\`."
+            echo
+            echo "Contract: https://github.com/localangle/backfield-docs/blob/main/docs/meta/release-update-contract.md"
+            echo
+            echo '```text'
+            tail -n 40 /tmp/docs-sync.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   alias:
     if: >
       github.repository == 'localangle/backfield' &&
+      github.event_name == 'push' &&
       vars.AWS_ARTIFACT_PUBLISHER_ROLE_ARN != '' &&
       vars.BACKFIELD_ARTIFACT_BUCKET != ''
     runs-on: ubuntu-latest

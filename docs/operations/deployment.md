@@ -145,6 +145,13 @@ Pushing the tag runs the `Release` workflow, which:
    idempotent if the release already exists.
 2. Aliases the existing immutable artifact manifest to `vX.Y.Z` (when artifact publisher credentials
    are configured). Images and UIs are not rebuilt at tag time.
+3. Launches a Cursor cloud agent against [`backfield-docs`](https://github.com/localangle/backfield-docs)
+   to open a human-reviewed product-docs PR (changelog + targeted pages). Requires repository secret
+   `CURSOR_API_KEY`. The agent must follow
+   [release-update-contract.md](https://github.com/localangle/backfield-docs/blob/main/docs/meta/release-update-contract.md).
+   Docs deploy only after that PR is merged. You can re-run docs sync alone via **workflow_dispatch**
+   on the `Release` workflow with a tag input. See
+   [`scripts/release_docs_agent/README.md`](../../scripts/release_docs_agent/README.md).
 
 Do not deploy an arbitrary mutable image tag or a partial artifact set. Use an immutable main version
 or validated SemVer alias backed by a complete manifest.
