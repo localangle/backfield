@@ -9,7 +9,7 @@
 </h1>
 
 <p align="center">
-  An open platform for turning journalism into durable, structured knowledge
+  <i>An open platform for turning journalism into durable, structured knowledge</i>
 </p>
 
 <p align="center">
