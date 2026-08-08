@@ -1,4 +1,4 @@
-name: Release Artifact Alias
+name: Release
 
 on:
   push:
@@ -7,9 +7,63 @@ on:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 jobs:
+  github-release:
+    if: github.repository == 'localangle/backfield'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: github-release-${{ github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate release tag is on main
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] \
+            || { echo "::error::Tag must be SemVer vX.Y.Z"; exit 1; }
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::Release commit is not on main"; exit 1; }
+
+      - name: Check whether GitHub Release already exists
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        if: steps.existing.outputs.exists != 'true'
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            ## Deploy
+
+            This SemVer tag aliases immutable CI artifacts for commit `${{ github.sha }}`.
+            Images and UIs are **not** rebuilt at tag time.
+
+            Promote the complete manifest alias `${{ github.ref_name }}` with the deployment
+            system. See [docs/operations/deployment.md](https://github.com/localangle/backfield/blob/main/docs/operations/deployment.md).
+
+      - name: Summarize existing release
+        if: steps.existing.outputs.exists == 'true'
+        run: |
+          echo "GitHub Release ${GITHUB_REF_NAME} already exists; skipping create." >> "$GITHUB_STEP_SUMMARY"
+
   alias:
     if: >
       github.repository == 'localangle/backfield' &&

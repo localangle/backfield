@@ -22,6 +22,9 @@
   <a href="https://github.com/localangle/backfield/actions/workflows/ci.yml">
     <img src="https://github.com/localangle/backfield/actions/workflows/ci.yml/badge.svg" alt="CI" />
   </a>
+  <a href="https://github.com/localangle/backfield/releases">
+    <img src="https://img.shields.io/github/v/release/localangle/backfield" alt="Release" />
+  </a>
 </p>
 
 Backfield turns unstructured news stories into structured data at scale. Among other things, it extracts and geocodes the locations of news events; organizes people and their quotes; and connect people, places and organizations into a knowledge graph based on your coverage.
