@@ -117,15 +117,19 @@ every required artifact is available and verified. Fork workflows do not publish
 Product releases use SemVer tags (`vX.Y.Z`). The workspace `pyproject.toml` version is an internal
 monorepo stub and is **not** the product version.
 
+The first public baseline is **`v0.8.0`**. Earlier tags such as `v0.0.1` are pre-history artifact
+aliases only and are not advertised as product releases. Stay on `0.Y.Z` until you are ready to treat
+the public API and upgrade path as a `1.0.0` stability contract.
+
 ### Cut a release
 
 1. Choose a commit already on `main` whose CI `publish-artifacts` job has produced a complete SHA
    manifest (`main-<first-12-sha>-amd64`).
-2. Pick the SemVer bump:
-   - **patch** — fixes and small non-breaking changes
-   - **minor** — backward-compatible features
-   - **major** — breaking or ops-notable changes (for example migrations that need a coordinated
-     upgrade)
+2. Pick the SemVer bump (from the current public baseline, starting at `v0.8.0`):
+   - **patch** — fixes and small non-breaking changes (`0.8.0` → `0.8.1`)
+   - **minor** — backward-compatible features (`0.8.0` → `0.9.0`)
+   - **major** — breaking or ops-notable changes, or the jump to `1.0.0` when you are ready for a
+     stability contract (for example migrations that need a coordinated upgrade)
 3. Create and push an annotated tag:
 
 ```bash
