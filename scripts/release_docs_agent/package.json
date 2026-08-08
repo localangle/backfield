@@ -1,0 +1,11 @@
+{
+  "name": "backfield-release-docs-agent",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@cursor/sdk": "1.0.27"
+  }
+}
