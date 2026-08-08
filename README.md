@@ -2,6 +2,8 @@
 
 # Backfield
 
+**Turn journalism into durable, structured knowledge**
+
 [Docs](https://docs.backfield.news) ·
 [Self-Hosting](https://github.com/localangle/backfield-hosting) ·
 [More info](https://localangle.co)
@@ -9,8 +11,6 @@
 [![CI](https://github.com/localangle/backfield/actions/workflows/ci.yml/badge.svg)](https://github.com/localangle/backfield/actions/workflows/ci.yml)
 
 </div>
-
-> **Turn journalism into durable, structured knowledge**
 
 Backfield turns unstructured news stories into structured data at scale. Among other things, it extracts and geocodes the locations of news events; organizes people and their quotes; and connect people, places and organizations into a knowledge graph based on your coverage.
 
