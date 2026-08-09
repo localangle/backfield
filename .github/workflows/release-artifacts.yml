@@ -47,7 +47,12 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ steps.tag.outputs.name }}"
-          git fetch origin main --tags
+          # Fetch main only. ``--tags`` fails under set -e when the checked-out
+          # release tag already exists locally ("would clobber existing tag").
+          git fetch origin main
+          if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          fi
           TAG_SHA="$(git rev-list -n 1 "$TAG")"
           git merge-base --is-ancestor "$TAG_SHA" origin/main \
             || { echo "::error::Release commit is not on main"; exit 1; }
@@ -117,7 +122,12 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ steps.tag.outputs.name }}"
-          git fetch origin main --tags
+          # Fetch main only. ``--tags`` fails under set -e when the checked-out
+          # release tag already exists locally ("would clobber existing tag").
+          git fetch origin main
+          if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          fi
           TAG_SHA="$(git rev-list -n 1 "$TAG")"
           git merge-base --is-ancestor "$TAG_SHA" origin/main \
             || { echo "::error::Release commit is not on main"; exit 1; }
