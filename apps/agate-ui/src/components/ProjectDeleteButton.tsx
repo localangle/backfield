@@ -1,20 +1,30 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import TypedNameDeleteDialog from '@/components/TypedNameDeleteDialog'
 import { useAppMessage } from '@/components/AppMessageProvider'
 import { useAuth } from '@/lib/auth'
+import { cn } from '@/lib/utils'
 import {
   deleteProject,
   getProjectDeletePreview,
-  type Project,
   type ProjectDeletePreview,
 } from '@/lib/api'
-import { listMyWorkspaces } from '@/lib/core-api'
 
-export default function ProjectDeleteDangerZone({ project }: { project: Project }) {
-  const navigate = useNavigate()
+type ProjectDeleteTarget = {
+  id: number
+  name: string
+  slug: string
+}
+
+export default function ProjectDeleteButton({
+  project,
+  onDeleted,
+  className,
+}: {
+  project: ProjectDeleteTarget
+  onDeleted?: () => void
+  className?: string
+}) {
   const { isOrgAdmin } = useAuth()
   const { showError, showMessage } = useAppMessage()
   const [open, setOpen] = useState(false)
@@ -23,8 +33,22 @@ export default function ProjectDeleteDangerZone({ project }: { project: Project 
   const [loading, setLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  if (!isOrgAdmin || project.slug === 'general') {
+  if (!isOrgAdmin) {
     return null
+  }
+
+  if (project.slug === 'general') {
+    return (
+      <p
+        className={cn(
+          'flex h-9 w-full items-center justify-center rounded-md border border-dashed border-border px-3 text-center text-xs text-muted-foreground',
+          className,
+        )}
+        title="General is the default project for this workspace and cannot be deleted."
+      >
+        Default project — can&apos;t be deleted
+      </p>
+    )
   }
 
   const openDialog = async () => {
@@ -54,17 +78,8 @@ export default function ProjectDeleteDangerZone({ project }: { project: Project 
       showMessage('Project deleted.', { title: 'Done' })
       window.dispatchEvent(new CustomEvent('agate:projects-changed'))
       window.dispatchEvent(new CustomEvent('agate:workspaces-changed'))
-      let destination = '/'
-      try {
-        const rows = await listMyWorkspaces()
-        const ws = rows.find((row) => row.id === project.workspace_id)
-        if (ws) {
-          destination = `/workspace/${encodeURIComponent(ws.slug)}`
-        }
-      } catch {
-        /* fall back to workspaces home */
-      }
-      navigate(destination, { replace: true })
+      setOpen(false)
+      onDeleted?.()
     } catch (e) {
       showError(e instanceof Error ? e.message : 'Could not delete project.')
     } finally {
@@ -74,24 +89,14 @@ export default function ProjectDeleteDangerZone({ project }: { project: Project 
 
   return (
     <>
-      <div className="space-y-3 pt-4 border-t border-border">
-        <h4 className="text-base font-semibold text-destructive">Delete project</h4>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          Permanently remove this project, its flows, runs, articles, and API keys. Shared
-          stylebook entries for your organization are kept. This cannot be undone.
-        </p>
-        <Card>
-          <CardContent className="p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-foreground">
-              Only organization admins can delete a project.
-            </p>
-            <Button type="button" variant="destructive" onClick={() => void openDialog()}>
-              Delete project…
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-
+      <Button
+        type="button"
+        variant="outline"
+        className={className}
+        onClick={() => void openDialog()}
+      >
+        Delete
+      </Button>
       <TypedNameDeleteDialog
         open={open && (loading || preview != null)}
         onOpenChange={(next) => {
@@ -102,7 +107,7 @@ export default function ProjectDeleteDangerZone({ project }: { project: Project 
           }
         }}
         title="Delete project"
-        description="This cannot be undone. Type the project name exactly to confirm."
+        description="This permanently removes the project, its flows, runs, articles, and API keys. Shared Stylebook entries for your organization are kept. Type the project name exactly to confirm."
         confirmLabel="Type the project name to confirm"
         confirmName={confirmName}
         onConfirmNameChange={setConfirmName}

@@ -19,7 +19,6 @@ import { listProjectApiKeys, setProjectApiKey, deleteProjectApiKey, updateProjec
 import ProjectAccessKeysPanel, {
   type ProjectAccessKeysPanelHandle,
 } from '@/components/ProjectAccessKeysPanel'
-import ProjectDeleteDangerZone from '@/components/ProjectDeleteDangerZone'
 import { format } from 'date-fns'
 
 export type ProjectSettingsHandle = {
@@ -676,7 +675,6 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
       <>
         {errorAlert}
         {systemPromptSection}
-        {project ? <ProjectDeleteDangerZone project={project} /> : null}
       </>
     )
   }
@@ -696,7 +694,6 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
       {projectNameSection}
       {systemPromptSection}
       {credentialsSection(true)}
-      {project ? <ProjectDeleteDangerZone project={project} /> : null}
     </div>
   )
 

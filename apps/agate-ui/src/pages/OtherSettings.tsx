@@ -16,12 +16,21 @@ import {
   type MapDefaultViewport,
 } from '@/lib/core-api'
 
+function viewportNearlyEqual(a: MapDefaultViewport, b: MapDefaultViewport): boolean {
+  return (
+    Math.abs(a.lat - b.lat) < 1e-7 &&
+    Math.abs(a.lng - b.lng) < 1e-7 &&
+    Math.abs(a.zoom - b.zoom) < 1e-7
+  )
+}
+
 export default function OtherSettings() {
   const { organizationId } = useAuth()
-  const { showError, showMessage } = useAppMessage()
+  const { showError } = useAppMessage()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [savedViewport, setSavedViewport] = useState<MapDefaultViewport | null>(null)
   const [draftViewport, setDraftViewport] = useState<MapDefaultViewport>({
     lat: CONTINENTAL_US_MAP_CENTER[0],
@@ -84,15 +93,20 @@ export default function OtherSettings() {
     )
   })()
 
+  useEffect(() => {
+    if (isDirty) setStatusMessage(null)
+  }, [isDirty])
+
   const handleSave = async () => {
     if (organizationId == null) return
     try {
       setSaving(true)
+      setStatusMessage(null)
       const next = await patchOrganizationSettings(organizationId, {
         map_default_viewport: draftViewport,
       })
       setSavedViewport(next.map_default_viewport)
-      showMessage('Default map view saved.', { title: 'Done' })
+      setStatusMessage('Default map view saved.')
     } catch (e) {
       showError(e instanceof Error ? e.message : 'Could not save settings.')
     } finally {
@@ -104,6 +118,7 @@ export default function OtherSettings() {
     if (organizationId == null) return
     try {
       setSaving(true)
+      setStatusMessage(null)
       await patchOrganizationSettings(organizationId, { map_default_viewport: null })
       setSavedViewport(null)
       setDraftViewport({
@@ -112,7 +127,7 @@ export default function OtherSettings() {
         zoom: CONTINENTAL_US_MAP_ZOOM,
       })
       setMapKey((k) => k + 1)
-      showMessage('Default map view cleared.', { title: 'Done' })
+      setStatusMessage('Default map view cleared.')
     } catch (e) {
       showError(e instanceof Error ? e.message : 'Could not clear settings.')
     } finally {
@@ -152,10 +167,14 @@ export default function OtherSettings() {
               initialCenter={[draftViewport.lat, draftViewport.lng]}
               initialZoom={draftViewport.zoom}
               onViewportChange={(v) => {
-                setDraftViewport({
+                const next = {
                   lat: v.center[0],
                   lng: v.center[1],
                   zoom: v.zoom,
+                }
+                setDraftViewport((prev) => {
+                  if (viewportNearlyEqual(prev, next)) return prev
+                  return next
                 })
               }}
             />
@@ -165,6 +184,11 @@ export default function OtherSettings() {
             {draftViewport.zoom.toFixed(1)}
             {savedViewport == null ? ' · Using the shared continental default until you save' : null}
           </p>
+          {statusMessage ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              {statusMessage}
+            </p>
+          ) : null}
           <div className="flex flex-wrap gap-2">
             <Button
               type="button"
