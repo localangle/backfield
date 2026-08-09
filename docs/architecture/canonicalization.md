@@ -107,8 +107,10 @@ Canonicalization and article reconciliation are separate controls. Backfield Out
 machine-generated mentions. `replace` is authoritative for every emitted domain, including an empty
 array: omitted machine associations and their system-extraction occurrences are retired while
 editor-added, editor-modified, and non-extraction associations remain. Shared substrate identities
-remain available to other articles; true orphans are unlinked and removed. `smart_merge` and
-`add_only` retain their non-authoritative behavior.
+remain available to other articles; true orphans are unlinked and removed. When the last linked
+substrate for an ingest-only location, person, or organization canonical is disposed or unlinked,
+that empty catalog shell is pruned (manual, CSV, bundle, and review-queue rows stay). `smart_merge`
+and `add_only` retain their non-authoritative behavior.
 
 Occurrence offsets are optional evidence, not best-effort guesses. Ingest stores `start_char` and
 `end_char` only when normalized source text can be mapped back to an equivalent exact article

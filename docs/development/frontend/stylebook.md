@@ -146,9 +146,10 @@ Each canonical detail page uses this section order:
 5. Connections
 
 Mentions respect the project filter. Metadata and connections remain
-Stylebook-wide. Move/link dialogs exclude the source canonical. When unlinking the
-last evidence leaves an empty canonical, the shared delete prompt is used. Do not
-show canonical status in the detail card.
+Stylebook-wide. Move/link dialogs exclude the source canonical. Ingest-only
+canonicals with no remaining linked evidence are removed automatically. When
+unlinking leaves an editorial empty canonical (manual, import, or review-created),
+the shared delete prompt is used. Do not show canonical status in the detail card.
 
 ## Stylebook Review
 
