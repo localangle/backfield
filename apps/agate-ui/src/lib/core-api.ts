@@ -440,6 +440,32 @@ export async function patchOrganization(
   })
 }
 
+export interface MapDefaultViewport {
+  lat: number
+  lng: number
+  zoom: number
+}
+
+export interface OrganizationSettings {
+  map_default_viewport: MapDefaultViewport | null
+}
+
+export async function getOrganizationSettings(
+  orgId: number,
+): Promise<OrganizationSettings> {
+  return jsonFetch(`/v1/organizations/${orgId}/settings`)
+}
+
+export async function patchOrganizationSettings(
+  orgId: number,
+  body: { map_default_viewport: MapDefaultViewport | null },
+): Promise<OrganizationSettings> {
+  return jsonFetch(`/v1/organizations/${orgId}/settings`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  })
+}
+
 export async function patchWorkspace(
   orgId: number,
   workspaceId: number,

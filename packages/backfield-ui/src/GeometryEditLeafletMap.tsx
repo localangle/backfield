@@ -4,10 +4,13 @@ import {
   isAxisAlignedRectanglePolygon,
   polygonFromAxisAlignedBounds,
 } from "./axisAlignedRectangle"
-import { LeafletMap, type LeafletMapFeatureClick, type LeafletMapProps } from "./LeafletMap"
-
-const ADD_GEOMETRY_MAP_CENTER: [number, number] = [39.8283, -98.5795]
-const ADD_GEOMETRY_MAP_ZOOM = 3
+import {
+  CONTINENTAL_US_MAP_CENTER,
+  CONTINENTAL_US_MAP_ZOOM,
+  LeafletMap,
+  type LeafletMapFeatureClick,
+  type LeafletMapProps,
+} from "./LeafletMap"
 
 const EDIT_TILE = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
 const EDIT_ATTR =
@@ -116,17 +119,19 @@ export function GeometryEditLeafletMap({
     }
   }, [geometryEditing, onRectanglePreviewChange])
 
+  const emptyFallbackCenter = initialCenter ?? CONTINENTAL_US_MAP_CENTER
+  const emptyFallbackZoom = initialZoom ?? CONTINENTAL_US_MAP_ZOOM
   const addModeCenter =
     geometryEditing &&
     !geometryDraft &&
     (geometryAddMode === "point" || geometryAddMode === "rectangle")
-      ? ADD_GEOMETRY_MAP_CENTER
+      ? emptyFallbackCenter
       : null
   const addModeZoom =
     geometryEditing &&
     !geometryDraft &&
     (geometryAddMode === "point" || geometryAddMode === "rectangle")
-      ? ADD_GEOMETRY_MAP_ZOOM
+      ? emptyFallbackZoom
       : null
 
   return (

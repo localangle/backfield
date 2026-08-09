@@ -34,10 +34,18 @@ export interface PlatformStylebook {
   is_default: boolean
 }
 
+export interface MapDefaultViewport {
+  lat: number
+  lng: number
+  zoom: number
+}
+
 export interface PlatformContext {
   user: SessionUser
   workspaces: PlatformWorkspace[]
   stylebooks: PlatformStylebook[]
+  /** Org map empty-state fallback; null means use continental US code default. */
+  mapDefaultViewport: MapDefaultViewport | null
 }
 
 interface MeOrganization {
@@ -136,12 +144,16 @@ export async function fetchPlatformContext(
     throw new SessionAuthRequiredError()
   }
 
-  const [workspaces, stylebooks] = await Promise.all([
+  const [workspaces, stylebooks, orgSettings] = await Promise.all([
     sessionJson<PlatformWorkspace[]>(coreOrigin, "/v1/me/workspaces"),
     sessionJson<PlatformStylebook[]>(
       stylebookApiOrigin,
       `/v1/organizations/${me.organization_id}/stylebooks`,
     ),
+    sessionJson<{ map_default_viewport?: MapDefaultViewport | null }>(
+      coreOrigin,
+      `/v1/organizations/${me.organization_id}/settings`,
+    ).catch(() => ({ map_default_viewport: null })),
   ])
 
   return {
@@ -156,5 +168,6 @@ export async function fetchPlatformContext(
     },
     workspaces,
     stylebooks,
+    mapDefaultViewport: orgSettings.map_default_viewport ?? null,
   }
 }

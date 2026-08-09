@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { BookOpen, Plug, Sparkles, Users } from 'lucide-react'
+import { BookOpen, MoreHorizontal, Plug, Sparkles, Users } from 'lucide-react'
 
 const settingsLinkClass =
   'flex w-full items-start gap-3 rounded-lg border border-border bg-background p-4 hover:bg-muted/40 transition-colors'
@@ -51,6 +51,19 @@ export default function SettingsHub() {
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium">Stylebooks</div>
           <div className="text-sm text-muted-foreground">Manage Stylebook catalogs.</div>
+        </div>
+      </NavLink>
+
+      <NavLink to="/settings/other" className={settingsLinkClass}>
+        <MoreHorizontal
+          className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground"
+          aria-hidden
+        />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium">Other settings</div>
+          <div className="text-sm text-muted-foreground">
+            Default map view and other organization preferences.
+          </div>
         </div>
       </NavLink>
     </div>

@@ -9,6 +9,7 @@ from backfield_auth.deps import (
 from backfield_auth.gate import (
     get_auth_dependency,
     require_org_admin,
+    require_org_member,
     require_project_access,
     resolve_auth,
     resolve_internal_auth,
@@ -34,6 +35,7 @@ __all__ = [
     "require_auth",
     "require_auth_or_service",
     "require_org_admin",
+    "require_org_member",
     "require_project_access",
     "resolve_internal_auth",
     "require_project_allowlist_dependency",

@@ -16,6 +16,11 @@ from backfield_db import (
     BackfieldWorkspaceMembership,
     Stylebook,
 )
+from backfield_db.organization_settings import (
+    MapDefaultViewport,
+    merge_map_default_viewport,
+    parse_organization_settings,
+)
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from backfield_entities.catalog.project_teardown import (
     ProjectTeardownError,
@@ -28,7 +33,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
-from core_api.authz import require_org_admin
+from core_api.authz import require_org_admin, require_org_member
 from core_api.deps import get_auth, get_session
 from core_api.security import hash_password
 
@@ -134,6 +139,17 @@ class OrganizationOut(BaseModel):
 
 class OrganizationPatchBody(BaseModel):
     name: str
+
+
+class OrganizationSettingsOut(BaseModel):
+    map_default_viewport: MapDefaultViewport | None = None
+
+
+class OrganizationSettingsPatchBody(BaseModel):
+    """Patch org settings. Omit a field to leave it unchanged; send null to clear."""
+
+    map_default_viewport: MapDefaultViewport | None = Field(default=None)
+    # Track explicit null vs omitted via model_fields_set in the handler.
 
 
 class WorkspaceCreateBody(BaseModel):
@@ -286,6 +302,47 @@ def patch_organization(
     if org.id is None:
         raise HTTPException(status_code=500, detail="Organization persist failed")
     return OrganizationOut(id=int(org.id), name=str(org.name), slug=str(org.slug))
+
+
+@router.get("/{org_id}/settings", response_model=OrganizationSettingsOut)
+def get_organization_settings(
+    org_id: int,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> OrganizationSettingsOut:
+    """Return organization preferences. Members and service tokens may read."""
+    require_org_member(session, auth, org_id)
+    org = session.get(BackfieldOrganization, org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    settings = parse_organization_settings(org.settings_json)
+    return OrganizationSettingsOut(map_default_viewport=settings.map_default_viewport)
+
+
+@router.patch("/{org_id}/settings", response_model=OrganizationSettingsOut)
+def patch_organization_settings(
+    org_id: int,
+    body: OrganizationSettingsPatchBody,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> OrganizationSettingsOut:
+    """Update organization preferences. Org admins only."""
+    require_org_admin(session, auth, org_id)
+    org = session.get(BackfieldOrganization, org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    if "map_default_viewport" not in body.model_fields_set:
+        settings = parse_organization_settings(org.settings_json)
+        return OrganizationSettingsOut(map_default_viewport=settings.map_default_viewport)
+    org.settings_json = merge_map_default_viewport(
+        org.settings_json,
+        map_default_viewport=body.map_default_viewport,
+    )
+    session.add(org)
+    session.commit()
+    session.refresh(org)
+    settings = parse_organization_settings(org.settings_json)
+    return OrganizationSettingsOut(map_default_viewport=settings.map_default_viewport)
 
 
 @router.get("/{org_id}/projects", response_model=list[ProjectSummaryOut])

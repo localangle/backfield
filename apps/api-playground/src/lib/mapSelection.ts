@@ -19,7 +19,9 @@ export interface MapCenter {
   lng: number
 }
 
-export const DEFAULT_MAP_CENTER: MapCenter = { lat: 41.878, lng: -87.63 }
+/** Empty-map fallback when the organization has no saved default viewport. */
+export const DEFAULT_MAP_CENTER: MapCenter = { lat: 39.8283, lng: -98.5795 }
+export const DEFAULT_MAP_ZOOM = 3
 
 export function spansAntimeridian(bbox: BoundingBox): boolean {
   return bbox.maxLng - bbox.minLng > 180

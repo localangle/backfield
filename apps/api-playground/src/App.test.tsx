@@ -84,6 +84,12 @@ function sessionResponse(input: RequestInfo | URL): Response | undefined {
       { status: 200, headers: { "Content-Type": "application/json" } },
     )
   }
+  if (url.endsWith("/v1/organizations/1/settings")) {
+    return new Response(JSON.stringify({ map_default_viewport: null }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    })
+  }
   return undefined
 }
 

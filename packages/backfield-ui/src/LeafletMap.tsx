@@ -83,10 +83,16 @@ export type LeafletMapProps = {
    */
   focusBounds?: [[number, number], [number, number]] | null
   focusBoundsKey?: number
+  /** Fires after pan/zoom settles (and once on mount) with the current center and zoom. */
+  onViewportChange?: (viewport: { center: LatLng; zoom: number }) => void
 }
 
-const DEFAULT_CENTER: LatLng = [39.8283, -98.5795] // continental US
-const DEFAULT_ZOOM = 3
+/** Shared empty-map fallback when an organization has no custom default viewport. */
+export const CONTINENTAL_US_MAP_CENTER: LatLng = [39.8283, -98.5795]
+export const CONTINENTAL_US_MAP_ZOOM = 3
+
+const DEFAULT_CENTER: LatLng = CONTINENTAL_US_MAP_CENTER
+const DEFAULT_ZOOM = CONTINENTAL_US_MAP_ZOOM
 
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v)
@@ -780,6 +786,33 @@ function MapClickHandler({ onMapClick, rectangleDrawingRef }: MapClickHandlerPro
   return null
 }
 
+function ViewportChangeHandler({
+  onViewportChange,
+}: {
+  onViewportChange?: (viewport: { center: LatLng; zoom: number }) => void
+}) {
+  const map = useMap()
+  const onViewportChangeRef = useRef(onViewportChange)
+  onViewportChangeRef.current = onViewportChange
+
+  const emit = useCallback(() => {
+    const cb = onViewportChangeRef.current
+    if (!cb) return
+    const center = map.getCenter()
+    cb({ center: [center.lat, center.lng], zoom: map.getZoom() })
+  }, [map])
+
+  useEffect(() => {
+    emit()
+  }, [emit])
+
+  useMapEvents({
+    moveend: emit,
+    zoomend: emit,
+  })
+  return null
+}
+
 type RectangleDrawControllerProps = {
   rectangleDrawRef: MutableRefObject<LeafletMapProps["rectangleDraw"]>
   rectangleDrawingRef: RectangleDrawingActiveRef
@@ -1146,6 +1179,7 @@ export function LeafletMap({
   geocoder = false,
   focusBounds = null,
   focusBoundsKey = 0,
+  onViewportChange,
 }: LeafletMapProps) {
   const [error, setError] = useState<string | null>(null)
   const clickHandlerRef = useRef(onFeatureClick)
@@ -1295,6 +1329,7 @@ export function LeafletMap({
       >
         {fillHeight ? <MapInvalidateSizeOnResize /> : null}
         <MapClickHandler onMapClick={onMapClick} rectangleDrawingRef={rectangleDrawingRef} />
+        {onViewportChange ? <ViewportChangeHandler onViewportChange={onViewportChange} /> : null}
         {rectangleDraw?.enabled ? (
           <RectangleDrawController rectangleDrawRef={rectangleDrawRef} rectangleDrawingRef={rectangleDrawingRef} />
         ) : null}

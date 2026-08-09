@@ -70,6 +70,22 @@ export async function listMyWorkspaces(): Promise<WorkspaceWithProjects[]> {
   return jsonFetch<WorkspaceWithProjects[]>("/v1/me/workspaces")
 }
 
+export interface MapDefaultViewport {
+  lat: number
+  lng: number
+  zoom: number
+}
+
+export interface OrganizationSettings {
+  map_default_viewport: MapDefaultViewport | null
+}
+
+export async function getOrganizationSettings(
+  orgId: number,
+): Promise<OrganizationSettings> {
+  return jsonFetch(`/v1/organizations/${orgId}/settings`)
+}
+
 export interface WorkspaceWithProjects {
   id: number
   name: string

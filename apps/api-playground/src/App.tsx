@@ -575,6 +575,17 @@ function PlaygroundHome() {
               projectOptions={projectOptions}
               projectSlug={explorerProjectSlug}
               onProjectSlugChange={setExplorerProjectSlug}
+              mapDefaultCenter={
+                platformContext?.mapDefaultViewport
+                  ? {
+                      lat: platformContext.mapDefaultViewport.lat,
+                      lng: platformContext.mapDefaultViewport.lng,
+                    }
+                  : undefined
+              }
+              mapDefaultZoom={
+                platformContext?.mapDefaultViewport?.zoom
+              }
             />
           </div>
         )}

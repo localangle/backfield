@@ -63,6 +63,8 @@ Workspace membership replacement endpoints treat the submitted collection as the
 
 Workspace deletion is organization-admin only. `GET /v1/organizations/{org_id}/workspaces/{workspace_id}/delete-preview` returns rollup counts plus per-project tallies. `POST /v1/organizations/{org_id}/workspaces/{workspace_id}/delete` requires `{ "confirm_name": "<exact workspace name>" }`, runs the same project teardown for every project in the workspace, then deletes the workspace and its memberships. Shared Stylebook canonicals for the organization are kept.
 
+Organization preferences live at `GET` / `PATCH /v1/organizations/{org_id}/settings`. Members and service tokens may read; only organization admins may write. The first preference is `map_default_viewport` (`lat`, `lng`, `zoom`), used as the empty-map fallback across Agate, Stylebook, and the API Playground when no geometry or selection already frames the map. Send `null` for `map_default_viewport` to clear it.
+
 ### Project credentials
 
 Routes under `/v1/projects/{project_id}/api-keys` list, create, and revoke project API keys.

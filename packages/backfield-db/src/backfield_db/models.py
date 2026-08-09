@@ -57,6 +57,8 @@ class BackfieldOrganization(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(sa_column=Column(Text, nullable=False))
     slug: str = Field(sa_column=Column(Text, unique=True, nullable=False, index=True))
+    #: Soft org preferences (JSON text), e.g. map_default_viewport.
+    settings_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )

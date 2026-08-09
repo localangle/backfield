@@ -19,6 +19,7 @@ import ManageUsers from './pages/ManageUsers'
 import ManageCatalogs from './pages/ManageCatalogs'
 import AiModelsSettings from './pages/AiModelsSettings'
 import OrgIntegrationsSettings from './pages/OrgIntegrationsSettings'
+import OtherSettings from './pages/OtherSettings'
 import SettingsLayout from './pages/SettingsLayout'
 import SettingsHub from './pages/SettingsHub'
 import HubLayout from './components/HubLayout'
@@ -258,6 +259,7 @@ function AppRoutes() {
         <Route index element={<SettingsHub />} />
         <Route path="models" element={<AiModelsSettings />} />
         <Route path="integrations" element={<OrgIntegrationsSettings />} />
+        <Route path="other" element={<OtherSettings />} />
         <Route path="*" element={<NotFound />} />
       </Route>
       <Route
