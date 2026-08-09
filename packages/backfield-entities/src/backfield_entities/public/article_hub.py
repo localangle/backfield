@@ -36,6 +36,7 @@ from backfield_entities.public.mention_evidence import (
     person_article_mention_evidence_by_mention_id,
     person_evidence_by_mention_id,
 )
+from backfield_entities.public.nature_filters import normalize_natures
 from backfield_entities.public.stylebook_scope import stylebook_slugs_by_id
 
 PublicEntityMentionType = Literal["location", "person", "organization"]
@@ -446,9 +447,9 @@ def enrich_articles_with_counts(session: Session, articles: list) -> None:
 def _mention_union_stmt(
     article_id: int,
     entity_type: PublicEntityMentionType | None,
-    nature: str | None = None,
+    natures: tuple[str, ...] = (),
 ):
-    nature_value = (nature or "").strip()
+    nature_values = normalize_natures(natures)
     parts = []
     if entity_type in (None, "location"):
         stmt = select(
@@ -459,8 +460,8 @@ def _mention_union_stmt(
             SubstrateLocationMention.article_id == article_id,
             SubstrateLocationMention.deleted == False,  # noqa: E712
         )
-        if nature_value:
-            stmt = stmt.where(SubstrateLocationMention.nature == nature_value)
+        if nature_values:
+            stmt = stmt.where(col(SubstrateLocationMention.nature).in_(nature_values))
         parts.append(stmt)
     if entity_type in (None, "person"):
         stmt = select(
@@ -471,8 +472,8 @@ def _mention_union_stmt(
             SubstratePersonMention.article_id == article_id,
             SubstratePersonMention.deleted == False,  # noqa: E712
         )
-        if nature_value:
-            stmt = stmt.where(SubstratePersonMention.nature == nature_value)
+        if nature_values:
+            stmt = stmt.where(col(SubstratePersonMention.nature).in_(nature_values))
         parts.append(stmt)
     if entity_type in (None, "organization"):
         stmt = select(
@@ -483,8 +484,8 @@ def _mention_union_stmt(
             SubstrateOrganizationMention.article_id == article_id,
             SubstrateOrganizationMention.deleted == False,  # noqa: E712
         )
-        if nature_value:
-            stmt = stmt.where(SubstrateOrganizationMention.nature == nature_value)
+        if nature_values:
+            stmt = stmt.where(col(SubstrateOrganizationMention.nature).in_(nature_values))
         parts.append(stmt)
     if not parts:
         return None
@@ -679,10 +680,10 @@ def list_article_mentions(
     *,
     article_id: int,
     entity_type: PublicEntityMentionType | None,
-    nature: str | None = None,
+    natures: tuple[str, ...] = (),
     quotes_only: bool = False,
 ) -> list[PublicArticleMentionOut]:
-    union_stmt = _mention_union_stmt(article_id, entity_type, nature=nature)
+    union_stmt = _mention_union_stmt(article_id, entity_type, natures=natures)
     if union_stmt is None:
         return []
     subq = union_stmt.subquery()
@@ -752,7 +753,7 @@ def list_article_locations(
     session: Session,
     *,
     article_id: int,
-    nature: str | None = None,
+    natures: tuple[str, ...] = (),
     location_type: str | None = None,
     quotes_only: bool = False,
     limit: int,
@@ -762,9 +763,9 @@ def list_article_locations(
         SubstrateLocationMention.article_id == article_id,
         SubstrateLocationMention.deleted == False,  # noqa: E712
     ]
-    nature_value = (nature or "").strip()
-    if nature_value:
-        filters.append(SubstrateLocationMention.nature == nature_value)
+    nature_values = normalize_natures(natures)
+    if nature_values:
+        filters.append(col(SubstrateLocationMention.nature).in_(nature_values))
     location_type_value = (location_type or "").strip()
     if location_type_value:
         filters.append(SubstrateLocation.location_type == location_type_value)
@@ -851,7 +852,7 @@ def list_article_people(
     session: Session,
     *,
     article_id: int,
-    nature: str | None = None,
+    natures: tuple[str, ...] = (),
     quotes_only: bool = False,
     limit: int,
     offset: int,
@@ -860,9 +861,9 @@ def list_article_people(
         SubstratePersonMention.article_id == article_id,
         SubstratePersonMention.deleted == False,  # noqa: E712
     ]
-    nature_value = (nature or "").strip()
-    if nature_value:
-        filters.append(SubstratePersonMention.nature == nature_value)
+    nature_values = normalize_natures(natures)
+    if nature_values:
+        filters.append(col(SubstratePersonMention.nature).in_(nature_values))
     filters.extend(
         maybe_quotes_only_mention_filters(
             SubstratePersonMention.id,
@@ -945,7 +946,7 @@ def list_article_organizations(
     session: Session,
     *,
     article_id: int,
-    nature: str | None = None,
+    natures: tuple[str, ...] = (),
     quotes_only: bool = False,
     limit: int,
     offset: int,
@@ -954,9 +955,9 @@ def list_article_organizations(
         SubstrateOrganizationMention.article_id == article_id,
         SubstrateOrganizationMention.deleted == False,  # noqa: E712
     ]
-    nature_value = (nature or "").strip()
-    if nature_value:
-        filters.append(SubstrateOrganizationMention.nature == nature_value)
+    nature_values = normalize_natures(natures)
+    if nature_values:
+        filters.append(col(SubstrateOrganizationMention.nature).in_(nature_values))
     filters.extend(
         maybe_quotes_only_mention_filters(
             SubstrateOrganizationMention.id,

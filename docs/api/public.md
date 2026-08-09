@@ -133,10 +133,11 @@ requires a non-empty `q`. Responses echo the effective sort and direction.
 Canonical person, organization, and location article-list endpoints accept the same
 repeatable `meta` grammar plus `author`, `external_source`, and repeatable
 `include=counts`. Article-scoped people, organizations, and locations share
-`nature` and `quote` filters; location lists additionally accept
-`location_type`. Entity connection lists use the standard `items` and
-`pagination` envelope, default to 25 items (maximum 100), and accept
-`to_entity_type` and `nature`.
+repeatable `nature` (OR) and `quote` filters; location lists additionally accept
+`location_type`. Entity list/search/geo routes use the same repeatable `nature`
+filter for “has a matching mention.” Entity connection lists use the standard
+`items` and `pagination` envelope, default to 25 items (maximum 100), and accept
+`to_entity_type` and repeatable `nature` (OR).
 
 People, organizations, and locations **list**, **search**, and **types** routes
 (and locations **geo-search**) accept an optional `stylebook_slug` query

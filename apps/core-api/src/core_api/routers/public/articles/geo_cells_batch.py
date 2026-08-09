@@ -18,7 +18,9 @@ from sqlmodel import Session
 from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import (
     META_PARAM_DESCRIPTION,
+    NATURE_PARAM_DESCRIPTION,
     parse_meta_clauses,
+    parse_natures,
     parse_optional_date,
 )
 from core_api.routers.public.deps import get_public_project
@@ -34,9 +36,9 @@ class PublicArticleGeoCellsBatchIn(BaseModel):
         default=None,
         description="Filter matching locations by substrate location_type",
     )
-    nature: str | None = Field(
-        default=None,
-        description="Filter matching location mentions by editorial nature",
+    nature: list[str] = Field(
+        default_factory=list,
+        description=NATURE_PARAM_DESCRIPTION,
     )
     meta: list[str] = Field(default_factory=list, description=META_PARAM_DESCRIPTION)
     external_source: str | None = Field(
@@ -63,11 +65,12 @@ def query_project_articles_in_geo_cells(
     session: Session = Depends(get_session),
 ) -> PublicArticleGeoCellsBatchOut:
     """Return articles and location mentions for many H3 cells in one request."""
+    natures = parse_natures(body.nature)
     params = PublicArticleGeoCellsBatchParams(
         cells=tuple(body.cells),
         resolution=body.resolution,
         location_type=body.location_type,
-        nature=body.nature,
+        natures=natures,
         meta_clauses=parse_meta_clauses(body.meta),
         external_source=body.external_source,
         pub_date_from=parse_optional_date(body.pub_date_from, param_name="pub_date_from"),

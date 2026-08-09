@@ -229,7 +229,7 @@ def test_search_public_mentions_filters_by_entity_type_and_nature() -> None:
         items, total = search_public_mentions(
             session,
             project_id=project_id,
-            params=PublicMentionSearchParams(entity_type="location", nature="primary"),
+            params=PublicMentionSearchParams(entity_type="location", natures=("primary",)),
         )
         assert total == 1
         assert items[0].mention_id == location_mid

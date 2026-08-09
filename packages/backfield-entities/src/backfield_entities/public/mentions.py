@@ -40,6 +40,7 @@ from backfield_entities.public.mention_evidence import (
     organization_evidence_by_mention_id,
     person_evidence_by_mention_id,
 )
+from backfield_entities.public.nature_filters import normalize_natures
 
 
 def _escape_ilike_metacharacters(value: str) -> str:
@@ -99,7 +100,7 @@ class PublicMentionFacetsOut(BaseModel):
 class PublicMentionSearchParams:
     entity_type: PublicEntityMentionType | None = None
     q: str | None = None
-    nature: str | None = None
+    natures: tuple[str, ...] = ()
     has_canonical: bool | None = None
     author: str | None = None
     external_source: str | None = None
@@ -200,9 +201,9 @@ def _location_mention_arm(
         )
     )
     stmt = _apply_article_filters_to_mention_arm(stmt, params)
-    nature_value = (params.nature or "").strip()
-    if nature_value:
-        stmt = stmt.where(SubstrateLocationMention.nature == nature_value)
+    natures = normalize_natures(params.natures)
+    if natures:
+        stmt = stmt.where(col(SubstrateLocationMention.nature).in_(natures))
     location_type = (params.location_type or "").strip()
     if location_type:
         stmt = stmt.where(SubstrateLocation.location_type == location_type)
@@ -251,9 +252,9 @@ def _person_mention_arm(
         )
     )
     stmt = _apply_article_filters_to_mention_arm(stmt, params)
-    nature_value = (params.nature or "").strip()
-    if nature_value:
-        stmt = stmt.where(SubstratePersonMention.nature == nature_value)
+    natures = normalize_natures(params.natures)
+    if natures:
+        stmt = stmt.where(col(SubstratePersonMention.nature).in_(natures))
     person_type = (params.person_type or "").strip()
     if person_type:
         stmt = stmt.where(SubstratePerson.person_type == person_type)
@@ -307,9 +308,9 @@ def _organization_mention_arm(
         )
     )
     stmt = _apply_article_filters_to_mention_arm(stmt, params)
-    nature_value = (params.nature or "").strip()
-    if nature_value:
-        stmt = stmt.where(SubstrateOrganizationMention.nature == nature_value)
+    natures = normalize_natures(params.natures)
+    if natures:
+        stmt = stmt.where(col(SubstrateOrganizationMention.nature).in_(natures))
     organization_type = (params.organization_type or "").strip()
     if organization_type:
         stmt = stmt.where(SubstrateOrganization.organization_type == organization_type)

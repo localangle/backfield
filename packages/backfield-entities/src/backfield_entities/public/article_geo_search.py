@@ -24,6 +24,7 @@ from backfield_entities.public.articles import (
     _article_to_public_out,
     _meta_rows_for_articles,
 )
+from backfield_entities.public.nature_filters import normalize_natures, postgres_natures_in_filter
 
 MILES_TO_METERS = 1609.34
 EARTH_RADIUS_MILES = 3958.7613
@@ -45,7 +46,7 @@ class PublicArticleGeoSearchParams:
     max_lng: float | None = None
     max_lat: float | None = None
     location_types: tuple[str, ...] = ()
-    nature: str | None = None
+    natures: tuple[str, ...] = ()
     meta_type: str | None = None
     meta_category: str | None = None
     exclude_meta_type: str | None = None
@@ -73,7 +74,7 @@ class PublicArticleGeoSearchQueryOut(BaseModel):
     radius_miles: float | None = None
     bbox: PublicGeoBboxOut | None = None
     location_types: list[str] = Field(default_factory=list)
-    nature: str | None = None
+    natures: list[str] = Field(default_factory=list)
     meta_type: str | None = None
     meta_category: str | None = None
     exclude_meta_type: str | None = None
@@ -107,7 +108,7 @@ def public_article_geo_search_query_out(
         else None,
         bbox=bbox,
         location_types=list(params.location_types),
-        nature=(params.nature or "").strip() or None,
+        natures=list(normalize_natures(params.natures)),
         meta_type=params.meta_type,
         meta_category=params.meta_category,
         exclude_meta_type=params.exclude_meta_type,
@@ -186,10 +187,7 @@ def _postgres_matching_pairs(
 ) -> list[tuple[int, int]]:
     bind: dict[str, object] = {"project_id": project_id}
     location_type_filter = _postgres_location_types_filter(params.location_types, bind)
-    nature_filter = ""
-    if (params.nature or "").strip():
-        bind["nature"] = params.nature.strip()
-        nature_filter = "AND lm.nature = :nature"
+    nature_filter = postgres_natures_in_filter(params.natures, bind, column_sql="lm.nature")
 
     if params.mode is PublicArticleGeoSearchMode.point:
         assert params.center_lng is not None
@@ -301,9 +299,9 @@ def _sqlite_matching_pairs(
     )
     if params.location_types:
         stmt = stmt.where(col(SubstrateLocation.location_type).in_(params.location_types))
-    nature = (params.nature or "").strip()
-    if nature:
-        stmt = stmt.where(SubstrateLocationMention.nature == nature)
+    natures = normalize_natures(params.natures)
+    if natures:
+        stmt = stmt.where(col(SubstrateLocationMention.nature).in_(natures))
 
     pairs: list[tuple[int, int]] = []
     for mention, loc, _article in session.exec(stmt).all():

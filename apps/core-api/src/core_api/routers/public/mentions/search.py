@@ -13,8 +13,10 @@ from sqlmodel import Session
 from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import (
     META_PARAM_DESCRIPTION,
+    NATURE_PARAM_DESCRIPTION,
     parse_entity_type,
     parse_meta_clauses,
+    parse_natures,
     parse_optional_date,
 )
 from core_api.routers.public.deps import get_public_project
@@ -36,7 +38,7 @@ def search_project_mentions(
         description="Filter to location, person, or organization mentions",
     ),
     q: str | None = Query(None, description="Keyword match on entity name"),
-    nature: str | None = Query(None, description="Filter by mention nature"),
+    nature: list[str] = Query(default=[], description=NATURE_PARAM_DESCRIPTION),
     has_canonical: bool | None = Query(
         None,
         description="When true, only mentions linked to a canonical; when false, only unlinked",
@@ -70,10 +72,11 @@ def search_project_mentions(
     offset: int = Query(0, ge=0),
 ) -> PaginatedResponse[PublicMentionSearchItemOut]:
     """Search project mentions across articles by entity name, nature, and article filters."""
+    natures = parse_natures(nature)
     params = build_mention_search_params(
         entity_type=parse_entity_type(entity_type),
         q=q,
-        nature=nature,
+        natures=natures,
         has_canonical=has_canonical,
         author=author,
         external_source=external_source,

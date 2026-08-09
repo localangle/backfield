@@ -43,7 +43,7 @@ class PublicLocationGeoSearchParams:
     max_lat: float | None = None
     q: str | None = None
     location_type: str | None = None
-    nature: str | None = None
+    natures: tuple[str, ...] = ()
     min_mentions: int = 0
     limit: int = 25
     offset: int = 0
@@ -53,7 +53,7 @@ def _keyword_params_from_geo(params: PublicLocationGeoSearchParams) -> PublicLoc
     return PublicLocationSearchParams(
         q=params.q,
         location_type=params.location_type,
-        nature=params.nature,
+        natures=params.natures,
         min_mentions=params.min_mentions,
         limit=params.limit,
         offset=params.offset,
@@ -240,7 +240,7 @@ def search_public_locations_by_geo(
             params=PublicLocationSearchParams(
                 q=params.q,
                 location_type=params.location_type,
-                nature=params.nature,
+                natures=params.natures,
                 min_mentions=params.min_mentions,
                 limit=10_000,
                 offset=0,

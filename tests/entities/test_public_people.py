@@ -176,7 +176,7 @@ def test_list_public_person_mentions_filters_by_nature_and_author() -> None:
             stylebook_id=stylebook_id,
             project_id=project_id,
             person_id=mayor_id,
-            params=PublicEntityMentionListParams(nature="subject"),
+            params=PublicEntityMentionListParams(natures=("subject",)),
         )
         assert by_nature is not None
         assert by_nature[1] == 1
@@ -186,7 +186,7 @@ def test_list_public_person_mentions_filters_by_nature_and_author() -> None:
             stylebook_id=stylebook_id,
             project_id=project_id,
             person_id=mayor_id,
-            params=PublicEntityMentionListParams(nature="actor"),
+            params=PublicEntityMentionListParams(natures=("actor",)),
         )
         assert no_match is not None
         assert no_match[1] == 0
@@ -235,7 +235,7 @@ def test_list_public_person_articles() -> None:
             stylebook_id=stylebook_id,
             project_id=project_id,
             person_id=mayor_id,
-            nature="subject",
+            natures=("subject",),
         )
         assert filtered_result is not None
         filtered, filtered_total = filtered_result

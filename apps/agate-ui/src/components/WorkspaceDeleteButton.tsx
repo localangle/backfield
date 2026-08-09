@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import TypedNameDeleteDialog from '@/components/TypedNameDeleteDialog'
 import { useAppMessage } from '@/components/AppMessageProvider'
 import { useAuth } from '@/lib/auth'
+import { cn } from '@/lib/utils'
 import {
   deleteWorkspace,
   getWorkspaceDeletePreview,
@@ -30,6 +31,21 @@ export default function WorkspaceDeleteButton({
   const isRealWorkspace = workspace.id > 0 && workspace.slug !== '_ungrouped'
   if (!isOrgAdmin || organizationId == null || !isRealWorkspace) {
     return null
+  }
+
+  const containsDefaultProject = workspace.projects.some((p) => p.slug === 'general')
+  if (containsDefaultProject) {
+    return (
+      <p
+        className={cn(
+          'flex h-9 w-full items-center justify-center rounded-md border border-dashed border-border px-3 text-center text-xs text-muted-foreground',
+          className,
+        )}
+        title="This workspace holds the default project and cannot be deleted."
+      >
+        Contains default project — can&apos;t be deleted
+      </p>
+    )
   }
 
   const openDialog = async () => {

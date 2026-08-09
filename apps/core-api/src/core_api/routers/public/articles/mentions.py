@@ -11,7 +11,12 @@ from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
 from core_api.deps import get_session
-from core_api.routers.public.articles.helpers import parse_entity_type, require_article
+from core_api.routers.public.articles.helpers import (
+    NATURE_PARAM_DESCRIPTION,
+    parse_entity_type,
+    parse_natures,
+    require_article,
+)
 from core_api.routers.public.deps import get_public_project
 
 router = APIRouter()
@@ -26,9 +31,9 @@ def list_project_article_mentions(
         None,
         description="Filter by entity type: location, person, organization",
     ),
-    nature: str | None = Query(
-        None,
-        description="Filter to mentions with this editorial nature (e.g. primary, subject, actor)",
+    nature: list[str] = Query(
+        default=[],
+        description=NATURE_PARAM_DESCRIPTION,
     ),
     quote: bool | None = Query(
         None,
@@ -38,10 +43,11 @@ def list_project_article_mentions(
     """List mention evidence for one article across entity types."""
     require_article(session, project, article_id)
     parsed_type = parse_entity_type(entity_type)
+    natures = parse_natures(nature)
     return list_article_mentions(
         session,
         article_id=article_id,
         entity_type=parsed_type,
-        nature=nature,
+        natures=natures,
         quotes_only=quote is True,
     )

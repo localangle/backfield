@@ -252,6 +252,12 @@ def resolve_article_metadata_filters(
 
 
 MAX_LOCATION_TYPES = 25
+MAX_NATURES = 25
+
+NATURE_PARAM_DESCRIPTION = (
+    "Repeatable editorial nature filter (OR). Match mentions (or connections) with any "
+    "listed nature."
+)
 
 
 def parse_location_types(values: list[str]) -> tuple[str, ...]:
@@ -274,6 +280,30 @@ def parse_location_types(values: list[str]) -> tuple[str, ...]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Too many location_type values. Maximum is {MAX_LOCATION_TYPES}.",
+        )
+    return tuple(out)
+
+
+def parse_natures(values: list[str]) -> tuple[str, ...]:
+    """Parse repeatable ``nature`` tokens (OR semantics)."""
+    if not values:
+        return ()
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in values:
+        token = raw.strip()
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid nature: empty token.",
+            )
+        if token not in seen:
+            seen.add(token)
+            out.append(token)
+    if len(out) > MAX_NATURES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Too many nature values. Maximum is {MAX_NATURES}.",
         )
     return tuple(out)
 

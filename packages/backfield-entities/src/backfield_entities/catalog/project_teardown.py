@@ -213,15 +213,19 @@ def delete_workspace(
     if workspace is None or int(workspace.organization_id) != int(organization_id):
         raise ProjectTeardownError("workspace not found")
 
-    project_ids = list(
+    project_rows = list(
         session.exec(
-            select(BackfieldProject.id).where(
+            select(BackfieldProject.id, BackfieldProject.slug).where(
                 BackfieldProject.organization_id == int(organization_id),
                 BackfieldProject.workspace_id == int(workspace_id),
             )
         ).all()
     )
-    for pid in project_ids:
+    if any(str(slug) == "general" for _pid, slug in project_rows):
+        raise ProjectTeardownError(
+            "cannot delete a workspace that contains the General project"
+        )
+    for pid, _slug in project_rows:
         delete_project(session, int(pid))
 
     # Cascaded in Postgres; explicit for SQLite FK parity.

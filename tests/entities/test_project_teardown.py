@@ -196,6 +196,40 @@ def test_delete_general_project_blocked() -> None:
             raise AssertionError("expected ProjectTeardownError")
 
 
+def test_delete_workspace_blocked_when_contains_general() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        oid, _sb_id, wid = _seed_org(session)
+        session.add(
+            BackfieldProject(
+                **project_ownership_fields(session, oid, workspace_id=wid),
+                organization_id=oid,
+                workspace_id=wid,
+                name="General",
+                slug="general",
+            )
+        )
+        session.add(
+            BackfieldProject(
+                **project_ownership_fields(session, oid, workspace_id=wid),
+                organization_id=oid,
+                workspace_id=wid,
+                name="Extra",
+                slug="extra",
+            )
+        )
+        session.commit()
+
+        try:
+            delete_workspace(session, organization_id=oid, workspace_id=wid)
+        except ProjectTeardownError as err:
+            assert "general" in str(err).lower()
+        else:
+            raise AssertionError("expected ProjectTeardownError")
+
+        assert session.get(BackfieldWorkspace, wid) is not None
+
+
 def test_delete_workspace_cascades_projects() -> None:
     engine = _engine()
     with Session(engine) as session:

@@ -22,12 +22,13 @@ from backfield_entities.public.articles import (
     _article_to_public_out,
     _meta_rows_for_articles,
 )
+from backfield_entities.public.nature_filters import normalize_natures, postgres_natures_in_filter
 
 
 @dataclass(frozen=True)
 class PublicArticleGeoMentionFilters:
     location_type: str | None = None
-    nature: str | None = None
+    natures: tuple[str, ...] = ()
     meta_type: str | None = None
     meta_category: str | None = None
     exclude_meta_type: str | None = None
@@ -42,7 +43,7 @@ class PublicArticleGeoMentionFilters:
 class PublicArticleGeoCellDetailParams:
     h3_cell: str
     location_type: str | None = None
-    nature: str | None = None
+    natures: tuple[str, ...] = ()
     meta_type: str | None = None
     meta_category: str | None = None
     exclude_meta_type: str | None = None
@@ -92,7 +93,7 @@ def mention_filters_from_detail_params(
 ) -> PublicArticleGeoMentionFilters:
     return PublicArticleGeoMentionFilters(
         location_type=params.location_type,
-        nature=params.nature,
+        natures=params.natures,
         meta_type=params.meta_type,
         meta_category=params.meta_category,
         exclude_meta_type=params.exclude_meta_type,
@@ -162,10 +163,7 @@ def _postgres_matching_pairs(
     if (params.location_type or "").strip():
         bind["location_type"] = params.location_type.strip()
         location_type_filter = "AND sl.location_type = :location_type"
-    nature_filter = ""
-    if (params.nature or "").strip():
-        bind["nature"] = params.nature.strip()
-        nature_filter = "AND lm.nature = :nature"
+    nature_filter = postgres_natures_in_filter(params.natures, bind, column_sql="lm.nature")
 
     stmt = text(
         """
@@ -228,9 +226,9 @@ def _sqlite_matching_pairs(
     location_type = (params.location_type or "").strip()
     if location_type:
         stmt = stmt.where(SubstrateLocation.location_type == location_type)
-    nature = (params.nature or "").strip()
-    if nature:
-        stmt = stmt.where(SubstrateLocationMention.nature == nature)
+    natures = normalize_natures(params.natures)
+    if natures:
+        stmt = stmt.where(col(SubstrateLocationMention.nature).in_(natures))
 
     candidate_pairs: list[tuple[int, int]] = []
     candidate_article_ids: set[int] = set()

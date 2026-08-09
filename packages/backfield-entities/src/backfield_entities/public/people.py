@@ -32,6 +32,7 @@ from backfield_entities.public.mention_filters import (
     PublicEntityMentionListParams,
     apply_entity_mention_list_filters,
 )
+from backfield_entities.public.nature_filters import normalize_natures
 from backfield_entities.public.stylebook_scope import (
     get_public_person_canonical,
     stylebook_slugs_by_id,
@@ -102,7 +103,7 @@ class PublicPersonSearchParams:
     public_figure: bool | None = None
     title: str | None = None
     affiliation: str | None = None
-    nature: str | None = None
+    natures: tuple[str, ...] = ()
     min_mentions: int = 0
     sort: PublicPersonSort = PublicPersonSort.sort_key
     limit: int = 25
@@ -215,15 +216,15 @@ def _person_filters(
         filters.append(
             col(StylebookPersonCanonical.affiliation).ilike(f"%{esc}%", escape="\\")
         )
-    nature = (params.nature or "").strip()
-    if nature:
+    natures = normalize_natures(params.natures)
+    if natures:
         filters.append(
             exists().where(
                 SubstratePerson.stylebook_person_canonical_id == StylebookPersonCanonical.id,
                 SubstratePerson.project_id == project_id,
                 SubstratePersonMention.person_id == SubstratePerson.id,
                 SubstratePersonMention.deleted == False,  # noqa: E712
-                SubstratePersonMention.nature == nature,
+                col(SubstratePersonMention.nature).in_(natures),
             )
         )
     if params.min_mentions > 0:
@@ -466,7 +467,7 @@ def list_public_person_articles(
     person_id: str,
     limit: int = 25,
     offset: int = 0,
-    nature: str | None = None,
+    natures: tuple[str, ...] = (),
     meta_clauses: tuple[ArticleMetaClause, ...] = (),
     author: str | None = None,
     external_source: str | None = None,
@@ -485,7 +486,7 @@ def list_public_person_articles(
         entity_canonical_col=SubstratePerson.stylebook_person_canonical_id,
         canonical_id=str(canon.id),
         project_id=project_id,
-        nature=nature,
+        natures=natures,
         meta_clauses=meta_clauses,
         author=author,
         external_source=external_source,

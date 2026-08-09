@@ -9,7 +9,7 @@ from datetime import date
 from backfield_db import SubstrateArticle, SubstrateLocation, SubstrateLocationMention
 from pydantic import BaseModel, Field
 from sqlalchemy import text
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from backfield_entities.geo.h3_index import EARTH_RADIUS_KM, POINT_H3_RESOLUTION
 from backfield_entities.public.article_geo_cell_detail import (
@@ -17,6 +17,7 @@ from backfield_entities.public.article_geo_cell_detail import (
     filter_allowed_article_ids,
 )
 from backfield_entities.public.articles import ArticleMetaClause
+from backfield_entities.public.nature_filters import normalize_natures, postgres_natures_in_filter
 
 MAX_CELLS_PER_RESPONSE = 5000
 MIN_H3_RESOLUTION = 0
@@ -45,7 +46,7 @@ class PublicArticleGeoCellsParams:
     max_lat: float
     resolution: int | None = None
     location_type: str | None = None
-    nature: str | None = None
+    natures: tuple[str, ...] = ()
     meta_type: str | None = None
     meta_category: str | None = None
     exclude_meta_type: str | None = None
@@ -223,10 +224,7 @@ def _postgres_candidate_rows(
     if (params.location_type or "").strip():
         bind["location_type"] = params.location_type.strip()
         location_type_filter = "AND sl.location_type = :location_type"
-    nature_filter = ""
-    if (params.nature or "").strip():
-        bind["nature"] = params.nature.strip()
-        nature_filter = "AND lm.nature = :nature"
+    nature_filter = postgres_natures_in_filter(params.natures, bind, column_sql="lm.nature")
 
     stmt = text(
         """
@@ -282,9 +280,9 @@ def _sqlite_candidate_rows(
     location_type = (params.location_type or "").strip()
     if location_type:
         stmt = stmt.where(SubstrateLocation.location_type == location_type)
-    nature = (params.nature or "").strip()
-    if nature:
-        stmt = stmt.where(SubstrateLocationMention.nature == nature)
+    natures = normalize_natures(params.natures)
+    if natures:
+        stmt = stmt.where(col(SubstrateLocationMention.nature).in_(natures))
 
     rows: list[tuple[int, str, int]] = []
     for mention, loc, _article in session.exec(stmt).all():

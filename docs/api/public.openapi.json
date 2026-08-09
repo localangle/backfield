@@ -623,16 +623,12 @@
             "type": "array"
           },
           "nature": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Filter matching location mentions by editorial nature",
-            "title": "Nature"
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Nature",
+            "type": "array"
           },
           "offset": {
             "default": 0,
@@ -950,16 +946,12 @@
             "title": "Location Types",
             "type": "array"
           },
-          "nature": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Nature"
+          "natures": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Natures",
+            "type": "array"
           },
           "pagination": {
             "$ref": "#/components/schemas/PaginationOut"
@@ -4338,21 +4330,18 @@
             }
           },
           {
-            "description": "Filter matching location mentions by editorial nature (e.g. primary, secondary, historical)",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter matching location mentions by editorial nature (e.g. primary, secondary, historical)",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -4866,21 +4855,18 @@
             }
           },
           {
-            "description": "Filter matching location mentions by editorial nature (e.g. primary, secondary, historical)",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter matching location mentions by editorial nature (e.g. primary, secondary, historical)",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -5257,21 +5243,18 @@
             }
           },
           {
-            "description": "Filter matching location mentions by editorial nature (e.g. primary, secondary, historical)",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter matching location mentions by editorial nature (e.g. primary, secondary, historical)",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -7379,21 +7362,18 @@
             }
           },
           {
-            "description": "Filter to mentions with this editorial nature",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter to mentions with this editorial nature",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -7694,21 +7674,18 @@
             }
           },
           {
-            "description": "Filter to mentions with this editorial nature (e.g. primary, subject, actor)",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter to mentions with this editorial nature (e.g. primary, subject, actor)",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -8174,21 +8151,18 @@
             }
           },
           {
-            "description": "Filter to mentions with this editorial nature (e.g. actor, subject)",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter to mentions with this editorial nature (e.g. actor, subject)",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -8453,21 +8427,18 @@
             }
           },
           {
-            "description": "Filter to mentions with this editorial nature (e.g. subject, official)",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter to mentions with this editorial nature (e.g. subject, official)",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -8775,21 +8746,18 @@
             }
           },
           {
-            "description": "Filter to locations with at least one linked mention of this nature",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter to locations with at least one linked mention of this nature",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -9184,21 +9152,18 @@
             }
           },
           {
-            "description": "Filter to locations with at least one linked mention of this nature",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter to locations with at least one linked mention of this nature",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -9500,21 +9465,18 @@
             }
           },
           {
-            "description": "Filter to locations with at least one linked mention of this nature",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter to locations with at least one linked mention of this nature",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -10240,21 +10202,18 @@
             }
           },
           {
-            "description": "Filter to articles with a mention of this editorial nature",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter to articles with a mention of this editorial nature",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -10620,19 +10579,18 @@
             }
           },
           {
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -10907,21 +10865,18 @@
             }
           },
           {
-            "description": "Filter by mention nature",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter by mention nature",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -11777,21 +11732,18 @@
             }
           },
           {
-            "description": "Filter by mention nature",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter by mention nature",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -12501,21 +12453,18 @@
             }
           },
           {
-            "description": "Filter to organizations with at least one linked mention of this nature",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter to organizations with at least one linked mention of this nature",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -12835,21 +12784,18 @@
             }
           },
           {
-            "description": "Filter to organizations with at least one linked mention of this nature",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter to organizations with at least one linked mention of this nature",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -13575,21 +13521,18 @@
             }
           },
           {
-            "description": "Filter to articles with a mention of this editorial nature",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter to articles with a mention of this editorial nature",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -13955,19 +13898,18 @@
             }
           },
           {
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -14242,21 +14184,18 @@
             }
           },
           {
-            "description": "Filter by mention nature",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter by mention nature",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -14969,21 +14908,18 @@
             }
           },
           {
-            "description": "Filter to people with at least one linked mention of this nature",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter to people with at least one linked mention of this nature",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -15355,21 +15291,18 @@
             }
           },
           {
-            "description": "Filter to people with at least one linked mention of this nature",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter to people with at least one linked mention of this nature",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -16095,21 +16028,18 @@
             }
           },
           {
-            "description": "Filter to articles with a mention of this editorial nature",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter to articles with a mention of this editorial nature",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -16475,19 +16405,18 @@
             }
           },
           {
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {
@@ -16762,21 +16691,18 @@
             }
           },
           {
-            "description": "Filter by mention nature",
+            "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
             "in": "query",
             "name": "nature",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter by mention nature",
-              "title": "Nature"
+              "default": [],
+              "description": "Repeatable editorial nature filter (OR). Match mentions (or connections) with any listed nature.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Nature",
+              "type": "array"
             }
           },
           {

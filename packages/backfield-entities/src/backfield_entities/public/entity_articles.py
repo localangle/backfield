@@ -15,6 +15,7 @@ from backfield_entities.public.articles import (
     _article_to_public_out,
     _meta_rows_for_articles,
 )
+from backfield_entities.public.nature_filters import normalize_natures
 
 
 def collect_mention_article_pairs(
@@ -26,7 +27,7 @@ def collect_mention_article_pairs(
     entity_canonical_col,
     canonical_id: str,
     project_id: int,
-    nature: str | None = None,
+    natures: tuple[str, ...] = (),
     meta_clauses: tuple[ArticleMetaClause, ...] = (),
     author: str | None = None,
     external_source: str | None = None,
@@ -40,9 +41,9 @@ def collect_mention_article_pairs(
         SubstrateArticle.project_id == project_id,
         SubstrateArticle.deleted == False,  # noqa: E712
     ]
-    nature_value = (nature or "").strip()
-    if nature_value:
-        filters.append(mention_model.nature == nature_value)
+    nature_values = normalize_natures(natures)
+    if nature_values:
+        filters.append(col(mention_model.nature).in_(nature_values))
     stmt = (
         select(mention_model.id, mention_model.article_id)
         .join(SubstrateArticle, SubstrateArticle.id == mention_model.article_id)

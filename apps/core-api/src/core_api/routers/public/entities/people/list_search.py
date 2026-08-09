@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
 from core_api.deps import get_session
+from core_api.routers.public.articles.helpers import NATURE_PARAM_DESCRIPTION, parse_natures
 from core_api.routers.public.deps import get_public_project
 from core_api.routers.public.entities.people.helpers import (
     build_person_search_params,
@@ -29,7 +30,7 @@ def _search_people(
     public_figure: bool | None,
     title: str | None,
     affiliation: str | None,
-    nature: str | None,
+    natures: tuple[str, ...],
     min_mentions: int,
     sort: str | None,
     limit: int,
@@ -44,7 +45,7 @@ def _search_people(
         public_figure=public_figure,
         title=title,
         affiliation=affiliation,
-        nature=nature,
+        natures=natures,
         min_mentions=min_mentions,
         sort=sort,
         limit=limit,
@@ -75,9 +76,9 @@ def list_project_people(
         None,
         description="Case-insensitive substring match on affiliation",
     ),
-    nature: str | None = Query(
-        None,
-        description="Filter to people with at least one linked mention of this nature",
+    nature: list[str] = Query(
+        default=[],
+        description=NATURE_PARAM_DESCRIPTION,
     ),
     min_mentions: int = Query(0, ge=0, le=1_000_000),
     sort: str | None = Query(
@@ -88,6 +89,7 @@ def list_project_people(
     offset: int = Query(0, ge=0),
 ) -> PaginatedResponse[PublicPersonOut]:
     """List canonical people in the project's Stylebook."""
+    natures = parse_natures(nature)
     return _search_people(
         session=session,
         project=project,
@@ -97,7 +99,7 @@ def list_project_people(
         public_figure=public_figure,
         title=title,
         affiliation=affiliation,
-        nature=nature,
+        natures=natures,
         min_mentions=min_mentions,
         sort=sort,
         limit=limit,
@@ -118,9 +120,9 @@ def search_project_people(
         None,
         description="Case-insensitive substring match on affiliation",
     ),
-    nature: str | None = Query(
-        None,
-        description="Filter to people with at least one linked mention of this nature",
+    nature: list[str] = Query(
+        default=[],
+        description=NATURE_PARAM_DESCRIPTION,
     ),
     min_mentions: int = Query(0, ge=0, le=1_000_000),
     sort: str | None = Query(
@@ -131,6 +133,7 @@ def search_project_people(
     offset: int = Query(0, ge=0),
 ) -> PaginatedResponse[PublicPersonOut]:
     """Search canonical people by name, title, affiliation, and filters."""
+    natures = parse_natures(nature)
     return _search_people(
         session=session,
         project=project,
@@ -140,7 +143,7 @@ def search_project_people(
         public_figure=public_figure,
         title=title,
         affiliation=affiliation,
-        nature=nature,
+        natures=natures,
         min_mentions=min_mentions,
         sort=sort,
         limit=limit,

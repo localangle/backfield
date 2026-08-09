@@ -14,8 +14,10 @@ from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import (
     INCLUDE_PARAM_DESCRIPTION,
     META_PARAM_DESCRIPTION,
+    NATURE_PARAM_DESCRIPTION,
     parse_article_includes,
     parse_meta_clauses,
+    parse_natures,
     parse_optional_date,
 )
 from core_api.routers.public.deps import get_public_project
@@ -40,9 +42,9 @@ def list_project_person_articles(
     person_id: str,
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
-    nature: str | None = Query(
-        None,
-        description="Filter to articles with a mention of this editorial nature",
+    nature: list[str] = Query(
+        default=[],
+        description=NATURE_PARAM_DESCRIPTION,
     ),
     author: str | None = Query(None, description="Filter by byline (case-insensitive exact match)"),
     external_source: str | None = Query(
@@ -60,12 +62,13 @@ def list_project_person_articles(
     stylebook_id, project_id = resolve_public_people_scope(session, project)
     parsed_id = parse_person_id(person_id)
     includes = parse_article_includes(include)
+    natures = parse_natures(nature)
     result = list_public_person_articles(
         session,
         stylebook_id=stylebook_id,
         project_id=project_id,
         person_id=parsed_id,
-        nature=nature,
+        natures=natures,
         meta_clauses=parse_meta_clauses(meta),
         author=author,
         external_source=external_source,

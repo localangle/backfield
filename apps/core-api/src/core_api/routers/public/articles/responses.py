@@ -39,7 +39,7 @@ class PublicArticleGeoSearchOut(BaseModel):
     radius_miles: float | None = None
     bbox: PublicGeoBboxOut | None = None
     location_types: list[str] = Field(default_factory=list)
-    nature: str | None = None
+    natures: list[str] = Field(default_factory=list)
     pub_date_from: date | None = None
     pub_date_to: date | None = None
     items: list[PublicArticleGeoSearchItemOut]

@@ -28,6 +28,7 @@ from backfield_entities.public.articles import (
     _article_to_public_out,
     _meta_rows_for_articles,
 )
+from backfield_entities.public.nature_filters import normalize_natures, postgres_natures_in_filter
 
 MAX_CELLS_PER_BATCH_QUERY = 200
 
@@ -41,7 +42,7 @@ class PublicArticleGeoCellsBatchParams:
     cells: tuple[str, ...]
     resolution: int
     location_type: str | None = None
-    nature: str | None = None
+    natures: tuple[str, ...] = ()
     meta_type: str | None = None
     meta_category: str | None = None
     exclude_meta_type: str | None = None
@@ -105,7 +106,7 @@ def normalize_batch_cells(cells: list[str], *, resolution: int) -> tuple[str, ..
 def _mention_filters(params: PublicArticleGeoCellsBatchParams) -> PublicArticleGeoMentionFilters:
     return PublicArticleGeoMentionFilters(
         location_type=params.location_type,
-        nature=params.nature,
+        natures=params.natures,
         meta_type=params.meta_type,
         meta_category=params.meta_category,
         exclude_meta_type=params.exclude_meta_type,
@@ -125,10 +126,7 @@ def _location_filters_sql(
     if (filters.location_type or "").strip():
         bind["location_type"] = filters.location_type.strip()
         location_type_filter = "AND sl.location_type = :location_type"
-    nature_filter = ""
-    if (filters.nature or "").strip():
-        bind["nature"] = filters.nature.strip()
-        nature_filter = "AND lm.nature = :nature"
+    nature_filter = postgres_natures_in_filter(filters.natures, bind, column_sql="lm.nature")
     return location_type_filter, nature_filter
 
 
@@ -213,9 +211,9 @@ def _sqlite_matching_triples(
     location_type = (filters.location_type or "").strip()
     if location_type:
         stmt = stmt.where(SubstrateLocation.location_type == location_type)
-    nature = (filters.nature or "").strip()
-    if nature:
-        stmt = stmt.where(SubstrateLocationMention.nature == nature)
+    natures = normalize_natures(filters.natures)
+    if natures:
+        stmt = stmt.where(col(SubstrateLocationMention.nature).in_(natures))
 
     candidate_triples: list[tuple[int, int, str]] = []
     candidate_article_ids: set[int] = set()

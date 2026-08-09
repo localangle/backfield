@@ -58,7 +58,7 @@ def build_organization_search_params(
     *,
     q: str | None,
     organization_type: str | None,
-    nature: str | None,
+    natures: tuple[str, ...],
     min_mentions: int,
     sort: str | None,
     limit: int,
@@ -76,7 +76,7 @@ def build_organization_search_params(
     return PublicOrganizationSearchParams(
         q=q,
         organization_type=organization_type,
-        nature=nature,
+        natures=natures,
         min_mentions=min_mentions,
         sort=sort_value,
         limit=limit,

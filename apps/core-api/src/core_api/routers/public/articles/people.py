@@ -11,7 +11,11 @@ from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
 from core_api.deps import get_session
-from core_api.routers.public.articles.helpers import require_article
+from core_api.routers.public.articles.helpers import (
+    NATURE_PARAM_DESCRIPTION,
+    parse_natures,
+    require_article,
+)
 from core_api.routers.public.deps import get_public_project
 from core_api.routers.public.schemas import PaginatedResponse, PaginationOut
 
@@ -23,9 +27,9 @@ def list_project_article_people(
     article_id: int,
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
-    nature: str | None = Query(
-        None,
-        description="Filter to mentions with this editorial nature (e.g. subject, official)",
+    nature: list[str] = Query(
+        default=[],
+        description=NATURE_PARAM_DESCRIPTION,
     ),
     quote: bool | None = Query(
         None,
@@ -36,10 +40,11 @@ def list_project_article_people(
 ) -> PaginatedResponse[PublicArticlePersonOut]:
     """List people mentioned in one article."""
     require_article(session, project, article_id)
+    natures = parse_natures(nature)
     items, total = list_article_people(
         session,
         article_id=article_id,
-        nature=nature,
+        natures=natures,
         quotes_only=quote is True,
         limit=limit,
         offset=offset,
