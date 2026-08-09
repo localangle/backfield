@@ -37,6 +37,12 @@ from backfield_entities.ingest.geocode_cache.sanity import (
             False,
         ),
         (
+            {"place": {"name": "Wishbone"}, "postal_code": "60661"},
+            "Wishbone, West Loop, Chicago, IL",
+            "Wishbone, Chicago, IL",
+            True,
+        ),
+        (
             {"address": "1400 Example Avenue"},
             "1400 Example Avenue",
             "2400 Example Avenue, Metro",
@@ -141,6 +147,47 @@ def test_place_blocks_park_canonical_when_venue_inside_park() -> None:
             match_formatted_address="Jackson Park, Chicago, IL",
             match_location_type="place",
             match_geometry_type="Polygon",
+        )
+        is False
+    )
+
+
+def test_place_allows_same_venue_with_neighborhood_tail_and_extract_postal() -> None:
+    """Neighborhood annotation + extract ZIP must not block the same POI label without ZIP."""
+    assert (
+        cache_hit_sane_for_substrate(
+            substrate_location_type="place",
+            location_text="Wishbone, West Loop, Chicago, IL",
+            components={
+                "place": {"name": "Wishbone", "addressable": True},
+                "neighborhood": "West Loop",
+                "city": "Chicago",
+                "state": {"abbr": "IL"},
+                "postal_code": "60661",
+            },
+            match_label="Wishbone, Chicago, IL",
+            match_formatted_address="Wishbone, Chicago, IL",
+            match_location_type="place",
+            match_geometry_type="Point",
+        )
+        is True
+    )
+
+
+def test_place_blocks_when_labels_assert_different_postal() -> None:
+    assert (
+        cache_hit_sane_for_substrate(
+            substrate_location_type="place",
+            location_text="Wishbone, West Loop, Chicago, IL",
+            components={
+                "place": {"name": "Wishbone"},
+                "city": "Chicago",
+                "postal_code": "60661",
+            },
+            match_label="Wishbone, Chicago, IL 60607",
+            match_formatted_address="Wishbone, Chicago, IL 60607",
+            match_location_type="place",
+            match_geometry_type="Point",
         )
         is False
     )

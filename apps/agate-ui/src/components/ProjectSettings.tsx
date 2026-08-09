@@ -20,7 +20,6 @@ import ProjectAccessKeysPanel, {
   type ProjectAccessKeysPanelHandle,
 } from '@/components/ProjectAccessKeysPanel'
 import ProjectDeleteDangerZone from '@/components/ProjectDeleteDangerZone'
-import { projectStylebookDisplayName } from '@/lib/projectStylebook'
 import { format } from 'date-fns'
 
 export type ProjectSettingsHandle = {
@@ -367,26 +366,8 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
       </div>
     )
 
-  /** Read-only: a project keeps the Stylebook it was created with. */
-  const stylebookSection = (
-    <div>
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold">Stylebook</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Locations, people, and organizations found in this project are saved to this Stylebook.
-          It is chosen when the project is created.
-        </p>
-      </div>
-      <Card>
-        <CardContent className="p-4">
-          <h4 className="font-medium">{projectStylebookDisplayName(project)}</h4>
-        </CardContent>
-      </Card>
-    </div>
-  )
-
   const systemPromptSection = (
-          <div className="border-t border-border pt-10">
+          <div>
             <div className="mb-4">
               <h3 className="text-lg font-semibold">System prompt</h3>
               <p className="mt-1 text-sm text-muted-foreground">
@@ -694,7 +675,6 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
     return inlineShell(
       <>
         {errorAlert}
-        {stylebookSection}
         {systemPromptSection}
         {project ? <ProjectDeleteDangerZone project={project} /> : null}
       </>
@@ -714,7 +694,6 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
     <div className="space-y-6 w-full min-w-0">
       {errorAlert}
       {projectNameSection}
-      {stylebookSection}
       {systemPromptSection}
       {credentialsSection(true)}
       {project ? <ProjectDeleteDangerZone project={project} /> : null}

@@ -278,7 +278,11 @@ def explicit_location_components_match_labels(
         expected_postal = _compare_key(postal).replace(" ", "")
         resolved_blob = _compare_key(labels).replace(" ", "")
         if expected_postal and expected_postal not in resolved_blob:
-            return False
+            # Thin POI/admin labels often omit ZIP/postcode. Missing postal is unknown
+            # evidence, not a conflict. Only fail when labels assert different digits
+            # (another ZIP/postcode or house-level line that should have carried it).
+            if re.search(r"\d", resolved_blob):
+                return False
 
     explicit_address = str(comps.get("address") or "").strip()
     requested_number = _HOUSE_NUMBER_TOKEN_RE.search(explicit_address)
