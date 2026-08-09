@@ -12,6 +12,7 @@ from typing import Any
 
 from api.deps import get_auth, get_session
 from backfield_auth.gate import (
+    require_org_admin,
     require_project_access,
     require_session_may_assign_project_to_workspace,
     resolve_project_by_slug,
@@ -28,6 +29,13 @@ from backfield_db import (
     Stylebook,
 )
 from backfield_db.crypto import encrypt_secret, fernet_from_env
+from backfield_entities.catalog.project_teardown import (
+    ProjectTeardownError,
+    project_delete_preview,
+)
+from backfield_entities.catalog.project_teardown import (
+    delete_project as domain_delete_project,
+)
 from backfield_entities.catalog.resolve import resolve_stylebook_id_for_project_id
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -812,21 +820,69 @@ def update_project(
     return _project_to_out(session, p)
 
 
-@router.delete("/{project_id}", status_code=204)
-def delete_project(
+class ProjectDeleteBody(BaseModel):
+    confirm_name: str = Field(min_length=1)
+
+
+class ProjectDeletePreviewOut(BaseModel):
+    project_id: int
+    name: str
+    slug: str
+    flow_count: int
+    run_count: int
+    processed_item_count: int
+    article_count: int
+    api_credential_count: int
+    secret_count: int
+
+
+@router.get("/{project_id}/delete-preview", response_model=ProjectDeletePreviewOut)
+def get_project_delete_preview(
     project_id: int,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
-):
-    require_project_access(session, auth, project_id)
+) -> ProjectDeletePreviewOut:
     p = session.get(BackfieldProject, project_id)
     if not p:
         raise HTTPException(404, "Project not found")
-    if p.slug == "general":
-        raise HTTPException(400, "Cannot delete the General project")
-    if session.exec(select(AgateGraph).where(AgateGraph.project_id == project_id)).first():
-        raise HTTPException(400, "Project still has flows; reassign or delete them first")
-    session.delete(p)
+    require_org_admin(session, auth, int(p.organization_id))
+    preview = project_delete_preview(session, project_id)
+    if preview is None:
+        raise HTTPException(404, "Project not found")
+    return ProjectDeletePreviewOut(
+        project_id=preview.project_id,
+        name=preview.name,
+        slug=preview.slug,
+        flow_count=preview.flow_count,
+        run_count=preview.run_count,
+        processed_item_count=preview.processed_item_count,
+        article_count=preview.article_count,
+        api_credential_count=preview.api_credential_count,
+        secret_count=preview.secret_count,
+    )
+
+
+@router.post("/{project_id}/delete", status_code=204)
+def delete_project(
+    project_id: int,
+    body: ProjectDeleteBody,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> None:
+    p = session.get(BackfieldProject, project_id)
+    if not p:
+        raise HTTPException(404, "Project not found")
+    require_org_admin(session, auth, int(p.organization_id))
+    typed = body.confirm_name.strip()
+    if typed != str(p.name).strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Confirmation name does not match this project.",
+        )
+    try:
+        domain_delete_project(session, project_id)
+    except ProjectTeardownError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
     session.commit()
     return None
 

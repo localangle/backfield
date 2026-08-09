@@ -19,6 +19,7 @@ import { listProjectApiKeys, setProjectApiKey, deleteProjectApiKey, updateProjec
 import ProjectAccessKeysPanel, {
   type ProjectAccessKeysPanelHandle,
 } from '@/components/ProjectAccessKeysPanel'
+import ProjectDeleteDangerZone from '@/components/ProjectDeleteDangerZone'
 import { projectStylebookDisplayName } from '@/lib/projectStylebook'
 import { format } from 'date-fns'
 
@@ -695,6 +696,7 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
         {errorAlert}
         {stylebookSection}
         {systemPromptSection}
+        {project ? <ProjectDeleteDangerZone project={project} /> : null}
       </>
     )
   }
@@ -715,6 +717,7 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
       {stylebookSection}
       {systemPromptSection}
       {credentialsSection(true)}
+      {project ? <ProjectDeleteDangerZone project={project} /> : null}
     </div>
   )
 

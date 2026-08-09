@@ -61,6 +61,8 @@ Routes under `/v1/organizations/{org_id}` manage:
 
 Workspace membership replacement endpoints treat the submitted collection as the complete desired state. User disable and role changes protect the current user and the last organization administrator.
 
+Workspace deletion is organization-admin only. `GET /v1/organizations/{org_id}/workspaces/{workspace_id}/delete-preview` returns rollup counts plus per-project tallies. `POST /v1/organizations/{org_id}/workspaces/{workspace_id}/delete` requires `{ "confirm_name": "<exact workspace name>" }`, runs the same project teardown for every project in the workspace, then deletes the workspace and its memberships. Shared Stylebook canonicals for the organization are kept.
+
 ### Project credentials
 
 Routes under `/v1/projects/{project_id}/api-keys` list, create, and revoke project API keys.

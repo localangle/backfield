@@ -2,18 +2,22 @@ import { useCallback, useEffect, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { FolderOpen, Loader2 } from "lucide-react"
 import { AddPlusCta } from "@/components/AddPlusCta"
+import { useAppMessage } from "@/components/AppMessageProvider"
 import { InlineNameEditor } from "@/components/InlineNameEditor"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
 import { PageBreadcrumbs } from "@/components/PageBreadcrumbs"
 import ProjectDialog from "@/components/ProjectDialog"
+import TypedNameDeleteDialog from "@/components/TypedNameDeleteDialog"
 import { useAuth } from "@/lib/auth"
 import { createProject, type ProjectCreate } from "@/lib/api"
 import {
+  deleteWorkspace,
+  getWorkspaceDeletePreview,
   listMyWorkspaces,
   patchWorkspace,
   type ProjectSummary,
+  type WorkspaceDeletePreview,
   type WorkspaceWithProjects,
 } from "@/lib/core-api"
 
@@ -69,6 +73,7 @@ export default function WorkspaceDetailPage() {
   const { workspaceSlug: workspaceSlugParam } = useParams<{ workspaceSlug: string }>()
   const navigate = useNavigate()
   const { organizationId, isOrgAdmin } = useAuth()
+  const { showError, showMessage } = useAppMessage()
   const workspaceSlug =
     workspaceSlugParam != null ? decodeURIComponent(workspaceSlugParam) : ""
 
@@ -76,6 +81,11 @@ export default function WorkspaceDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [projectDialogOpen, setProjectDialogOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deletePreview, setDeletePreview] = useState<WorkspaceDeletePreview | null>(null)
+  const [deleteConfirmName, setDeleteConfirmName] = useState("")
+  const [deleteLoading, setDeleteLoading] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const load = useCallback(async () => {
     setError(null)
@@ -109,6 +119,42 @@ export default function WorkspaceDetailPage() {
     window.dispatchEvent(new CustomEvent("agate:projects-changed"))
     window.dispatchEvent(new CustomEvent("agate:workspaces-changed"))
     setProjectDialogOpen(false)
+  }
+
+  const openDeleteDialog = async () => {
+    if (!organizationId || !workspace) return
+    setDeleteConfirmName("")
+    setDeletePreview(null)
+    setDeleteOpen(true)
+    setDeleteLoading(true)
+    try {
+      setDeletePreview(await getWorkspaceDeletePreview(organizationId, workspace.id))
+    } catch (e) {
+      setDeleteOpen(false)
+      showError(e instanceof Error ? e.message : "Could not load delete details.")
+    } finally {
+      setDeleteLoading(false)
+    }
+  }
+
+  const handleDeleteWorkspace = async () => {
+    if (!organizationId || !workspace || !deletePreview) return
+    if (deleteConfirmName.trim() !== workspace.name.trim()) {
+      showError("The name you typed does not match this workspace.")
+      return
+    }
+    try {
+      setDeleting(true)
+      await deleteWorkspace(organizationId, workspace.id, deleteConfirmName.trim())
+      showMessage("Workspace deleted.", { title: "Done" })
+      window.dispatchEvent(new CustomEvent("agate:projects-changed"))
+      window.dispatchEvent(new CustomEvent("agate:workspaces-changed"))
+      navigate("/", { replace: true })
+    } catch (e) {
+      showError(e instanceof Error ? e.message : "Could not delete workspace.")
+    } finally {
+      setDeleting(false)
+    }
   }
 
   if (loading) {
@@ -183,6 +229,54 @@ export default function WorkspaceDetailPage() {
         onSave={handleCreateProject}
         defaultWorkspaceId={workspace.id}
       />
+
+      {isOrgAdmin && organizationId != null ? (
+        <div className="space-y-3 pt-4 border-t border-border">
+          <h2 className="text-base font-semibold text-destructive">Delete workspace</h2>
+          <p className="text-sm text-muted-foreground max-w-2xl">
+            Permanently remove this workspace and every project inside it, including flows, runs,
+            articles, and API keys. Shared catalog entries in your stylebooks are kept. This cannot
+            be undone.
+          </p>
+          <Button type="button" variant="destructive" onClick={() => void openDeleteDialog()}>
+            Delete workspace…
+          </Button>
+          <TypedNameDeleteDialog
+            open={deleteOpen && (deleteLoading || deletePreview != null)}
+            onOpenChange={(next) => {
+              if (!next) {
+                setDeleteOpen(false)
+                setDeletePreview(null)
+                setDeleteConfirmName("")
+              }
+            }}
+            title="Delete workspace"
+            description="This cannot be undone. Type the workspace name exactly to confirm."
+            confirmLabel="Type the workspace name to confirm"
+            confirmName={deleteConfirmName}
+            onConfirmNameChange={setDeleteConfirmName}
+            expectedName={workspace.name}
+            loading={deleteLoading}
+            deleting={deleting}
+            deleteButtonLabel="Delete workspace"
+            onConfirm={() => void handleDeleteWorkspace()}
+          >
+            {deletePreview ? (
+              <p>
+                <span className="font-medium">{deletePreview.name}</span> will remove{" "}
+                <span className="font-medium">{deletePreview.project_count}</span>{" "}
+                {deletePreview.project_count === 1 ? "project" : "projects"},{" "}
+                <span className="font-medium">{deletePreview.flow_count}</span>{" "}
+                {deletePreview.flow_count === 1 ? "flow" : "flows"},{" "}
+                <span className="font-medium">{deletePreview.article_count}</span>{" "}
+                {deletePreview.article_count === 1 ? "article" : "articles"}, and{" "}
+                <span className="font-medium">{deletePreview.api_credential_count}</span> API{" "}
+                {deletePreview.api_credential_count === 1 ? "key" : "keys"}.
+              </p>
+            ) : null}
+          </TypedNameDeleteDialog>
+        </div>
+      ) : null}
     </div>
   )
 }

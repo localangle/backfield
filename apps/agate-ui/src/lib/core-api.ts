@@ -451,6 +451,52 @@ export async function patchWorkspace(
   })
 }
 
+export interface WorkspaceProjectDeletePreview {
+  project_id: number
+  name: string
+  slug: string
+  flow_count: number
+  run_count: number
+  processed_item_count: number
+  article_count: number
+  api_credential_count: number
+  secret_count: number
+}
+
+export interface WorkspaceDeletePreview {
+  workspace_id: number
+  name: string
+  slug: string
+  project_count: number
+  flow_count: number
+  run_count: number
+  processed_item_count: number
+  article_count: number
+  api_credential_count: number
+  secret_count: number
+  projects: WorkspaceProjectDeletePreview[]
+}
+
+export async function getWorkspaceDeletePreview(
+  orgId: number,
+  workspaceId: number,
+): Promise<WorkspaceDeletePreview> {
+  return jsonFetch(
+    `/v1/organizations/${orgId}/workspaces/${workspaceId}/delete-preview`,
+  )
+}
+
+export async function deleteWorkspace(
+  orgId: number,
+  workspaceId: number,
+  confirmName: string,
+): Promise<void> {
+  await jsonFetch(`/v1/organizations/${orgId}/workspaces/${workspaceId}/delete`, {
+    method: "POST",
+    body: JSON.stringify({ confirm_name: confirmName }),
+  })
+}
+
 export interface OrgStylebook {
   id: number
   name: string

@@ -17,6 +17,13 @@ from backfield_db import (
     Stylebook,
 )
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
+from backfield_entities.catalog.project_teardown import (
+    ProjectTeardownError,
+    workspace_delete_preview,
+)
+from backfield_entities.catalog.project_teardown import (
+    delete_workspace as domain_delete_workspace,
+)
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
@@ -463,6 +470,112 @@ def patch_workspace(
     if out is None:
         raise HTTPException(status_code=500, detail="Workspace load failed")
     return out
+
+
+class WorkspaceDeleteBody(BaseModel):
+    confirm_name: str = Field(min_length=1)
+
+
+class WorkspaceProjectDeletePreviewOut(BaseModel):
+    project_id: int
+    name: str
+    slug: str
+    flow_count: int
+    run_count: int
+    processed_item_count: int
+    article_count: int
+    api_credential_count: int
+    secret_count: int
+
+
+class WorkspaceDeletePreviewOut(BaseModel):
+    workspace_id: int
+    name: str
+    slug: str
+    project_count: int
+    flow_count: int
+    run_count: int
+    processed_item_count: int
+    article_count: int
+    api_credential_count: int
+    secret_count: int
+    projects: list[WorkspaceProjectDeletePreviewOut]
+
+
+@router.get(
+    "/{org_id}/workspaces/{workspace_id}/delete-preview",
+    response_model=WorkspaceDeletePreviewOut,
+)
+def get_workspace_delete_preview(
+    org_id: int,
+    workspace_id: int,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> WorkspaceDeletePreviewOut:
+    require_org_admin(session, auth, org_id)
+    preview = workspace_delete_preview(
+        session,
+        organization_id=org_id,
+        workspace_id=workspace_id,
+    )
+    if preview is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return WorkspaceDeletePreviewOut(
+        workspace_id=preview.workspace_id,
+        name=preview.name,
+        slug=preview.slug,
+        project_count=preview.project_count,
+        flow_count=preview.flow_count,
+        run_count=preview.run_count,
+        processed_item_count=preview.processed_item_count,
+        article_count=preview.article_count,
+        api_credential_count=preview.api_credential_count,
+        secret_count=preview.secret_count,
+        projects=[
+            WorkspaceProjectDeletePreviewOut(
+                project_id=p.project_id,
+                name=p.name,
+                slug=p.slug,
+                flow_count=p.flow_count,
+                run_count=p.run_count,
+                processed_item_count=p.processed_item_count,
+                article_count=p.article_count,
+                api_credential_count=p.api_credential_count,
+                secret_count=p.secret_count,
+            )
+            for p in preview.projects
+        ],
+    )
+
+
+@router.post("/{org_id}/workspaces/{workspace_id}/delete", status_code=204)
+def delete_workspace(
+    org_id: int,
+    workspace_id: int,
+    body: WorkspaceDeleteBody,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> None:
+    require_org_admin(session, auth, org_id)
+    ws = session.get(BackfieldWorkspace, workspace_id)
+    if ws is None or int(ws.organization_id) != org_id:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    typed = body.confirm_name.strip()
+    if typed != str(ws.name).strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Confirmation name does not match this workspace.",
+        )
+    try:
+        domain_delete_workspace(
+            session,
+            organization_id=org_id,
+            workspace_id=workspace_id,
+        )
+    except ProjectTeardownError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    session.commit()
+    return None
 
 
 @router.get("/{org_id}/users", response_model=list[UserOut])
