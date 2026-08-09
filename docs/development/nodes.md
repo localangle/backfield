@@ -222,7 +222,7 @@ steps.
 
 S3 Input scans claim object revisions through `agate_s3_ingestion_ledger` so unchanged
 content is skipped across runs. A stable `source_id` is stored on the node params
-(minted automatically). The **Process files again** setting reclaims previously succeeded
+(minted automatically). The **Reprocess completed files** setting reclaims previously succeeded
 revisions so the same files can be run once more. Replay bypasses the ledger and
 re-executes stored inputs.
 

@@ -23,8 +23,8 @@ export function runEmptyItemsCopy(run: Pick<Run, 'status' | 's3_batch'>): RunEmp
       title: 'Nothing new to process',
       description:
         alreadyProcessed === 1
-          ? 'The file in this folder was already processed successfully. Turn on “Process files again” in S3 Input if you want to run it once more.'
-          : `All ${alreadyProcessed} files in this folder were already processed successfully. Turn on “Process files again” in S3 Input if you want to run them again.`,
+          ? 'The file in this folder was already processed successfully. Turn on “Reprocess completed files” in S3 Input if you want to run it once more.'
+          : `All ${alreadyProcessed} files in this folder were already processed successfully. Turn on “Reprocess completed files” in S3 Input if you want to run them again.`,
     }
   }
 
@@ -32,7 +32,7 @@ export function runEmptyItemsCopy(run: Pick<Run, 'status' | 's3_batch'>): RunEmp
     return {
       title: 'Nothing new to process',
       description:
-        'No new files were ready to run in this folder. Turn on “Process files again” in S3 Input if you want to re-run files that already completed.',
+        'No new files were ready to run in this folder. Turn on “Reprocess completed files” in S3 Input if you want to re-run files that already completed.',
     }
   }
 
