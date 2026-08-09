@@ -97,6 +97,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
   const params = useParams<{ stylebookSlug?: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const [projects, setProjects] = useState<Project[]>([])
+  const [workflowProjectsReady, setWorkflowProjectsReady] = useState(false)
   const [workspaceRows, setWorkspaceRows] = useState<WorkspaceWithProjects[]>(
     [],
   )
@@ -223,9 +224,22 @@ export default function Layout({ children, headerContent }: LayoutProps) {
   const workspaceAccess = hasWorkspaceAccess(workspaceRows, isOrgAdmin)
 
   useEffect(() => {
+    let cancelled = false
+    setWorkflowProjectsReady(false)
     fetchProjects()
-      .then(setProjects)
-      .catch((err) => console.error("Failed to fetch projects:", err))
+      .then((rows) => {
+        if (!cancelled) setProjects(rows)
+      })
+      .catch((err) => {
+        console.error("Failed to fetch projects:", err)
+        if (!cancelled) setProjects([])
+      })
+      .finally(() => {
+        if (!cancelled) setWorkflowProjectsReady(true)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const loadWorkspaces = useCallback(async () => {
@@ -610,7 +624,11 @@ export default function Layout({ children, headerContent }: LayoutProps) {
             </nav>
           )}
         </ShellSidebar>
-        <StylebookScopeProvider selectedStylebookLabel={selectedStylebookLabel}>
+        <StylebookScopeProvider
+          selectedStylebookLabel={selectedStylebookLabel}
+          workflowProjectsReady={workflowProjectsReady}
+          hasWorkflowProjects={projects.length > 0}
+        >
           <StylebookEditProvider canEditStylebook={canEditStylebook}>
             <main className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-y-contain">
               <div className="w-full max-w-none px-4 sm:px-6 lg:px-8 py-8">

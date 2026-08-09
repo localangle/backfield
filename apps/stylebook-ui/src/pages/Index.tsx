@@ -3,7 +3,10 @@ import { useNavigate } from "react-router-dom"
 import { getStats, type Stats } from "@/lib/api"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { ENTITY_HOME_CARDS, entityDisplayName } from "@/lib/entityRegistry"
-import { useSelectedStylebookLabel } from "@/lib/stylebookScopeContext"
+import {
+  useSelectedStylebookLabel,
+  useWorkflowProjectScopeReady,
+} from "@/lib/stylebookScopeContext"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
 import { StylebookHomeTabs } from "@/components/StylebookHomeTabs"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
@@ -39,30 +42,41 @@ export default function Index() {
     catalogBasePath,
   } = useProjectCatalogScope()
   const selectedStylebookLabel = useSelectedStylebookLabel()
+  const { workflowProjectsReady, hasWorkflowProjects } = useWorkflowProjectScopeReady()
   const crumbRoot = useScopeBreadcrumbRoot()
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (projectScopeSlug) {
-      loadStats(projectScopeSlug)
-    } else {
-      setLoading(false)
-      setStats(null)
-    }
-  }, [projectScopeSlug, stylebookSlug])
+    let cancelled = false
 
-  const loadStats = async (slug: string) => {
-    try {
-      setLoading(true)
-      const data = await getStats(slug)
-      setStats(data)
-    } catch (error) {
-      console.error("Failed to load stats:", error)
-    } finally {
-      setLoading(false)
+    if (projectScopeSlug) {
+      ;(async () => {
+        try {
+          setLoading(true)
+          const data = await getStats(projectScopeSlug)
+          if (!cancelled) setStats(data)
+        } catch (error) {
+          console.error("Failed to load stats:", error)
+          if (!cancelled) setStats(null)
+        } finally {
+          if (!cancelled) setLoading(false)
+        }
+      })()
+      return () => {
+        cancelled = true
+      }
     }
-  }
+
+    // Layout injects default ``project_scope`` after projects load. Keep the spinner
+    // until then so the unscoped card layout does not flash first.
+    setStats(null)
+    if (!workflowProjectsReady || hasWorkflowProjects) {
+      setLoading(true)
+      return
+    }
+    setLoading(false)
+  }, [projectScopeSlug, stylebookSlug, workflowProjectsReady, hasWorkflowProjects])
 
   const handleEntityTypeClick = (card: (typeof ENTITY_HOME_CARDS)[number]) => {
     const suffix = card.canonicalFirst ? filterScopeSuffix : workflowScopeSuffix
