@@ -17,10 +17,12 @@ from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import (
     INCLUDE_PARAM_DESCRIPTION,
     META_PARAM_DESCRIPTION,
+    NATURE_PARAM_DESCRIPTION,
     parse_article_includes,
     parse_bbox,
     parse_location_types,
     parse_meta_clauses,
+    parse_natures,
     parse_optional_date,
 )
 from core_api.routers.public.articles.responses import PublicArticleGeoSearchOut
@@ -52,12 +54,9 @@ def search_project_articles_by_geo(
             "mention of any listed substrate location_type."
         ),
     ),
-    nature: str | None = Query(
-        None,
-        description=(
-            "Filter matching location mentions by editorial nature "
-            "(e.g. primary, secondary, historical)"
-        ),
+    nature: list[str] = Query(
+        default=[],
+        description=NATURE_PARAM_DESCRIPTION,
     ),
     meta: list[str] = Query(default=[], description=META_PARAM_DESCRIPTION),
     pub_date_from: str | None = Query(
@@ -94,6 +93,7 @@ def search_project_articles_by_geo(
 
     if has_bbox:
         min_lng, min_lat, max_lng, max_lat = parse_bbox(bbox)
+        natures = parse_natures(nature)
         params = PublicArticleGeoSearchParams(
             mode=PublicArticleGeoSearchMode.bbox,
             min_lng=min_lng,
@@ -101,7 +101,7 @@ def search_project_articles_by_geo(
             max_lng=max_lng,
             max_lat=max_lat,
             location_types=location_types,
-            nature=nature,
+            natures=natures,
             meta_clauses=meta_clauses,
             pub_date_from=pub_date_from_parsed,
             pub_date_to=pub_date_to_parsed,
@@ -114,13 +114,14 @@ def search_project_articles_by_geo(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="center_lng, center_lat, and radius_miles are required together.",
             )
+        natures = parse_natures(nature)
         params = PublicArticleGeoSearchParams(
             mode=PublicArticleGeoSearchMode.point,
             center_lng=center_lng,
             center_lat=center_lat,
             radius_miles=radius_miles,
             location_types=location_types,
-            nature=nature,
+            natures=natures,
             meta_clauses=meta_clauses,
             pub_date_from=pub_date_from_parsed,
             pub_date_to=pub_date_to_parsed,

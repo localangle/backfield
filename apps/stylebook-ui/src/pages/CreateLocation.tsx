@@ -17,6 +17,7 @@ import {
 } from "@/lib/place-extract-type-label"
 import { slugifyLocationTypeLabel } from "@/lib/import/geojsonImport"
 import { LeafletMap } from "@backfield/ui/LeafletMap"
+import { useOrgMapDefaultViewport } from "@/lib/useOrgMapDefaultViewport"
 import {
   boundsFromPolygonGeometry,
   isAxisAlignedRectanglePolygon,
@@ -35,11 +36,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Info, Loader2, MousePointer, Square, Trash2 } from "lucide-react"
-
-/** Continental US when adding the first geometry from an empty draft (matches LeafletMap defaults). */
-const ADD_GEOMETRY_MAP_CENTER: [number, number] = [39.8283, -98.5795]
-/** Match @backfield/ui LeafletMap continental US default framing. */
-const ADD_GEOMETRY_MAP_ZOOM = 3
 
 /** Radix Select value when no type is chosen */
 const CREATE_LOCATION_TYPE_NONE = "__none__"
@@ -143,6 +139,7 @@ function geometryToFeatureCollections(
 export default function CreateLocation() {
   const { showMessage, showError, showConfirm } = useAppMessage()
   const navigate = useNavigate()
+  const orgMapDefault = useOrgMapDefaultViewport()
   const { filterScopeSuffix, catalogBasePath, stylebookSlug, projectFilterSlug } =
     useProjectCatalogScope()
   const crumbRoot = useScopeBreadcrumbRoot()
@@ -565,14 +562,14 @@ export default function CreateLocation() {
                     geometryEditing &&
                     !geometryDraft &&
                     (geometryAddMode === "point" || geometryAddMode === "rectangle")
-                      ? ADD_GEOMETRY_MAP_CENTER
+                      ? orgMapDefault.center
                       : leafletInitialCenter
                   }
                   initialZoom={
                     geometryEditing &&
                     !geometryDraft &&
                     (geometryAddMode === "point" || geometryAddMode === "rectangle")
-                      ? ADD_GEOMETRY_MAP_ZOOM
+                      ? orgMapDefault.zoom
                       : null
                   }
                   interactiveWhenEmpty={geometryEditing && geometryAddMode === "point" && !geometryDraft}

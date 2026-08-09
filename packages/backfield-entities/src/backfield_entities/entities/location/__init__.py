@@ -6,7 +6,9 @@ from backfield_entities.entities.location.persist import (
     assert_canonical_link_invariant,
     create_standalone_canonical,
     link_to_existing_canonical,
+    location_canonical_has_editorial_catalog_provenance,
     materialize_new_canonical_and_link,
+    maybe_prune_ingest_orphan_location_canonical,
     refresh_aliases_for_linked_location,
 )
 from backfield_entities.entities.location.policy import (
@@ -26,7 +28,9 @@ __all__ = [
     "decide_location_canonical_persist_plan",
     "find_existing_canonical_id_by_alias",
     "link_to_existing_canonical",
+    "location_canonical_has_editorial_catalog_provenance",
     "materialize_new_canonical_and_link",
+    "maybe_prune_ingest_orphan_location_canonical",
     "plan_has_ambiguous_canonical_match",
     "plan_requires_llm_canonical_adjudication",
     "rank_scored_canonical_recall_matches",

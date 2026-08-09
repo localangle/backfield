@@ -203,6 +203,16 @@ def test_071_upgrade_and_downgrade_against_postgres(
         command.upgrade(config, "072_user_password_change_flag")
         user_columns = {row["name"]: row for row in inspect(engine).get_columns("backfield_user")}
         assert user_columns["must_change_password"]["nullable"] is False
+        command.upgrade(config, "073_org_settings_json")
+        org_columns = {
+            row["name"]: row for row in inspect(engine).get_columns("backfield_organization")
+        }
+        assert org_columns["settings_json"]["nullable"] is True
+        command.downgrade(config, "072_user_password_change_flag")
+        org_column_names = {
+            row["name"] for row in inspect(engine).get_columns("backfield_organization")
+        }
+        assert "settings_json" not in org_column_names
         command.downgrade(config, "071_project_org_slug_scope")
         user_column_names = {
             row["name"] for row in inspect(engine).get_columns("backfield_user")

@@ -16,7 +16,7 @@ describe('runEmptyItemsCopy', () => {
     })
     expect(copy.title).toBe('Nothing new to process')
     expect(copy.description).toContain('12 files')
-    expect(copy.description).toContain('Process files again')
+    expect(copy.description).toContain('Reprocess completed files')
   })
 
   it('keeps the generic empty message while a run is still active', () => {

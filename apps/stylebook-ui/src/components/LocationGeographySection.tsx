@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { GeometryEditLeafletMap } from "@backfield/ui/GeometryEditLeafletMap"
+import { useOrgMapDefaultViewport } from "@/lib/useOrgMapDefaultViewport"
 import {
   boundsFromPolygonGeometry,
   isAxisAlignedRectanglePolygon,
@@ -131,6 +132,7 @@ export default function LocationGeographySection({
   onGeometrySaved,
 }: LocationGeographySectionProps) {
   const { showError, showConfirm } = useAppMessage()
+  const orgMapDefault = useOrgMapDefaultViewport()
   const [geometryEditing, setGeometryEditing] = useState(false)
   const [geometryDraft, setGeometryDraft] = useState<Record<string, unknown> | null>(geometry)
   const [geometrySaving, setGeometrySaving] = useState(false)
@@ -374,7 +376,8 @@ export default function LocationGeographySection({
             geometryAddMode={geometryAddMode}
             onGeometryAddModeChange={setGeometryAddMode}
             editPointFeatureId="canonical"
-            initialCenter={leafletInitialCenter}
+            initialCenter={leafletInitialCenter ?? orgMapDefault.center}
+            initialZoom={leafletInitialCenter == null ? orgMapDefault.zoom : null}
             rectanglePreview={rectanglePreview}
             onRectanglePreviewChange={setRectanglePreview}
             showPopups={false}

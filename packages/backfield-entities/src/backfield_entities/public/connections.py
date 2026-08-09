@@ -7,9 +7,10 @@ from typing import Literal
 from backfield_db import StylebookConnection
 from pydantic import BaseModel
 from sqlalchemy import and_, or_
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from backfield_entities.public.canonical_display import public_canonical_label
+from backfield_entities.public.nature_filters import normalize_natures
 
 PublicConnectionEntityType = Literal["location", "person", "organization"]
 
@@ -52,12 +53,12 @@ def list_public_entity_connections(
     entity_type: PublicConnectionEntityType,
     entity_id: str,
     to_entity_type: PublicConnectionEntityType | None = None,
-    nature: str | None = None,
+    natures: tuple[str, ...] = (),
     limit: int = 25,
     offset: int = 0,
 ) -> tuple[list[PublicConnectionOut], int]:
     target_type = (to_entity_type or "").strip()
-    nature_value = (nature or "").strip()
+    nature_values = normalize_natures(natures)
     directional_filters = [
         and_(
             StylebookConnection.from_entity_type == entity_type,
@@ -82,8 +83,8 @@ def list_public_entity_connections(
         StylebookConnection.project_id == project_id,
         or_(*directional_filters),
     ]
-    if nature_value:
-        filters.append(StylebookConnection.nature == nature_value)
+    if nature_values:
+        filters.append(col(StylebookConnection.nature).in_(nature_values))
     rows = session.exec(
         select(StylebookConnection)
         .where(*filters)

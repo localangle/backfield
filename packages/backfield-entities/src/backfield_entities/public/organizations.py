@@ -32,6 +32,7 @@ from backfield_entities.public.mention_filters import (
     PublicEntityMentionListParams,
     apply_entity_mention_list_filters,
 )
+from backfield_entities.public.nature_filters import normalize_natures
 from backfield_entities.public.stylebook_scope import (
     get_public_organization_canonical,
     stylebook_slugs_by_id,
@@ -81,7 +82,7 @@ class PublicOrganizationMentionOut(BaseModel):
 class PublicOrganizationSearchParams:
     q: str | None = None
     organization_type: str | None = None
-    nature: str | None = None
+    natures: tuple[str, ...] = ()
     min_mentions: int = 0
     sort: PublicOrganizationSort = PublicOrganizationSort.label
     limit: int = 25
@@ -179,8 +180,8 @@ def _organization_filters(
     org_type = (params.organization_type or "").strip()
     if org_type:
         filters.append(col(StylebookOrganizationCanonical.organization_type) == org_type)
-    nature = (params.nature or "").strip()
-    if nature:
+    natures = normalize_natures(params.natures)
+    if natures:
         filters.append(
             exists().where(
                 SubstrateOrganization.stylebook_organization_canonical_id
@@ -188,7 +189,7 @@ def _organization_filters(
                 SubstrateOrganization.project_id == project_id,
                 SubstrateOrganizationMention.organization_id == SubstrateOrganization.id,
                 SubstrateOrganizationMention.deleted == False,  # noqa: E712
-                SubstrateOrganizationMention.nature == nature,
+                col(SubstrateOrganizationMention.nature).in_(natures),
             )
         )
     if params.min_mentions > 0:
@@ -452,7 +453,7 @@ def list_public_organization_articles(
     organization_id: str,
     limit: int = 25,
     offset: int = 0,
-    nature: str | None = None,
+    natures: tuple[str, ...] = (),
     meta_clauses: tuple[ArticleMetaClause, ...] = (),
     author: str | None = None,
     external_source: str | None = None,
@@ -475,7 +476,7 @@ def list_public_organization_articles(
         entity_canonical_col=SubstrateOrganization.stylebook_organization_canonical_id,
         canonical_id=str(canon.id),
         project_id=project_id,
-        nature=nature,
+        natures=natures,
         meta_clauses=meta_clauses,
         author=author,
         external_source=external_source,

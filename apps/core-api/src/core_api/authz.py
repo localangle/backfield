@@ -5,6 +5,7 @@ from __future__ import annotations
 from backfield_auth.gate import (
     get_auth_dependency,
     require_org_admin,
+    require_org_member,
     require_project_access,
     resolve_auth,
     resolve_internal_auth,
@@ -18,6 +19,7 @@ from backfield_auth.gate import (
 __all__ = [
     "get_auth_dependency",
     "require_org_admin",
+    "require_org_member",
     "require_project_access",
     "resolve_internal_auth",
     "resolve_auth",

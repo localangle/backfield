@@ -34,7 +34,7 @@ import {
   type ParameterValues,
   type PlaygroundResponse,
 } from "../lib/request"
-import { cellResolution } from "../lib/mapSelection"
+import { cellResolution, type MapCenter } from "../lib/mapSelection"
 import { CollapsibleResponseBody } from "./CollapsibleResponseBody"
 
 const GeoAreaMap = lazy(() => import("./GeoAreaMap"))
@@ -52,6 +52,9 @@ interface EndpointExplorerProps {
   projectOptions?: SelectOption[]
   projectSlug?: string
   onProjectSlugChange?: (projectSlug: string) => void
+  /** Org empty-map fallback when signed in; omit for continental US default. */
+  mapDefaultCenter?: MapCenter
+  mapDefaultZoom?: number
 }
 
 interface ProjectOptionLoad extends OptionLoad {
@@ -146,6 +149,8 @@ export default function EndpointExplorer({
   projectOptions = [],
   projectSlug = "",
   onProjectSlugChange,
+  mapDefaultCenter,
+  mapDefaultZoom,
 }: EndpointExplorerProps) {
   const bodySchema = jsonBodySchema(operation)
   const resolvedBodySchema = resolveInputSchema(document, bodySchema)
@@ -472,6 +477,8 @@ export default function EndpointExplorer({
                         centerLng={values["query:center_lng"] ?? ""}
                         radiusMiles={values["query:radius_miles"] ?? ""}
                         supportsPoint={operation.displayPath.endsWith("/geo-search")}
+                        defaultCenter={mapDefaultCenter}
+                        defaultZoom={mapDefaultZoom}
                         onChange={(changed) =>
                           setValues((current) => ({
                             ...current,
@@ -505,6 +512,7 @@ export default function EndpointExplorer({
                                 .filter(Boolean)
                         }
                         resolution={6}
+                        defaultCenter={mapDefaultCenter}
                         onChange={(cells) => {
                           setH3HighlightCells(cells)
                           setValues((current) => ({
@@ -604,6 +612,7 @@ export default function EndpointExplorer({
           origin={origin}
           projectSlug={selectedProjectSlug}
           apiKey={apiKey}
+          mapDefaultCenter={mapDefaultCenter}
         />
       )}
 

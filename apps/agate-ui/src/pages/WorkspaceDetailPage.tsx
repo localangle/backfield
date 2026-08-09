@@ -3,9 +3,9 @@ import { Link, useNavigate, useParams } from "react-router-dom"
 import { FolderOpen, Loader2 } from "lucide-react"
 import { AddPlusCta } from "@/components/AddPlusCta"
 import { InlineNameEditor } from "@/components/InlineNameEditor"
+import ProjectDeleteButton from "@/components/ProjectDeleteButton"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
 import { PageBreadcrumbs } from "@/components/PageBreadcrumbs"
 import ProjectDialog from "@/components/ProjectDialog"
 import { useAuth } from "@/lib/auth"
@@ -45,7 +45,13 @@ function WorkspaceTitleRow({
   )
 }
 
-function ProjectHomeCard({ project }: { project: ProjectSummary }) {
+function ProjectHomeCard({
+  project,
+  onDeleted,
+}: {
+  project: ProjectSummary
+  onDeleted: () => void
+}) {
   return (
     <Card className="h-full w-full flex flex-col hover:border-foreground/20 transition-colors">
       <CardHeader>
@@ -56,10 +62,11 @@ function ProjectHomeCard({ project }: { project: ProjectSummary }) {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col gap-3 mt-auto">
-        <Button type="button" className="w-full mt-auto" asChild>
+      <CardContent className="flex-1 flex flex-col gap-2 mt-auto">
+        <Button type="button" className="w-full" asChild>
           <Link to={`/project/${encodeURIComponent(project.slug)}`}>Open project</Link>
         </Button>
+        <ProjectDeleteButton project={project} onDeleted={onDeleted} className="w-full" />
       </CardContent>
     </Card>
   )
@@ -164,7 +171,7 @@ export default function WorkspaceDetailPage() {
       <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {projects.map((p) => (
           <li key={p.id} className="flex h-full min-h-0 w-full">
-            <ProjectHomeCard project={p} />
+            <ProjectHomeCard project={p} onDeleted={() => void load()} />
           </li>
         ))}
         <li key="__add_project__" className="flex h-full min-h-0 w-full">

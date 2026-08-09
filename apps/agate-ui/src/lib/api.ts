@@ -1214,8 +1214,27 @@ export async function updateProject(id: number, data: ProjectUpdate): Promise<Pr
   }) as Promise<Project>
 }
 
-export async function deleteProject(id: number): Promise<void> {
-  await fetchAPI(`/projects/${id}`, { method: 'DELETE' })
+export interface ProjectDeletePreview {
+  project_id: number
+  name: string
+  slug: string
+  flow_count: number
+  run_count: number
+  processed_item_count: number
+  article_count: number
+  api_credential_count: number
+  secret_count: number
+}
+
+export async function getProjectDeletePreview(id: number): Promise<ProjectDeletePreview> {
+  return fetchAPI(`/projects/${id}/delete-preview`) as Promise<ProjectDeletePreview>
+}
+
+export async function deleteProject(id: number, confirmName: string): Promise<void> {
+  await fetchAPI(`/projects/${id}/delete`, {
+    method: 'POST',
+    body: JSON.stringify({ confirm_name: confirmName }),
+  })
 }
 
 export async function listTemplates(): Promise<AgateTemplate[]> {

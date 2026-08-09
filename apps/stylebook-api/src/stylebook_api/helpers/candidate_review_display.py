@@ -16,15 +16,14 @@ _SKIP_LIST_DISPLAY_CODES: frozenset[str] = frozenset(
         "canonical_suggestion",
         "review_note",
         "deferred_manual",
+        # Ambiguity is already expressed by Suggested actions / the link picker.
+        "ambiguous_canonical_match",
+        "ambiguous_person_canonical_match",
+        "ambiguous_organization_canonical_match",
     }
 )
 
 _DEFAULT_CODE_MESSAGES: dict[str, str] = {
-    "ambiguous_canonical_match": "Several Stylebook locations could match this place.",
-    "ambiguous_person_canonical_match": "Several Stylebook people could match this person.",
-    "ambiguous_organization_canonical_match": (
-        "Several Stylebook organizations could match this organization."
-    ),
     "organization_canonical_type_mismatch": ORGANIZATION_CANONICAL_TYPE_MISMATCH_MESSAGE,
     "child": "Identified as a child",
     "animal": "Identified as an animal",
@@ -66,33 +65,26 @@ def _line_for_reason(item: dict[str, Any]) -> str | None:
         return message.strip()
 
     if code == "canonical_adjudication":
+        outcome = str(item.get("outcome") or "").strip()
+        # Gate coerces keep the LLM rationale for audit, but editors should see the
+        # structured outcome — otherwise a vetoed link reads like a create recommendation.
+        if outcome == "content_sanity_coerced":
+            return (
+                "A possible Stylebook match was blocked by a content check — "
+                "confirm before linking or creating a new entry."
+            )
+        if outcome == "district_kind_mismatch_coerced":
+            return "District kind does not match the recalled Stylebook entry."
+        if outcome == "district_key_mismatch_coerced":
+            return "District identity does not match the recalled Stylebook entry."
         rationale = item.get("rationale")
         if isinstance(rationale, str) and rationale.strip():
             return rationale.strip()
-        outcome = str(item.get("outcome") or "").strip()
         if outcome == "no_high_confidence_link":
             return "No confident Stylebook match for this mention."
-        if outcome == "district_key_mismatch_coerced":
-            return "District identity does not match the recalled Stylebook entry."
         if outcome == "link_existing":
             return "Ingest suggested linking to an existing Stylebook entry."
         return None
-
-    if code in (
-        "ambiguous_canonical_match",
-        "ambiguous_person_canonical_match",
-        "ambiguous_organization_canonical_match",
-    ):
-        ids = item.get("recall_canonical_ids")
-        if isinstance(ids, list) and len(ids) > 0:
-            if code == "ambiguous_canonical_match":
-                noun = "locations"
-            elif code == "ambiguous_person_canonical_match":
-                noun = "people"
-            else:
-                noun = "organizations"
-            return f"Several Stylebook {noun} could match ({len(ids)} recalled)."
-        return _DEFAULT_CODE_MESSAGES.get(code)
 
     if code == "deferred_policy":
         return deferred_policy_display_message(item)

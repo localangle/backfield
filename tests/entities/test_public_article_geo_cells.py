@@ -415,7 +415,7 @@ def test_nature_filter_narrows_cells() -> None:
                 min_lat=41.0,
                 max_lng=-87.0,
                 max_lat=42.0,
-                nature="primary",
+                natures=("primary",),
             ),
         )
         secondary = aggregate_article_geo_cells(
@@ -426,7 +426,7 @@ def test_nature_filter_narrows_cells() -> None:
                 min_lat=41.0,
                 max_lng=-87.0,
                 max_lat=42.0,
-                nature="secondary",
+                natures=("secondary",),
             ),
         )
 

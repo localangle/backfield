@@ -4,8 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocation
-from sqlmodel import Session, select
+from backfield_db import (
+    StylebookLocationAlias,
+    StylebookLocationCanonical,
+    StylebookLocationMeta,
+    SubstrateLocation,
+    SubstrateLocationMention,
+)
+from sqlmodel import Session, col, func, select
 
 from backfield_entities.activity import (
     EVENT_CANONICAL_CREATED,
@@ -26,6 +32,9 @@ from backfield_entities.canonical.plan_types import CanonicalPersistDecision, Ca
 from backfield_entities.canonical.slug import (
     allocate_unique_canonical_slug,
     flush_new_canonical_with_slug_retry,
+)
+from backfield_entities.entities.location.catalog_provenance import (
+    is_location_catalog_editorial_provenance,
 )
 from backfield_entities.entities.location.policy import plan_has_ambiguous_canonical_match
 from backfield_entities.entities.location.recall import location_alias_lookup_keys
@@ -614,3 +623,109 @@ def apply_canonical_persist_plan(
         related_entity_id=str(location.id) if location.id is not None else None,
         payload_json={"provenance": provenance, "materialized_from_substrate": True},
     )
+
+
+def _linked_substrate_count_for_location_canonical(
+    session: Session,
+    *,
+    canonical_id: str,
+) -> int:
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(SubstrateLocation)
+            .where(col(SubstrateLocation.stylebook_location_canonical_id) == str(canonical_id))
+        )
+        or 0
+    )
+
+
+def _active_mention_count_for_location_canonical(
+    session: Session,
+    *,
+    canonical_id: str,
+) -> int:
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(SubstrateLocationMention)
+            .join(
+                SubstrateLocation,
+                SubstrateLocation.id == SubstrateLocationMention.location_id,
+            )
+            .where(
+                col(SubstrateLocation.stylebook_location_canonical_id) == str(canonical_id),
+                col(SubstrateLocationMention.deleted).is_(False),
+            )
+        )
+        or 0
+    )
+
+
+def location_canonical_has_editorial_catalog_provenance(
+    session: Session,
+    *,
+    canonical_id: str,
+) -> bool:
+    """True when aliases or meta indicate manual/import catalog intent."""
+    alias_rows = session.exec(
+        select(StylebookLocationAlias.provenance).where(
+            StylebookLocationAlias.location_canonical_id == str(canonical_id),
+        )
+    ).all()
+    if any(is_location_catalog_editorial_provenance(str(p)) for p in alias_rows if p is not None):
+        return True
+    meta_count = int(
+        session.scalar(
+            select(func.count())
+            .select_from(StylebookLocationMeta)
+            .where(
+                col(StylebookLocationMeta.stylebook_location_canonical_id) == str(canonical_id)
+            )
+        )
+        or 0
+    )
+    return meta_count > 0
+
+
+def maybe_prune_ingest_orphan_location_canonical(
+    session: Session,
+    *,
+    stylebook_id: int,
+    canonical_id: str,
+    removed_substrate_ingest_alias: bool = False,
+) -> bool:
+    """Delete ingest-only canonical rows left with no substrates or mentions.
+
+    Manual, CSV, bundle, and review-queue catalog rows are protected via editorial
+    alias provenance (``LOCATION_CATALOG_EDITORIAL_PROVENANCES``). Legacy bundle rows
+    without aliases are also kept unless an ingest alias was removed in this same
+    unlink/dispose step.
+    """
+    cid = str(canonical_id)
+    canon = session.get(StylebookLocationCanonical, cid)
+    if canon is None or int(canon.stylebook_id) != int(stylebook_id):
+        return False
+    if location_canonical_has_editorial_catalog_provenance(session, canonical_id=cid):
+        return False
+    if _linked_substrate_count_for_location_canonical(session, canonical_id=cid) > 0:
+        return False
+    if _active_mention_count_for_location_canonical(session, canonical_id=cid) > 0:
+        return False
+
+    alias_rows = session.exec(
+        select(StylebookLocationAlias).where(StylebookLocationAlias.location_canonical_id == cid)
+    ).all()
+    if alias_rows:
+        if any(
+            is_location_catalog_editorial_provenance(str(row.provenance)) for row in alias_rows
+        ):
+            return False
+        session.delete(canon)
+        return True
+
+    if not removed_substrate_ingest_alias:
+        return False
+
+    session.delete(canon)
+    return True

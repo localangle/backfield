@@ -21,7 +21,8 @@ All schema changes use the single Alembic chain under `packages/backfield-db/ale
 ### Identity, access, and AI
 
 - Organizations, workspaces, projects, and users:
-  `backfield_organization`, `backfield_workspace`, `backfield_project`, `backfield_user`.
+  `backfield_organization` (optional `settings_json` for tenant preferences such as
+  `map_default_viewport`), `backfield_workspace`, `backfield_project`, `backfield_user`.
   Projects store both their workspace and a direct Stylebook ownership reference. The direct
   reference and workspace are required and indexed. The Stylebook is set once at creation, either
   from an explicit same-organization choice or by copying the selected workspace's Stylebook.

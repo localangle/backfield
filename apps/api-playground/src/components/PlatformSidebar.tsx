@@ -322,6 +322,8 @@ export default function PlatformSidebar({
             ) : null}
             <a
               href="https://docs.backfield.news"
+              target="_blank"
+              rel="noopener noreferrer"
               className={hubLinkClass}
               title={!expanded ? "Help" : undefined}
             >

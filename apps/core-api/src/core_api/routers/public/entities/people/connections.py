@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session
 
 from core_api.deps import get_session
+from core_api.routers.public.articles.helpers import NATURE_PARAM_DESCRIPTION, parse_natures
 from core_api.routers.public.deps import get_public_project
 from core_api.routers.public.entities.connections import public_entity_connections_response
 from core_api.routers.public.entities.people.helpers import (
@@ -32,7 +33,7 @@ def list_project_person_connections(
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
     to_entity_type: PublicConnectionEntityType | None = Query(None),
-    nature: str | None = Query(None),
+    nature: list[str] = Query(default=[], description=NATURE_PARAM_DESCRIPTION),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> PaginatedResponse[PublicConnectionOut]:
@@ -47,6 +48,7 @@ def list_project_person_connections(
     )
     if person is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
+    natures = parse_natures(nature)
     return public_entity_connections_response(
         session,
         project_id=project_id,
@@ -54,7 +56,7 @@ def list_project_person_connections(
         entity_type="person",
         entity_id=parsed_id,
         to_entity_type=to_entity_type,
-        nature=nature,
+        natures=natures,
         limit=limit,
         offset=offset,
     )

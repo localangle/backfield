@@ -8,11 +8,12 @@ from typing import Literal
 
 from backfield_entities.public.articles import ArticleMetaClause, _apply_public_article_list_filters
 from backfield_entities.public.mention_evidence import maybe_quotes_only_mention_filters
+from backfield_entities.public.nature_filters import normalize_natures
 
 
 @dataclass(frozen=True)
 class PublicEntityMentionListParams:
-    nature: str | None = None
+    natures: tuple[str, ...] = ()
     author: str | None = None
     external_source: str | None = None
     meta_type: str | None = None
@@ -52,9 +53,9 @@ def apply_entity_mention_list_filters(
         pub_date_from=params.pub_date_from,
         pub_date_to=params.pub_date_to,
     )
-    nature_value = (params.nature or "").strip()
-    if nature_value:
-        stmt = stmt.where(mention_nature_col == nature_value)
+    natures = normalize_natures(params.natures)
+    if natures:
+        stmt = stmt.where(mention_nature_col.in_(natures))
     if params.quotes_only:
         for clause in maybe_quotes_only_mention_filters(
             mention_id_col,

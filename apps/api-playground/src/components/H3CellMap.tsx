@@ -21,6 +21,7 @@ import {
   cellsForBounds,
   centerFromCells,
   DEFAULT_MAP_CENTER,
+  type MapCenter,
 } from "../lib/mapSelection"
 
 const RESOLUTION_OPTIONS = [
@@ -307,12 +308,15 @@ function H3Grid({
 interface H3CellMapProps {
   cells: string[]
   resolution: number
+  /** Empty-map fallback center (org default viewport when signed in). */
+  defaultCenter?: MapCenter
   onChange: (cells: string[], resolution: number) => void
 }
 
 export default function H3CellMap({
   cells,
   resolution,
+  defaultCenter = DEFAULT_MAP_CENTER,
   onChange,
 }: H3CellMapProps) {
   const selectedResolution = cells[0] ? cellResolution(cells[0]) : null
@@ -322,7 +326,7 @@ export default function H3CellMap({
   useEffect(() => {
     setActiveResolution(selectedResolution ?? resolution)
   }, [resolution, selectedResolution])
-  const center = centerFromCells(cells) ?? DEFAULT_MAP_CENTER
+  const center = centerFromCells(cells) ?? defaultCenter
   const cellsRef = useRef(cells)
   cellsRef.current = cells
 

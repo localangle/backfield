@@ -62,10 +62,13 @@ threshold.
 
 PlaceExtract and GeocodeAgent preserve one terminal row for every extracted
 location. Explicit country, subdivision, postal, and address components constrain
-resolver acceptance. A rejected or review-required result retains its reason and
-audit context but not provider identity, geometry, H3, or cache eligibility. It
-can still link to an existing canonical, or recommend a geography-free canonical
-for editorial acceptance; automatic ingest does not create that canonical.
+resolver acceptance. A postal on the extract without a postal on a thin POI or
+admin label is unknown evidence (not a conflict); disagreement is only enforced
+when the candidate label asserts a different postal. A rejected or review-required
+result retains its reason and audit context but not provider identity, geometry,
+H3, or cache eligibility. It can still link to an existing canonical, or recommend
+a geography-free canonical for editorial acceptance; automatic ingest does not
+create that canonical.
 Recognized countries use ISO identity without requiring geometry; unknown country
 labels never inherit a domestic default. Address displays must preserve the
 structured house number and street, and article-level reconciliation keeps

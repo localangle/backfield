@@ -376,6 +376,23 @@ def require_session_may_assign_project_to_workspace(
         )
 
 
+def require_org_member(
+    session: Session,
+    auth: dict[str, Any],
+    organization_id: int,
+) -> None:
+    """Allow session members (any role) or service tokens for the organization."""
+    if auth["type"] == "api_key":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Organization settings require a session or service token",
+        )
+    if auth["type"] == "service":
+        return
+    if int(auth["organization_id"]) != organization_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Wrong organization")
+
+
 def require_org_admin(
     session: Session,
     auth: dict[str, Any],

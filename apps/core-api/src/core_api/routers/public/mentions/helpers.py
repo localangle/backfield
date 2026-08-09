@@ -18,7 +18,7 @@ def build_mention_search_params(
     *,
     entity_type: PublicEntityMentionType | None,
     q: str | None,
-    nature: str | None,
+    natures: tuple[str, ...],
     has_canonical: bool | None,
     author: str | None,
     external_source: str | None,
@@ -41,7 +41,7 @@ def build_mention_search_params(
     return PublicMentionSearchParams(
         entity_type=entity_type,
         q=q,
-        nature=nature,
+        natures=natures,
         has_canonical=has_canonical,
         author=author,
         external_source=external_source,

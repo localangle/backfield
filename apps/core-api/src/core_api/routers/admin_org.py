@@ -16,12 +16,24 @@ from backfield_db import (
     BackfieldWorkspaceMembership,
     Stylebook,
 )
+from backfield_db.organization_settings import (
+    MapDefaultViewport,
+    merge_map_default_viewport,
+    parse_organization_settings,
+)
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
+from backfield_entities.catalog.project_teardown import (
+    ProjectTeardownError,
+    workspace_delete_preview,
+)
+from backfield_entities.catalog.project_teardown import (
+    delete_workspace as domain_delete_workspace,
+)
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
-from core_api.authz import require_org_admin
+from core_api.authz import require_org_admin, require_org_member
 from core_api.deps import get_auth, get_session
 from core_api.security import hash_password
 
@@ -127,6 +139,17 @@ class OrganizationOut(BaseModel):
 
 class OrganizationPatchBody(BaseModel):
     name: str
+
+
+class OrganizationSettingsOut(BaseModel):
+    map_default_viewport: MapDefaultViewport | None = None
+
+
+class OrganizationSettingsPatchBody(BaseModel):
+    """Patch org settings. Omit a field to leave it unchanged; send null to clear."""
+
+    map_default_viewport: MapDefaultViewport | None = Field(default=None)
+    # Track explicit null vs omitted via model_fields_set in the handler.
 
 
 class WorkspaceCreateBody(BaseModel):
@@ -279,6 +302,47 @@ def patch_organization(
     if org.id is None:
         raise HTTPException(status_code=500, detail="Organization persist failed")
     return OrganizationOut(id=int(org.id), name=str(org.name), slug=str(org.slug))
+
+
+@router.get("/{org_id}/settings", response_model=OrganizationSettingsOut)
+def get_organization_settings(
+    org_id: int,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> OrganizationSettingsOut:
+    """Return organization preferences. Members and service tokens may read."""
+    require_org_member(session, auth, org_id)
+    org = session.get(BackfieldOrganization, org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    settings = parse_organization_settings(org.settings_json)
+    return OrganizationSettingsOut(map_default_viewport=settings.map_default_viewport)
+
+
+@router.patch("/{org_id}/settings", response_model=OrganizationSettingsOut)
+def patch_organization_settings(
+    org_id: int,
+    body: OrganizationSettingsPatchBody,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> OrganizationSettingsOut:
+    """Update organization preferences. Org admins only."""
+    require_org_admin(session, auth, org_id)
+    org = session.get(BackfieldOrganization, org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    if "map_default_viewport" not in body.model_fields_set:
+        settings = parse_organization_settings(org.settings_json)
+        return OrganizationSettingsOut(map_default_viewport=settings.map_default_viewport)
+    org.settings_json = merge_map_default_viewport(
+        org.settings_json,
+        map_default_viewport=body.map_default_viewport,
+    )
+    session.add(org)
+    session.commit()
+    session.refresh(org)
+    settings = parse_organization_settings(org.settings_json)
+    return OrganizationSettingsOut(map_default_viewport=settings.map_default_viewport)
 
 
 @router.get("/{org_id}/projects", response_model=list[ProjectSummaryOut])
@@ -463,6 +527,112 @@ def patch_workspace(
     if out is None:
         raise HTTPException(status_code=500, detail="Workspace load failed")
     return out
+
+
+class WorkspaceDeleteBody(BaseModel):
+    confirm_name: str = Field(min_length=1)
+
+
+class WorkspaceProjectDeletePreviewOut(BaseModel):
+    project_id: int
+    name: str
+    slug: str
+    flow_count: int
+    run_count: int
+    processed_item_count: int
+    article_count: int
+    api_credential_count: int
+    secret_count: int
+
+
+class WorkspaceDeletePreviewOut(BaseModel):
+    workspace_id: int
+    name: str
+    slug: str
+    project_count: int
+    flow_count: int
+    run_count: int
+    processed_item_count: int
+    article_count: int
+    api_credential_count: int
+    secret_count: int
+    projects: list[WorkspaceProjectDeletePreviewOut]
+
+
+@router.get(
+    "/{org_id}/workspaces/{workspace_id}/delete-preview",
+    response_model=WorkspaceDeletePreviewOut,
+)
+def get_workspace_delete_preview(
+    org_id: int,
+    workspace_id: int,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> WorkspaceDeletePreviewOut:
+    require_org_admin(session, auth, org_id)
+    preview = workspace_delete_preview(
+        session,
+        organization_id=org_id,
+        workspace_id=workspace_id,
+    )
+    if preview is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return WorkspaceDeletePreviewOut(
+        workspace_id=preview.workspace_id,
+        name=preview.name,
+        slug=preview.slug,
+        project_count=preview.project_count,
+        flow_count=preview.flow_count,
+        run_count=preview.run_count,
+        processed_item_count=preview.processed_item_count,
+        article_count=preview.article_count,
+        api_credential_count=preview.api_credential_count,
+        secret_count=preview.secret_count,
+        projects=[
+            WorkspaceProjectDeletePreviewOut(
+                project_id=p.project_id,
+                name=p.name,
+                slug=p.slug,
+                flow_count=p.flow_count,
+                run_count=p.run_count,
+                processed_item_count=p.processed_item_count,
+                article_count=p.article_count,
+                api_credential_count=p.api_credential_count,
+                secret_count=p.secret_count,
+            )
+            for p in preview.projects
+        ],
+    )
+
+
+@router.post("/{org_id}/workspaces/{workspace_id}/delete", status_code=204)
+def delete_workspace(
+    org_id: int,
+    workspace_id: int,
+    body: WorkspaceDeleteBody,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> None:
+    require_org_admin(session, auth, org_id)
+    ws = session.get(BackfieldWorkspace, workspace_id)
+    if ws is None or int(ws.organization_id) != org_id:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    typed = body.confirm_name.strip()
+    if typed != str(ws.name).strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Confirmation name does not match this workspace.",
+        )
+    try:
+        domain_delete_workspace(
+            session,
+            organization_id=org_id,
+            workspace_id=workspace_id,
+        )
+    except ProjectTeardownError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    session.commit()
+    return None
 
 
 @router.get("/{org_id}/users", response_model=list[UserOut])

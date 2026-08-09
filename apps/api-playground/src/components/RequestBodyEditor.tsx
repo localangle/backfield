@@ -12,6 +12,7 @@ import {
   sectionsForBodyFields,
   type PresentationContext,
 } from "../lib/presentation"
+import type { MapCenter } from "../lib/mapSelection"
 
 const H3CellMap = lazy(() => import("./H3CellMap"))
 
@@ -24,6 +25,7 @@ interface RequestBodyEditorProps {
   origin: string
   projectSlug: string
   schema: OpenApiSchema
+  mapDefaultCenter?: MapCenter
   onChange: (bodyText: string) => void
 }
 
@@ -77,6 +79,7 @@ export default function RequestBodyEditor({
   origin,
   projectSlug,
   schema,
+  mapDefaultCenter,
   onChange,
 }: RequestBodyEditorProps) {
   const [rawMode, setRawMode] = useState(false)
@@ -171,6 +174,7 @@ export default function RequestBodyEditor({
                     resolution={
                       typeof body.resolution === "number" ? body.resolution : 6
                     }
+                    defaultCenter={mapDefaultCenter}
                     onChange={(cells, resolution) =>
                       setFields({ cells, resolution })
                     }

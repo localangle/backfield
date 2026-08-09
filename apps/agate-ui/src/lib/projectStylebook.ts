@@ -19,7 +19,7 @@ export function reviewStylebookSlug(project: Project | null | undefined): string
   return project?.stylebook_slug?.trim() || null
 }
 
-/** Name shown on project settings for the Stylebook a project writes into. */
+/** Name shown under the project title for the Stylebook a project writes into. */
 export function projectStylebookDisplayName(project: Pick<Project, 'stylebook_name'>): string {
   return project.stylebook_name?.trim() || 'Not available'
 }

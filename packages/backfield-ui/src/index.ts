@@ -41,6 +41,8 @@ export {
 } from "./siblingUiOrigin"
 export {
   LeafletMap,
+  CONTINENTAL_US_MAP_CENTER,
+  CONTINENTAL_US_MAP_ZOOM,
   photonExtentToLeafletLatLngBounds,
   type LeafletMapProps,
   type LeafletMapFeatureClick,

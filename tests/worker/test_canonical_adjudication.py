@@ -716,6 +716,83 @@ def test_adjudicate_rejects_llm_choice_when_content_sanity_blocks(monkeypatch) -
         assert adj.get("canonical_id") == park_id
 
 
+def test_adjudicate_same_venue_with_neighborhood_tail_and_postal_links(
+    monkeypatch,
+) -> None:
+    """Extract ZIP + neighborhood tail must not coerce a high-confidence same-POI link."""
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        pid, sb_id = _bootstrap(session)
+        venue = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Wishbone, Chicago, IL",
+            slug="wishbone-chicago-il",
+            location_type="place",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        session.add(venue)
+        session.commit()
+        session.refresh(venue)
+        venue_id = str(venue.id)
+
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Wishbone, West Loop, Chicago, IL",
+            normalized_name="wishbone, west loop, chicago, il",
+            location_type="place",
+            identity_fingerprint="fp-adj-wishbone",
+            source_details_json={
+                "place_extract_components": {
+                    "place": {"name": "Wishbone", "addressable": True},
+                    "neighborhood": "West Loop",
+                    "city": "Chicago",
+                    "state": {"abbr": "IL"},
+                    "postal_code": "60661",
+                }
+            },
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+
+        plan = CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.DEFER,
+            resolution_reasons=(
+                {
+                    "code": "ambiguous_canonical_match",
+                    "best_canonical_id": venue_id,
+                    "best_score": 0.4,
+                    "recall_canonical_ids": [venue_id],
+                },
+            ),
+        )
+
+        def _fake_llm(*_a, **_k) -> str:
+            return _adj_json_link(
+                venue_id,
+                0.98,
+                "Same real-world Wishbone restaurant with a neighborhood variant.",
+            )
+
+        monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
+
+        out = adjudicate_ambiguous_plan_with_llm(
+            session,
+            plan=plan,
+            location=loc,
+            stylebook_id=sb_id,
+            model="gpt-5-nano",
+        )
+
+        assert out.decision == CanonicalPersistDecision.LINK_EXISTING
+        assert out.existing_canonical_id == venue_id
+        adj = next(r for r in out.resolution_reasons if r.get("code") == "canonical_adjudication")
+        assert adj.get("outcome") == "link_existing"
+
+
 def test_adjudicate_political_district_fuzzy_plan_runs_llm(monkeypatch) -> None:
     """``linked_fuzzy_autolink`` + political_district is adjudicated like ambiguity."""
     engine = create_engine("sqlite://", echo=False)

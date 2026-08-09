@@ -49,6 +49,15 @@ HTTP endpoint and does not change Agate API ownership of interactive project lif
   are null when the workspace or its Stylebook cannot be resolved, which is logged and degraded
   rather than failing the request. A later workspace Stylebook change does not alter existing
   projects.
+- Project deletion is organization-admin only. `GET /projects/{project_id}/delete-preview`
+  returns counts (flows, runs, processed items, articles, API credentials, secrets) for the
+  confirmation UI. `POST /projects/{project_id}/delete` requires a body
+  `{ "confirm_name": "<exact project name>" }` and hard-deletes the project container: flows,
+  runs, processed items, tracked AI call records, project secrets and API credentials,
+  project-scoped Stylebook meta/connections, and durable substrate articles and entities for
+  that project. Shared Stylebook canonicals for the organization are kept. The reserved
+  `general` project cannot be deleted. Unlike flow deletion, project deletion does **not**
+  preserve durable article content.
 
 ### Flows and templates
 

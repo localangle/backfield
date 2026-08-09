@@ -439,6 +439,8 @@ export default function AppSidebar() {
               ) : null}
               <a
                 href={helpHref()}
+                target="_blank"
+                rel="noopener noreferrer"
                 className={hubLinkClass}
                 title={!expanded ? 'Help' : undefined}
               >

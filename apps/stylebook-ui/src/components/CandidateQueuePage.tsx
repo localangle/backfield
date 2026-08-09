@@ -531,7 +531,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                         <TableRow id={`candidate-row-${c.id}`}>
                           <TableCell className={cn("font-medium", candidateQueueDataCellClass)}>
                             <div className="flex flex-col items-start gap-1 min-w-0">
-                              <div className="flex items-center gap-2 min-w-0 w-full">
+                              <div className="flex items-start gap-2 min-w-0 w-full">
                                 <Button
                                   type="button"
                                   size="icon"
@@ -556,10 +556,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                                     />
                                   )}
                                 </Button>
-                                <span
-                                  className="min-w-0 flex-1 truncate"
-                                  title={(c.suggested_name ?? "").trim() || undefined}
-                                >
+                                <span className="min-w-0 flex-1 whitespace-normal break-words">
                                   {c.suggested_name || "—"}
                                 </span>
                                 {rowDuplicateCount > 1 ? (

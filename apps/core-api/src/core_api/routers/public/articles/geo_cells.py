@@ -15,8 +15,10 @@ from sqlmodel import Session
 from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import (
     META_PARAM_DESCRIPTION,
+    NATURE_PARAM_DESCRIPTION,
     parse_bbox,
     parse_meta_clauses,
+    parse_natures,
     parse_optional_date,
 )
 from core_api.routers.public.deps import get_public_project
@@ -38,12 +40,9 @@ def aggregate_project_articles_by_geo_cells(
         ),
     ),
     location_type: str | None = Query(None, description="Filter matching locations by type"),
-    nature: str | None = Query(
-        None,
-        description=(
-            "Filter matching location mentions by editorial nature "
-            "(e.g. primary, secondary, historical)"
-        ),
+    nature: list[str] = Query(
+        default=[],
+        description=NATURE_PARAM_DESCRIPTION,
     ),
     meta: list[str] = Query(default=[], description=META_PARAM_DESCRIPTION),
     pub_date_from: str | None = Query(
@@ -63,6 +62,7 @@ def aggregate_project_articles_by_geo_cells(
             detail="bbox must have min_lng < max_lng and min_lat < max_lat.",
         )
 
+    natures = parse_natures(nature)
     params = PublicArticleGeoCellsParams(
         min_lng=min_lng,
         min_lat=min_lat,
@@ -70,7 +70,7 @@ def aggregate_project_articles_by_geo_cells(
         max_lat=max_lat,
         resolution=resolution,
         location_type=location_type,
-        nature=nature,
+        natures=natures,
         meta_clauses=parse_meta_clauses(meta),
         pub_date_from=parse_optional_date(pub_date_from, param_name="pub_date_from"),
         pub_date_to=parse_optional_date(pub_date_to, param_name="pub_date_to"),

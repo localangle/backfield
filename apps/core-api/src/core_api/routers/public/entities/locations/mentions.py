@@ -21,7 +21,9 @@ from sqlmodel import Session
 from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import (
     META_PARAM_DESCRIPTION,
+    NATURE_PARAM_DESCRIPTION,
     parse_meta_clauses,
+    parse_natures,
     parse_optional_date,
 )
 from core_api.routers.public.deps import get_public_project
@@ -101,7 +103,7 @@ def list_project_location_mentions(
     session: Session = Depends(get_session),
     sort: Literal["article", "created_at"] = Query("created_at"),
     sort_direction: Literal["asc", "desc"] = Query("desc"),
-    nature: str | None = Query(None, description="Filter by mention nature"),
+    nature: list[str] = Query(default=[], description=NATURE_PARAM_DESCRIPTION),
     author: str | None = Query(None, description="Filter by article byline (exact match)"),
     external_source: str | None = Query(
         None,
@@ -120,8 +122,9 @@ def list_project_location_mentions(
     """Return paginated mention evidence for a canonical location in this project."""
     stylebook_id, project_id = resolve_public_locations_scope(session, project)
     parsed_id = parse_location_id(location_id)
+    natures = parse_natures(nature)
     params = build_entity_mention_list_params(
-        nature=nature,
+        natures=natures,
         author=author,
         external_source=external_source,
         section=None,

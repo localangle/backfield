@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
 from core_api.deps import get_session
+from core_api.routers.public.articles.helpers import NATURE_PARAM_DESCRIPTION, parse_natures
 from core_api.routers.public.deps import get_public_project
 from core_api.routers.public.entities.locations.helpers import (
     build_location_search_params,
@@ -26,7 +27,7 @@ def _search_locations(
     stylebook_slug: str | None,
     q: str | None,
     location_type: str | None,
-    nature: str | None,
+    natures: tuple[str, ...],
     min_mentions: int,
     sort: str | None,
     limit: int,
@@ -38,7 +39,7 @@ def _search_locations(
     params = build_location_search_params(
         q=q,
         location_type=location_type,
-        nature=nature,
+        natures=natures,
         min_mentions=min_mentions,
         sort=sort,
         limit=limit,
@@ -63,9 +64,9 @@ def list_project_locations(
     stylebook_slug: StylebookSlugQuery = None,
     q: str | None = Query(None, description="Search label or formatted address"),
     location_type: str | None = Query(None),
-    nature: str | None = Query(
-        None,
-        description="Filter to locations with at least one linked mention of this nature",
+    nature: list[str] = Query(
+        default=[],
+        description=NATURE_PARAM_DESCRIPTION,
     ),
     min_mentions: int = Query(0, ge=0, le=1_000_000),
     sort: str | None = Query(
@@ -76,13 +77,14 @@ def list_project_locations(
     offset: int = Query(0, ge=0),
 ) -> PaginatedResponse[PublicLocationOut]:
     """List canonical locations in the project's Stylebook."""
+    natures = parse_natures(nature)
     return _search_locations(
         session=session,
         project=project,
         stylebook_slug=stylebook_slug,
         q=q,
         location_type=location_type,
-        nature=nature,
+        natures=natures,
         min_mentions=min_mentions,
         sort=sort,
         limit=limit,
@@ -97,9 +99,9 @@ def search_project_locations(
     stylebook_slug: StylebookSlugQuery = None,
     q: str | None = Query(None, description="Search label or formatted address"),
     location_type: str | None = Query(None),
-    nature: str | None = Query(
-        None,
-        description="Filter to locations with at least one linked mention of this nature",
+    nature: list[str] = Query(
+        default=[],
+        description=NATURE_PARAM_DESCRIPTION,
     ),
     min_mentions: int = Query(0, ge=0, le=1_000_000),
     sort: str | None = Query(
@@ -110,13 +112,14 @@ def search_project_locations(
     offset: int = Query(0, ge=0),
 ) -> PaginatedResponse[PublicLocationOut]:
     """Search canonical locations by name, address, and filters."""
+    natures = parse_natures(nature)
     return _search_locations(
         session=session,
         project=project,
         stylebook_slug=stylebook_slug,
         q=q,
         location_type=location_type,
-        nature=nature,
+        natures=natures,
         min_mentions=min_mentions,
         sort=sort,
         limit=limit,

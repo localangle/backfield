@@ -382,7 +382,7 @@ def test_nature_filter_narrows_drilldown() -> None:
             project_id=project_id,
             params=PublicArticleGeoCellDetailParams(
                 h3_cell=str(loc.h3_cell),
-                nature="primary",
+                natures=("primary",),
             ),
         )
         secondary = search_public_articles_in_cell(
@@ -390,7 +390,7 @@ def test_nature_filter_narrows_drilldown() -> None:
             project_id=project_id,
             params=PublicArticleGeoCellDetailParams(
                 h3_cell=str(loc.h3_cell),
-                nature="secondary",
+                natures=("secondary",),
             ),
         )
 

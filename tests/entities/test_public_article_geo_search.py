@@ -146,7 +146,7 @@ def test_search_public_articles_by_geo_nature_filter() -> None:
                 center_lng=-87.6,
                 center_lat=41.8,
                 radius_miles=5.0,
-                nature="primary",
+                natures=("primary",),
             ),
         )
 
@@ -163,7 +163,7 @@ def test_search_public_articles_by_geo_nature_filter() -> None:
                 center_lng=-87.6,
                 center_lat=41.8,
                 radius_miles=5.0,
-                nature="secondary",
+                natures=("secondary",),
             ),
         )
 
@@ -255,3 +255,37 @@ def test_search_public_articles_by_geo_location_types_or() -> None:
     assert len(by_either[0].matching_locations) == 2
     assert total == 0
     assert by_city == []
+
+
+def test_search_public_articles_by_geo_natures_or() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project_id = _seed_geo_articles(session)
+        both, total = search_public_articles_by_geo(
+            session,
+            project_id=project_id,
+            params=PublicArticleGeoSearchParams(
+                mode=PublicArticleGeoSearchMode.point,
+                center_lng=-87.6,
+                center_lat=41.8,
+                radius_miles=5.0,
+                natures=("primary", "secondary"),
+            ),
+        )
+        primary_only, _ = search_public_articles_by_geo(
+            session,
+            project_id=project_id,
+            params=PublicArticleGeoSearchParams(
+                mode=PublicArticleGeoSearchMode.point,
+                center_lng=-87.6,
+                center_lat=41.8,
+                radius_miles=5.0,
+                natures=("primary",),
+            ),
+        )
+
+    assert total == 1
+    assert len(both) == 1
+    assert both[0].matching_locations[0].nature == "primary"
+    assert len(primary_only) == 1

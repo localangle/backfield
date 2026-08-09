@@ -12,7 +12,7 @@ from backfield_entities.public.mention_timeline import PublicEntityMentionTimeli
 
 def build_entity_mention_list_params(
     *,
-    nature: str | None,
+    natures: tuple[str, ...],
     author: str | None,
     external_source: str | None,
     section: str | None,
@@ -37,7 +37,7 @@ def build_entity_mention_list_params(
         resolved_meta_type = "topic"
         resolved_meta_category = section_value
     return PublicEntityMentionListParams(
-        nature=nature,
+        natures=natures,
         author=author,
         external_source=external_source,
         meta_type=resolved_meta_type,

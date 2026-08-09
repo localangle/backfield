@@ -189,7 +189,7 @@ export default function S3InputPanel({
 
         <div className="flex items-center justify-between gap-3">
           <div>
-            <Label htmlFor="reprocess-unchanged">Process files again</Label>
+            <Label htmlFor="reprocess-unchanged">Reprocess completed files</Label>
             <p className="text-xs text-muted-foreground mt-0.5">
               Run files that already completed successfully, even when their contents have not
               changed.

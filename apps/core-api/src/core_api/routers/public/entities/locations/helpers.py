@@ -55,7 +55,7 @@ def build_location_search_params(
     *,
     q: str | None,
     location_type: str | None,
-    nature: str | None,
+    natures: tuple[str, ...],
     min_mentions: int,
     sort: str | None,
     limit: int,
@@ -73,7 +73,7 @@ def build_location_search_params(
     return PublicLocationSearchParams(
         q=q,
         location_type=location_type,
-        nature=nature,
+        natures=natures,
         min_mentions=min_mentions,
         sort=sort_value,
         limit=limit,

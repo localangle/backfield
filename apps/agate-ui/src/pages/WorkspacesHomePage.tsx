@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import WorkspaceDeleteButton from "@/components/WorkspaceDeleteButton"
 import { useAuth } from "@/lib/auth"
 import {
   createWorkspace,
@@ -48,9 +49,11 @@ function workspaceGridEntries(
 function WorkspaceHomeCard({
   ws,
   canUseTemplates,
+  onDeleted,
 }: {
   ws: WorkspaceWithProjects
   canUseTemplates: boolean
+  onDeleted: () => void
 }) {
   const primary = defaultProjectSlug(ws)
   const isRealWorkspace = ws.id > 0 && ws.slug !== "_ungrouped"
@@ -97,9 +100,12 @@ function WorkspaceHomeCard({
             <li className="text-xs text-muted-foreground">+{ws.projects.length - 6} more</li>
           ) : null}
         </ul>
-        <Button type="button" className="w-full mt-auto" asChild>
-          <Link to={href}>{openLabel}</Link>
-        </Button>
+        <div className="mt-auto flex flex-col gap-2">
+          <Button type="button" className="w-full" asChild>
+            <Link to={href}>{openLabel}</Link>
+          </Button>
+          <WorkspaceDeleteButton workspace={ws} onDeleted={onDeleted} className="w-full" />
+        </div>
       </CardContent>
     </Card>
   )
@@ -294,7 +300,11 @@ export default function WorkspacesHomePage() {
         {gridEntries.map((entry) =>
           entry.kind === "workspace" ? (
             <li key={`${entry.ws.slug}-${entry.ws.id}`} className="flex h-full min-h-0 w-full">
-              <WorkspaceHomeCard ws={entry.ws} canUseTemplates={canUseTemplates} />
+              <WorkspaceHomeCard
+                ws={entry.ws}
+                canUseTemplates={canUseTemplates}
+                onDeleted={() => void load()}
+              />
             </li>
           ) : (
             <li key="__add_workspace__" className="flex h-full min-h-0 w-full">

@@ -17,6 +17,7 @@ import {
   bboxToLeafletBounds,
   bboxToValue,
   DEFAULT_MAP_CENTER,
+  DEFAULT_MAP_ZOOM,
   parseBbox,
   validCenter,
   type BoundingBox,
@@ -31,6 +32,9 @@ interface GeoAreaMapProps {
   centerLng: string
   radiusMiles: string
   supportsPoint: boolean
+  /** Empty-map fallback (org default viewport when signed in). */
+  defaultCenter?: MapCenter
+  defaultZoom?: number
   onChange: (values: {
     bbox?: string
     centerLat?: string
@@ -176,6 +180,8 @@ export default function GeoAreaMap({
   centerLng,
   radiusMiles,
   supportsPoint,
+  defaultCenter = DEFAULT_MAP_CENTER,
+  defaultZoom = DEFAULT_MAP_ZOOM,
   onChange,
 }: GeoAreaMapProps) {
   const bbox = parseBbox(bboxValue)
@@ -184,6 +190,8 @@ export default function GeoAreaMap({
     supportsPoint && center && !bbox ? "point" : "bbox",
   )
   const radius = Number(radiusMiles)
+  const emptyCenter = defaultCenter
+  const emptyZoom = defaultZoom > 0 ? defaultZoom : DEFAULT_MAP_ZOOM
 
   useEffect(() => {
     if (bbox) setMode("bbox")
@@ -237,8 +245,8 @@ export default function GeoAreaMap({
 
       <div className="map-selector-frame">
         <MapContainer
-          center={[center?.lat ?? DEFAULT_MAP_CENTER.lat, center?.lng ?? DEFAULT_MAP_CENTER.lng]}
-          zoom={11}
+          center={[center?.lat ?? emptyCenter.lat, center?.lng ?? emptyCenter.lng]}
+          zoom={center || bbox ? 11 : emptyZoom}
           scrollWheelZoom
           className="map-selector-map"
         >

@@ -56,16 +56,14 @@ import { SimilarCanonicalNotice } from "@/components/SimilarCanonicalNotice"
 import { LeafletMap } from "@backfield/ui/LeafletMap"
 import { updateCanonicalLocationGeometry } from "@/lib/stylebook-api/locations"
 import { mergeCleanupLocationCanonical } from "@/lib/stylebook-api/cleanup"
+import { useOrgMapDefaultViewport } from "@/lib/useOrgMapDefaultViewport"
 import { Loader2 } from "lucide-react"
 
-/** Continental US when adding the first geometry from an empty draft (matches LeafletMap defaults). */
-const ADD_GEOMETRY_MAP_CENTER: [number, number] = [39.8283, -98.5795]
-/** Match @backfield/ui LeafletMap continental US default framing. */
-const ADD_GEOMETRY_MAP_ZOOM = 3
 const ENTITY_TYPE: CleanupEntityType = "location"
 
 export default function LocationDetail() {
   const { showError, showConfirm } = useAppMessage()
+  const orgMapDefault = useOrgMapDefaultViewport()
   const {
     projectFilterSlug,
     filterScopeSuffix,
@@ -588,8 +586,8 @@ export default function LocationDetail() {
                   }
                   showPopups={false}
                   fitToData
-                  initialCenter={ADD_GEOMETRY_MAP_CENTER}
-                  initialZoom={ADD_GEOMETRY_MAP_ZOOM}
+                  initialCenter={orgMapDefault.center}
+                  initialZoom={orgMapDefault.zoom}
                 />
               </div>
               <details className="rounded-md border bg-muted/30 group">

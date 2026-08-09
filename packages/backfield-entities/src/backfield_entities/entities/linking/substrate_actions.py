@@ -14,6 +14,7 @@ from backfield_entities.canonical.link import (
 from backfield_entities.canonical.link_matrix import link_pair_allowed
 from backfield_entities.canonical.retrieval import retrieve_candidate_canonical_ids
 from backfield_entities.entities.location.persist import (
+    maybe_prune_ingest_orphan_location_canonical,
     normalized_alias_variants,
     refresh_aliases_for_linked_location,
 )
@@ -70,18 +71,21 @@ def delete_canonical_alias_if_no_other_linked_substrate(
     canonical_id: str,
     normalized_name: str,
     exclude_substrate_location_id: int,
-) -> bool:
+) -> str | None:
     """Delete non-suppressed alias variants no other linked substrate still covers.
 
     Prunes every normalized variant of ``normalized_name`` (including the loose,
     punctuation-stripped form) so unlink does not leave ghost aliases behind.
+
+    Returns a deleted alias provenance (preferring ``substrate_ingest`` when present),
+    or ``None`` when no row was removed.
     """
     norm = str(normalized_name).strip()
     if not norm:
-        return False
+        return None
     variants = set(normalized_alias_variants(norm))
     if not variants:
-        return False
+        return None
 
     other_names = session.exec(
         select(SubstrateLocation.normalized_name).where(
@@ -95,7 +99,7 @@ def delete_canonical_alias_if_no_other_linked_substrate(
 
     to_delete = sorted(variants - covered)
     if not to_delete:
-        return False
+        return None
     aliases = session.exec(
         select(StylebookLocationAlias).where(
             StylebookLocationAlias.location_canonical_id == str(canonical_id),
@@ -103,9 +107,15 @@ def delete_canonical_alias_if_no_other_linked_substrate(
             StylebookLocationAlias.suppressed.is_(False),
         )
     ).all()
+    if not aliases:
+        return None
+    removed_provenance: str | None = None
     for alias in aliases:
+        prov = str(alias.provenance)
+        if removed_provenance is None or prov == "substrate_ingest":
+            removed_provenance = prov
         session.delete(alias)
-    return len(aliases) > 0
+    return removed_provenance
 
 
 def unlink_substrate_from_canonical(
@@ -134,7 +144,7 @@ def unlink_substrate_from_canonical(
     lid = int(location.id)
     old = str(cid)
     norm = str(location.normalized_name)
-    delete_canonical_alias_if_no_other_linked_substrate(
+    removed_alias_provenance = delete_canonical_alias_if_no_other_linked_substrate(
         session,
         canonical_id=old,
         normalized_name=norm,
@@ -152,6 +162,12 @@ def unlink_substrate_from_canonical(
         }
     ]
     session.add(location)
+    maybe_prune_ingest_orphan_location_canonical(
+        session,
+        stylebook_id=stylebook_id,
+        canonical_id=old,
+        removed_substrate_ingest_alias=removed_alias_provenance == "substrate_ingest",
+    )
 
 
 def dispose_orphan_substrate_without_requeue(
@@ -337,10 +353,16 @@ def link_substrate_to_canonical_atomic(
         session, stylebook_id=stylebook_id, location=location, provenance=provenance
     )
     if prev_str is not None and prev_str != tid:
-        delete_canonical_alias_if_no_other_linked_substrate(
+        removed_alias_provenance = delete_canonical_alias_if_no_other_linked_substrate(
             session,
             canonical_id=prev_str,
             normalized_name=str(location.normalized_name),
             exclude_substrate_location_id=lid,
+        )
+        maybe_prune_ingest_orphan_location_canonical(
+            session,
+            stylebook_id=stylebook_id,
+            canonical_id=prev_str,
+            removed_substrate_ingest_alias=removed_alias_provenance == "substrate_ingest",
         )
     return True

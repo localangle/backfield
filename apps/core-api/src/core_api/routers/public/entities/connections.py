@@ -20,7 +20,7 @@ def public_entity_connections_response(
     entity_type: PublicConnectionEntityType,
     entity_id: str,
     to_entity_type: PublicConnectionEntityType | None,
-    nature: str | None,
+    natures: tuple[str, ...],
     limit: int,
     offset: int,
 ) -> PaginatedResponse[PublicConnectionOut]:
@@ -32,7 +32,7 @@ def public_entity_connections_response(
         entity_type=entity_type,
         entity_id=entity_id,
         to_entity_type=to_entity_type,
-        nature=nature,
+        natures=natures,
         limit=limit,
         offset=offset,
     )

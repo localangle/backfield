@@ -1,5 +1,6 @@
 import { GeometryEditLeafletMap } from '@backfield/ui/GeometryEditLeafletMap'
 import type { LeafletFeatureCollections } from '@/lib/review/entities/location/placeGeometry'
+import { useOrgMapDefaultViewport } from '@/lib/useOrgMapDefaultViewport'
 
 export interface ProcessedItemVerificationLeafletMapProps {
   collections: LeafletFeatureCollections
@@ -36,6 +37,7 @@ export function ProcessedItemVerificationLeafletMap({
   focusBounds = null,
   focusBoundsKey = 0,
 }: ProcessedItemVerificationLeafletMapProps) {
+  const orgMapDefault = useOrgMapDefaultViewport()
   return (
     <div className="h-full min-h-0 w-full overflow-hidden bg-background">
       <GeometryEditLeafletMap
@@ -51,6 +53,8 @@ export function ProcessedItemVerificationLeafletMap({
         editPointFeatureId={editPointFeatureId}
         focusBounds={focusBounds}
         focusBoundsKey={focusBoundsKey}
+        initialCenter={orgMapDefault.center}
+        initialZoom={orgMapDefault.zoom}
         onFeatureClick={
           onFeatureSelect
             ? (ev) => {

@@ -440,6 +440,32 @@ export async function patchOrganization(
   })
 }
 
+export interface MapDefaultViewport {
+  lat: number
+  lng: number
+  zoom: number
+}
+
+export interface OrganizationSettings {
+  map_default_viewport: MapDefaultViewport | null
+}
+
+export async function getOrganizationSettings(
+  orgId: number,
+): Promise<OrganizationSettings> {
+  return jsonFetch(`/v1/organizations/${orgId}/settings`)
+}
+
+export async function patchOrganizationSettings(
+  orgId: number,
+  body: { map_default_viewport: MapDefaultViewport | null },
+): Promise<OrganizationSettings> {
+  return jsonFetch(`/v1/organizations/${orgId}/settings`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  })
+}
+
 export async function patchWorkspace(
   orgId: number,
   workspaceId: number,
@@ -448,6 +474,52 @@ export async function patchWorkspace(
   return jsonFetch(`/v1/organizations/${orgId}/workspaces/${workspaceId}`, {
     method: "PATCH",
     body: JSON.stringify(body),
+  })
+}
+
+export interface WorkspaceProjectDeletePreview {
+  project_id: number
+  name: string
+  slug: string
+  flow_count: number
+  run_count: number
+  processed_item_count: number
+  article_count: number
+  api_credential_count: number
+  secret_count: number
+}
+
+export interface WorkspaceDeletePreview {
+  workspace_id: number
+  name: string
+  slug: string
+  project_count: number
+  flow_count: number
+  run_count: number
+  processed_item_count: number
+  article_count: number
+  api_credential_count: number
+  secret_count: number
+  projects: WorkspaceProjectDeletePreview[]
+}
+
+export async function getWorkspaceDeletePreview(
+  orgId: number,
+  workspaceId: number,
+): Promise<WorkspaceDeletePreview> {
+  return jsonFetch(
+    `/v1/organizations/${orgId}/workspaces/${workspaceId}/delete-preview`,
+  )
+}
+
+export async function deleteWorkspace(
+  orgId: number,
+  workspaceId: number,
+  confirmName: string,
+): Promise<void> {
+  await jsonFetch(`/v1/organizations/${orgId}/workspaces/${workspaceId}/delete`, {
+    method: "POST",
+    body: JSON.stringify({ confirm_name: confirmName }),
   })
 }
 

@@ -35,6 +35,7 @@ from backfield_entities.public.mention_filters import (
     PublicEntityMentionListParams,
     apply_entity_mention_list_filters,
 )
+from backfield_entities.public.nature_filters import normalize_natures
 from backfield_entities.public.stylebook_scope import (
     get_public_location_canonical,
     stylebook_slugs_by_id,
@@ -86,7 +87,7 @@ class PublicLocationMentionOut(BaseModel):
 class PublicLocationSearchParams:
     q: str | None = None
     location_type: str | None = None
-    nature: str | None = None
+    natures: tuple[str, ...] = ()
     min_mentions: int = 0
     sort: PublicLocationSort = PublicLocationSort.label
     limit: int = 25
@@ -197,15 +198,15 @@ def location_filters(
     location_type = (params.location_type or "").strip()
     if location_type:
         filters.append(col(StylebookLocationCanonical.location_type) == location_type)
-    nature = (params.nature or "").strip()
-    if nature:
+    natures = normalize_natures(params.natures)
+    if natures:
         filters.append(
             exists().where(
                 SubstrateLocation.stylebook_location_canonical_id == StylebookLocationCanonical.id,
                 SubstrateLocation.project_id == project_id,
                 SubstrateLocationMention.location_id == SubstrateLocation.id,
                 SubstrateLocationMention.deleted == False,  # noqa: E712
-                SubstrateLocationMention.nature == nature,
+                col(SubstrateLocationMention.nature).in_(natures),
             )
         )
     if params.min_mentions > 0:
@@ -461,7 +462,7 @@ def list_public_location_articles(
     location_id: str,
     limit: int = 25,
     offset: int = 0,
-    nature: str | None = None,
+    natures: tuple[str, ...] = (),
     meta_clauses: tuple[ArticleMetaClause, ...] = (),
     author: str | None = None,
     external_source: str | None = None,
@@ -484,7 +485,7 @@ def list_public_location_articles(
         entity_canonical_col=SubstrateLocation.stylebook_location_canonical_id,
         canonical_id=str(canon.id),
         project_id=project_id,
-        nature=nature,
+        natures=natures,
         meta_clauses=meta_clauses,
         author=author,
         external_source=external_source,

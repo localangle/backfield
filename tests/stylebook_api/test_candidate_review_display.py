@@ -4,6 +4,42 @@ from stylebook_api.helpers.candidate_review_display import (
 )
 
 
+def test_content_sanity_coerced_prefers_outcome_copy_over_link_rationale() -> None:
+    raw = [
+        {
+            "code": "canonical_adjudication",
+            "outcome": "content_sanity_coerced",
+            "rationale": (
+                "Substrate 'Wishbone, West Loop, Chicago, IL' is the same "
+                "real-world restaurant entity as 'Wishbone, Chicago, IL'."
+            ),
+            "confidence": 0.98,
+            "canonical_id": "6e28e10d-164d-4353-8a94-7c78285aeffc",
+        }
+    ]
+    assert format_candidate_review_lines(raw) == [
+        "A possible Stylebook match was blocked by a content check — "
+        "confirm before linking or creating a new entry.",
+    ]
+
+
+def test_format_lines_skips_ambiguous_canonical_match() -> None:
+    raw = [
+        {
+            "code": "ambiguous_canonical_match",
+            "recall_canonical_ids": ["a"] * 19,
+        },
+        {
+            "code": "canonical_adjudication",
+            "rationale": "Not the same place as recalled entries.",
+            "outcome": "no_high_confidence_link",
+        },
+    ]
+    assert format_candidate_review_lines(raw) == [
+        "Not the same place as recalled entries.",
+    ]
+
+
 def test_format_lines_skips_suggestion_and_note() -> None:
     raw = [
         {"code": "canonical_suggestion", "suggested_action": "link_existing"},
@@ -19,7 +55,6 @@ def test_format_lines_skips_suggestion_and_note() -> None:
         },
     ]
     assert format_candidate_review_lines(raw) == [
-        "Several Stylebook people could match (2 recalled).",
         "None of the candidates match Greg Abbott.",
     ]
 

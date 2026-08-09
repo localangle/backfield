@@ -28,6 +28,8 @@ import {
   type ProjectStats,
   type ProjectEstimatedAiCost,
 } from '@/lib/api'
+import { projectStylebookDisplayName } from '@/lib/projectStylebook'
+import { stylebookShellHref } from '@/lib/platformUrls'
 import { formatDurationMs } from '@/lib/formatDuration'
 import { useAuth } from '@/lib/auth'
 import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
@@ -361,6 +363,24 @@ export default function ProjectDetailPage() {
             />
           ) : null}
         </div>
+        {project ? (
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground/80">Stylebook</span>
+            <span className="mx-1.5 text-muted-foreground/80" aria-hidden="true">
+              ·
+            </span>
+            {project.stylebook_slug?.trim() ? (
+              <a
+                href={stylebookShellHref(project.stylebook_slug, project.slug)}
+                className="underline-offset-4 hover:underline"
+              >
+                {projectStylebookDisplayName(project)}
+              </a>
+            ) : (
+              projectStylebookDisplayName(project)
+            )}
+          </p>
+        ) : null}
       </div>
 
       <div className="w-full min-w-0">
