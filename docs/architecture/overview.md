@@ -40,6 +40,10 @@ Redis and Celery.
   semantic-document synchronization.
 - `packages/backfield-ai` owns model resolution, LiteLLM integration, embeddings, and AI call
   accounting.
+- `packages/backfield-events` owns event contracts and envelopes, webhook payload signing,
+  event-feed cursors, destination (SSRF) validation, transactional run-event recording, and
+  delivery claim/terminalize helpers. It stays HTTP-free; transport lives in the worker. See
+  [`../development/webhooks.md`](../development/webhooks.md).
 - `packages/backfield-auth` owns signed sessions, service authentication, project API-key
   authentication, and shared FastAPI auth dependencies. Internal dependencies accept sessions and
   trusted service tokens; the separate public dependency accepts project keys only on Core API's
@@ -63,15 +67,16 @@ infrastructure packages:
 ```text
 UI applications -> HTTP APIs
 
-agate-api -> backfield-auth, backfield-observability, agate-runtime, backfield-entities, backfield-db
-core-api -> backfield-ai, backfield-auth, backfield-observability, agate-runtime, backfield-entities, backfield-db
+agate-api -> backfield-auth, backfield-events, backfield-observability, agate-runtime, backfield-entities, backfield-db
+core-api -> backfield-ai, backfield-auth, backfield-events, backfield-observability, agate-runtime, backfield-entities, backfield-db
 stylebook-api -> backfield-ai, backfield-auth, backfield-observability, backfield-entities, backfield-db
-worker -> backfield-ai, backfield-auth, backfield-observability, agate-runtime, backfield-entities, backfield-db
+worker -> backfield-ai, backfield-auth, backfield-events, backfield-observability, agate-runtime, backfield-entities, backfield-db
 
 agate-runtime -> backfield-ai, backfield-entities, backfield-db
 backfield-auth -> backfield-db
 backfield-ai -> backfield-db
 backfield-entities -> backfield-db
+backfield-events -> backfield-db
 backfield-cli -> backfield-db
 backfield-observability -> (stdlib / typing only; no DB)
 ```

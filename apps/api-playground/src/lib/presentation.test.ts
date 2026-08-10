@@ -26,7 +26,7 @@ describe("endpoint presentation contract", () => {
   const operations = listOperations(document)
 
   it("covers every public operation and every supported parameter exactly once", () => {
-    expect(operations).toHaveLength(47)
+    expect(operations).toHaveLength(49)
 
     for (const operation of operations) {
       const parameters = operation.parameters.filter(

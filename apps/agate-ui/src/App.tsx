@@ -19,6 +19,7 @@ import ManageUsers from './pages/ManageUsers'
 import ManageCatalogs from './pages/ManageCatalogs'
 import AiModelsSettings from './pages/AiModelsSettings'
 import OrgIntegrationsSettings from './pages/OrgIntegrationsSettings'
+import WebhooksSettings from './pages/WebhooksSettings'
 import OtherSettings from './pages/OtherSettings'
 import SettingsLayout from './pages/SettingsLayout'
 import SettingsHub from './pages/SettingsHub'
@@ -259,6 +260,7 @@ function AppRoutes() {
         <Route index element={<SettingsHub />} />
         <Route path="models" element={<AiModelsSettings />} />
         <Route path="integrations" element={<OrgIntegrationsSettings />} />
+        <Route path="webhooks" element={<WebhooksSettings />} />
         <Route path="other" element={<OtherSettings />} />
         <Route path="*" element={<NotFound />} />
       </Route>

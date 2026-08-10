@@ -11,6 +11,11 @@ from backfield_db import (
     SubstrateLocation,
     SubstrateLocationMention,
 )
+from backfield_events import (
+    record_canonical_created,
+    record_canonical_deleted,
+    record_canonical_evidence_changed,
+)
 from sqlmodel import Session, col, func, select
 
 from backfield_entities.activity import (
@@ -229,6 +234,14 @@ def link_to_existing_canonical(
         location=location,
         provenance=provenance,
     )
+    record_canonical_evidence_changed(
+        session,
+        stylebook_id=stylebook_id,
+        entity_type="location",
+        canonical_id=cid,
+        label=str(canon.label),
+        change="substrate_linked",
+    )
 
 
 def create_standalone_canonical(
@@ -279,6 +292,13 @@ def create_standalone_canonical(
         session, canon_id=cid, label=clean, provenance=provenance
     )
     session.flush()
+    record_canonical_created(
+        session,
+        stylebook_id=stylebook_id,
+        entity_type="location",
+        canonical_id=cid,
+        label=clean,
+    )
     return canon
 
 
@@ -355,6 +375,13 @@ def materialize_new_canonical_and_link(
         canon_id=cid,
         location=location,
         provenance=provenance,
+    )
+    record_canonical_created(
+        session,
+        stylebook_id=stylebook_id,
+        entity_type="location",
+        canonical_id=cid,
+        label=label,
     )
 
 
@@ -721,11 +748,27 @@ def maybe_prune_ingest_orphan_location_canonical(
             is_location_catalog_editorial_provenance(str(row.provenance)) for row in alias_rows
         ):
             return False
-        session.delete(canon)
+        _delete_pruned_location_canonical(session, stylebook_id=stylebook_id, canon=canon)
         return True
 
     if not removed_substrate_ingest_alias:
         return False
 
-    session.delete(canon)
+    _delete_pruned_location_canonical(session, stylebook_id=stylebook_id, canon=canon)
     return True
+
+
+def _delete_pruned_location_canonical(
+    session: Session,
+    *,
+    stylebook_id: int,
+    canon: StylebookLocationCanonical,
+) -> None:
+    record_canonical_deleted(
+        session,
+        stylebook_id=stylebook_id,
+        entity_type="location",
+        canonical_id=str(canon.id),
+        label=str(canon.label),
+    )
+    session.delete(canon)

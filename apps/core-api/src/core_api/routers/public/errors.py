@@ -41,6 +41,8 @@ def _error_code(status_code: int) -> str:
         403: "forbidden",
         404: "not_found",
         409: "conflict",
+        # Only the event feed returns 410 (cursor beyond the retention window).
+        410: "cursor_expired",
         429: "rate_limit_exceeded",
         422: "validation_error",
         503: "service_unavailable",

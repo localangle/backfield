@@ -244,6 +244,31 @@ def keep_smoke_data() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _complete_organization_selection(core: httpx.Client, login_body: dict[str, Any]) -> None:
+    """Finish a multi-organization login by selecting ``SMOKE_ORG_SLUG`` (default first)."""
+    organizations = login_body.get("organizations")
+    if not isinstance(organizations, list) or not organizations:
+        raise RuntimeError(f"Login requires organization selection but listed none: {login_body}")
+    wanted_slug = os.environ.get("SMOKE_ORG_SLUG", "").strip()
+    chosen = next(
+        (
+            row
+            for row in organizations
+            if isinstance(row, dict) and (not wanted_slug or row.get("slug") == wanted_slug)
+        ),
+        None,
+    )
+    if chosen is None:
+        raise RuntimeError(
+            f"Organization slug {wanted_slug!r} not in login options: {organizations}"
+        )
+    selection = core.post(
+        "/v1/auth/select-organization",
+        json={"organization_id": chosen.get("id")},
+    )
+    selection.raise_for_status()
+
+
 def login_session_context(
     *,
     core_base: str,
@@ -260,6 +285,11 @@ def login_session_context(
 
         login = core.post("/v1/auth/login", json={"email": email, "password": password})
         login.raise_for_status()
+        login_body = login.json() if login.headers.get("content-type", "").startswith(
+            "application/json"
+        ) else {}
+        if isinstance(login_body, dict) and login_body.get("organization_selection_required"):
+            _complete_organization_selection(core, login_body)
         session_token = core.cookies.get("session")
         if not session_token:
             raise RuntimeError("Login did not set session cookie")

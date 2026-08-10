@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
@@ -13,6 +14,16 @@ from sqlmodel import Session, col, select
 
 from worker.s3_ingestion_ledger import S3_INGESTION_EXTERNAL_SOURCE
 from worker.substrate.common import _parse_date, _sha256_hex, _utcnow
+
+
+@dataclass(frozen=True)
+class ArticleUpsertResult:
+    """Outcome of an article upsert, used for article lifecycle events."""
+
+    article: SubstrateArticle
+    created: bool
+    #: True when a merge changed headline/author/date/text/url (False for creates).
+    content_changed: bool
 
 
 def _text_fingerprint(*, project_id: int, text_str: str) -> str:
@@ -87,18 +98,28 @@ def _apply_article_merge(
     text_str: str,
     run_id: str,
     processed_item_id: int | None = None,
-) -> None:
+) -> bool:
+    """Merge incoming fields onto the existing row; True when content changed."""
+    resolved_url = url_str or article.url
+    content_changed = (
+        article.headline != headline_str
+        or article.author != author_str
+        or article.pub_date != pub_date
+        or article.text != text_str
+        or article.url != resolved_url
+    )
     now = _utcnow()
     article.headline = headline_str
     article.author = author_str
     article.pub_date = pub_date
     article.text = text_str
-    article.url = url_str or article.url
+    article.url = resolved_url
     article.source_run_id = run_id
     if processed_item_id is not None:
         article.source_item_id = processed_item_id
     article.updated_at = now
     article.edited = True
+    return content_changed
 
 
 def _upsert_article(
@@ -108,7 +129,7 @@ def _upsert_article(
     consolidated: dict[str, Any],
     run_id: str,
     processed_item_id: int | None = None,
-) -> SubstrateArticle:
+) -> ArticleUpsertResult:
     url = consolidated.get("url")
     url_str = str(url).strip() if isinstance(url, str) else None
     if url_str == "":
@@ -212,7 +233,7 @@ def _upsert_article(
                     "substrate_article insert collided on unique key but concurrent row "
                     "was not visible; retry the persistence step"
                 ) from exc
-            _apply_article_merge(
+            content_changed = _apply_article_merge(
                 article,
                 url_str=url_str,
                 headline_str=headline_str,
@@ -224,10 +245,14 @@ def _upsert_article(
             )
             session.add(article)
             session.flush()
-            return article
-        return new_article
+            return ArticleUpsertResult(
+                article=article,
+                created=False,
+                content_changed=content_changed,
+            )
+        return ArticleUpsertResult(article=new_article, created=True, content_changed=False)
 
-    _apply_article_merge(
+    content_changed = _apply_article_merge(
         article,
         url_str=url_str,
         headline_str=headline_str,
@@ -239,7 +264,7 @@ def _upsert_article(
     )
     session.add(article)
     session.flush()
-    return article
+    return ArticleUpsertResult(article=article, created=False, content_changed=content_changed)
 
 
 def _sync_images(session: Session, *, article_id: int, consolidated: dict[str, Any]) -> None:

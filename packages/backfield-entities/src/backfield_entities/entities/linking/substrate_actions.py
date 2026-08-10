@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocation
+from backfield_events import record_canonical_evidence_changed
 from sqlmodel import Session, col, select
 
 from backfield_entities.canonical.link import (
@@ -162,6 +163,14 @@ def unlink_substrate_from_canonical(
         }
     ]
     session.add(location)
+    record_canonical_evidence_changed(
+        session,
+        stylebook_id=stylebook_id,
+        entity_type="location",
+        canonical_id=old,
+        label=str(canon.label),
+        change="substrate_unlinked",
+    )
     maybe_prune_ingest_orphan_location_canonical(
         session,
         stylebook_id=stylebook_id,
@@ -352,7 +361,23 @@ def link_substrate_to_canonical_atomic(
     refresh_aliases_for_linked_location(
         session, stylebook_id=stylebook_id, location=location, provenance=provenance
     )
+    record_canonical_evidence_changed(
+        session,
+        stylebook_id=stylebook_id,
+        entity_type="location",
+        canonical_id=tid,
+        label=str(canon.label),
+        change="substrate_linked",
+    )
     if prev_str is not None and prev_str != tid:
+        record_canonical_evidence_changed(
+            session,
+            stylebook_id=stylebook_id,
+            entity_type="location",
+            canonical_id=prev_str,
+            label=None,
+            change="substrate_unlinked",
+        )
         removed_alias_provenance = delete_canonical_alias_if_no_other_linked_substrate(
             session,
             canonical_id=prev_str,

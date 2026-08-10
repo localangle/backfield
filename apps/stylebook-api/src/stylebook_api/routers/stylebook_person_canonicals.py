@@ -29,6 +29,7 @@ from backfield_entities.entities.person.types import (
     derive_person_sort_key,
     normalize_person_type,
 )
+from backfield_events import record_canonical_deleted, record_canonical_updated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import case, exists, literal
@@ -656,6 +657,13 @@ def patch_canonical_person(
         entity_label=str(canon.label),
         payload_json=updates,
     )
+    record_canonical_updated(
+        session,
+        stylebook_id=int(sb.id),
+        entity_type="person",
+        canonical_id=str(canon.id),
+        label=str(canon.label),
+    )
     session.add(canon)
     session.commit()
     session.refresh(canon)
@@ -724,6 +732,13 @@ def delete_canonical_person(
         entity_id=str(canon.id),
         entity_label=str(canon.label),
         payload_json={"unlinked_substrate_count": len(linked)},
+    )
+    record_canonical_deleted(
+        session,
+        stylebook_id=int(sb.id),
+        entity_type="person",
+        canonical_id=str(canon.id),
+        label=str(canon.label),
     )
     session.delete(canon)
     session.commit()

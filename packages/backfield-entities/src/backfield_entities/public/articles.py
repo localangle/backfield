@@ -235,6 +235,33 @@ def _article_to_public_out(
     )
 
 
+def public_articles_for_ids(
+    session: Session,
+    *,
+    project_id: int,
+    article_ids: list[int],
+) -> list[PublicArticleOut]:
+    """Serialize active project articles in the given ID order (missing/deleted skipped)."""
+    if not article_ids:
+        return []
+    rows = session.exec(
+        _active_articles_for_project(session, project_id).where(
+            col(SubstrateArticle.id).in_(article_ids)
+        )
+    ).all()
+    by_id = {int(row.id): row for row in rows if row.id is not None}
+    metadata = _meta_rows_for_articles(session, [aid for aid in article_ids if aid in by_id])
+    out: list[PublicArticleOut] = []
+    for article_id in article_ids:
+        article = by_id.get(article_id)
+        if article is None:
+            continue
+        out.append(
+            _article_to_public_out(article, metadata=metadata.get(article_id, []))
+        )
+    return out
+
+
 def _active_articles_for_project(session: Session, project_id: int):
     return select(SubstrateArticle).where(
         SubstrateArticle.project_id == project_id,

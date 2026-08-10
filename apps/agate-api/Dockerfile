@@ -22,12 +22,14 @@ COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-agate /app/packages/backfield-agate
 COPY packages/backfield-entities /app/packages/backfield-entities
 COPY packages/backfield-auth /app/packages/backfield-auth
+COPY packages/backfield-events /app/packages/backfield-events
 COPY packages/backfield-cli /app/packages/backfield-cli
 COPY apps/agate-api /app/apps/agate-api
 
 RUN uv pip install --system /app/packages/backfield-db \
     && uv pip install --system /app/packages/backfield-observability \
     && uv pip install --system /app/packages/backfield-ai \
+    && uv pip install --system /app/packages/backfield-events \
     && uv pip install --system /app/packages/backfield-entities \
     && uv pip install --system /app/packages/backfield-agate \
     && uv pip install --system /app/packages/backfield-auth \
@@ -77,12 +79,14 @@ COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-agate /app/packages/backfield-agate
 COPY packages/backfield-entities /app/packages/backfield-entities
 COPY packages/backfield-auth /app/packages/backfield-auth
+COPY packages/backfield-events /app/packages/backfield-events
 COPY packages/backfield-cli /app/packages/backfield-cli
 COPY apps/agate-api /app/apps/agate-api
 
 RUN pip install --no-cache-dir -e /app/packages/backfield-db \
     && pip install --no-cache-dir -e /app/packages/backfield-observability \
     && pip install --no-cache-dir -e /app/packages/backfield-ai \
+    && pip install --no-cache-dir -e /app/packages/backfield-events \
     && pip install --no-cache-dir -e /app/packages/backfield-entities \
     && pip install --no-cache-dir -e /app/packages/backfield-agate \
     && pip install --no-cache-dir -e /app/packages/backfield-auth \

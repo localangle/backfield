@@ -403,7 +403,7 @@ const docsPresentations: DocsPresentation[] = [
       method === "get" && isEntityResourcePath(displayPath, "organizations", "/connections"),
   },
 
-  // Other (Mention timeline, Geo cells, Runs)
+  // Other (Mention timeline, Geo cells, Runs, Events)
   {
     group: "Other",
     summary: "Get timeline",
@@ -440,6 +440,19 @@ const docsPresentations: DocsPresentation[] = [
     order: 4,
     match: (method, displayPath) =>
       method === "get" && /^\/runs\/\{[^}]+\}$/.test(displayPath),
+  },
+  {
+    group: "Other",
+    summary: "List run articles",
+    order: 5,
+    match: (method, displayPath) =>
+      method === "get" && /^\/runs\/\{[^}]+\}\/articles$/.test(displayPath),
+  },
+  {
+    group: "Other",
+    summary: "List events",
+    order: 6,
+    match: (method, displayPath) => method === "get" && displayPath === "/events",
   },
 ]
 

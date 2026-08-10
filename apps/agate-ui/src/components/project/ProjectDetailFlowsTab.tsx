@@ -20,7 +20,8 @@ import {
 } from '@/lib/api'
 import { flowDescriptionTableText } from '@/components/flow-builder/FlowDescriptionField'
 import { formatDate } from '@/lib/utils'
-import { Loader2, Copy, Trash2 } from 'lucide-react'
+import { useAuth } from '@/lib/auth'
+import { Loader2, Copy, Trash2, Webhook } from 'lucide-react'
 
 interface ProjectDetailFlowsTabProps {
   projectId: number
@@ -38,6 +39,7 @@ export default function ProjectDetailFlowsTab({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [flowToDelete, setFlowToDelete] = useState<GraphSummary | null>(null)
   const navigate = useNavigate()
+  const { isOrgAdmin } = useAuth()
 
   const loadData = useCallback(async () => {
     try {
@@ -154,6 +156,22 @@ export default function ProjectDetailFlowsTab({
                       </td>
                       <td className="p-3 sm:p-4 align-top">
                         <div className="flex items-center justify-end gap-1">
+                          {isOrgAdmin && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigate(
+                                  `/settings/webhooks?create=1&project=${projectId}&flow=${graph.id}`,
+                                )
+                              }}
+                              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                              title="Send updates when this flow finishes"
+                            >
+                              <Webhook className="h-4 w-4" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="sm"

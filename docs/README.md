@@ -36,6 +36,7 @@ Getting a local stack running and validating changes:
 - [`development/local-setup.md`](development/local-setup.md) — prerequisites, `init`/`seed`, stack lifecycle
 - [`development/testing.md`](development/testing.md) — lint, unit/integration tests, smoke, CI
 - [`development/nodes.md`](development/nodes.md) — Agate node contracts and checklist
+- [`development/webhooks.md`](development/webhooks.md) — webhook and event feed contract, delivery semantics, operations
 - [`development/entities/overview.md`](development/entities/overview.md) — entity model
 - [`development/entities/implementation.md`](development/entities/implementation.md) — cross-layer entity checklist
 - [`development/frontend/conventions.md`](development/frontend/conventions.md) — UI copy and patterns

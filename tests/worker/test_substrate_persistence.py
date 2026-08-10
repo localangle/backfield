@@ -258,13 +258,15 @@ def test_upsert_article_reuses_existing_row_by_publication_and_entry_id() -> Non
             "author": "Letters to the Editor",
             "pub_date": "2026-06-05",
         }
-        article = _upsert_article(
+        upsert = _upsert_article(
             session,
             project_id=project_id,
             consolidated=consolidated,
             run_id="run-a2",
         )
-        article_id = int(article.id)  # type: ignore[arg-type]
+        assert not upsert.created
+        assert upsert.content_changed
+        article_id = int(upsert.article.id)  # type: ignore[arg-type]
         session.commit()
 
     with Session(engine) as session:

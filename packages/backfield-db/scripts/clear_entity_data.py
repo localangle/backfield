@@ -49,6 +49,12 @@ _DISCOVER_TABLES_SQL = text(
           AND tablename NOT IN ('agate_graph', 'agate_template')
         )
         OR tablename = 'backfield_ai_call_record'
+        -- Run-scoped event/delivery data; webhook endpoint/subscription config is preserved.
+        OR tablename IN (
+          'backfield_event',
+          'backfield_webhook_delivery',
+          'backfield_webhook_delivery_attempt'
+        )
       )
     ORDER BY tablename
     """

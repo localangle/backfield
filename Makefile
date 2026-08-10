@@ -121,7 +121,7 @@ format:
 	uv run ruff format packages apps tests
 
 test:
-	uv run pytest packages/backfield-agate/tests packages/backfield-auth/tests packages/backfield-db/tests packages/backfield-cli/tests packages/backfield-observability/tests -q
+	uv run pytest packages/backfield-agate/tests packages/backfield-auth/tests packages/backfield-db/tests packages/backfield-cli/tests packages/backfield-events/tests packages/backfield-observability/tests -q
 	uv run pytest tests -q
 
 smoke:

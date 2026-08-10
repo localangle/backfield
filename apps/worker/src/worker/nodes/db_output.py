@@ -12,6 +12,7 @@ from typing import Any
 
 from agate_runtime.output_node import consolidated_body_from_dboutput
 from agate_utils.llm import call_llm
+from backfield_db import AgateRun
 from backfield_db.deadlock import is_postgres_deadlock
 from backfield_entities.connections.db_output import run_auto_connections_for_db_output
 from backfield_entities.ingest.article_embedding import persist_article_embedding_after_db_output
@@ -23,6 +24,13 @@ from backfield_entities.ingest.semantic_indexing.db_output import (
     build_semantic_indexing_summary,
     sync_semantic_documents_after_db_output,
 )
+from backfield_events import (
+    pop_recorded_events,
+    record_article_created,
+    record_article_updated,
+    record_run_output_article,
+)
+from celery import current_app as celery_current_app
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session
 
@@ -96,6 +104,43 @@ def _dboutput_persist_slot() -> Iterator[None]:
             logger.debug("DBOutput persist gate lock release failed", exc_info=True)
 
 
+def _kick_webhook_dispatch_after_commit(session: Session) -> None:
+    """Best-effort dispatcher kick for article events; the sweep stays authoritative."""
+    recorded = pop_recorded_events(session)
+    if not any(event.delivery_ids for event in recorded):
+        return
+    try:
+        celery_current_app.send_task(
+            "worker.tasks.dispatch_webhook_deliveries",
+            queue=os.environ.get("CELERY_QUEUE", "agate"),
+        )
+    except Exception:
+        logger.warning(
+            "Webhook dispatch kick failed; scheduled recovery will deliver",
+            exc_info=True,
+        )
+
+
+def _record_run_output_association(
+    session: Session,
+    *,
+    run_id: str,
+    article_id: int,
+    processed_item_id: int | None,
+) -> None:
+    """Tie the persisted article to the run's current execution attempt (same transaction)."""
+    run = session.get(AgateRun, run_id)
+    if run is None or article_id is None:
+        return
+    record_run_output_article(
+        session,
+        run_id=run_id,
+        execution_attempt=int(run.execution_attempt or 1),
+        article_id=int(article_id),
+        processed_item_id=processed_item_id,
+    )
+
+
 def _persist_db_output_in_session(
     session: Session,
     *,
@@ -119,6 +164,28 @@ def _persist_db_output_in_session(
         processed_item_id=processed_item_id,
     )
     article_id = persist_result.article_id
+    _record_run_output_association(
+        session,
+        run_id=run_id,
+        article_id=article_id,
+        processed_item_id=processed_item_id,
+    )
+    if persist_result.article_created:
+        record_article_created(
+            session,
+            run_id=run_id,
+            article_id=article_id,
+            headline=persist_result.article_headline,
+        )
+    else:
+        record_article_updated(
+            session,
+            run_id=run_id,
+            article_id=article_id,
+            headline=persist_result.article_headline,
+            change="reprocessed",
+            content_changed=persist_result.article_content_changed,
+        )
     retired_mentions = persist_result.retired_mentions
     substrates_disposed = persist_result.disposed_substrates
     replace_stats = persist_result.replace_stats
@@ -286,6 +353,7 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
                         settings=settings,
                     )
                     session.commit()
+                    _kick_webhook_dispatch_after_commit(session)
                 return result
             except SQLAlchemyError as exc:
                 last_exc = exc
