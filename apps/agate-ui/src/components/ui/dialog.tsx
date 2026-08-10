@@ -20,6 +20,7 @@ const DialogOverlay = React.forwardRef<
     ref={ref}
     className={cn(
       // Above Leaflet map panes/controls (often 400–1000) so dialogs are not trapped under maps.
+      // Portaled Select/DropdownMenu content must stay above this (see z-[2100] there).
       "fixed inset-0 z-[2000] bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       className
     )}
