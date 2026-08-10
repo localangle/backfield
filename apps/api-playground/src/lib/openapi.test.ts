@@ -100,7 +100,7 @@ describe("Playground operation presentation", () => {
       JSON.parse(readFileSync(join(repoRoot, "docs/api/public.openapi.json"), "utf8")),
     )
     const operations = listOperations(document)
-    expect(operations).toHaveLength(47)
+    expect(operations).toHaveLength(49)
     expect(operations.map((operation) => operation.group)).toEqual([
       ...Array(1).fill("Projects"),
       ...Array(2).fill("Metadata"),
@@ -109,7 +109,7 @@ describe("Playground operation presentation", () => {
       ...Array(7).fill("People"),
       ...Array(8).fill("Locations"),
       ...Array(7).fill("Organizations"),
-      ...Array(7).fill("Other"),
+      ...Array(9).fill("Other"),
     ])
     expect(
       operations.some(
