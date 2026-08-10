@@ -35,6 +35,7 @@ from backfield_entities.entities.linking.substrate_actions import (
 )
 from backfield_entities.entities.location.persist import refresh_aliases_for_linked_location
 from backfield_entities.entities.location.types import PLACE_EXTRACT_LOCATION_TYPES
+from backfield_events import record_canonical_created, record_canonical_evidence_changed
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import exists
@@ -859,6 +860,13 @@ def accept_candidate(
                 "canonical_id": str(canon.id),
             }
         ]
+        record_canonical_created(
+            session,
+            stylebook_id=stylebook_id,
+            entity_type="location",
+            canonical_id=str(canon.id),
+            label=str(canon.label),
+        )
     else:
         loc.canonical_review_reasons_json = [
             {
@@ -866,6 +874,14 @@ def accept_candidate(
                 "canonical_id": str(canon.id),
             }
         ]
+        record_canonical_evidence_changed(
+            session,
+            stylebook_id=stylebook_id,
+            entity_type="location",
+            canonical_id=str(canon.id),
+            label=str(canon.label),
+            change="substrate_linked",
+        )
     session.add(loc)
     session.commit()
     return AcceptCandidateResponse(

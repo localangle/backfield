@@ -9,6 +9,7 @@ from backfield_db import (
     StylebookPersonCanonical,
     SubstratePerson,
 )
+from backfield_events import record_canonical_merged, suppress_canonical_evidence_events
 from sqlmodel import Session, col, func, select
 
 from backfield_entities.connections.rewire import rewire_connections_for_canonical_merge
@@ -73,6 +74,13 @@ def merge_person_canonical_into(
     if target is None or int(target.stylebook_id) != int(stylebook_id):
         raise ValueError("target canonical not in this stylebook")
 
+    # The merged event subsumes the per-substrate relink evidence events below.
+    suppress_canonical_evidence_events(
+        session,
+        entity_type="person",
+        canonical_ids=[source_id, target_id],
+    )
+
     project_ids = _organization_project_ids(session, organization_id=organization_id)
     linked = list(
         session.exec(
@@ -113,6 +121,14 @@ def merge_person_canonical_into(
         project_ids=project_ids,
     )
 
+    record_canonical_merged(
+        session,
+        stylebook_id=int(stylebook_id),
+        entity_type="person",
+        source_canonical_id=source_id,
+        target_canonical_id=target_id,
+        label=str(source.label),
+    )
     session.delete(source)
     return MergePersonCanonicalResult(
         source_id=source_id,

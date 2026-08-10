@@ -5,7 +5,6 @@ import { SettingsScreenHeader } from '@/components/SettingsScreenHeader'
 const SECTION_TITLE: Record<string, string> = {
   models: 'AI models',
   integrations: 'Integrations',
-  webhooks: 'Webhooks',
 }
 
 /**

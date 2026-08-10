@@ -9,6 +9,7 @@ from backfield_db import (
     StylebookLocationCanonical,
     SubstrateLocation,
 )
+from backfield_events import record_canonical_deleted, suppress_canonical_evidence_events
 from sqlmodel import Session, col, select
 
 from backfield_entities.activity import (
@@ -45,6 +46,13 @@ def delete_location_canonical_and_requeue(
     canon = session.get(StylebookLocationCanonical, canonical_id)
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise LookupError("Canonical location not found")
+
+    # The delete event subsumes the per-substrate evidence changes below.
+    suppress_canonical_evidence_events(
+        session,
+        entity_type="location",
+        canonical_ids=[str(canon.id)],
+    )
 
     pid_rows = session.exec(
         select(BackfieldProject.id).where(
@@ -87,6 +95,13 @@ def delete_location_canonical_and_requeue(
         entity_id=deleted_id,
         entity_label=label,
         payload_json={"unlinked_substrate_count": len(linked_ids)},
+    )
+    record_canonical_deleted(
+        session,
+        stylebook_id=int(stylebook_id),
+        entity_type="location",
+        canonical_id=deleted_id,
+        label=label,
     )
     session.delete(canon)
     return DeleteCanonicalAndRequeueResult(

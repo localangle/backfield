@@ -20,6 +20,7 @@ from backfield_entities.activity import (
 )
 from backfield_entities.catalog.search import catalog_label_alias_ilike_filter
 from backfield_entities.entities.location.persist import create_standalone_canonical
+from backfield_events import record_canonical_updated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import case, literal
@@ -541,6 +542,13 @@ def patch_canonical_location(
         entity_label=str(canon.label),
         payload_json=updates,
     )
+    record_canonical_updated(
+        session,
+        stylebook_id=int(sb.id),
+        entity_type="location",
+        canonical_id=str(canon.id),
+        label=str(canon.label),
+    )
     session.add(canon)
     session.commit()
     session.refresh(canon)
@@ -580,6 +588,13 @@ def patch_canonical_location_geometry(
     if canon is None or int(canon.stylebook_id) != int(sb.id):
         raise HTTPException(status_code=404, detail="Canonical location not found")
     canon.geometry_json = body.geometry_json
+    record_canonical_updated(
+        session,
+        stylebook_id=int(sb.id),
+        entity_type="location",
+        canonical_id=str(canon.id),
+        label=str(canon.label),
+    )
     session.add(canon)
     session.commit()
     return {"message": "ok", "id": str(canon.id)}

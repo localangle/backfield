@@ -687,12 +687,18 @@ export async function revokeProjectAccessKey(
   })
 }
 
-/** Webhook endpoints (org admin): send updates to another application when a run finishes. */
+/** Webhook endpoints (org admin): send updates to another application when things happen. */
 export type WebhookOutcome = 'succeeded' | 'failed'
 
 export interface WebhookFlow {
   flow_id: string
   flow_name: string | null
+}
+
+export interface WebhookEventType {
+  event_type: string
+  /** Flow-scoped types can target specific flows; others always apply to the whole project. */
+  flow_scoped: boolean
 }
 
 export interface WebhookEndpoint {
@@ -710,6 +716,9 @@ export interface WebhookEndpoint {
   last_success_at: string | null
   last_failure_at: string | null
   outcomes: WebhookOutcome[] | null
+  event_types: string[]
+  /** True when flow-scoped notifications apply to every flow in the project. */
+  all_flows: boolean
   flows: WebhookFlow[]
   pending_deliveries: number
   failed_deliveries: number
@@ -781,8 +790,16 @@ export interface WebhookEndpointCreateInput {
   project_id: number
   name: string
   url: string
-  flow_ids: string[]
+  event_types: string[]
+  flow_ids?: string[]
+  all_flows?: boolean
   outcomes?: WebhookOutcome[] | null
+}
+
+export async function listOrganizationWebhookEventTypes(
+  orgId: number,
+): Promise<WebhookEventType[]> {
+  return jsonFetch(`/v1/organizations/${orgId}/webhook-event-types`)
 }
 
 export async function createOrganizationWebhookEndpoint(
@@ -798,7 +815,9 @@ export async function createOrganizationWebhookEndpoint(
 export interface WebhookEndpointPatchInput {
   name?: string
   url?: string
+  event_types?: string[]
   flow_ids?: string[]
+  all_flows?: boolean
   outcomes?: WebhookOutcome[] | null
   clear_outcomes?: boolean
 }

@@ -20,13 +20,52 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from backfield_events.config import webhooks_enabled
-from backfield_events.contracts import RunCompletedCounts, normalize_run_outcome
-from backfield_events.recording import RecordedEvent, record_run_completed_event
+from backfield_events.contracts import (
+    RUN_COMPLETED_EVENT,
+    RunCompletedCounts,
+    RunCompletedData,
+    normalize_run_outcome,
+)
+from backfield_events.events import DomainEvent, EventScope, record_event
+from backfield_events.recording import RecordedEvent
 
 #: Shared cancellation marker (see worker terminal_transitions and Agate API cancel).
 RUN_CANCELLED_MESSAGE = "Run cancelled by user"
 
 TERMINAL_RUN_STATUSES = ("succeeded", "failed", "timed_out")
+
+
+class RunCompleted(DomainEvent):
+    """A flow run attempt reached a terminal state."""
+
+    event_type = RUN_COMPLETED_EVENT
+    flow_scoped = True
+
+    organization_id: int
+    project_id: int
+    graph_id: str
+    graph_name: str
+    run_id: str
+    execution_attempt: int | None
+    data: RunCompletedData
+
+    def scopes(self, session: Session) -> list[EventScope]:
+        return [
+            EventScope(
+                organization_id=self.organization_id,
+                project_id=self.project_id,
+                graph_id=self.graph_id,
+                graph_name=self.graph_name,
+                run_id=self.run_id,
+                execution_attempt=self.execution_attempt,
+            )
+        ]
+
+    def payload(self) -> dict[str, object]:
+        return self.data.model_dump()
+
+    def outcome(self) -> str | None:
+        return self.data.outcome
 
 
 def record_run_output_article(
@@ -123,18 +162,24 @@ def record_run_terminal_event(session: Session, run: AgateRun) -> RecordedEvent 
     outcome, completion_reason = normalize_run_outcome(status=run.status, cancelled=cancelled)
     failure_category = _failure_category(status=run.status, completion_reason=completion_reason)
 
-    return record_run_completed_event(
-        session,
-        run=run,
-        graph=graph,
-        project=project,
-        outcome=outcome,
-        completion_reason=completion_reason,
-        failure_category=failure_category,
-        counts=_run_counts(session, run),
-        article_count=article_count,
+    event = RunCompleted(
         occurred_at=datetime.now(UTC),
+        organization_id=project.organization_id,
+        project_id=int(project.id or 0),
+        graph_id=graph.id,
+        graph_name=graph.name,
+        run_id=run.id,
+        execution_attempt=run.execution_attempt,
+        data=RunCompletedData(
+            outcome=outcome,
+            completion_reason=completion_reason,
+            failure_category=failure_category,
+            counts=_run_counts(session, run),
+            article_count=article_count,
+        ),
     )
+    recorded = record_event(session, event)
+    return recorded[0] if recorded else None
 
 
 def _failure_category(*, status: str, completion_reason: str) -> str | None:

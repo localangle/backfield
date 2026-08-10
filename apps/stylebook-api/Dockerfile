@@ -17,12 +17,14 @@ COPY packages/backfield-db /app/packages/backfield-db
 COPY packages/backfield-observability /app/packages/backfield-observability
 COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-auth /app/packages/backfield-auth
+COPY packages/backfield-events /app/packages/backfield-events
 COPY packages/backfield-entities /app/packages/backfield-entities
 COPY apps/stylebook-api /app/apps/stylebook-api
 
 RUN uv pip install --system /app/packages/backfield-db \
     && uv pip install --system /app/packages/backfield-observability \
     && uv pip install --system /app/packages/backfield-ai \
+    && uv pip install --system /app/packages/backfield-events \
     && uv pip install --system /app/packages/backfield-entities \
     && uv pip install --system /app/packages/backfield-auth \
     && uv pip install --system /app/apps/stylebook-api
@@ -61,12 +63,14 @@ COPY packages/backfield-db /app/packages/backfield-db
 COPY packages/backfield-observability /app/packages/backfield-observability
 COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-auth /app/packages/backfield-auth
+COPY packages/backfield-events /app/packages/backfield-events
 COPY packages/backfield-entities /app/packages/backfield-entities
 COPY apps/stylebook-api /app/apps/stylebook-api
 
 RUN cd /app/packages/backfield-db && uv pip install --system -e . \
     && cd /app/packages/backfield-observability && uv pip install --system -e . \
     && cd /app/packages/backfield-ai && uv pip install --system -e . \
+    && cd /app/packages/backfield-events && uv pip install --system -e . \
     && cd /app/packages/backfield-entities && uv pip install --system -e . \
     && cd /app/packages/backfield-auth && uv pip install --system -e . \
     && cd /app/apps/stylebook-api && uv pip install --system -e .

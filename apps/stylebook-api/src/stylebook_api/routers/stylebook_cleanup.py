@@ -76,6 +76,7 @@ from backfield_entities.quality.types import (
     CleanupLocationGeographyIssueRow,
     CleanupNameMismatchIssueRow,
 )
+from backfield_events import record_canonical_deleted
 from backfield_observability.celery_publish import register_publish_timestamp_hook
 from celery import Celery
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -2218,6 +2219,13 @@ def delete_empty_cleanup_canonical_location(
         entity_label=str(canon.label),
         payload_json={"check_id": "questionable-location-canonicals"},
     )
+    record_canonical_deleted(
+        session,
+        stylebook_id=int(sb.id),
+        entity_type="location",
+        canonical_id=deleted_id,
+        label=str(canon.label),
+    )
     session.delete(canon)
     session.commit()
     return DeleteCleanupCanonicalResponse(id=deleted_id, message="deleted")
@@ -2358,6 +2366,13 @@ def delete_empty_cleanup_canonical_person(
         entity_label=str(canon.label),
         payload_json={"check_id": "questionable-person-canonicals"},
     )
+    record_canonical_deleted(
+        session,
+        stylebook_id=int(sb.id),
+        entity_type="person",
+        canonical_id=deleted_id,
+        label=str(canon.label),
+    )
     session.delete(canon)
     session.commit()
     return DeleteCleanupCanonicalResponse(id=deleted_id, message="deleted")
@@ -2497,6 +2512,13 @@ def delete_empty_cleanup_canonical_organization(
         entity_id=deleted_id,
         entity_label=str(canon.label),
         payload_json={"check_id": "questionable-organization-canonicals"},
+    )
+    record_canonical_deleted(
+        session,
+        stylebook_id=int(sb.id),
+        entity_type="organization",
+        canonical_id=deleted_id,
+        label=str(canon.label),
     )
     session.delete(canon)
     session.commit()

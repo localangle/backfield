@@ -82,9 +82,8 @@ from backfield_entities.quality.finders.duplicate_organizations import (
     duplicate_organization_cluster_ids,
 )
 from backfield_entities.quality.finders.duplicate_people import duplicate_person_cluster_ids
-from backfield_events import record_run_terminal_event
+from backfield_events import pop_recorded_events, record_run_terminal_event
 from backfield_events.delivery import find_due_delivery_ids
-from backfield_events.recording import RecordedEvent
 from backfield_observability.celery_publish import register_publish_timestamp_hook
 from backfield_observability.lifecycle import (
     emit_item_terminal,
@@ -131,9 +130,10 @@ def _graph_has_db_output(spec: GraphSpec) -> bool:
     return any(node.type == "DBOutput" for node in spec.nodes)
 
 
-def _kick_webhook_dispatch(recorded: RecordedEvent | None) -> None:
+def _kick_webhook_dispatch(session: Session) -> None:
     """Best-effort post-commit dispatcher kick; the recovery sweep remains authoritative."""
-    if recorded is None or not recorded.delivery_ids:
+    recorded = pop_recorded_events(session)
+    if not any(event.delivery_ids for event in recorded):
         return
     try:
         celery_app.send_task(
@@ -712,7 +712,7 @@ def _finalize_s3_parent_run(session: Session, run_id: str) -> None:
         run.error_message = None
     run.updated_at = datetime.now(UTC)
     session.add(run)
-    recorded_event = record_run_terminal_event(session, run)
+    record_run_terminal_event(session, run)
     session.commit()
     emit_run_terminal(
         previous_status=previous_status,
@@ -720,7 +720,7 @@ def _finalize_s3_parent_run(session: Session, run_id: str) -> None:
         identity=worker_identity(),
         correlation={"run_id": run_id},
     )
-    _kick_webhook_dispatch(recorded_event)
+    _kick_webhook_dispatch(session)
 
 
 @celery_app.task(name="worker.tasks.execute_agate_run")
@@ -737,7 +737,7 @@ def execute_agate_run(run_id: str) -> None:
             run.error_message = "Graph not found"
             run.updated_at = datetime.now(UTC)
             session.add(run)
-            recorded_event = record_run_terminal_event(session, run)
+            record_run_terminal_event(session, run)
             session.commit()
             emit_run_terminal(
                 previous_status=previous_status,
@@ -745,7 +745,7 @@ def execute_agate_run(run_id: str) -> None:
                 identity=worker_identity(),
                 correlation={"run_id": run_id},
             )
-            _kick_webhook_dispatch(recorded_event)
+            _kick_webhook_dispatch(session)
             return
 
         if run.status != "pending":
@@ -848,7 +848,7 @@ def execute_agate_run(run_id: str) -> None:
             run.result_json = None
         run.updated_at = datetime.now(UTC)
         session.add(run)
-        recorded_event = record_run_terminal_event(session, run)
+        record_run_terminal_event(session, run)
         session.commit()
         emit_run_terminal(
             previous_status=previous_status,
@@ -856,7 +856,7 @@ def execute_agate_run(run_id: str) -> None:
             identity=worker_identity(),
             correlation={"run_id": run_id},
         )
-        _kick_webhook_dispatch(recorded_event)
+        _kick_webhook_dispatch(session)
 
 
 @celery_app.task(name="worker.tasks.execute_s3_batch_setup")
@@ -873,7 +873,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
             run.error_message = "Graph not found"
             run.updated_at = datetime.now(UTC)
             session.add(run)
-            recorded_event = record_run_terminal_event(session, run)
+            record_run_terminal_event(session, run)
             session.commit()
             emit_run_terminal(
                 previous_status=previous_status,
@@ -881,7 +881,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                 identity=worker_identity(),
                 correlation={"run_id": run_id},
             )
-            _kick_webhook_dispatch(recorded_event)
+            _kick_webhook_dispatch(session)
             return
 
         claimed_at = datetime.now(UTC)
@@ -968,7 +968,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                 )
                 run.updated_at = datetime.now(UTC)
                 session.add(run)
-                recorded_event = record_run_terminal_event(session, run)
+                record_run_terminal_event(session, run)
                 session.commit()
                 emit_run_terminal(
                     previous_status=previous_status,
@@ -976,7 +976,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                     identity=worker_identity(),
                     correlation={"run_id": run_id},
                 )
-                _kick_webhook_dispatch(recorded_event)
+                _kick_webhook_dispatch(session)
                 return
 
             with _env_overlay(overlay):
@@ -1131,7 +1131,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                     run.error_message = None
                     run.updated_at = datetime.now(UTC)
                     session.add(run)
-                    recorded_event = record_run_terminal_event(session, run)
+                    record_run_terminal_event(session, run)
                     session.commit()
                     emit_run_terminal(
                         previous_status=previous_status,
@@ -1139,7 +1139,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                         identity=worker_identity(),
                         correlation={"run_id": run_id},
                     )
-                    _kick_webhook_dispatch(recorded_event)
+                    _kick_webhook_dispatch(session)
                     return
                 run.status = "failed"
                 run.error_message = (
@@ -1147,7 +1147,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                 )
                 run.updated_at = datetime.now(UTC)
                 session.add(run)
-                recorded_event = record_run_terminal_event(session, run)
+                record_run_terminal_event(session, run)
                 session.commit()
                 emit_run_terminal(
                     previous_status=previous_status,
@@ -1155,7 +1155,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                     identity=worker_identity(),
                     correlation={"run_id": run_id},
                 )
-                _kick_webhook_dispatch(recorded_event)
+                _kick_webhook_dispatch(session)
                 return
 
             # Queue all ``execute_processed_item`` tasks and return immediately. A ``chord``
@@ -1193,7 +1193,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                 run_fail.error_message = str(e)
                 run_fail.updated_at = datetime.now(UTC)
                 session3.add(run_fail)
-                recorded_event = record_run_terminal_event(session3, run_fail)
+                record_run_terminal_event(session3, run_fail)
                 session3.commit()
                 emit_run_terminal(
                     previous_status=previous_status,
@@ -1201,7 +1201,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                     identity=worker_identity(),
                     correlation={"run_id": run_id},
                 )
-                _kick_webhook_dispatch(recorded_event)
+                _kick_webhook_dispatch(session3)
 
 
 @celery_app.task(name="worker.tasks.execute_run_replay_setup")
@@ -1233,9 +1233,9 @@ def execute_run_replay_setup(source_run_id: str, new_run_id: str) -> None:
             new_run.error_message = "No replayable items found on the source run."
             new_run.updated_at = datetime.now(UTC)
             session.add(new_run)
-            recorded_event = record_run_terminal_event(session, new_run)
+            record_run_terminal_event(session, new_run)
             session.commit()
-            _kick_webhook_dispatch(recorded_event)
+            _kick_webhook_dispatch(session)
             return
 
         source_payload = parse_run_result_payload(source.result_json)
@@ -1274,9 +1274,9 @@ def execute_run_replay_setup(source_run_id: str, new_run_id: str) -> None:
                 new_run_fail.error_message = "Replay setup produced no processed items."
                 new_run_fail.updated_at = datetime.now(UTC)
                 session.add(new_run_fail)
-                recorded_event = record_run_terminal_event(session, new_run_fail)
+                record_run_terminal_event(session, new_run_fail)
                 session.commit()
-                _kick_webhook_dispatch(recorded_event)
+                _kick_webhook_dispatch(session)
             return
 
         logger.info(

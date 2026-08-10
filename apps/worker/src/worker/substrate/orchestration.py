@@ -48,6 +48,10 @@ class PersistResult:
     reconciliation_summary: DomainReconciliationSummary
     domain_summaries: tuple[DomainReconciliationSummary, ...] = ()
     consolidated_domain_keys: tuple[str, ...] = ()
+    #: Article lifecycle facts for event emission (agate.article.created/updated).
+    article_created: bool = False
+    article_content_changed: bool = False
+    article_headline: str | None = None
 
     def __iter__(self):
         yield self.article_id
@@ -135,13 +139,14 @@ def persist_from_consolidated(
             "consolidated['article_metadata'], and/or consolidated['custom_records']"
         )
 
-    article = _upsert_article(
+    upsert = _upsert_article(
         session,
         project_id=project_id,
         consolidated=consolidated,
         run_id=run_id,
         processed_item_id=processed_item_id,
     )
+    article = upsert.article
     _sync_images(session, article_id=int(article.id), consolidated=consolidated)
 
     article_text = str(consolidated.get("text") or "")
@@ -230,4 +235,7 @@ def persist_from_consolidated(
         reconciliation_summary=_primary_reconciliation_summary(summaries_tuple, policy=policy),
         domain_summaries=summaries_tuple,
         consolidated_domain_keys=active_keys,
+        article_created=upsert.created,
+        article_content_changed=upsert.content_changed,
+        article_headline=article.headline,
     )

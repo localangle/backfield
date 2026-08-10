@@ -42,6 +42,7 @@ from backfield_db import (
     AgateProcessedItem,
     AgateRun,
     BackfieldAiCallRecord,
+    SubstrateArticle,
     SubstrateArticleMeta,
 )
 from backfield_entities.connections.processed_item import (
@@ -64,8 +65,11 @@ from backfield_entities.ingest.custom_record.persist import (
 from backfield_entities.ingest.semantic_indexing.processed_item import (
     build_processed_item_semantic_indexing_summary,
 )
-from backfield_events import record_run_terminal_event
-from backfield_events.recording import RecordedEvent
+from backfield_events import (
+    pop_recorded_events,
+    record_article_updated,
+    record_run_terminal_event,
+)
 from backfield_observability.celery_publish import register_publish_timestamp_hook
 from backfield_observability.lifecycle import api_identity, emit_item_terminal, emit_run_terminal
 from celery import Celery
@@ -95,9 +99,29 @@ def _celery_queue() -> str:
     return str(os.environ.get("CELERY_QUEUE", "agate"))
 
 
-def _kick_webhook_dispatch(recorded: RecordedEvent | None) -> None:
+def _record_article_metadata_event(
+    session: Session,
+    *,
+    run_id: str,
+    article_id: int | None,
+) -> None:
+    """Record article.updated for a review metadata change (same transaction)."""
+    if article_id is None:
+        return
+    article = session.get(SubstrateArticle, int(article_id))
+    record_article_updated(
+        session,
+        run_id=run_id,
+        article_id=int(article_id),
+        headline=article.headline if article else None,
+        change="metadata",
+    )
+
+
+def _kick_webhook_dispatch(session: Session) -> None:
     """Best-effort post-commit dispatcher kick; the recovery sweep remains authoritative."""
-    if recorded is None or not recorded.delivery_ids:
+    recorded = pop_recorded_events(session)
+    if not any(event.delivery_ids for event in recorded):
         return
     try:
         celery_app.send_task(
@@ -2008,6 +2032,7 @@ def create_run_processed_item_article_meta(
         session.add(substrate_row)
         session.flush()
         new_row_id = int(substrate_row.id)  # type: ignore[arg-type]
+        _record_article_metadata_event(session, run_id=run_id, article_id=int(article_id))
 
     overlay_payload = _merge_article_meta_user_added(
         overlay_obj,
@@ -2060,6 +2085,7 @@ def create_run_processed_item_article_meta(
             },
         )
     session.commit()
+    _kick_webhook_dispatch(session)
     session.refresh(item)
 
     by_item, null_b, currency = _rollup_ai_costs_for_run(session, run_id)
@@ -2165,6 +2191,7 @@ def patch_run_processed_item_article_meta(
         substrate_row.category = category
         substrate_row.updated_at = datetime.now(UTC)
         session.add(substrate_row)
+        _record_article_metadata_event(session, run_id=run_id, article_id=int(article_id))
 
     overlay_payload = _merge_article_meta_category_patch(
         overlay_obj,
@@ -2212,6 +2239,7 @@ def patch_run_processed_item_article_meta(
             },
         )
     session.commit()
+    _kick_webhook_dispatch(session)
     session.refresh(item)
 
     by_item, null_b, currency = _rollup_ai_costs_for_run(session, run_id)
@@ -2306,6 +2334,7 @@ def delete_run_processed_item_article_meta(
         if substrate_row is None or int(substrate_row.article_id) != int(article_id):
             raise HTTPException(404, "Article metadata row not found")
         session.delete(substrate_row)
+        _record_article_metadata_event(session, run_id=run_id, article_id=int(article_id))
 
     overlay_payload = _merge_article_meta_removal(
         overlay_obj,
@@ -2352,6 +2381,7 @@ def delete_run_processed_item_article_meta(
             },
         )
     session.commit()
+    _kick_webhook_dispatch(session)
     session.refresh(item)
 
     by_item, null_b, currency = _rollup_ai_costs_for_run(session, run_id)
@@ -2654,9 +2684,9 @@ def cancel_run(
     r.error_message = _RUN_CANCELLED_MESSAGE
     r.updated_at = now
     session.add(r)
-    recorded_event = record_run_terminal_event(session, r)
+    record_run_terminal_event(session, r)
     session.commit()
-    _kick_webhook_dispatch(recorded_event)
+    _kick_webhook_dispatch(session)
     identity = api_identity("agate-api")
     for _ in range(cancelled_items):
         emit_item_terminal(

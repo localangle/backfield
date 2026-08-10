@@ -5,6 +5,10 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from backfield_db import BackfieldEvent, BackfieldProject
+
+# Import from the package root so every DomainEvent subclass is registered
+# before we validate type filters against the registry.
+from backfield_events import event_type_is_registered
 from backfield_events.contracts import envelope_from_event
 from backfield_events.cursor import (
     EVENT_RETENTION_DAYS,
@@ -37,6 +41,15 @@ class PublicEventRunOut(BaseModel):
 class PublicEventLinksOut(BaseModel):
     run: str | None = None
     articles: str | None = None
+    article: str | None = None
+    entity: str | None = None
+
+
+class PublicEventEntityOut(BaseModel):
+    """Canonical entity scope for stylebook events."""
+
+    type: str | None = None
+    id: str | None = None
 
 
 class PublicEventOut(BaseModel):
@@ -49,6 +62,8 @@ class PublicEventOut(BaseModel):
     occurred_at: datetime
     flow: PublicEventFlowOut
     run: PublicEventRunOut
+    article_id: int | None
+    entity: PublicEventEntityOut
     data: dict[str, object]
     links: PublicEventLinksOut
 
@@ -67,6 +82,10 @@ def list_public_events(
     flow_id: list[str] | None = Query(
         default=None,
         description="Limit to events from these flows (repeatable).",
+    ),
+    type: list[str] | None = Query(
+        default=None,
+        description="Limit to these event types (repeatable), e.g. agate.run.completed.",
     ),
     limit: int = Query(default=25, ge=1, le=100),
     project: BackfieldProject = Depends(get_public_project),
@@ -109,6 +128,16 @@ def list_public_events(
         cleaned = [value.strip() for value in flow_id if value.strip()]
         if cleaned:
             stmt = stmt.where(col(BackfieldEvent.graph_id).in_(cleaned))
+    if type:
+        cleaned_types = [value.strip() for value in type if value.strip()]
+        for event_type in cleaned_types:
+            if not event_type_is_registered(event_type):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Unknown event type: {event_type}",
+                )
+        if cleaned_types:
+            stmt = stmt.where(col(BackfieldEvent.event_type).in_(cleaned_types))
 
     events = list(session.exec(stmt).all())
     items: list[PublicEventOut] = []
@@ -130,10 +159,14 @@ def list_public_events(
                     attempt=envelope.run.attempt,
                     url=envelope.run.url,
                 ),
+                article_id=event.article_id,
+                entity=PublicEventEntityOut(type=event.entity_type, id=event.entity_id),
                 data=envelope.data,
                 links=PublicEventLinksOut(
                     run=envelope.links.run,
                     articles=envelope.links.articles,
+                    article=envelope.links.article,
+                    entity=envelope.links.entity,
                 ),
             )
         )

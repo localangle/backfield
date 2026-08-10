@@ -193,11 +193,16 @@ webhook and event contract.
 
 - Each item carries an opaque `cursor`; pass the last processed one back as
   `?cursor=` to resume. `next_cursor` repeats the final item's cursor.
-- `flow_id` is repeatable and limits results to specific flows.
+- `flow_id` is repeatable and limits results to specific flows. `type` is
+  repeatable and limits results to specific event types (unknown types return
+  `400`).
 - Feed items use the same versioned envelope as webhook bodies: `id`, `type`
-  (`agate.run.completed`), `schema_version`, `occurred_at`, `flow`, `run`
-  (id, attempt, url), normalized `data` (outcome, completion reason, counts,
-  article count), and `links` to the public run and run-articles resources.
+  (`agate.run.completed`, `agate.article.created|updated`,
+  `stylebook.canonical.created|updated|deleted|merged`,
+  `stylebook.canonical.evidence.changed`), `schema_version`, `occurred_at`,
+  `flow`, `run` (id, attempt, url), `article_id` and `entity` (type, id) scope
+  refs, the type-specific `data` payload, and `links` to the relevant public
+  resources (run, run articles, article, or canonical entity).
 - Synthetic webhook verification events never appear in the feed.
 - A cursor older than the retention window returns `410` with
   `error.code=cursor_expired`; restart without a cursor. Malformed cursors

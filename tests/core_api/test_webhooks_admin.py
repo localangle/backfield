@@ -400,3 +400,116 @@ def test_cross_org_endpoint_is_not_visible(webhooks_client: TestClient) -> None:
     )
     # The admin belongs to org 1, so org 2 access is rejected outright.
     assert response.status_code in (403, 404)
+
+
+def test_event_types_catalog_lists_registered_types(webhooks_client: TestClient) -> None:
+    _login_admin(webhooks_client)
+    response = webhooks_client.get("/v1/organizations/1/webhook-event-types")
+    assert response.status_code == 200
+    rows = {row["event_type"]: row["flow_scoped"] for row in response.json()}
+    assert rows["agate.run.completed"] is True
+    assert rows["agate.article.created"] is True
+    assert rows["stylebook.canonical.created"] is False
+    assert "backfield.webhook.test" not in rows
+
+
+def test_create_endpoint_with_multiple_event_types_and_all_flows(
+    webhooks_client: TestClient,
+) -> None:
+    _login_admin(webhooks_client)
+    created = _create_endpoint(
+        webhooks_client,
+        event_types=["agate.run.completed", "stylebook.canonical.updated"],
+        flow_ids=None,
+        all_flows=True,
+    )
+    endpoint = created["endpoint"]
+    assert sorted(endpoint["event_types"]) == [
+        "agate.run.completed",
+        "stylebook.canonical.updated",
+    ]
+    assert endpoint["all_flows"] is True
+    assert endpoint["flows"] == []
+
+    with Session(webhooks_client.test_engine) as session:  # type: ignore[attr-defined]
+        rows = session.exec(select(BackfieldWebhookSubscription)).all()
+        # One all-flows row per event type; canonical rows are always graph-less.
+        assert {(row.event_type, row.graph_id) for row in rows} == {
+            ("agate.run.completed", None),
+            ("stylebook.canonical.updated", None),
+        }
+
+
+def test_create_endpoint_rejects_unknown_event_type(webhooks_client: TestClient) -> None:
+    _login_admin(webhooks_client)
+    response = webhooks_client.post(
+        "/v1/organizations/1/webhook-endpoints",
+        json={
+            "project_id": 1,
+            "name": "Bad type",
+            "url": ENDPOINT_URL,
+            "event_types": ["agate.run.started"],
+            "all_flows": True,
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_create_flow_scoped_endpoint_requires_flows_or_all_flows(
+    webhooks_client: TestClient,
+) -> None:
+    _login_admin(webhooks_client)
+    response = webhooks_client.post(
+        "/v1/organizations/1/webhook-endpoints",
+        json={
+            "project_id": 1,
+            "name": "No flows",
+            "url": ENDPOINT_URL,
+            "event_types": ["agate.article.created"],
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_patch_can_switch_between_explicit_flows_and_all_flows(
+    webhooks_client: TestClient,
+) -> None:
+    _login_admin(webhooks_client)
+    endpoint_id = _create_endpoint(webhooks_client)["endpoint"]["id"]
+
+    patched = webhooks_client.patch(
+        f"/v1/organizations/1/webhook-endpoints/{endpoint_id}",
+        json={"all_flows": True},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["all_flows"] is True
+    assert patched.json()["flows"] == []
+
+    back = webhooks_client.patch(
+        f"/v1/organizations/1/webhook-endpoints/{endpoint_id}",
+        json={"all_flows": False, "flow_ids": ["graph-webhook-flow"]},
+    )
+    assert back.status_code == 200
+    assert back.json()["all_flows"] is False
+    assert back.json()["flows"] == [
+        {"flow_id": "graph-webhook-flow", "flow_name": "Webhook flow"}
+    ]
+
+
+def test_patch_event_types_preserves_flow_selection(webhooks_client: TestClient) -> None:
+    _login_admin(webhooks_client)
+    endpoint_id = _create_endpoint(webhooks_client)["endpoint"]["id"]
+
+    patched = webhooks_client.patch(
+        f"/v1/organizations/1/webhook-endpoints/{endpoint_id}",
+        json={"event_types": ["agate.run.completed", "agate.article.updated"]},
+    )
+    assert patched.status_code == 200
+    body = patched.json()
+    assert sorted(body["event_types"]) == [
+        "agate.article.updated",
+        "agate.run.completed",
+    ]
+    assert body["flows"] == [
+        {"flow_id": "graph-webhook-flow", "flow_name": "Webhook flow"}
+    ]

@@ -197,6 +197,44 @@ def test_event_feed_excludes_test_events_and_filters_by_flow(
     assert [item["run"]["id"] for item in filtered["items"]] == ["run-other"]
 
 
+def test_event_feed_filters_by_type_and_carries_scope_refs(
+    events_client: TestClient,
+) -> None:
+    raw_key = _read_key(events_client)
+    with Session(events_client.test_engine) as session:  # type: ignore[attr-defined]
+        _seed_event(session, run_id="run-main")
+        canonical_event = BackfieldEvent(
+            event_type="stylebook.canonical.updated",
+            organization_id=1,
+            project_id=1,
+            entity_type="location",
+            entity_id="canon-1",
+            payload_json=json.dumps({"label": "City Hall"}),
+            occurred_at=datetime.now(UTC),
+        )
+        session.add(canonical_event)
+        session.commit()
+
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    filtered = events_client.get(
+        "/public/v1/projects/general/events?type=stylebook.canonical.updated",
+        headers=headers,
+    ).json()
+    assert len(filtered["items"]) == 1
+    item = filtered["items"][0]
+    assert item["type"] == "stylebook.canonical.updated"
+    assert item["entity"] == {"type": "location", "id": "canon-1"}
+    assert item["run"]["id"] is None
+    assert item["links"]["entity"] is not None
+    assert "locations/canon-1" in item["links"]["entity"]
+
+    unknown = events_client.get(
+        "/public/v1/projects/general/events?type=agate.run.started",
+        headers=headers,
+    )
+    assert unknown.status_code == 400
+
+
 def test_event_feed_expired_cursor_returns_410(events_client: TestClient) -> None:
     raw_key = _read_key(events_client)
     expired = encode_event_cursor(

@@ -2414,6 +2414,11 @@ class BackfieldEvent(SQLModel, table=True):
         default=None,
         sa_column=Column(Integer, nullable=True),
     )
+    #: Snapshot scope for article events (no FK; history survives deletion).
+    article_id: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))
+    #: Snapshot scope for canonical entity events: "location" | "person" | "organization".
+    entity_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    entity_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     payload_json: str = Field(sa_column=Column(Text, nullable=False))
     occurred_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
     #: Synthetic verification events are delivery-only and never enter the public feed.
@@ -2498,7 +2503,12 @@ class BackfieldWebhookEndpoint(SQLModel, table=True):
 
 
 class BackfieldWebhookSubscription(SQLModel, table=True):
-    """Explicit (endpoint, event type, flow) subscription row."""
+    """(endpoint, event type, flow) subscription row.
+
+    ``graph_id`` NULL means "all flows in the endpoint's project" for flow-scoped
+    event types, and is the only shape used by non-flow-scoped event types
+    (e.g. stylebook canonical events).
+    """
 
     __tablename__ = "backfield_webhook_subscription"
     __table_args__ = (
@@ -2507,6 +2517,16 @@ class BackfieldWebhookSubscription(SQLModel, table=True):
             "event_type",
             "graph_id",
             name="uq_backfield_webhook_subscription",
+        ),
+        # NULL graph_id rows escape the composite unique constraint, so enforce
+        # at most one all-flows row per (endpoint, event type) separately.
+        Index(
+            "uq_backfield_webhook_subscription_all_flows",
+            "endpoint_id",
+            "event_type",
+            unique=True,
+            postgresql_where=text("graph_id IS NULL"),
+            sqlite_where=text("graph_id IS NULL"),
         ),
         Index("ix_backfield_webhook_subscription_graph", "graph_id"),
     )
@@ -2521,12 +2541,13 @@ class BackfieldWebhookSubscription(SQLModel, table=True):
         )
     )
     event_type: str = Field(sa_column=Column(Text, nullable=False))
-    graph_id: str = Field(
+    graph_id: str | None = Field(
+        default=None,
         sa_column=Column(
             Text,
             ForeignKey("agate_graph.id", ondelete="CASCADE"),
-            nullable=False,
-        )
+            nullable=True,
+        ),
     )
     #: JSON array of outcomes to deliver (e.g. ["succeeded"]); NULL means all outcomes.
     outcomes_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))

@@ -9,6 +9,9 @@ Covers the golden webhook path end to end:
 4. Read the same event from the public event feed and the run-articles endpoint.
 5. A second endpoint whose receiver starts failing shows a retry-scheduled delivery.
 6. A run from an unsubscribed flow appears in the feed but produces no delivery.
+7. A project-wide endpoint subscribed to Stylebook canonical events receives a
+   signed ``stylebook.canonical.created`` delivery when a canonical person is
+   created, and the event appears in the feed under the ``type`` filter.
 
 The stack must run with ``BACKFIELD_WEBHOOKS_ENABLED=1`` and
 ``BACKFIELD_WEBHOOK_ALLOW_PRIVATE_DESTINATIONS=1`` (local Compose defaults).
@@ -38,11 +41,14 @@ from _helpers import (
     log,
     login_session_context,
     session_cookie_headers,
+    smoke_db_session,
     wait_for_terminal_run,
 )
+from backfield_db import BackfieldProject, Stylebook
 from backfield_events.signing import verify_webhook_signature
 
 AGATE_API_BASE = os.environ.get("AGATE_API_BASE", "http://localhost:8000")
+STYLEBOOK_API_BASE = os.environ.get("STYLEBOOK_API_BASE", "http://localhost:8003")
 CORE_API_BASE = os.environ.get("CORE_API_BASE", "http://localhost:8004")
 SMOKE_EMAIL = os.environ.get("SMOKE_EMAIL", "").strip()
 SMOKE_PASSWORD = os.environ.get("SMOKE_PASSWORD", "")
@@ -147,6 +153,20 @@ def _simple_graph_spec(name: str) -> dict[str, object]:
             {"source": "text", "target": "out", "sourceHandle": "text", "targetHandle": "data"}
         ],
     }
+
+
+def _project_stylebook_slug(project_id: int) -> str:
+    """Slug of the stylebook the project writes to (not the org default)."""
+    with smoke_db_session() as session:
+        project = session.get(BackfieldProject, project_id)
+        if project is None:
+            raise RuntimeError(f"Project {project_id} not found for stylebook lookup")
+        stylebook = session.get(Stylebook, int(project.stylebook_id))
+        if stylebook is None:
+            raise RuntimeError(
+                f"Stylebook {project.stylebook_id} not found for project {project_id}"
+            )
+        return str(stylebook.slug)
 
 
 def _verify_signed(request: _CapturedRequest, *, secret: str, context: str) -> dict[str, Any]:
@@ -397,6 +417,88 @@ def main() -> int:
             time.sleep(3)
             if len(receiver.requests_for("/hook")) != hook_count_before:
                 raise RuntimeError("Unsubscribed flow produced an unexpected delivery")
+
+            # 8. Canonical events: project-wide endpoint + Stylebook mutation.
+            canonical_created = assert_object(
+                core.post(
+                    f"/v1/organizations/{org_id}/webhook-endpoints",
+                    json={
+                        "project_id": ctx.project_id,
+                        "name": f"Smoke canonical receiver {suffix}",
+                        "url": f"{base_callback}/canonical",
+                        "event_types": ["stylebook.canonical.created"],
+                    },
+                ),
+                "create canonical endpoint",
+            )
+            canonical_endpoint_id = str(canonical_created["endpoint"]["id"])
+            endpoint_ids.append(canonical_endpoint_id)
+            canonical_secret = str(canonical_created["signing_secret"])
+            canonical_tested = assert_object(
+                core.post(
+                    f"/v1/organizations/{org_id}/webhook-endpoints/"
+                    f"{canonical_endpoint_id}/test"
+                ),
+                "canonical verification test",
+            )
+            if canonical_tested["endpoint"]["status"] != "active":
+                raise RuntimeError("Canonical endpoint failed to activate")
+            receiver.wait_for("/canonical", count=1, timeout_s=10)
+
+            stylebook_slug = _project_stylebook_slug(ctx.project_id)
+            with httpx.Client(
+                base_url=STYLEBOOK_API_BASE, timeout=15.0, headers=headers
+            ) as stylebook:
+                person = assert_object(
+                    stylebook.post(
+                        f"/v1/stylebooks/{stylebook_slug}/canonical-people",
+                        json={"label": f"Webhook Smoke Person {suffix}"},
+                    ),
+                    "create canonical person",
+                )
+                canonical_person_id = str(person["id"])
+                try:
+                    canonical_request = receiver.wait_for(
+                        "/canonical", count=2, timeout_s=60
+                    )[1]
+                    canonical_envelope = _verify_signed(
+                        canonical_request,
+                        secret=canonical_secret,
+                        context="canonical-created delivery",
+                    )
+                    if canonical_envelope.get("type") != "stylebook.canonical.created":
+                        raise RuntimeError(
+                            f"Unexpected event type: {canonical_envelope.get('type')}"
+                        )
+                    links = canonical_envelope.get("links", {})
+                    if not str(links.get("entity") or "").endswith(
+                        f"/people/{canonical_person_id}"
+                    ):
+                        raise RuntimeError(f"Unexpected entity link: {links}")
+
+                    canonical_feed = assert_object(
+                        core.get(
+                            f"/public/v1/projects/{ctx.project_slug}/events",
+                            headers=api_headers,
+                            params={"type": "stylebook.canonical.created"},
+                        ),
+                        "canonical event feed",
+                    )
+                    feed_entities = [
+                        item.get("entity", {}).get("id")
+                        for item in canonical_feed.get("items", [])
+                    ]
+                    if canonical_person_id not in feed_entities:
+                        raise RuntimeError(
+                            f"Canonical event missing from feed: {feed_entities}"
+                        )
+                finally:
+                    if not keep_smoke_data():
+                        with suppress(Exception):
+                            stylebook.delete(
+                                f"/v1/stylebooks/{stylebook_slug}"
+                                f"/canonical-people/{canonical_person_id}"
+                            )
 
             log("Smoke webhooks passed.")
             log(f"Project: {ctx.project_slug} ({ctx.project_id})")

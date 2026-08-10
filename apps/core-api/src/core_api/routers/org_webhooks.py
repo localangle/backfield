@@ -17,6 +17,7 @@ from core_api.webhooks_admin import (
     WebhookEndpointCreatedOut,
     WebhookEndpointOut,
     WebhookEndpointPatchBody,
+    WebhookEventTypeOut,
     WebhookSecretOut,
     activate_webhook_endpoint,
     create_webhook_endpoint,
@@ -26,6 +27,7 @@ from core_api.webhooks_admin import (
     get_webhook_endpoint,
     list_webhook_deliveries,
     list_webhook_endpoints,
+    list_webhook_event_types,
     patch_webhook_endpoint,
     replay_webhook_delivery,
     require_webhook_endpoint,
@@ -42,6 +44,17 @@ class WebhookTestResponse(BaseModel):
 
 class WebhookReplayOut(BaseModel):
     delivery_id: str
+
+
+@router.get("/{org_id}/webhook-event-types", response_model=list[WebhookEventTypeOut])
+def get_organization_webhook_event_types(
+    org_id: int,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> list[WebhookEventTypeOut]:
+    """Event types available for webhook subscriptions."""
+    require_org_admin(session, auth, org_id)
+    return list_webhook_event_types()
 
 
 @router.get("/{org_id}/webhook-endpoints", response_model=list[WebhookEndpointOut])

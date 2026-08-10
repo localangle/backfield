@@ -24,7 +24,13 @@ from backfield_entities.ingest.semantic_indexing.db_output import (
     build_semantic_indexing_summary,
     sync_semantic_documents_after_db_output,
 )
-from backfield_events import record_run_output_article
+from backfield_events import (
+    pop_recorded_events,
+    record_article_created,
+    record_article_updated,
+    record_run_output_article,
+)
+from celery import current_app as celery_current_app
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session
 
@@ -98,6 +104,23 @@ def _dboutput_persist_slot() -> Iterator[None]:
             logger.debug("DBOutput persist gate lock release failed", exc_info=True)
 
 
+def _kick_webhook_dispatch_after_commit(session: Session) -> None:
+    """Best-effort dispatcher kick for article events; the sweep stays authoritative."""
+    recorded = pop_recorded_events(session)
+    if not any(event.delivery_ids for event in recorded):
+        return
+    try:
+        celery_current_app.send_task(
+            "worker.tasks.dispatch_webhook_deliveries",
+            queue=os.environ.get("CELERY_QUEUE", "agate"),
+        )
+    except Exception:
+        logger.warning(
+            "Webhook dispatch kick failed; scheduled recovery will deliver",
+            exc_info=True,
+        )
+
+
 def _record_run_output_association(
     session: Session,
     *,
@@ -147,6 +170,22 @@ def _persist_db_output_in_session(
         article_id=article_id,
         processed_item_id=processed_item_id,
     )
+    if persist_result.article_created:
+        record_article_created(
+            session,
+            run_id=run_id,
+            article_id=article_id,
+            headline=persist_result.article_headline,
+        )
+    else:
+        record_article_updated(
+            session,
+            run_id=run_id,
+            article_id=article_id,
+            headline=persist_result.article_headline,
+            change="reprocessed",
+            content_changed=persist_result.article_content_changed,
+        )
     retired_mentions = persist_result.retired_mentions
     substrates_disposed = persist_result.disposed_substrates
     replace_stats = persist_result.replace_stats
@@ -314,6 +353,7 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
                         settings=settings,
                     )
                     session.commit()
+                    _kick_webhook_dispatch_after_commit(session)
                 return result
             except SQLAlchemyError as exc:
                 last_exc = exc

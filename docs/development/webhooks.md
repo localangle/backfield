@@ -1,9 +1,10 @@
 # Webhooks and the event feed
 
-Backfield can send a signed HTTP notification to another application when a
-flow run finishes, backed by a durable project event feed. This document is the
-source of truth for the event contract, delivery semantics, security policy,
-and operations.
+Backfield can send a signed HTTP notification to another application when
+things happen in a project — runs finishing, articles being saved, Stylebook
+canonicals changing — backed by a durable project event feed. This document is
+the source of truth for the event contract, delivery semantics, security
+policy, and operations.
 
 ## Feature gate
 
@@ -15,32 +16,56 @@ When the gate is off, no events or deliveries are recorded; run-attempt article
 snapshots are still materialized because the public run-articles endpoint
 depends on them.
 
-## Scope of v1
+## Event types
 
-- One event type: **`agate.run.completed`**, recorded for every terminal run
-  attempt (succeeded, failed, cancelled, timed out) from every trigger source.
+| Type | Scope | Recorded when |
+| --- | --- | --- |
+| `agate.run.completed` | flow | A run attempt reaches a terminal state (succeeded, failed, cancelled, timed out), from every trigger source. Supports the outcome filter (`succeeded` / `failed`). |
+| `agate.article.created` | flow | DBOutput persists an article for the first time. |
+| `agate.article.updated` | flow | An existing article is re-persisted by a run (`change: "reprocessed"`, with `content_changed`) or its review metadata changes through the Agate API (`change: "metadata"`). Coalesced per article per transaction. |
+| `stylebook.canonical.created` | project-wide | A canonical entity (location, person, organization) is created — standalone, materialized from a candidate, or accepted in review. |
+| `stylebook.canonical.updated` | project-wide | A canonical's fields or geometry are edited in Stylebook. |
+| `stylebook.canonical.deleted` | project-wide | A canonical is deleted (manual, cleanup, or orphan pruning). |
+| `stylebook.canonical.merged` | project-wide | A canonical is folded into another; the event is scoped to the retired source ID and `data.merged_into` names the target. |
+| `stylebook.canonical.evidence.changed` | project-wide | The substrate evidence behind a canonical changes (mention linked or unlinked). Coalesced per canonical per transaction; merges and deletes suppress the per-link noise they would otherwise cascade. |
+
+Flow-scoped types match per-flow subscriptions and "all flows" subscriptions;
+project-wide types always apply to the whole project. Canonicals live in a
+stylebook shared by multiple projects, so one canonical change **fans out** to
+one event per project attached to that stylebook.
+
+Event emission is first-class: every type is a `DomainEvent` subclass
+registered in `backfield_events.events`, and call sites emit through one
+entrypoint — `record_event(session, event)` (or the typed
+`record_*` convenience wrappers) — inside the same open transaction as the
+domain mutation. The registry drives admin validation and the UI event picker.
+
+## Scope
+
 - Endpoints are **project-scoped** and managed by **organization admins** in
   Settings → Webhooks (session API under
   `/v1/organizations/{org_id}/webhook-endpoints`). Up to **10 active endpoints
-  per project**; each endpoint subscribes to explicitly selected flows and may
-  filter on outcome (`succeeded` / `failed`).
+  per project**; each endpoint chooses its event types and either explicit
+  flows or all flows.
 - Payloads are **thin**: receivers pull details through the public API (run
-  status, run articles, event feed) using ordinary project API keys. Webhook
-  signing secrets and project API keys are separate credentials.
-- Post-run editorial changes (article edits, canonical updates) are **not**
-  reported; they need a future `article.updated` / canonical event family.
-  Arbitrary node or S3 outputs are also out of scope.
+  status, run articles, articles, canonicals, event feed) using ordinary
+  project API keys. Webhook signing secrets and project API keys are separate
+  credentials.
+- Run starts, connection events, and arbitrary node or S3 outputs are out of
+  scope.
 
 ## Event model
 
 - `backfield_event` rows are immutable, per-project, and ordered by a bigint
-  sequence. `graph_id` / `run_id` are plain text snapshots so feed history
-  survives flow and run deletion. Retention is **90 days**; older events are
-  purged by the maintenance pass.
-- Events are recorded **in the same database transaction** as the run's
-  terminal status change (`record_run_terminal_event` in
-  `packages/backfield-events`), together with one pending delivery per matching
-  active endpoint. A rollback leaves no event or delivery behind.
+  sequence. `graph_id` / `run_id` / `article_id` / `entity_type` / `entity_id`
+  are plain snapshots so feed history survives flow, run, article, and
+  canonical deletion. Retention is **90 days**; older events are purged by the
+  maintenance pass.
+- Events are recorded **in the same database transaction** as the domain
+  mutation (`record_event` in `packages/backfield-events`), together with one
+  pending delivery per matching active endpoint. A rollback leaves no event or
+  delivery behind. Recorded results are stashed on the session and drained
+  after commit (`pop_recorded_events`) to kick the delivery dispatcher.
 - Run attempts: `agate_run.execution_attempt` starts at 1 and increments only
   when a terminal run is explicitly rerun; worker claim/recovery keeps the
   current attempt. Every terminal attempt records its own event, and each
@@ -73,10 +98,23 @@ Webhook bodies and feed items share one versioned envelope
 }
 ```
 
-`outcome` is `succeeded` or `failed`; `completion_reason` is `completed`,
-`error`, or `cancelled`. `failure_category` is a normalized label, never raw
-provider error text. Raw run results, article bodies, and credentials are never
-included.
+`data` payloads per type (all typed in `backfield_events.contracts`):
+
+- `agate.run.completed` — `outcome` (`succeeded` / `failed`),
+  `completion_reason` (`completed` / `error` / `cancelled`), normalized
+  `failure_category`, item `counts`, `article_count`.
+- `agate.article.created` — `headline`.
+- `agate.article.updated` — `headline`, `change` (`reprocessed` / `metadata`),
+  `content_changed` (for reprocessed articles).
+- `stylebook.canonical.created|updated|deleted` — `label`.
+- `stylebook.canonical.merged` — `label`, `merged_into` (target canonical ID).
+- `stylebook.canonical.evidence.changed` — `label`, `change`
+  (`substrate_linked` / `substrate_unlinked`).
+
+`links` carries `run` and `articles` for run-scoped events, `article` for
+article events, and `entity` (the public canonical URL) for stylebook events.
+Flow and run refs are null for stylebook events. Raw run results, article
+bodies, and credentials are never included.
 
 ## Delivery semantics
 
@@ -157,6 +195,7 @@ feature gate is off.
    webhook envelopes).
 2. On webhook gaps (pause, outage, missed deliveries), page
    `GET /public/v1/projects/{slug}/events?cursor=...` forward until caught up.
+   Filter with repeatable `flow_id` and `type` query parameters.
 3. A `410 cursor_expired` means the cursor predates the 90-day retention
    window; restart without a cursor.
 
@@ -174,10 +213,17 @@ Low-cardinality only (no project, endpoint, URL, or error dimensions):
 ## Code map
 
 - `packages/backfield-events` — contracts, signing, cursors, destination
-  validation, transactional recording, claim/terminalize helpers.
-- `packages/backfield-db` — models and migration `074_webhooks_and_events`.
+  validation, the typed event registry (`events.py`), run/article/canonical
+  event classes, transactional recording, claim/terminalize helpers.
+- `packages/backfield-entities` — canonical event call sites in the shared
+  persist/merge/delete/link mutation helpers.
+- `packages/backfield-db` — models and migrations `074_webhooks_and_events`
+  and `075_event_scopes_all_flows`.
 - `apps/worker/src/worker/webhooks/` — HTTP sender and delivery orchestration;
-  `apps/worker/src/worker/webhook_maintenance.py` — scheduled pass.
+  `apps/worker/src/worker/webhook_maintenance.py` — scheduled pass. Article
+  events are emitted from `nodes/db_output.py`.
+- `apps/stylebook-api/src/stylebook_api/webhook_dispatch.py` — post-commit
+  dispatcher kick for canonical events recorded during Stylebook requests.
 - `apps/core-api/src/core_api/webhooks_admin.py`, `webhook_verification.py`,
   `routers/org_webhooks.py` — org-admin management API.
 - `apps/core-api/src/core_api/routers/public/events.py` and

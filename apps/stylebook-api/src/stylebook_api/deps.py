@@ -8,10 +8,15 @@ from backfield_db.session import get_engine
 from fastapi import Cookie, Depends, Header
 from sqlmodel import Session
 
+from stylebook_api.webhook_dispatch import kick_webhook_dispatch_if_recorded
+
 
 def get_session() -> Generator[Session, None, None]:
     with Session(get_engine()) as session:
         yield session
+        # Runs after the route returns; events recorded but rolled back or
+        # never committed were already cleared and produce no kick.
+        kick_webhook_dispatch_if_recorded(session)
 
 
 def get_auth(

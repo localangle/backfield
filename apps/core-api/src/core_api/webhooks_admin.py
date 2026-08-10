@@ -22,6 +22,14 @@ from backfield_db import (
     BackfieldWebhookSubscription,
 )
 from backfield_db.crypto import decrypt_secret, encrypt_secret
+
+# Import from the package root so every DomainEvent subclass is registered
+# before we validate event types against the registry.
+from backfield_events import (
+    event_type_is_flow_scoped,
+    event_type_is_registered,
+    registered_event_types,
+)
 from backfield_events.contracts import RUN_COMPLETED_EVENT
 from backfield_events.destinations import (
     WebhookDestinationError,
@@ -70,6 +78,9 @@ class WebhookEndpointOut(BaseModel):
     last_success_at: datetime | None
     last_failure_at: datetime | None
     outcomes: list[WebhookOutcome] | None
+    event_types: list[str]
+    #: True when flow-scoped event types apply to every flow in the project.
+    all_flows: bool
     flows: list[WebhookFlowOut]
     pending_deliveries: int
     failed_deliveries: int
@@ -81,7 +92,10 @@ class WebhookEndpointCreateBody(BaseModel):
     project_id: int
     name: str = Field(min_length=1, max_length=200)
     url: str = Field(min_length=1)
-    flow_ids: list[str] = Field(min_length=1)
+    event_types: list[str] = Field(default_factory=lambda: [RUN_COMPLETED_EVENT], min_length=1)
+    #: Required for flow-scoped event types unless ``all_flows`` is set.
+    flow_ids: list[str] | None = None
+    all_flows: bool = False
     outcomes: list[WebhookOutcome] | None = None
 
 
@@ -94,7 +108,9 @@ class WebhookEndpointCreatedOut(BaseModel):
 class WebhookEndpointPatchBody(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     url: str | None = None
+    event_types: list[str] | None = Field(default=None, min_length=1)
     flow_ids: list[str] | None = Field(default=None, min_length=1)
+    all_flows: bool | None = None
     outcomes: list[WebhookOutcome] | None = None
     clear_outcomes: bool = False
 
@@ -174,6 +190,43 @@ def _require_flows_in_project(
     return graphs
 
 
+def _validated_event_types(event_types: list[str]) -> list[str]:
+    cleaned = [event_type.strip() for event_type in event_types if event_type.strip()]
+    deduped = list(dict.fromkeys(cleaned))
+    if not deduped:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Choose at least one event type",
+        )
+    for event_type in deduped:
+        if not event_type_is_registered(event_type):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown event type: {event_type}",
+            )
+    return deduped
+
+
+def _require_flow_selection(
+    session: Session,
+    project_id: int,
+    *,
+    event_types: list[str],
+    flow_ids: list[str] | None,
+    all_flows: bool,
+) -> list[str]:
+    """Flow-scoped event types need explicit flows unless the endpoint covers all flows."""
+    if all_flows or not any(event_type_is_flow_scoped(t) for t in event_types):
+        return []
+    if not flow_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Choose at least one flow, or apply the webhook to all flows",
+        )
+    _require_flows_in_project(session, project_id, flow_ids)
+    return [flow_id.strip() for flow_id in dict.fromkeys(flow_ids) if flow_id.strip()]
+
+
 def _validated_url(url: str) -> str:
     """Shape/scheme/literal-address checks at save time; DNS is checked per delivery."""
     try:
@@ -232,23 +285,41 @@ def _enforce_endpoint_limit(session: Session, project_id: int) -> None:
 def _replace_subscriptions(
     session: Session,
     endpoint: BackfieldWebhookEndpoint,
+    *,
+    event_types: list[str],
     flow_ids: list[str],
+    all_flows: bool,
     outcomes_json: str | None,
 ) -> None:
+    """Rewrite subscription rows: per-flow rows for flow-scoped types (unless
+    all-flows), a single NULL-graph row otherwise. Outcome filters only apply
+    to run completions."""
     session.exec(
         delete(BackfieldWebhookSubscription).where(
             BackfieldWebhookSubscription.endpoint_id == endpoint.id
         )
     )
-    for flow_id in dict.fromkeys(flow_ids):
-        session.add(
-            BackfieldWebhookSubscription(
-                endpoint_id=endpoint.id,
-                event_type=RUN_COMPLETED_EVENT,
-                graph_id=flow_id,
-                outcomes_json=outcomes_json,
+    for event_type in dict.fromkeys(event_types):
+        row_outcomes = outcomes_json if event_type == RUN_COMPLETED_EVENT else None
+        if event_type_is_flow_scoped(event_type) and not all_flows:
+            for flow_id in dict.fromkeys(flow_ids):
+                session.add(
+                    BackfieldWebhookSubscription(
+                        endpoint_id=endpoint.id,
+                        event_type=event_type,
+                        graph_id=flow_id,
+                        outcomes_json=row_outcomes,
+                    )
+                )
+        else:
+            session.add(
+                BackfieldWebhookSubscription(
+                    endpoint_id=endpoint.id,
+                    event_type=event_type,
+                    graph_id=None,
+                    outcomes_json=row_outcomes,
+                )
             )
-        )
 
 
 def endpoint_to_out(session: Session, endpoint: BackfieldWebhookEndpoint) -> WebhookEndpointOut:
@@ -260,19 +331,25 @@ def endpoint_to_out(session: Session, endpoint: BackfieldWebhookEndpoint) -> Web
     ).all()
     flows: list[WebhookFlowOut] = []
     outcomes: list[str] | None = None
+    seen_flow_ids: set[str] = set()
     for subscription in subscriptions:
-        graph = session.get(AgateGraph, subscription.graph_id)
-        flows.append(
-            WebhookFlowOut(
-                flow_id=subscription.graph_id,
-                flow_name=graph.name if graph else None,
+        if subscription.graph_id is not None and subscription.graph_id not in seen_flow_ids:
+            seen_flow_ids.add(subscription.graph_id)
+            graph = session.get(AgateGraph, subscription.graph_id)
+            flows.append(
+                WebhookFlowOut(
+                    flow_id=subscription.graph_id,
+                    flow_name=graph.name if graph else None,
+                )
             )
-        )
         if subscription.outcomes_json:
             try:
                 outcomes = list(json.loads(subscription.outcomes_json))
             except ValueError:
                 outcomes = None
+    event_types = sorted({subscription.event_type for subscription in subscriptions})
+    flow_scoped_subs = [s for s in subscriptions if event_type_is_flow_scoped(s.event_type)]
+    all_flows = bool(flow_scoped_subs) and all(s.graph_id is None for s in flow_scoped_subs)
 
     pending = int(
         session.exec(
@@ -309,6 +386,8 @@ def endpoint_to_out(session: Session, endpoint: BackfieldWebhookEndpoint) -> Web
         last_success_at=endpoint.last_success_at,
         last_failure_at=endpoint.last_failure_at,
         outcomes=outcomes,  # type: ignore[arg-type]
+        event_types=event_types,
+        all_flows=all_flows,
         flows=sorted(flows, key=lambda flow: (flow.flow_name or "", flow.flow_id)),
         pending_deliveries=pending,
         failed_deliveries=failed,
@@ -318,6 +397,23 @@ def endpoint_to_out(session: Session, endpoint: BackfieldWebhookEndpoint) -> Web
 
 
 # ----- Operations -----
+
+
+class WebhookEventTypeOut(BaseModel):
+    event_type: str
+    #: Flow-scoped types support per-flow subscriptions; others always apply project-wide.
+    flow_scoped: bool
+
+
+def list_webhook_event_types() -> list[WebhookEventTypeOut]:
+    """Subscribable event types from the registry (display copy lives in the UI)."""
+    return [
+        WebhookEventTypeOut(
+            event_type=event_type,
+            flow_scoped=event_type_is_flow_scoped(event_type),
+        )
+        for event_type in registered_event_types()
+    ]
 
 
 def list_webhook_endpoints(
@@ -344,7 +440,14 @@ def create_webhook_endpoint(
     created_by_user_id: int | None,
 ) -> WebhookEndpointCreatedOut:
     project = _require_project_in_org(session, org_id, body.project_id)
-    _require_flows_in_project(session, int(project.id), body.flow_ids)
+    event_types = _validated_event_types(body.event_types)
+    flow_ids = _require_flow_selection(
+        session,
+        int(project.id),
+        event_types=event_types,
+        flow_ids=body.flow_ids,
+        all_flows=body.all_flows,
+    )
     _enforce_endpoint_limit(session, int(project.id))
     url = _validated_url(body.url)
 
@@ -361,7 +464,14 @@ def create_webhook_endpoint(
     )
     session.add(endpoint)
     session.flush()
-    _replace_subscriptions(session, endpoint, body.flow_ids, _outcomes_json(body.outcomes))
+    _replace_subscriptions(
+        session,
+        endpoint,
+        event_types=event_types,
+        flow_ids=flow_ids,
+        all_flows=body.all_flows,
+        outcomes_json=_outcomes_json(body.outcomes),
+    )
     session.commit()
     session.refresh(endpoint)
     return WebhookEndpointCreatedOut(
@@ -398,15 +508,40 @@ def patch_webhook_endpoint(
             endpoint.paused_at = None
             endpoint.pause_reason = None
 
-    if body.flow_ids is not None or body.outcomes is not None or body.clear_outcomes:
+    subscription_fields_changed = (
+        body.event_types is not None
+        or body.flow_ids is not None
+        or body.all_flows is not None
+        or body.outcomes is not None
+        or body.clear_outcomes
+    )
+    if subscription_fields_changed:
         subscriptions = session.exec(
             select(BackfieldWebhookSubscription).where(
                 BackfieldWebhookSubscription.endpoint_id == endpoint.id
             )
         ).all()
-        current_flow_ids = [subscription.graph_id for subscription in subscriptions]
-        flow_ids = body.flow_ids if body.flow_ids is not None else current_flow_ids
-        _require_flows_in_project(session, int(endpoint.project_id), flow_ids)
+        current_event_types = sorted({s.event_type for s in subscriptions})
+        current_flow_ids = [s.graph_id for s in subscriptions if s.graph_id is not None]
+        flow_scoped_subs = [s for s in subscriptions if event_type_is_flow_scoped(s.event_type)]
+        current_all_flows = bool(flow_scoped_subs) and all(
+            s.graph_id is None for s in flow_scoped_subs
+        )
+
+        event_types = (
+            _validated_event_types(body.event_types)
+            if body.event_types is not None
+            else current_event_types
+        )
+        all_flows = body.all_flows if body.all_flows is not None else current_all_flows
+        raw_flow_ids = body.flow_ids if body.flow_ids is not None else current_flow_ids
+        flow_ids = _require_flow_selection(
+            session,
+            int(endpoint.project_id),
+            event_types=event_types,
+            flow_ids=raw_flow_ids,
+            all_flows=all_flows,
+        )
         if body.clear_outcomes:
             outcomes_json = None
         elif body.outcomes is not None:
@@ -416,7 +551,14 @@ def patch_webhook_endpoint(
                 (s.outcomes_json for s in subscriptions if s.outcomes_json),
                 None,
             )
-        _replace_subscriptions(session, endpoint, flow_ids, outcomes_json)
+        _replace_subscriptions(
+            session,
+            endpoint,
+            event_types=event_types,
+            flow_ids=flow_ids,
+            all_flows=all_flows,
+            outcomes_json=outcomes_json,
+        )
 
     endpoint.updated_at = now
     session.add(endpoint)

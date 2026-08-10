@@ -582,7 +582,7 @@ def test_article_upsert_prefers_ledger_identity(ledger_engine):
         session.commit()
         session.refresh(item)
 
-        article = _upsert_article(
+        upsert = _upsert_article(
             session,
             project_id=pid,
             consolidated={
@@ -595,6 +595,8 @@ def test_article_upsert_prefers_ledger_identity(ledger_engine):
             processed_item_id=int(item.id),
         )
         session.commit()
+        article = upsert.article
+        assert upsert.created is True
         assert article.external_source == S3_INGESTION_EXTERNAL_SOURCE
         assert article.external_id == str(ledger.id)
 
@@ -611,5 +613,7 @@ def test_article_upsert_prefers_ledger_identity(ledger_engine):
             processed_item_id=int(item.id),
         )
         session.commit()
-        assert int(again.id) == int(article.id)
-        assert again.headline == "H2"
+        assert again.created is False
+        assert again.content_changed is True
+        assert int(again.article.id) == int(article.id)
+        assert again.article.headline == "H2"

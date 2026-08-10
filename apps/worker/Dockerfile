@@ -29,9 +29,9 @@ RUN uv pip install --system /app/packages/backfield-db \
     && uv pip install --system /app/packages/backfield-observability \
     && uv pip install --system /app/packages/backfield-ai \
     && uv pip install --system /app/packages/backfield-auth \
+    && uv pip install --system /app/packages/backfield-events \
     && uv pip install --system /app/packages/backfield-entities \
     && uv pip install --system /app/packages/backfield-agate \
-    && uv pip install --system /app/packages/backfield-events \
     && uv pip install --system /app/apps/worker
 
 FROM python:3.11-slim-bookworm AS prod
@@ -80,9 +80,9 @@ RUN pip install --no-cache-dir -e /app/packages/backfield-db \
     && pip install --no-cache-dir -e /app/packages/backfield-observability \
     && pip install --no-cache-dir -e /app/packages/backfield-ai \
     && pip install --no-cache-dir -e /app/packages/backfield-auth \
+    && pip install --no-cache-dir -e /app/packages/backfield-events \
     && pip install --no-cache-dir -e /app/packages/backfield-entities \
     && pip install --no-cache-dir -e /app/packages/backfield-agate \
-    && pip install --no-cache-dir -e /app/packages/backfield-events \
     && pip install --no-cache-dir "celery>=5.3.0" "redis>=5.0.0" "httpx>=0.27.0" \
     && pip install --no-cache-dir -e /app/apps/worker --no-deps
 

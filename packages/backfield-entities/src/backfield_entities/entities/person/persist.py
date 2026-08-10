@@ -12,6 +12,11 @@ from backfield_db import (
     SubstratePerson,
     SubstratePersonMention,
 )
+from backfield_events import (
+    record_canonical_created,
+    record_canonical_deleted,
+    record_canonical_evidence_changed,
+)
 from sqlmodel import Session, col, func, select
 
 from backfield_entities.activity import (
@@ -224,6 +229,14 @@ def link_to_existing_canonical(
         person=person,
         provenance=provenance,
     )
+    record_canonical_evidence_changed(
+        session,
+        stylebook_id=stylebook_id,
+        entity_type="person",
+        canonical_id=str(canon.id),
+        label=str(canon.label),
+        change="substrate_linked",
+    )
 
 
 def create_standalone_canonical(
@@ -276,6 +289,13 @@ def create_standalone_canonical(
             provenance=provenance,
         )
     session.flush()
+    record_canonical_created(
+        session,
+        stylebook_id=stylebook_id,
+        entity_type="person",
+        canonical_id=cid,
+        label=clean,
+    )
     return canon
 
 
@@ -327,6 +347,13 @@ def materialize_new_canonical_and_link(
         canon_id=cid,
         person=person,
         provenance=provenance,
+    )
+    record_canonical_created(
+        session,
+        stylebook_id=stylebook_id,
+        entity_type="person",
+        canonical_id=cid,
+        label=clean,
     )
 
 
@@ -707,14 +734,30 @@ def maybe_prune_ingest_orphan_person_canonical(
             is_person_catalog_editorial_provenance(str(row.provenance)) for row in alias_rows
         ):
             return False
-        session.delete(canon)
+        _delete_pruned_person_canonical(session, stylebook_id=stylebook_id, canon=canon)
         return True
 
     if not removed_substrate_ingest_alias:
         return False
 
-    session.delete(canon)
+    _delete_pruned_person_canonical(session, stylebook_id=stylebook_id, canon=canon)
     return True
+
+
+def _delete_pruned_person_canonical(
+    session: Session,
+    *,
+    stylebook_id: int,
+    canon: StylebookPersonCanonical,
+) -> None:
+    record_canonical_deleted(
+        session,
+        stylebook_id=stylebook_id,
+        entity_type="person",
+        canonical_id=str(canon.id),
+        label=str(canon.label),
+    )
+    session.delete(canon)
 
 
 def delete_canonical_alias_if_no_other_linked_substrate(
@@ -795,6 +838,14 @@ def unlink_substrate_from_canonical(
         }
     ]
     session.add(person)
+    record_canonical_evidence_changed(
+        session,
+        stylebook_id=stylebook_id,
+        entity_type="person",
+        canonical_id=old,
+        label=str(canon.label),
+        change="substrate_unlinked",
+    )
     maybe_prune_ingest_orphan_person_canonical(
         session,
         stylebook_id=stylebook_id,
@@ -851,7 +902,23 @@ def link_substrate_to_canonical_atomic(
         person=person,
         provenance=provenance,
     )
+    record_canonical_evidence_changed(
+        session,
+        stylebook_id=stylebook_id,
+        entity_type="person",
+        canonical_id=tid,
+        label=str(canon.label),
+        change="substrate_linked",
+    )
     if prev_str is not None and prev_str != tid:
+        record_canonical_evidence_changed(
+            session,
+            stylebook_id=stylebook_id,
+            entity_type="person",
+            canonical_id=prev_str,
+            label=None,
+            change="substrate_unlinked",
+        )
         removed_alias_provenance = delete_canonical_alias_if_no_other_linked_substrate(
             session,
             canonical_id=prev_str,

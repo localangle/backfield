@@ -2210,6 +2210,35 @@
         "title": "PublicErrorResponse",
         "type": "object"
       },
+      "PublicEventEntityOut": {
+        "description": "Canonical entity scope for stylebook events.",
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          }
+        },
+        "title": "PublicEventEntityOut",
+        "type": "object"
+      },
       "PublicEventFlowOut": {
         "properties": {
           "id": {
@@ -2244,6 +2273,17 @@
       },
       "PublicEventLinksOut": {
         "properties": {
+          "article": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Article"
+          },
           "articles": {
             "anyOf": [
               {
@@ -2254,6 +2294,17 @@
               }
             ],
             "title": "Articles"
+          },
+          "entity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity"
           },
           "run": {
             "anyOf": [
@@ -2273,6 +2324,17 @@
       "PublicEventOut": {
         "description": "Versioned event envelope; ``data`` holds the type-specific payload.",
         "properties": {
+          "article_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Article Id"
+          },
           "cursor": {
             "title": "Cursor",
             "type": "string"
@@ -2281,6 +2343,9 @@
             "additionalProperties": true,
             "title": "Data",
             "type": "object"
+          },
+          "entity": {
+            "$ref": "#/components/schemas/PublicEventEntityOut"
           },
           "flow": {
             "$ref": "#/components/schemas/PublicEventFlowOut"
@@ -2317,6 +2382,8 @@
           "occurred_at",
           "flow",
           "run",
+          "article_id",
+          "entity",
           "data",
           "links"
         ],
@@ -8956,6 +9023,27 @@
               ],
               "description": "Limit to events from these flows (repeatable).",
               "title": "Flow Id"
+            }
+          },
+          {
+            "description": "Limit to these event types (repeatable), e.g. agate.run.completed.",
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Limit to these event types (repeatable), e.g. agate.run.completed.",
+              "title": "Type"
             }
           },
           {

@@ -13,6 +13,7 @@ dependencies = [
     "backfield-auth",
     "backfield-db",
     "backfield-entities",
+    "backfield-events",
 ]
 
 [build-system]

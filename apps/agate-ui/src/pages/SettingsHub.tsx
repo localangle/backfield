@@ -41,7 +41,8 @@ export default function SettingsHub() {
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium">Webhooks</div>
           <div className="text-sm text-muted-foreground">
-            Send updates to another application when a run finishes.
+            Send updates to another application when runs finish, articles are
+            saved, or Stylebook entries change.
           </div>
         </div>
       </NavLink>

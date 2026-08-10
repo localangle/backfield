@@ -29,10 +29,10 @@ COPY apps/agate-api /app/apps/agate-api
 RUN uv pip install --system /app/packages/backfield-db \
     && uv pip install --system /app/packages/backfield-observability \
     && uv pip install --system /app/packages/backfield-ai \
+    && uv pip install --system /app/packages/backfield-events \
     && uv pip install --system /app/packages/backfield-entities \
     && uv pip install --system /app/packages/backfield-agate \
     && uv pip install --system /app/packages/backfield-auth \
-    && uv pip install --system /app/packages/backfield-events \
     && uv pip install --system "rich>=13.0.0" \
     && uv pip install --system --no-deps --no-sources /app/packages/backfield-cli \
     && uv pip install --system /app/apps/agate-api
@@ -86,10 +86,10 @@ COPY apps/agate-api /app/apps/agate-api
 RUN pip install --no-cache-dir -e /app/packages/backfield-db \
     && pip install --no-cache-dir -e /app/packages/backfield-observability \
     && pip install --no-cache-dir -e /app/packages/backfield-ai \
+    && pip install --no-cache-dir -e /app/packages/backfield-events \
     && pip install --no-cache-dir -e /app/packages/backfield-entities \
     && pip install --no-cache-dir -e /app/packages/backfield-agate \
     && pip install --no-cache-dir -e /app/packages/backfield-auth \
-    && pip install --no-cache-dir -e /app/packages/backfield-events \
     && pip install --no-cache-dir -e /app/packages/backfield-cli \
     && pip install --no-cache-dir \
         "fastapi>=0.109.0" \
