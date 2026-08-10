@@ -19,6 +19,7 @@ from core_api.routers import legacy_public as legacy_public_router
 from core_api.routers import me as me_router
 from core_api.routers import org_ai_models as org_ai_models_router
 from core_api.routers import org_integration_secrets as org_integration_secrets_router
+from core_api.routers import org_webhooks as org_webhooks_router
 from core_api.routers import project_ai_models as project_ai_models_router
 from core_api.routers import secure as secure_router
 from core_api.routers.public import router as public_v1_router
@@ -90,6 +91,7 @@ app.include_router(secure_router.router, prefix="/v1")
 app.include_router(admin_org_router.router, prefix="/v1")
 app.include_router(org_ai_models_router.router, prefix="/v1")
 app.include_router(org_integration_secrets_router.router, prefix="/v1")
+app.include_router(org_webhooks_router.router, prefix="/v1")
 app.include_router(credentials_router.router, prefix="/v1")
 app.include_router(project_ai_models_router.router, prefix="/v1")
 app.include_router(me_router.router, prefix="/v1")

@@ -22,6 +22,7 @@ COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-auth /app/packages/backfield-auth
 COPY packages/backfield-agate /app/packages/backfield-agate
 COPY packages/backfield-entities /app/packages/backfield-entities
+COPY packages/backfield-events /app/packages/backfield-events
 COPY apps/worker /app/apps/worker
 
 RUN uv pip install --system /app/packages/backfield-db \
@@ -30,6 +31,7 @@ RUN uv pip install --system /app/packages/backfield-db \
     && uv pip install --system /app/packages/backfield-auth \
     && uv pip install --system /app/packages/backfield-entities \
     && uv pip install --system /app/packages/backfield-agate \
+    && uv pip install --system /app/packages/backfield-events \
     && uv pip install --system /app/apps/worker
 
 FROM python:3.11-slim-bookworm AS prod
@@ -71,6 +73,7 @@ COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-auth /app/packages/backfield-auth
 COPY packages/backfield-agate /app/packages/backfield-agate
 COPY packages/backfield-entities /app/packages/backfield-entities
+COPY packages/backfield-events /app/packages/backfield-events
 COPY apps/worker /app/apps/worker
 
 RUN pip install --no-cache-dir -e /app/packages/backfield-db \
@@ -79,7 +82,8 @@ RUN pip install --no-cache-dir -e /app/packages/backfield-db \
     && pip install --no-cache-dir -e /app/packages/backfield-auth \
     && pip install --no-cache-dir -e /app/packages/backfield-entities \
     && pip install --no-cache-dir -e /app/packages/backfield-agate \
-    && pip install --no-cache-dir "celery>=5.3.0" "redis>=5.0.0" \
+    && pip install --no-cache-dir -e /app/packages/backfield-events \
+    && pip install --no-cache-dir "celery>=5.3.0" "redis>=5.0.0" "httpx>=0.27.0" \
     && pip install --no-cache-dir -e /app/apps/worker --no-deps
 
 RUN chmod +x /app/apps/worker/scripts/entrypoint.sh

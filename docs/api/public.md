@@ -99,7 +99,10 @@ The public router currently exposes:
 - **People, organizations, and locations** — list and search, available types,
   canonical detail, mention evidence and timelines, related articles, and
   connections. Locations also provide geographic search.
-- **Runs** — triggering an API-enabled Agate graph and polling the resulting run.
+- **Runs** — triggering an API-enabled Agate graph, polling the resulting run,
+  and listing the articles a run persisted (per execution attempt).
+- **Events** — a durable, ascending project event feed for webhook recovery and
+  polling integrations.
 
 There is no public `works` router or project-wide custom-record search router in
 the current implementation. The article-scoped custom-record route is present.
@@ -169,6 +172,36 @@ Default one-minute limits are 600 standard reads, 60 semantic/geographic
 searches, and 5 run triggers per API key. Each project's aggregate limit is four
 times its corresponding per-key limit. Internal service tokens receive bounded
 token-derived identities and use the same limits.
+
+## Run articles
+
+`GET /public/v1/projects/{project_slug}/runs/{run_id}/articles` lists the
+articles a run persisted through DBOutput, using the standard `items` +
+`pagination` envelope. Each run execution attempt keeps an immutable article
+snapshot: the default response covers the latest attempt that produced output,
+and `?attempt=N` reads earlier attempts. Partial output from failed or
+cancelled runs is exposed; articles later deleted from the project are counted
+in the snapshot but omitted from `items`. Unknown attempts return `404`.
+
+## Event feed
+
+`GET /public/v1/projects/{project_slug}/events` is an immutable, ascending
+project event feed retained for 90 days. It backs webhook recovery: consumers
+that miss webhook deliveries replay the feed from their last processed cursor.
+See [`../development/webhooks.md`](../development/webhooks.md) for the full
+webhook and event contract.
+
+- Each item carries an opaque `cursor`; pass the last processed one back as
+  `?cursor=` to resume. `next_cursor` repeats the final item's cursor.
+- `flow_id` is repeatable and limits results to specific flows.
+- Feed items use the same versioned envelope as webhook bodies: `id`, `type`
+  (`agate.run.completed`), `schema_version`, `occurred_at`, `flow`, `run`
+  (id, attempt, url), normalized `data` (outcome, completion reason, counts,
+  article count), and `links` to the public run and run-articles resources.
+- Synthetic webhook verification events never appear in the feed.
+- A cursor older than the retention window returns `410` with
+  `error.code=cursor_expired`; restart without a cursor. Malformed cursors
+  return `400`.
 
 ## OpenAPI artifact
 

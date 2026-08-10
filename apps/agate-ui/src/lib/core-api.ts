@@ -686,3 +686,201 @@ export async function revokeProjectAccessKey(
     method: "DELETE",
   })
 }
+
+/** Webhook endpoints (org admin): send updates to another application when a run finishes. */
+export type WebhookOutcome = 'succeeded' | 'failed'
+
+export interface WebhookFlow {
+  flow_id: string
+  flow_name: string | null
+}
+
+export interface WebhookEndpoint {
+  id: string
+  project_id: number
+  project_name: string | null
+  project_slug: string | null
+  name: string
+  destination_host: string
+  status: string
+  secret_version: number
+  verified_at: string | null
+  paused_at: string | null
+  pause_reason: string | null
+  last_success_at: string | null
+  last_failure_at: string | null
+  outcomes: WebhookOutcome[] | null
+  flows: WebhookFlow[]
+  pending_deliveries: number
+  failed_deliveries: number
+  created_at: string
+  updated_at: string
+}
+
+export interface WebhookEndpointCreated {
+  endpoint: WebhookEndpoint
+  /** Shown exactly once; store it in the receiving application. */
+  signing_secret: string
+}
+
+export interface WebhookSecret {
+  signing_secret: string
+  secret_version: number
+  endpoint: WebhookEndpoint
+}
+
+export interface WebhookTestResult {
+  ok: boolean
+  status_code: number | null
+  failure_category: string | null
+  failure_summary: string | null
+}
+
+export interface WebhookTestResponse {
+  result: WebhookTestResult
+  endpoint: WebhookEndpoint
+}
+
+export interface WebhookDeliveryAttempt {
+  attempt_number: number
+  attempted_at: string
+  status_code: number | null
+  failure_category: string | null
+  failure_summary: string | null
+  duration_ms: number | null
+}
+
+export interface WebhookDelivery {
+  id: string
+  event_id: string
+  event_type: string
+  flow_name: string | null
+  run_id: string | null
+  state: string
+  attempt_count: number
+  next_attempt_at: string | null
+  last_status_code: number | null
+  failure_category: string | null
+  failure_summary: string | null
+  is_replay: boolean
+  is_test: boolean
+  created_at: string
+  delivered_at: string | null
+  attempts: WebhookDeliveryAttempt[]
+}
+
+export async function listOrganizationWebhookEndpoints(
+  orgId: number,
+  projectId?: number,
+): Promise<WebhookEndpoint[]> {
+  const q = projectId != null ? `?project_id=${projectId}` : ''
+  return jsonFetch(`/v1/organizations/${orgId}/webhook-endpoints${q}`)
+}
+
+export interface WebhookEndpointCreateInput {
+  project_id: number
+  name: string
+  url: string
+  flow_ids: string[]
+  outcomes?: WebhookOutcome[] | null
+}
+
+export async function createOrganizationWebhookEndpoint(
+  orgId: number,
+  body: WebhookEndpointCreateInput,
+): Promise<WebhookEndpointCreated> {
+  return jsonFetch(`/v1/organizations/${orgId}/webhook-endpoints`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export interface WebhookEndpointPatchInput {
+  name?: string
+  url?: string
+  flow_ids?: string[]
+  outcomes?: WebhookOutcome[] | null
+  clear_outcomes?: boolean
+}
+
+export async function patchOrganizationWebhookEndpoint(
+  orgId: number,
+  endpointId: string,
+  body: WebhookEndpointPatchInput,
+): Promise<WebhookEndpoint> {
+  return jsonFetch(
+    `/v1/organizations/${orgId}/webhook-endpoints/${encodeURIComponent(endpointId)}`,
+    { method: 'PATCH', body: JSON.stringify(body) },
+  )
+}
+
+export async function deleteOrganizationWebhookEndpoint(
+  orgId: number,
+  endpointId: string,
+): Promise<void> {
+  await jsonFetch(
+    `/v1/organizations/${orgId}/webhook-endpoints/${encodeURIComponent(endpointId)}`,
+    { method: 'DELETE' },
+  )
+}
+
+export async function disableOrganizationWebhookEndpoint(
+  orgId: number,
+  endpointId: string,
+): Promise<WebhookEndpoint> {
+  return jsonFetch(
+    `/v1/organizations/${orgId}/webhook-endpoints/${encodeURIComponent(endpointId)}/disable`,
+    { method: 'POST' },
+  )
+}
+
+export async function activateOrganizationWebhookEndpoint(
+  orgId: number,
+  endpointId: string,
+): Promise<WebhookEndpoint> {
+  return jsonFetch(
+    `/v1/organizations/${orgId}/webhook-endpoints/${encodeURIComponent(endpointId)}/activate`,
+    { method: 'POST' },
+  )
+}
+
+export async function rotateOrganizationWebhookSecret(
+  orgId: number,
+  endpointId: string,
+): Promise<WebhookSecret> {
+  return jsonFetch(
+    `/v1/organizations/${orgId}/webhook-endpoints/${encodeURIComponent(endpointId)}/rotate-secret`,
+    { method: 'POST' },
+  )
+}
+
+export async function testOrganizationWebhookEndpoint(
+  orgId: number,
+  endpointId: string,
+): Promise<WebhookTestResponse> {
+  return jsonFetch(
+    `/v1/organizations/${orgId}/webhook-endpoints/${encodeURIComponent(endpointId)}/test`,
+    { method: 'POST' },
+  )
+}
+
+export async function listOrganizationWebhookDeliveries(
+  orgId: number,
+  endpointId: string,
+  limit = 50,
+): Promise<WebhookDelivery[]> {
+  return jsonFetch(
+    `/v1/organizations/${orgId}/webhook-endpoints/${encodeURIComponent(endpointId)}/deliveries?limit=${limit}`,
+  )
+}
+
+export async function replayOrganizationWebhookDelivery(
+  orgId: number,
+  endpointId: string,
+  deliveryId: string,
+): Promise<{ delivery_id: string }> {
+  return jsonFetch(
+    `/v1/organizations/${orgId}/webhook-endpoints/${encodeURIComponent(endpointId)}/deliveries/${encodeURIComponent(deliveryId)}/replay`,
+    { method: 'POST' },
+  )
+}

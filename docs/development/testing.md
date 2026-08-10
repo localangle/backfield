@@ -77,7 +77,18 @@ uv run python -u tests/smoke/smoke_stylebook_import_export.py
 uv run python -u tests/smoke/smoke_s3_batch.py
 uv run python -u tests/smoke/place_geocode_smoke.py
 uv run python -u tests/smoke/smoke_people_stack.py --via-agate-api
+uv run python -u tests/smoke/smoke_webhooks.py
 ```
+
+The webhook smoke starts a local HTTP callback receiver, creates and verifies a
+webhook endpoint, runs a subscribed flow, checks the signed delivery, retry
+classification against a failing receiver, the public event feed, and the
+run-articles endpoint. It needs the local Compose defaults
+(`BACKFIELD_WEBHOOKS_ENABLED=1`, `BACKFIELD_WEBHOOK_ALLOW_PRIVATE_DESTINATIONS=1`)
+and containers that can reach the host via `host.docker.internal` (override with
+`SMOKE_WEBHOOK_CALLBACK_HOST`). See
+[`webhooks.md`](webhooks.md) for the delivery contract. It is deterministic —
+no external LLM or geocoder calls.
 
 The place-geocode smoke exercises live provider credentials. For named,
 addressable places, confirm the audit shows the expected Brave Web → Brave

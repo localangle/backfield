@@ -20,7 +20,6 @@ from _helpers import (
     assert_object,
     capture_smoke_snapshot,
     cleanup_snapshot_delta,
-    default_stylebook_for_org,
     delete_smoke_run,
     ensure_health,
     http_error_detail,
@@ -40,6 +39,7 @@ from agate_runtime import (
 from backfield_db import (
     BackfieldProject,
     BackfieldWorkspace,
+    Stylebook,
     SubstrateArticle,
     SubstrateLocation,
     SubstrateLocationMention,
@@ -175,6 +175,20 @@ def _ensure_starter_graph(
         )
     _assert_starter_graph_matches_bootstrap(starter)
     return str(starter["id"]), STARTER_FLOW_GRAPH_DISPLAY_NAME, starter
+
+
+def _project_stylebook_slug(project_id: int) -> str:
+    """Slug of the stylebook the project writes to (not the org default)."""
+    with smoke_db_session() as session:
+        project = session.get(BackfieldProject, project_id)
+        if project is None:
+            raise RuntimeError(f"Project {project_id} not found for stylebook lookup")
+        stylebook = session.get(Stylebook, int(project.stylebook_id))
+        if stylebook is None:
+            raise RuntimeError(
+                f"Stylebook {project.stylebook_id} not found for project {project_id}"
+            )
+        return str(stylebook.slug)
 
 
 def _assert_stylebook_persistence_visible(
@@ -383,12 +397,7 @@ def run_session_flow() -> int:
     )
     project_id = ctx.project_id
     cookie_header = session_cookie_headers(ctx.session_token)
-    stylebook = default_stylebook_for_org(
-        stylebook_base=STYLEBOOK_API_BASE,
-        session_token=ctx.session_token,
-        organization_id=ctx.organization_id,
-    )
-    stylebook_slug = str(stylebook["slug"])
+    stylebook_slug = _project_stylebook_slug(project_id)
     run_id: str | None = None
     before_snapshot: SmokeDataSnapshot | None = None
     ensure_health(

@@ -4,6 +4,11 @@
 x-shared-env: &shared-env
   SERVICE_API_TOKEN: ${SERVICE_API_TOKEN:-backfield-dev}
   SESSION_SECRET: ${SESSION_SECRET:-dev-session-secret}
+  # Local dev: webhooks enabled; production stays gated off until the recovery
+  # schedule and delivery alerts are deployed (see docs/development/webhooks.md).
+  BACKFIELD_WEBHOOKS_ENABLED: ${BACKFIELD_WEBHOOKS_ENABLED:-1}
+  # Allow localhost/private receivers for local webhook testing only.
+  BACKFIELD_WEBHOOK_ALLOW_PRIVATE_DESTINATIONS: ${BACKFIELD_WEBHOOK_ALLOW_PRIVATE_DESTINATIONS:-1}
 
 # Runtime DB traffic goes through PgBouncer; migrations/admin use BACKFIELD_DATABASE_URL_DIRECT.
 x-pooled-database-env: &pooled-database-env

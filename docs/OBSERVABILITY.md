@@ -48,8 +48,16 @@ Never use as dimensions: `Version`, `RunId`, `JobId`, URLs, emails, raw error st
 | `worker_lost_total` | counter | Client, Environment, Service=`worker` | Best-effort in-app | Incomplete; cloud owns ECS stop/OOM/SIGKILL |
 | `external_request_failures_total` | counter | Client, Environment, Service, Operation | Transport wrappers | Transport/timeout/HTTP/malformed only; empty geocode ≠ failure |
 | `external_request_duration_seconds` | distribution | Client, Environment, Service, Operation | Transport wrappers | Every physical attempt |
+| `webhook_delivery_attempts_total` | counter | Client, Environment, Service=`worker` | Webhook delivery | One per HTTP attempt |
+| `webhook_delivery_failures_total` | counter | Client, Environment, Service=`worker` | Webhook delivery | Failed attempts (retryable or terminal) |
+| `webhook_delivery_duration_seconds` | distribution | Client, Environment, Service=`worker` | Webhook delivery | Per HTTP attempt |
+| `webhook_deliveries_dead_total` | counter | Client, Environment, Service=`worker` | Webhook delivery | Terminal failures (incl. window exhaustion) |
+| `webhook_endpoints_paused_total` | counter | Client, Environment, Service=`worker` | Webhook delivery | Auto-pauses after exhausted retry window |
+| `webhook_deliveries_pending` | gauge | Client, Environment, Service=`worker` | Webhook maintenance | Pending + in-flight deliveries |
+| `webhook_deliveries_pending_age_seconds` | gauge | Client, Environment, Service=`worker` | Webhook maintenance | Age of oldest unfinished delivery |
 
 Counters are **approximate** (emit after commit). A transactional outbox is deferred.
+Webhook metrics never use project IDs, endpoint IDs, URLs, or error text as dimensions.
 
 ## Identity and logs
 
@@ -79,6 +87,17 @@ Never log: secrets, auth headers, raw DB/Redis URLs, passwords, or customer cont
 - **Failure mode:** on Redis/DB/decode failure, log a sanitized structured error and **omit** the affected gauge(s). Cloud must treat missing data as **degraded**, not healthy.
 - **Not on Celery:** never enqueue the collector through the shared `agate` queue.
 - **Idle / busy / stuck:** idle = depth 0 and `runs_active` 0; busy = positive depth/active with completion progress; stuck = positive/increasing `queue_oldest_age_seconds` with no completion progress, combined cloud-side with ECS worker health.
+
+### Webhook maintenance (same scheduled pattern)
+
+- **Command:** `python -m worker.webhook_maintenance` (single shot; exit 0 after one pass).
+- **Schedule:** every ~60 seconds, alongside the metrics collector.
+- **What it does:** processes due webhook deliveries (recovering anything the best-effort
+  post-commit Celery kick missed), purges events past 90-day retention, and emits the
+  pending gauges above. Exits immediately when `BACKFIELD_WEBHOOKS_ENABLED` is off.
+- **Writes:** unlike the collector, this pass mutates webhook delivery rows and purges
+  expired `backfield_event` rows; it needs a read-write DB role.
+- See [`development/webhooks.md`](development/webhooks.md) for delivery semantics.
 
 ## Idle / busy / stuck
 

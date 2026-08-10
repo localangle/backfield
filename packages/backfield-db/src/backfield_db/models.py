@@ -11,6 +11,7 @@ from geoalchemy2 import Geometry
 from pydantic import ConfigDict
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     Column,
@@ -2109,6 +2110,12 @@ class AgateRun(SQLModel, table=True):
     id: str = Field(default_factory=_uuid, primary_key=True)
     graph_id: str = Field(foreign_key="agate_graph.id", index=True)
     status: str = Field(default="pending", sa_column=Column(Text, nullable=False))
+    #: Explicit execution attempt (1-based). Incremented only when a terminal run is
+    #: explicitly rerun; worker claim/recovery keeps the current attempt.
+    execution_attempt: int = Field(
+        default=1,
+        sa_column=Column(Integer, nullable=False, server_default=text("1")),
+    )
     result_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     error_message: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     #: When true, the next DBOutput persist for this run replaces pipeline geography per article.
@@ -2303,6 +2310,334 @@ class AgateTemplate(SQLModel, table=True):
     description: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     category: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     spec_json: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class AgateRunOutputArticle(SQLModel, table=True):
+    """Immutable association between one run execution attempt and a persisted article."""
+
+    __tablename__ = "agate_run_output_article"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "execution_attempt",
+            "article_id",
+            name="uq_agate_run_output_article_attempt",
+        ),
+        Index("ix_agate_run_output_article_run_attempt", "run_id", "execution_attempt"),
+        Index("ix_agate_run_output_article_article", "article_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    run_id: str = Field(
+        sa_column=Column(
+            Text,
+            ForeignKey("agate_run.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    execution_attempt: int = Field(sa_column=Column(Integer, nullable=False))
+    article_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("substrate_article.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    processed_item_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            Integer,
+            ForeignKey("agate_processed_item.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+# ----- Events & webhooks (backfield_*) -----
+
+
+class BackfieldEvent(SQLModel, table=True):
+    """Immutable project event (public event feed + webhook fan-out source).
+
+    ``graph_id``/``run_id`` are deliberately plain text snapshots (no FK) so feed
+    history survives flow and run deletion within the retention window.
+    """
+
+    __tablename__ = "backfield_event"
+    __table_args__ = (
+        Index("ix_backfield_event_project_seq", "project_id", "id"),
+        Index("ix_backfield_event_project_type_seq", "project_id", "event_type", "id"),
+        Index("ix_backfield_event_created_at", "created_at"),
+    )
+
+    id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            BigInteger().with_variant(Integer, "sqlite"),
+            primary_key=True,
+            autoincrement=True,
+        ),
+    )
+    event_uuid: str = Field(
+        default_factory=_uuid,
+        sa_column=Column(Text, unique=True, nullable=False),
+    )
+    event_type: str = Field(sa_column=Column(Text, nullable=False))
+    schema_version: int = Field(
+        default=1,
+        sa_column=Column(Integer, nullable=False, server_default=text("1")),
+    )
+    organization_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("backfield_organization.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    project_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("backfield_project.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    graph_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    graph_name: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    run_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    execution_attempt: int | None = Field(
+        default=None,
+        sa_column=Column(Integer, nullable=True),
+    )
+    payload_json: str = Field(sa_column=Column(Text, nullable=False))
+    occurred_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    #: Synthetic verification events are delivery-only and never enter the public feed.
+    is_test: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default=text("false")),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class BackfieldWebhookEndpoint(SQLModel, table=True):
+    """Project-scoped webhook destination managed by organization admins."""
+
+    __tablename__ = "backfield_webhook_endpoint"
+    __table_args__ = (
+        Index("ix_backfield_webhook_endpoint_project_status", "project_id", "status"),
+        Index("ix_backfield_webhook_endpoint_org", "organization_id"),
+    )
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    organization_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("backfield_organization.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    project_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("backfield_project.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    name: str = Field(sa_column=Column(Text, nullable=False))
+    url_encrypted: str = Field(sa_column=Column(Text, nullable=False))
+    #: Sanitized destination host for display; never exposes path/query/credentials.
+    display_host: str = Field(sa_column=Column(Text, nullable=False))
+    signing_secret_encrypted: str = Field(sa_column=Column(Text, nullable=False))
+    secret_version: int = Field(
+        default=1,
+        sa_column=Column(Integer, nullable=False, server_default=text("1")),
+    )
+    #: pending (unverified), active, paused (delivery exhausted), disabled (admin).
+    status: str = Field(
+        default="pending",
+        sa_column=Column(Text, nullable=False, server_default="pending"),
+    )
+    verified_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    paused_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    pause_reason: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    last_success_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    last_failure_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    created_by_user_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            Integer,
+            ForeignKey("backfield_user.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class BackfieldWebhookSubscription(SQLModel, table=True):
+    """Explicit (endpoint, event type, flow) subscription row."""
+
+    __tablename__ = "backfield_webhook_subscription"
+    __table_args__ = (
+        UniqueConstraint(
+            "endpoint_id",
+            "event_type",
+            "graph_id",
+            name="uq_backfield_webhook_subscription",
+        ),
+        Index("ix_backfield_webhook_subscription_graph", "graph_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    endpoint_id: str = Field(
+        sa_column=Column(
+            Text,
+            ForeignKey("backfield_webhook_endpoint.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    event_type: str = Field(sa_column=Column(Text, nullable=False))
+    graph_id: str = Field(
+        sa_column=Column(
+            Text,
+            ForeignKey("agate_graph.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    #: JSON array of outcomes to deliver (e.g. ["succeeded"]); NULL means all outcomes.
+    outcomes_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class BackfieldWebhookDelivery(SQLModel, table=True):
+    """One at-least-once delivery of an event to an endpoint (leased claim rows)."""
+
+    __tablename__ = "backfield_webhook_delivery"
+    __table_args__ = (
+        Index(
+            "uq_backfield_webhook_delivery_event_endpoint",
+            "event_id",
+            "endpoint_id",
+            unique=True,
+            postgresql_where=text("NOT is_replay"),
+            sqlite_where=text("NOT is_replay"),
+        ),
+        Index("ix_backfield_webhook_delivery_due", "state", "next_attempt_at"),
+        Index("ix_backfield_webhook_delivery_endpoint_created", "endpoint_id", "created_at"),
+        Index("ix_backfield_webhook_delivery_event", "event_id"),
+    )
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    event_id: int = Field(
+        sa_column=Column(
+            BigInteger().with_variant(Integer, "sqlite"),
+            ForeignKey("backfield_event.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    endpoint_id: str = Field(
+        sa_column=Column(
+            Text,
+            ForeignKey("backfield_webhook_endpoint.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    #: pending, delivering, delivered, failed (terminal).
+    state: str = Field(
+        default="pending",
+        sa_column=Column(Text, nullable=False, server_default="pending"),
+    )
+    attempt_count: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False, server_default=text("0")),
+    )
+    next_attempt_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    lease_token: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    lease_expires_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    last_status_code: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))
+    #: Normalized failure category (e.g. timeout, connection_error, http_4xx, http_5xx).
+    failure_category: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    #: Short sanitized failure summary; never raw response bodies or secrets.
+    failure_summary: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    is_replay: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default=text("false")),
+    )
+    is_test: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default=text("false")),
+    )
+    first_attempted_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    delivered_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class BackfieldWebhookDeliveryAttempt(SQLModel, table=True):
+    """Append-only per-attempt outcome history for a webhook delivery."""
+
+    __tablename__ = "backfield_webhook_delivery_attempt"
+    __table_args__ = (
+        Index(
+            "ix_backfield_webhook_delivery_attempt_delivery",
+            "delivery_id",
+            "attempt_number",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    delivery_id: str = Field(
+        sa_column=Column(
+            Text,
+            ForeignKey("backfield_webhook_delivery.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    attempt_number: int = Field(sa_column=Column(Integer, nullable=False))
+    attempted_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    status_code: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))
+    failure_category: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    failure_summary: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    duration_ms: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )

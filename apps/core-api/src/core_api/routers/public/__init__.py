@@ -7,14 +7,15 @@ Layout:
 - ``entities/`` — canonical people, organizations, and locations
   (list, search, detail, mentions, articles, connections)
 - ``mentions/`` — project-wide mention search, facets, and detail across entity types
-- ``runs/`` — run trigger and status polling (``runs:trigger`` scope)
+- ``runs/`` — run trigger, status polling (``runs:trigger`` scope), and run output articles
+- ``events.py`` — durable project event feed for webhook recovery
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter
 
-from core_api.routers.public import articles, entities, mentions, projects, runs
+from core_api.routers.public import articles, entities, events, mentions, projects, runs
 from core_api.routers.public.errors import PUBLIC_ERROR_RESPONSES
 
 router = APIRouter(tags=["public"], responses=PUBLIC_ERROR_RESPONSES)
@@ -24,3 +25,4 @@ router.include_router(articles.router)
 router.include_router(entities.router)
 router.include_router(mentions.router)
 router.include_router(runs.router)
+router.include_router(events.router)

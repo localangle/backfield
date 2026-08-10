@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import os
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -63,6 +64,8 @@ from backfield_entities.ingest.custom_record.persist import (
 from backfield_entities.ingest.semantic_indexing.processed_item import (
     build_processed_item_semantic_indexing_summary,
 )
+from backfield_events import record_run_terminal_event
+from backfield_events.recording import RecordedEvent
 from backfield_observability.celery_publish import register_publish_timestamp_hook
 from backfield_observability.lifecycle import api_identity, emit_item_terminal, emit_run_terminal
 from celery import Celery
@@ -70,6 +73,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import case, delete, desc, func, or_, update
 from sqlmodel import Session, asc, col, select
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_AI_COST_CURRENCY = "USD"
 
@@ -88,6 +93,22 @@ register_publish_timestamp_hook()
 
 def _celery_queue() -> str:
     return str(os.environ.get("CELERY_QUEUE", "agate"))
+
+
+def _kick_webhook_dispatch(recorded: RecordedEvent | None) -> None:
+    """Best-effort post-commit dispatcher kick; the recovery sweep remains authoritative."""
+    if recorded is None or not recorded.delivery_ids:
+        return
+    try:
+        celery_app.send_task(
+            "worker.tasks.dispatch_webhook_deliveries",
+            queue=_celery_queue(),
+        )
+    except Exception:
+        logger.warning(
+            "Webhook dispatch kick failed; scheduled recovery will deliver",
+            exc_info=True,
+        )
 
 
 class AiCostNodeBreakdown(BaseModel):
@@ -2369,6 +2390,9 @@ def rerun_run_processed_item(
 
     if _is_synthetic_whole_graph_item_view(session, run_id, item_id):
         snapshot = _run_graph_spec_snapshot_json(r)
+        if r.status in ("succeeded", "failed", "timed_out"):
+            # Explicit rerun of a terminal run starts a new execution attempt.
+            r.execution_attempt = int(r.execution_attempt or 1) + 1
         r.status = "pending"
         r.error_message = None
         r.result_json = (
@@ -2395,6 +2419,9 @@ def rerun_run_processed_item(
         raise HTTPException(404, "Processed item not found")
 
     if r.status != "running":
+        if r.status in ("succeeded", "failed", "timed_out"):
+            # Explicit rerun of a terminal run starts a new execution attempt.
+            r.execution_attempt = int(r.execution_attempt or 1) + 1
         r.status = "running"
         r.updated_at = datetime.now(UTC)
         session.add(r)
@@ -2627,7 +2654,9 @@ def cancel_run(
     r.error_message = _RUN_CANCELLED_MESSAGE
     r.updated_at = now
     session.add(r)
+    recorded_event = record_run_terminal_event(session, r)
     session.commit()
+    _kick_webhook_dispatch(recorded_event)
     identity = api_identity("agate-api")
     for _ in range(cancelled_items):
         emit_item_terminal(

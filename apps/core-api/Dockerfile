@@ -19,6 +19,7 @@ COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-entities /app/packages/backfield-entities
 COPY packages/backfield-agate /app/packages/backfield-agate
 COPY packages/backfield-auth /app/packages/backfield-auth
+COPY packages/backfield-events /app/packages/backfield-events
 COPY apps/core-api /app/apps/core-api
 
 RUN uv pip install --system /app/packages/backfield-db \
@@ -27,6 +28,7 @@ RUN uv pip install --system /app/packages/backfield-db \
     && uv pip install --system /app/packages/backfield-entities \
     && uv pip install --system /app/packages/backfield-agate \
     && uv pip install --system /app/packages/backfield-auth \
+    && uv pip install --system /app/packages/backfield-events \
     && uv pip install --system /app/apps/core-api
 
 FROM python:3.11-slim-bookworm AS prod
@@ -65,6 +67,7 @@ COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-entities /app/packages/backfield-entities
 COPY packages/backfield-agate /app/packages/backfield-agate
 COPY packages/backfield-auth /app/packages/backfield-auth
+COPY packages/backfield-events /app/packages/backfield-events
 COPY apps/core-api /app/apps/core-api
 
 RUN cd /app/packages/backfield-db && uv pip install --system -e . \
@@ -73,6 +76,7 @@ RUN cd /app/packages/backfield-db && uv pip install --system -e . \
     && cd /app/packages/backfield-entities && uv pip install --system -e . \
     && cd /app/packages/backfield-agate && uv pip install --system -e . \
     && cd /app/packages/backfield-auth && uv pip install --system -e . \
+    && cd /app/packages/backfield-events && uv pip install --system -e . \
     && cd /app/apps/core-api && uv pip install --system -e .
 
 ENV PYTHONPATH=/app/apps/core-api/src

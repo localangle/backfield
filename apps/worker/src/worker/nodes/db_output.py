@@ -12,6 +12,7 @@ from typing import Any
 
 from agate_runtime.output_node import consolidated_body_from_dboutput
 from agate_utils.llm import call_llm
+from backfield_db import AgateRun
 from backfield_db.deadlock import is_postgres_deadlock
 from backfield_entities.connections.db_output import run_auto_connections_for_db_output
 from backfield_entities.ingest.article_embedding import persist_article_embedding_after_db_output
@@ -23,6 +24,7 @@ from backfield_entities.ingest.semantic_indexing.db_output import (
     build_semantic_indexing_summary,
     sync_semantic_documents_after_db_output,
 )
+from backfield_events import record_run_output_article
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session
 
@@ -96,6 +98,26 @@ def _dboutput_persist_slot() -> Iterator[None]:
             logger.debug("DBOutput persist gate lock release failed", exc_info=True)
 
 
+def _record_run_output_association(
+    session: Session,
+    *,
+    run_id: str,
+    article_id: int,
+    processed_item_id: int | None,
+) -> None:
+    """Tie the persisted article to the run's current execution attempt (same transaction)."""
+    run = session.get(AgateRun, run_id)
+    if run is None or article_id is None:
+        return
+    record_run_output_article(
+        session,
+        run_id=run_id,
+        execution_attempt=int(run.execution_attempt or 1),
+        article_id=int(article_id),
+        processed_item_id=processed_item_id,
+    )
+
+
 def _persist_db_output_in_session(
     session: Session,
     *,
@@ -119,6 +141,12 @@ def _persist_db_output_in_session(
         processed_item_id=processed_item_id,
     )
     article_id = persist_result.article_id
+    _record_run_output_association(
+        session,
+        run_id=run_id,
+        article_id=article_id,
+        processed_item_id=processed_item_id,
+    )
     retired_mentions = persist_result.retired_mentions
     substrates_disposed = persist_result.disposed_substrates
     replace_stats = persist_result.replace_stats
