@@ -13,9 +13,9 @@
 </p>
 
 <p align="center">
-  <a href="https://docs.backfield.news">Docs</a> &bull;
-  <a href="https://github.com/localangle/backfield-hosting">Self-Hosting</a> &bull;
-  <a href="https://localangle.co">More info</a>
+  <a href="https://try.backfield.news/">Try it</a> &bull;
+  <a href="https://docs.backfield.news">Documentation</a> &bull;
+  <a href="https://github.com/localangle/backfield-hosting">Self-Hosting</a>
 </p>
 
 <p align="center">
@@ -142,11 +142,9 @@ All of these services are optional, but they greatly enhance performance.
 
 ## Project status
 
-This repository is open for **local development, source inspection, and external contributions**.
+This repository is open for **local development, source inspection, and external contributions**. You can deploy Backfield publicly, but infrastructure, image builds and other infrastructure are not supplied in this repo. See [backfield-hosting](https://github.com/localangle/backfield-hosting) for a sample of an infrastructure architecture that works.
 
-Production self-hosting is not directly supported from this checkout. You can deploy Backfield publicly, but infrastructure, image builds and other infrastructure are not supplied in this repo.
-
-Further guidance on this is forthcoming, and you can contact [Local Angle](https://localangle.co) for help getting things running.
+You can also contact [Local Angle](https://localangle.co) for help getting things running.
 
 ## For contributors
 
