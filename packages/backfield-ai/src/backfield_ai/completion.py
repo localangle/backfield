@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -11,11 +12,15 @@ from typing import Any
 import litellm
 
 from backfield_ai.cost_estimate import litellm_estimated_cost_from_response
+from backfield_ai.json_clean import clean_json_response_text
 
 logger = logging.getLogger(__name__)
 
 # Upper bound when bumping an explicit ``max_tokens`` after empty JSON + finish_reason=length.
 _MAX_OUTPUT_RETRY_CEILING = 1_048_576
+# GPT-5.6 omits a usable provider default for visible JSON; LiteLLM remaps this to
+# ``max_completion_tokens`` (visible + reasoning tokens).
+_GPT56_DEFAULT_MAX_COMPLETION_TOKENS = 8192
 
 
 @dataclass(frozen=True)
@@ -190,11 +195,71 @@ def _litellm_completion_temperature(
     return temperature
 
 
+def _is_gpt56_family(litellm_model: str) -> bool:
+    """True for ``gpt-5.6`` and named variants (sol / terra / luna)."""
+    return _provider_model_id_from_litellm(litellm_model).startswith("gpt-5.6")
+
+
+def _assistant_json_is_parseable(text: str) -> bool:
+    """Whether assistant text is parseable JSON after fence stripping."""
+    candidate = clean_json_response_text(text)
+    if not candidate:
+        return False
+    try:
+        json.loads(candidate)
+    except json.JSONDecodeError:
+        return False
+    return True
+
+
+def _effective_max_tokens(litellm_model: str, max_tokens: int | None) -> int | None:
+    """Caller cap, or a GPT-5.6 default so JSON extract is not left uncapped."""
+    if max_tokens is not None:
+        return max_tokens
+    if _is_gpt56_family(litellm_model):
+        return _GPT56_DEFAULT_MAX_COMPLETION_TOKENS
+    return None
+
+
+def _bumped_max_tokens(current: int) -> int | None:
+    bumped = min(max(current * 2, 8192), _MAX_OUTPUT_RETRY_CEILING)
+    if bumped <= current:
+        return None
+    return bumped
+
+
+def _needs_output_budget_retry(
+    *,
+    text: str,
+    finish: str | None,
+    force_json_response: bool,
+    litellm_model: str,
+) -> bool:
+    """Retry once when the model spent the budget before usable JSON arrived."""
+    if text == "" and finish == "length":
+        return True
+    if (
+        _is_gpt56_family(litellm_model)
+        and force_json_response
+        and text != ""
+        and not _assistant_json_is_parseable(text)
+    ):
+        return True
+    return False
+
+
 def _gpt5_reasoning_effort_for_simple_completion(litellm_model: str) -> str | None:
-    """Use the lowest supported reasoning setting so short completions emit visible text."""
+    """Use the lowest supported reasoning setting so short completions emit visible text.
+
+    GPT-5.6 supports ``none`` and does not support ``minimal``. Force ``none`` even when
+    LiteLLM's model map is missing or stale, so extract/JSON calls do not spend the
+    completion budget on hidden reasoning.
+    """
     model_id = _provider_model_id_from_litellm(litellm_model)
     if not model_id.startswith("gpt-5"):
         return None
+    if _is_gpt56_family(litellm_model):
+        return "none"
     try:
         from litellm.llms.openai.chat.gpt_5_transformation import OpenAIGPT5Config
 
@@ -234,8 +299,10 @@ def completion_text_sync(
 ) -> LiteLLMCompletionResult:
     """Single LiteLLM completion (no Backfield-level retries here).
 
-    When ``max_tokens`` is None, it is omitted so the provider applies model defaults (recommended
-    for OpenAI to avoid caps below the model maximum).
+    When ``max_tokens`` is None, it is omitted so the provider applies model defaults
+    (recommended for most OpenAI models). GPT-5.6 is the exception: those models get an
+    explicit completion budget so JSON extract is not truncated by hidden reasoning.
+    LiteLLM remaps ``max_tokens`` to ``max_completion_tokens`` for the GPT-5 family.
     """
     kwargs: dict[str, Any] = {
         "model": litellm_model,
@@ -243,8 +310,9 @@ def completion_text_sync(
         "timeout": timeout,
         "num_retries": 0,
     }
-    if max_tokens is not None:
-        kwargs["max_tokens"] = max_tokens
+    effective_max_tokens = _effective_max_tokens(litellm_model, max_tokens)
+    if effective_max_tokens is not None:
+        kwargs["max_tokens"] = effective_max_tokens
     if api_key:
         kwargs["api_key"] = api_key
     if api_base and str(api_base).strip():
@@ -292,21 +360,26 @@ def completion_text_sync(
         )
 
     # Reasoning models can exhaust max_completion_tokens on hidden reasoning before any
-    # visible assistant text is emitted. Retry once with a larger cap when that happens.
-    if (
-        allow_max_tokens_bump
-        and text == ""
-        and finish == "length"
+    # visible assistant text is emitted. GPT-5.6 can also stop with truncated nonempty
+    # JSON. Retry once with a larger cap when that happens.
+    if allow_max_tokens_bump and _needs_output_budget_retry(
+        text=text,
+        finish=finish,
+        force_json_response=force_json_response,
+        litellm_model=litellm_model,
     ):
         current = kwargs.get("max_tokens")
         if current is not None:
             current_cap = int(current)
-            bumped = min(max(current_cap * 2, 8192), _MAX_OUTPUT_RETRY_CEILING)
-            if bumped > current_cap:
+            bumped = _bumped_max_tokens(current_cap)
+            if bumped is not None:
                 logger.info(
-                    "LiteLLM empty output + finish_reason=length; retry max_tokens=%s (was %s)",
+                    "LiteLLM unusable JSON output; retry max_tokens=%s (was %s, "
+                    "finish_reason=%s, empty=%s)",
                     bumped,
                     current_cap,
+                    finish,
+                    text == "",
                 )
                 kwargs["max_tokens"] = bumped
                 resp = litellm.completion(**kwargs)
@@ -345,6 +418,31 @@ def completion_text_sync(
             "If finish_reason is 'length', the completion budget was exhausted before any JSON was "
             "emitted—shorten the input or pass a higher explicit max_tokens if your provider "
             "requires one.",
+            result=partial,
+        )
+
+    if (
+        force_json_response
+        and _is_gpt56_family(litellm_model)
+        and text != ""
+        and not _assistant_json_is_parseable(text)
+    ):
+        prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)
+        mt_display = kwargs.get("max_tokens")
+        if mt_display is None:
+            mt_display = "omitted (provider default)"
+        preview = text[:400]
+        partial = _build_completion_result(
+            resp=resp,
+            litellm_model=litellm_model,
+            text=text,
+            latency_ms=latency_ms,
+        )
+        raise LiteLLMCompletionRejectedError(
+            "LiteLLM returned truncated or invalid JSON while JSON output was required "
+            f"(model={litellm_model!r}, finish_reason={finish!r}, "
+            f"max_tokens={mt_display}, approx_prompt_chars={prompt_chars}, "
+            f"preview={preview!r}).",
             result=partial,
         )
 

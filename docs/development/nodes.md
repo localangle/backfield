@@ -253,6 +253,12 @@ context window (8,000-token fallback when metadata is unknown) and fail with gui
 to add Document Chunker. Article Metadata and Embed Text keep whole-document outputs
 but truncate prompt/embedding body input safely.
 
+GPT-5.6 extract completions (`gpt-5.6`, Sol, Terra, Luna) always send
+`reasoning_effort=none` and an explicit completion budget (default 8,192 tokens,
+retried once if the JSON is empty or truncated). Do not fall back to `minimal`; 5.6
+does not support it. Other GPT-5 models still pick the lowest LiteLLM-supported
+effort (`none`, then `minimal`).
+
 ## Canvas components
 
 `ui/NodeComponent.tsx` uses React Flow `NodeProps`, normally wrapped in `memo`.
