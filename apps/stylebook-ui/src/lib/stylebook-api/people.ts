@@ -1,4 +1,4 @@
-import { stylebookJsonFetch } from "@/lib/stylebook-api/client"
+import { stylebookJsonFetch, type UnlinkCanonicalResult } from "@/lib/stylebook-api/client"
 
 /** One ``stylebook_person_canonical`` row (Stylebook catalog), not a substrate person. */
 export interface CanonicalPerson {
@@ -196,8 +196,8 @@ export async function getCanonicalPersonMentions(
 export async function unlinkPersonSubstrateFromCanonical(
   substratePersonId: number,
   projectSlug: string,
-): Promise<{ message: string }> {
-  return stylebookJsonFetch<{ message: string }>(
+): Promise<UnlinkCanonicalResult> {
+  return stylebookJsonFetch<UnlinkCanonicalResult>(
     `/v1/people/${substratePersonId}/unlink-canonical?project_slug=${encodeURIComponent(projectSlug)}`,
     { method: "POST" },
   )

@@ -82,6 +82,15 @@ export function isStylebookApiNotFoundError(error: unknown): boolean {
   return error instanceof StylebookApiError && error.status === 404
 }
 
+export type UnlinkCanonicalResult = {
+  message: string
+  canonical_pruned: boolean
+}
+
+function looksLikeHtml(contentType: string, body: string): boolean {
+  return contentType.includes("text/html") || /^\s*</.test(body)
+}
+
 export async function stylebookJsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const resolvedPath = augmentStylebookApiPath(path)
   const response = await handleTenantResponse(await fetch(`${stylebookApiBase()}${resolvedPath}`, {
@@ -92,8 +101,9 @@ export async function stylebookJsonFetch<T>(path: string, init?: RequestInit): P
     },
     credentials: "include",
   }))
+  const errorText = await response.text()
+  const contentType = response.headers.get("content-type") ?? ""
   if (!response.ok) {
-    const errorText = await response.text()
     let errorMessage = `API error: ${response.statusText}`
     try {
       const errorJson = JSON.parse(errorText) as { detail?: unknown }
@@ -106,5 +116,13 @@ export async function stylebookJsonFetch<T>(path: string, init?: RequestInit): P
     }
     throw new StylebookApiError(response.status, errorMessage)
   }
-  return response.json() as Promise<T>
+  // CloudFront SPA fallback can rewrite API 404/403 to 200 + index.html.
+  if (looksLikeHtml(contentType, errorText)) {
+    throw new StylebookApiError(404, "This record is no longer available.")
+  }
+  try {
+    return JSON.parse(errorText) as T
+  } catch {
+    throw new StylebookApiError(response.status, "The server returned an unexpected response.")
+  }
 }

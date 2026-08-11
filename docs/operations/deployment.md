@@ -78,7 +78,9 @@ Vite loads each app's `.env.production`. The default browser paths are:
 - `/api/stylebook` for Stylebook API
 
 The origin or CDN must route those paths to the matching API and serve `index.html` as the SPA
-fallback. When the API receives a forwarded prefix rather than a stripped path, set
+fallback for document routes only. Do not rewrite API `404`/`403` responses to `index.html`
+(CloudFront custom error responses apply to every origin, including `/api/*` and `/v1/*`).
+When the API receives a forwarded prefix rather than a stripped path, set
 `BACKFIELD_HTTP_PATH_PREFIX` on that API.
 
 Deploy the API Playground at `playground.{organization-slug}.backfield.news`. Configure wildcard

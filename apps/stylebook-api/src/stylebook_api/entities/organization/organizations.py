@@ -63,6 +63,11 @@ class LinkCanonicalResponse(BaseModel):
     changed: bool
 
 
+class UnlinkCanonicalResponse(BaseModel):
+    message: str
+    canonical_pruned: bool
+
+
 def _manual_organization_type(value: str | None) -> str | None:
     return normalize_organization_type(value)
 
@@ -74,7 +79,7 @@ def unlink_substrate_from_canonical_route(
     stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
-) -> dict[str, str]:
+) -> UnlinkCanonicalResponse:
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
@@ -91,7 +96,7 @@ def unlink_substrate_from_canonical_route(
     )
     stylebook_id = int(guarded_stylebook.id)
     try:
-        unlink_substrate_from_canonical(
+        canonical_pruned = unlink_substrate_from_canonical(
             session,
             stylebook_id=stylebook_id,
             organization=organization,
@@ -100,7 +105,7 @@ def unlink_substrate_from_canonical_route(
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     session.commit()
-    return {"message": "unlinked"}
+    return UnlinkCanonicalResponse(message="unlinked", canonical_pruned=canonical_pruned)
 
 
 @router.post(

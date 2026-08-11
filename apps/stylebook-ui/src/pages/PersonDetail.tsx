@@ -233,7 +233,12 @@ export default function PersonDetail() {
     }
     setUnlinkingId(sub.id)
     try {
-      await unlinkPersonSubstrateFromCanonical(sub.id, sub.project_slug)
+      const result = await unlinkPersonSubstrateFromCanonical(sub.id, sub.project_slug)
+      if (result.canonical_pruned) {
+        setDeleting(true)
+        navigate(canonicalListHref)
+        return
+      }
       setSubstrates((prev) => prev.filter((item) => item.id !== sub.id))
       setPerson((prev) =>
         prev

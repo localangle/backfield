@@ -63,7 +63,7 @@ Project-scoped saved entity routes manage article evidence before or after a can
 - `/v1/people` and `/v1/people/candidates`
 - `/v1/organizations` and `/v1/organizations/candidates`
 
-Saved entities can be inspected, edited, linked or unlinked from a canonical, and removed from an article. Article-evidence create routes for each current domain validate selected quote offsets and create the saved entity, mention, and first occurrence together.
+Saved entities can be inspected, edited, linked or unlinked from a canonical, and removed from an article. Unlink responses include ``canonical_pruned`` when the last linked saved entity caused an ingest-only catalog row to be removed. Article-evidence create routes for each current domain validate selected quote offsets and create the saved entity, mention, and first occurrence together.
 
 Candidate queues support open and deferred review, notes, context, suggested canonicals,
 recommendation clearing, acceptance into a new or existing canonical, and type facets. Existing

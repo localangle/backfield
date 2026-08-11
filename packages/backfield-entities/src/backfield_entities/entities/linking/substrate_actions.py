@@ -126,11 +126,12 @@ def unlink_substrate_from_canonical(
     location: SubstrateLocation,
     provenance: str = "stylebook_ui_unlink",
     requeue_after_unlink: bool = True,
-) -> None:
+) -> bool:
     """Clear canonical FK; remove matching alias on old canonical when safe.
 
     When ``requeue_after_unlink`` is true (default), set ``pending`` for the open candidate
     queue. When false, set ``unlinked`` so the row stays out of the queue (story-only remove).
+    Returns True when the leftover ingest-only canonical was pruned.
     """
     if location.id is None:
         raise ValueError("location must be persisted")
@@ -171,7 +172,7 @@ def unlink_substrate_from_canonical(
         label=str(canon.label),
         change="substrate_unlinked",
     )
-    maybe_prune_ingest_orphan_location_canonical(
+    return maybe_prune_ingest_orphan_location_canonical(
         session,
         stylebook_id=stylebook_id,
         canonical_id=old,
