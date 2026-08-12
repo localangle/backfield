@@ -47,7 +47,7 @@ import {
 } from "@/lib/stylebookPaths"
 import {
   defaultWorkflowProjectSlug,
-  projectOwnsStylebook,
+  replacementWorkflowProjectSlug,
 } from "@/lib/workflowProjectScope"
 
 function projectSearchSuffix(searchParams: URLSearchParams): string {
@@ -58,6 +58,13 @@ function projectSearchSuffix(searchParams: URLSearchParams): string {
   if (filt) p.set("project", filt)
   const s = p.toString()
   return s ? `?${s}` : ""
+}
+
+/** Keep catalog navigations under ``/org/{slug}`` when the shell already is. */
+function orgPrefixedStylebookPath(pathname: string, stylebookSlug: string, search = ""): string {
+  const orgPrefix = pathname.match(/^(\/org\/[^/]+)/)?.[1] ?? ""
+  const base = `${orgPrefix}/stylebook/${encodeURIComponent(stylebookSlug)}`
+  return search ? `${base}${search.startsWith("?") ? search : `?${search}`}` : base
 }
 
 const STORAGE_WORKSPACES_EXPANDED = "stylebook-sidebar-workspaces-expanded"
@@ -297,28 +304,39 @@ export default function Layout({ children, headerContent }: LayoutProps) {
     if (!routeSlug || projects.length === 0) return
     const stylebook = stylebooks.find((row) => row.slug === routeSlug)
     const stylebookId = stylebook?.id ?? null
-    // Wait for workspace ownership when we know the catalog id, so we do not
-    // briefly pin ``general`` before correcting to an owning project.
-    if (stylebookId != null && workspaceRows.length === 0) return
 
-    const owningSlug = defaultWorkflowProjectSlug(projects, {
+    if (!workflowProjectSlug) {
+      const owningSlug = defaultWorkflowProjectSlug(projects, {
+        stylebookId,
+        workspaces: workspaceRows,
+      })
+      if (!owningSlug) return
+      setSearchParams(
+        (prev) => {
+          if (prev.get("project_scope") === owningSlug) return prev
+          const next = new URLSearchParams(prev)
+          next.set("project_scope", owningSlug)
+          return next
+        },
+        { replace: true },
+      )
+      return
+    }
+
+    if (stylebookId == null) return
+    const nextSlug = replacementWorkflowProjectSlug(
+      workflowProjectSlug,
       stylebookId,
-      workspaces: workspaceRows,
-    })
-    if (!owningSlug) return
-
-    const scopeMismatched =
-      !!workflowProjectSlug &&
-      stylebookId != null &&
-      !projectOwnsStylebook(workflowProjectSlug, stylebookId, workspaceRows)
-
-    if (workflowProjectSlug && !scopeMismatched) return
+      projects,
+      workspaceRows,
+    )
+    if (!nextSlug) return
 
     setSearchParams(
       (prev) => {
-        if (prev.get("project_scope") === owningSlug) return prev
+        if (prev.get("project_scope") === nextSlug) return prev
         const next = new URLSearchParams(prev)
-        next.set("project_scope", owningSlug)
+        next.set("project_scope", nextSlug)
         return next
       },
       { replace: true },
@@ -349,10 +367,14 @@ export default function Layout({ children, headerContent }: LayoutProps) {
       stylebooks.find((b) => b.is_default)?.slug ?? stylebooks[0]?.slug ?? ""
     if (!nextSlug) return
     navigate(
-      `/stylebook/${encodeURIComponent(nextSlug)}${projectSearchSuffix(searchParams)}`,
+      orgPrefixedStylebookPath(
+        location.pathname,
+        nextSlug,
+        projectSearchSuffix(searchParams),
+      ),
       { replace: true },
     )
-  }, [routeSlug, stylebooks, navigate, searchParams])
+  }, [routeSlug, stylebooks, navigate, searchParams, location.pathname])
 
   const onStylebookChange = useCallback(
     (slug: string) => {
@@ -364,9 +386,9 @@ export default function Layout({ children, headerContent }: LayoutProps) {
       const next = new URLSearchParams()
       if (owningSlug) next.set("project_scope", owningSlug)
       const suffix = next.toString() ? `?${next.toString()}` : ""
-      navigate(`/stylebook/${encodeURIComponent(slug)}${suffix}`)
+      navigate(orgPrefixedStylebookPath(location.pathname, slug, suffix))
     },
-    [navigate, projects, stylebooks, workspaceRows],
+    [navigate, projects, stylebooks, workspaceRows, location.pathname],
   )
 
   const handleLogout = async () => {
