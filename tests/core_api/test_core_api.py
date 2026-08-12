@@ -752,6 +752,86 @@ def test_org_admin_list_projects_and_users_detail(client: TestClient) -> None:
     assert len(wdata[0]["projects"]) >= 1
 
 
+def test_org_admin_patch_disable_and_reenable_user(client: TestClient) -> None:
+    seed_first_admin(client, "admin@example.com", "admin-secret")
+    client.post(
+        "/v1/auth/login",
+        json={"email": "admin@example.com", "password": "admin-secret"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+
+    create = client.post(
+        f"/v1/organizations/{org_id}/users",
+        json={
+            "email": "member@example.com",
+            "password": "member-secret",
+            "display_name": "Old Name",
+            "role": "member",
+        },
+    )
+    assert create.status_code == 200
+    member_id = create.json()["id"]
+
+    patched = client.patch(
+        f"/v1/organizations/{org_id}/users/{member_id}",
+        json={"display_name": "New Name"},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["display_name"] == "New Name"
+    assert patched.json()["disabled_at"] is None
+
+    disabled = client.delete(f"/v1/organizations/{org_id}/users/{member_id}")
+    assert disabled.status_code == 200
+    assert disabled.json() == {"ok": True}
+
+    listed = client.get(f"/v1/organizations/{org_id}/users").json()
+    member_row = next(u for u in listed if u["id"] == member_id)
+    assert member_row["disabled_at"] is not None
+
+    login_disabled = client.post(
+        "/v1/auth/login",
+        json={"email": "member@example.com", "password": "member-secret"},
+    )
+    assert login_disabled.status_code == 401
+
+    recreate = client.post(
+        f"/v1/organizations/{org_id}/users",
+        json={
+            "email": "member@example.com",
+            "password": "other-secret",
+            "role": "member",
+        },
+    )
+    assert recreate.status_code == 409
+    assert "disabled" in recreate.json()["detail"].lower()
+
+    renamed_while_disabled = client.patch(
+        f"/v1/organizations/{org_id}/users/{member_id}",
+        json={"display_name": "Still Disabled", "disabled": False},
+    )
+    assert renamed_while_disabled.status_code == 200
+    body = renamed_while_disabled.json()
+    assert body["display_name"] == "Still Disabled"
+    assert body["disabled_at"] is None
+
+    login_enabled = client.post(
+        "/v1/auth/login",
+        json={"email": "member@example.com", "password": "member-secret"},
+    )
+    assert login_enabled.status_code == 200
+
+    client.post(
+        "/v1/auth/login",
+        json={"email": "admin@example.com", "password": "admin-secret"},
+    )
+    self_disable = client.patch(
+        f"/v1/organizations/{org_id}/users/{client.get('/v1/auth/me').json()['user_id']}",
+        json={"disabled": True},
+    )
+    assert self_disable.status_code == 400
+    assert "own account" in self_disable.json()["detail"].lower()
+
+
 def test_member_workspace_memberships_grant_project_access(client: TestClient) -> None:
     seed_first_admin(client, "wsadmin@example.com", "ws-admin-secret")
     client.post(

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { BookOpen, Building2, UserX } from "lucide-react"
+import { BookOpen, Building2, Pencil, UserCheck, UserX } from "lucide-react"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import { Button } from "@/components/ui/button"
 import {
@@ -31,6 +31,7 @@ import { useAuth } from "@/lib/auth"
 import {
   createOrgUser,
   disableOrgUser,
+  enableOrgUser,
   listOrgUsers,
   listOrgWorkspaces,
   patchOrgUser,
@@ -59,6 +60,10 @@ export default function ManageUsersPage() {
   const [createPassword, setCreatePassword] = useState("")
   const [createDisplay, setCreateDisplay] = useState("")
   const [createRole, setCreateRole] = useState("member")
+  const [editUser, setEditUser] = useState<OrgUserRow | null>(null)
+  const [editDisplay, setEditDisplay] = useState("")
+  const [editRole, setEditRole] = useState("member")
+  const [editSaving, setEditSaving] = useState(false)
   const [accessUser, setAccessUser] = useState<OrgUserRow | null>(null)
   const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<Set<number>>(
     new Set(),
@@ -115,6 +120,32 @@ export default function ManageUsersPage() {
       cancelled = true
     }
   }, [organizationId, reload])
+
+  const openEditUser = (u: OrgUserRow) => {
+    setEditUser(u)
+    setEditDisplay(u.display_name ?? "")
+    setEditRole(u.role)
+  }
+
+  const saveEditUser = async () => {
+    if (!editUser || !organizationId) {
+      return
+    }
+    setEditSaving(true)
+    setError("")
+    try {
+      await patchOrgUser(organizationId, editUser.id, {
+        display_name: editDisplay.trim() || null,
+        role: editRole,
+      })
+      setEditUser(null)
+      await reload()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not update user")
+    } finally {
+      setEditSaving(false)
+    }
+  }
 
   const openWorkspaceAccess = (u: OrgUserRow) => {
     setAccessUser(u)
@@ -285,11 +316,7 @@ export default function ManageUsersPage() {
                 <TableCell className="font-medium">{u.email}</TableCell>
                 <TableCell>{u.display_name ?? "—"}</TableCell>
                 <TableCell>
-                  <OrgRoleSelect
-                    orgId={orgId}
-                    user={u}
-                    onUpdated={reload}
-                  />
+                  {u.role === "org_admin" ? "Organization admin" : "Member"}
                 </TableCell>
                 <TableCell>
                   {u.disabled_at ? (
@@ -300,6 +327,18 @@ export default function ManageUsersPage() {
                 </TableCell>
                 <TableCell className="text-right align-middle">
                   <div className="flex flex-nowrap items-center justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 gap-1.5 max-lg:px-2.5"
+                      onClick={() => openEditUser(u)}
+                      title="Edit display name and role"
+                      aria-label={`Edit ${u.email}`}
+                    >
+                      <Pencil className="h-4 w-4 shrink-0" aria-hidden />
+                      <span className="hidden lg:inline">Edit</span>
+                    </Button>
                     <Button
                       type="button"
                       variant="outline"
@@ -338,30 +377,70 @@ export default function ManageUsersPage() {
                       <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
                       <span className="hidden lg:inline">Stylebooks</span>
                     </Button>
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      className="shrink-0 gap-1.5 max-lg:px-2.5"
-                      disabled={!!u.disabled_at}
-                      aria-label={`Disable ${u.email}`}
-                      onClick={async () => {
-                        const ok = await showConfirm(
-                          `Disable ${u.email}? They will not be able to sign in.`,
-                          {
-                            title: "Disable user",
-                            confirmLabel: "Disable",
-                            destructive: true,
-                          },
-                        )
-                        if (!ok) return
-                        await disableOrgUser(orgId, u.id)
-                        await reload()
-                      }}
-                    >
-                      <UserX className="h-4 w-4 shrink-0" aria-hidden />
-                      <span className="hidden lg:inline">Disable</span>
-                    </Button>
+                    {u.disabled_at ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 gap-1.5 max-lg:px-2.5"
+                        aria-label={`Re-enable ${u.email}`}
+                        onClick={async () => {
+                          const ok = await showConfirm(
+                            `Re-enable ${u.email}? They will be able to sign in again.`,
+                            {
+                              title: "Re-enable user",
+                              confirmLabel: "Re-enable",
+                            },
+                          )
+                          if (!ok) return
+                          try {
+                            await enableOrgUser(orgId, u.id)
+                            await reload()
+                          } catch (e) {
+                            setError(
+                              e instanceof Error
+                                ? e.message
+                                : "Could not re-enable user",
+                            )
+                          }
+                        }}
+                      >
+                        <UserCheck className="h-4 w-4 shrink-0" aria-hidden />
+                        <span className="hidden lg:inline">Re-enable</span>
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        className="shrink-0 gap-1.5 max-lg:px-2.5"
+                        aria-label={`Disable ${u.email}`}
+                        onClick={async () => {
+                          const ok = await showConfirm(
+                            `Disable ${u.email}? They will not be able to sign in.`,
+                            {
+                              title: "Disable user",
+                              confirmLabel: "Disable",
+                              destructive: true,
+                            },
+                          )
+                          if (!ok) return
+                          try {
+                            await disableOrgUser(orgId, u.id)
+                            await reload()
+                          } catch (e) {
+                            setError(
+                              e instanceof Error
+                                ? e.message
+                                : "Could not disable user",
+                            )
+                          }
+                        }}
+                      >
+                        <UserX className="h-4 w-4 shrink-0" aria-hidden />
+                        <span className="hidden lg:inline">Disable</span>
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>
@@ -424,6 +503,73 @@ export default function ManageUsersPage() {
               onClick={() => void handleCreate().catch((e) => setError(String(e)))}
             >
               Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!editUser}
+        onOpenChange={(o) => {
+          if (!o) {
+            setEditUser(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit user</DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              Update the display name and organization role. Email cannot be
+              changed.
+            </p>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="e-email">Email</Label>
+              <Input
+                id="e-email"
+                type="email"
+                value={editUser?.email ?? ""}
+                disabled
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="e-dn">Display name</Label>
+              <Input
+                id="e-dn"
+                value={editDisplay}
+                onChange={(e) => setEditDisplay(e.target.value)}
+                maxLength={200}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Organization role</Label>
+              <Select value={editRole} onValueChange={setEditRole}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="member">Member</SelectItem>
+                  <SelectItem value="org_admin">Organization admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditUser(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={editSaving}
+              onClick={() => void saveEditUser()}
+            >
+              {editSaving ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -553,49 +699,5 @@ export default function ManageUsersPage() {
         </DialogContent>
       </Dialog>
     </div>
-  )
-}
-
-function OrgRoleSelect({
-  orgId,
-  user,
-  onUpdated,
-}: {
-  orgId: number
-  user: OrgUserRow
-  onUpdated: () => Promise<void>
-}) {
-  const { showError } = useAppMessage()
-  const [value, setValue] = useState(user.role)
-  const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    setValue(user.role)
-  }, [user.id, user.role])
-
-  return (
-    <Select
-      value={value}
-      disabled={saving || !!user.disabled_at}
-      onValueChange={(v) => {
-        setValue(v)
-        setSaving(true)
-        void patchOrgUser(orgId, user.id, { role: v })
-          .then(() => onUpdated())
-          .catch((err) => {
-            setValue(user.role)
-            showError(err instanceof Error ? err.message : "Could not update role")
-          })
-          .finally(() => setSaving(false))
-      }}
-    >
-      <SelectTrigger className="w-[180px]">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="member">Member</SelectItem>
-        <SelectItem value="org_admin">Organization admin</SelectItem>
-      </SelectContent>
-    </Select>
   )
 }

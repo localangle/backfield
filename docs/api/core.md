@@ -59,7 +59,7 @@ Routes under `/v1/organizations/{org_id}` manage:
 - workspaces and their assigned Stylebooks;
 - users, roles, and workspace or explicit project memberships.
 
-Workspace membership replacement endpoints treat the submitted collection as the complete desired state. User disable and role changes protect the current user and the last organization administrator.
+Workspace membership replacement endpoints treat the submitted collection as the complete desired state. User disable and role changes protect the current user and the last organization administrator. Soft-disabled accounts keep their email reserved; organization admins can edit display name and role, and re-enable a user with `PATCH /v1/organizations/{org_id}/users/{user_id}` (`disabled: false`) instead of creating a duplicate account.
 
 Workspace deletion is organization-admin only. `GET /v1/organizations/{org_id}/workspaces/{workspace_id}/delete-preview` returns rollup counts plus per-project tallies. `POST /v1/organizations/{org_id}/workspaces/{workspace_id}/delete` requires `{ "confirm_name": "<exact workspace name>" }`, runs the same project teardown for every project in the workspace, then deletes the workspace and its memberships. Shared Stylebook canonicals for the organization are kept.
 
