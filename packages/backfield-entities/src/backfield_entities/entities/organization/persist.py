@@ -808,7 +808,8 @@ def unlink_substrate_from_canonical(
     organization: SubstrateOrganization,
     provenance: str = "stylebook_ui_unlink",
     requeue_after_unlink: bool = True,
-) -> None:
+) -> bool:
+    """Return True when the leftover ingest-only canonical was pruned."""
     if organization.id is None:
         raise ValueError("organization must be persisted")
     if str(organization.canonical_link_status) != CANONICAL_LINK_LINKED:
@@ -847,7 +848,7 @@ def unlink_substrate_from_canonical(
         label=str(canon.label),
         change="substrate_unlinked",
     )
-    maybe_prune_ingest_orphan_organization_canonical(
+    return maybe_prune_ingest_orphan_organization_canonical(
         session,
         stylebook_id=stylebook_id,
         canonical_id=old,

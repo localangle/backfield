@@ -1,4 +1,4 @@
-import { stylebookJsonFetch } from "@/lib/stylebook-api/client"
+import { stylebookJsonFetch, type UnlinkCanonicalResult } from "@/lib/stylebook-api/client"
 
 export interface Location {
   id: number
@@ -168,8 +168,8 @@ export async function listCanonicalLinkedSubstrates(
 export async function unlinkSubstrateFromCanonical(
   substrateLocationId: number,
   projectSlug: string,
-): Promise<{ message: string }> {
-  return stylebookJsonFetch<{ message: string }>(
+): Promise<UnlinkCanonicalResult> {
+  return stylebookJsonFetch<UnlinkCanonicalResult>(
     `/v1/locations/${substrateLocationId}/unlink-canonical?project_slug=${encodeURIComponent(projectSlug)}`,
     { method: "POST" },
   )

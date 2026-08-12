@@ -400,6 +400,11 @@ class LinkCanonicalResponse(BaseModel):
     changed: bool
 
 
+class UnlinkCanonicalResponse(BaseModel):
+    message: str
+    canonical_pruned: bool
+
+
 @router.post("/locations/{location_id}/unlink-canonical")
 def unlink_substrate_from_canonical_route(
     location_id: int,
@@ -407,7 +412,7 @@ def unlink_substrate_from_canonical_route(
     stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
-) -> dict[str, str]:
+) -> UnlinkCanonicalResponse:
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
@@ -424,7 +429,7 @@ def unlink_substrate_from_canonical_route(
     )
     stylebook_id = int(guarded_stylebook.id)
     try:
-        unlink_substrate_from_canonical(
+        canonical_pruned = unlink_substrate_from_canonical(
             session, stylebook_id=stylebook_id, location=loc, provenance="stylebook_ui_unlink"
         )
     except ValueError as e:
@@ -436,7 +441,7 @@ def unlink_substrate_from_canonical_route(
         entity_type="location",
         entity_id=location_id,
     )
-    return {"message": "unlinked"}
+    return UnlinkCanonicalResponse(message="unlinked", canonical_pruned=canonical_pruned)
 
 
 @router.post("/locations/{location_id}/link-canonical", response_model=LinkCanonicalResponse)

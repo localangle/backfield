@@ -109,7 +109,9 @@ array: omitted machine associations and their system-extraction occurrences are 
 editor-added, editor-modified, and non-extraction associations remain. Shared substrate identities
 remain available to other articles; true orphans are unlinked and removed. When the last linked
 substrate for an ingest-only location, person, or organization canonical is disposed or unlinked,
-that empty catalog shell is pruned (manual, CSV, bundle, and review-queue rows stay). `smart_merge`
+that empty catalog shell is pruned (manual, CSV, bundle, and review-queue rows stay). Stylebook
+unlink responses report that prune as ``canonical_pruned`` so the catalog UI can leave the detail
+page instead of refetching a row that no longer exists. `smart_merge`
 and `add_only` retain their non-authoritative behavior.
 
 Occurrence offsets are optional evidence, not best-effort guesses. Ingest stores `start_char` and

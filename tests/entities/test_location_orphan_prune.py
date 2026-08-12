@@ -75,7 +75,7 @@ def test_unlink_prunes_ingest_orphan_canonical_when_last_substrate_removed() -> 
         ghost_id = str(location.stylebook_location_canonical_id)
         assert ghost_id
 
-        unlink_substrate_from_canonical(
+        pruned = unlink_substrate_from_canonical(
             session,
             stylebook_id=sb_id,
             location=location,
@@ -84,6 +84,7 @@ def test_unlink_prunes_ingest_orphan_canonical_when_last_substrate_removed() -> 
         )
         session.commit()
 
+        assert pruned is True
         assert session.get(StylebookLocationCanonical, ghost_id) is None
         assert (
             session.exec(
@@ -129,7 +130,7 @@ def test_unlink_keeps_manual_canonical_with_zero_substrates() -> None:
         session.commit()
         session.refresh(location)
 
-        unlink_substrate_from_canonical(
+        pruned = unlink_substrate_from_canonical(
             session,
             stylebook_id=sb_id,
             location=location,
@@ -138,6 +139,7 @@ def test_unlink_keeps_manual_canonical_with_zero_substrates() -> None:
         )
         session.commit()
 
+        assert pruned is False
         assert session.get(StylebookLocationCanonical, canon_id) is not None
 
 

@@ -35,6 +35,7 @@ from backfield_entities.canonical.link import (
     CANONICAL_LINK_UNLINKED,
     CANONICAL_LINK_WAIVED,
 )
+from backfield_entities.entities.location.persist import materialize_new_canonical_and_link
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
@@ -2469,13 +2470,14 @@ def test_post_unlink_canonical_prunes_alias_when_sole_substrate(
         headers=_service_headers(),
     )
     assert r_un.status_code == 200
-    assert r_un.json() == {"message": "unlinked"}
+    assert r_un.json() == {"message": "unlinked", "canonical_pruned": False}
 
     with Session(engine) as s:
         row = s.get(SubstrateLocation, sid)
         assert row is not None
         assert row.stylebook_location_canonical_id is None
         assert row.canonical_link_status == CANONICAL_LINK_PENDING
+        assert s.get(StylebookLocationCanonical, cid) is not None
         aliases_after = s.exec(
             select(StylebookLocationAlias).where(
                 StylebookLocationAlias.location_canonical_id == cid,
@@ -2483,6 +2485,43 @@ def test_post_unlink_canonical_prunes_alias_when_sole_substrate(
             )
         ).all()
         assert len(aliases_after) == 0
+
+
+def test_post_unlink_canonical_reports_prune_for_ingest_orphan(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Ingest Garage",
+            normalized_name="ingest garage",
+            location_type="place",
+            identity_fingerprint="fp-ingest-orphan-1",
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        s.add(loc)
+        s.commit()
+        s.refresh(loc)
+        materialize_new_canonical_and_link(s, stylebook_id=sb_id, location=loc)
+        s.commit()
+        s.refresh(loc)
+        sid = int(loc.id)  # type: ignore[arg-type]
+        cid = str(loc.stylebook_location_canonical_id)
+
+    r_un = client.post(
+        f"/v1/locations/{sid}/unlink-canonical?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r_un.status_code == 200
+    assert r_un.json() == {"message": "unlinked", "canonical_pruned": True}
+
+    with Session(engine) as s:
+        assert s.get(StylebookLocationCanonical, cid) is None
 
 
 def test_delete_location_article_scoped_removes_orphan_linked_substrate_without_requeue(

@@ -100,6 +100,8 @@ class ProjectSummaryOut(BaseModel):
 class UserPatchBody(BaseModel):
     display_name: str | None = Field(default=None, max_length=200)
     role: OrgRole | None = None
+    # True disables; False re-enables; omit to leave status unchanged.
+    disabled: bool | None = None
 
 
 class MembershipRow(BaseModel):
@@ -716,7 +718,13 @@ def create_user(
     email = body.email
     existing = session.exec(select(BackfieldUser).where(BackfieldUser.email == email)).first()
     if existing:
-        raise HTTPException(status_code=409, detail="Email already registered")
+        detail = (
+            "Email already registered (including disabled accounts). "
+            "Edit or re-enable that user instead of creating a new one."
+            if existing.disabled_at is not None
+            else "Email already registered"
+        )
+        raise HTTPException(status_code=409, detail=detail)
     user = BackfieldUser(
         email=email,
         password_hash=hash_password(body.password),
@@ -751,6 +759,41 @@ def create_user(
     )
 
 
+def _apply_user_disabled_state(
+    *,
+    session: Session,
+    org_id: int,
+    user_id: int,
+    user: BackfieldUser,
+    mem: BackfieldOrganizationMembership,
+    caller_id: int | None,
+    disabled: bool,
+) -> None:
+    """Set or clear ``disabled_at`` with the same guards as soft-delete disable."""
+    if disabled:
+        if caller_id is not None and user_id == caller_id:
+            raise HTTPException(status_code=400, detail="Cannot disable your own account")
+        if str(mem.role) == "org_admin" and _is_only_active_org_admin(session, org_id, user_id):
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot disable the last organization admin",
+            )
+        if user.disabled_at is None:
+            user.disabled_at = datetime.now(UTC)
+            session.add(user)
+        return
+    if user.disabled_at is not None:
+        user.disabled_at = None
+        session.add(user)
+
+
+def _caller_user_id(auth: dict) -> int | None:
+    user = auth.get("user")
+    if user is None:
+        return None
+    return int(user.id)
+
+
 @router.patch("/{org_id}/users/{user_id}", response_model=UserOut)
 def patch_user(
     org_id: int,
@@ -767,7 +810,8 @@ def patch_user(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if body.role is None and body.display_name is None:
+    fields_set = body.model_fields_set
+    if not fields_set:
         session.refresh(user)
         session.refresh(mem)
         return UserOut(
@@ -780,7 +824,7 @@ def patch_user(
             workspace_memberships=None,
         )
 
-    if body.role is not None:
+    if "role" in fields_set and body.role is not None:
         new_role = body.role
         if str(mem.role) == "org_admin" and new_role == "member":
             if _is_only_active_org_admin(session, org_id, user_id):
@@ -791,9 +835,21 @@ def patch_user(
         mem.role = str(new_role)
         session.add(mem)
 
-    if body.display_name is not None:
-        user.display_name = body.display_name
+    if "display_name" in fields_set:
+        raw = body.display_name
+        user.display_name = (raw.strip() if isinstance(raw, str) else None) or None
         session.add(user)
+
+    if "disabled" in fields_set and body.disabled is not None:
+        _apply_user_disabled_state(
+            session=session,
+            org_id=org_id,
+            user_id=user_id,
+            user=user,
+            mem=mem,
+            caller_id=_caller_user_id(auth),
+            disabled=body.disabled,
+        )
 
     session.commit()
     session.refresh(user)
@@ -817,19 +873,21 @@ def disable_user(
     auth: dict = Depends(get_auth),
 ) -> dict[str, bool]:
     require_org_admin(session, auth, org_id)
-    caller_id = int(auth["user"].id)
-    if user_id == caller_id:
-        raise HTTPException(status_code=400, detail="Cannot disable your own account")
     mem = _membership_for_user_org(session, org_id, user_id)
     if mem is None:
         raise HTTPException(status_code=404, detail="User not in organization")
-    if str(mem.role) == "org_admin" and _is_only_active_org_admin(session, org_id, user_id):
-        raise HTTPException(status_code=400, detail="Cannot disable the last organization admin")
     user = session.get(BackfieldUser, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
-    user.disabled_at = datetime.now(UTC)
-    session.add(user)
+    _apply_user_disabled_state(
+        session=session,
+        org_id=org_id,
+        user_id=user_id,
+        user=user,
+        mem=mem,
+        caller_id=_caller_user_id(auth),
+        disabled=True,
+    )
     session.commit()
     return {"ok": True}
 

@@ -132,7 +132,8 @@ def call_llm(
         max_retries: Maximum number of retry attempts (default: 3)
         temperature: Temperature for generation (default: 0.0)
         max_tokens: Optional max completion tokens. Default None omits the parameter so OpenAI /
-            LiteLLM use the model/provider default (recommended). Required only when you need an
+            LiteLLM use the model/provider default (recommended), except GPT-5.6 models which
+            receive an explicit budget in ``completion_text_sync``. Required only when you need an
             explicit cap; legacy Anthropic direct calls use ANTHROPIC_MESSAGES_MAX_TOKENS_FALLBACK.
         openai_api_key: OpenAI API key (required for OpenAI models)
         anthropic_api_key: Anthropic API key (required for Anthropic models)

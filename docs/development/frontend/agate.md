@@ -138,7 +138,9 @@ can sync reviewed S3 Output content back to its object.
   `workspace_stylebook_*` fields describe the workspace, not the project, and must not be used
   as a catalog target.
 - Organization administrators use the Settings hub for AI models, integrations,
-  users, and Stylebooks.
+  users, and Stylebooks. On Users (`/admin/users`), admins can edit display name
+  and role, soft-disable accounts, and re-enable them (emails stay reserved while
+  disabled, so recreate is not used).
 - Current settings routes are `/settings/models` and `/settings/integrations`.
   Compatibility redirects remain active from `/admin/ai-models` and
   `/admin/integrations`.

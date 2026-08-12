@@ -592,7 +592,11 @@ export async function createOrgUser(
 export async function patchOrgUser(
   orgId: number,
   userId: number,
-  body: { display_name?: string | null; role?: string | null },
+  body: {
+    display_name?: string | null
+    role?: string | null
+    disabled?: boolean
+  },
 ): Promise<OrgUserRow> {
   return jsonFetch(`/v1/organizations/${orgId}/users/${userId}`, {
     method: "PATCH",
@@ -607,6 +611,13 @@ export async function disableOrgUser(
   await jsonFetch(`/v1/organizations/${orgId}/users/${userId}`, {
     method: "DELETE",
   })
+}
+
+export async function enableOrgUser(
+  orgId: number,
+  userId: number,
+): Promise<OrgUserRow> {
+  return patchOrgUser(orgId, userId, { disabled: false })
 }
 
 /** @deprecated Prefer workspace-based access via replaceWorkspaceMemberships. */

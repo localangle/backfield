@@ -5,8 +5,12 @@ from __future__ import annotations
 import litellm
 import pytest
 from backfield_ai.completion import (
+    _GPT56_DEFAULT_MAX_COMPLETION_TOKENS,
     LiteLLMCompletionRejectedError,
+    _assistant_json_is_parseable,
     _extract_message_content_text,
+    _gpt5_reasoning_effort_for_simple_completion,
+    _is_gpt56_family,
     _litellm_completion_temperature,
     _litellm_json_object_response_format_supported,
     completion_text_sync,
@@ -83,6 +87,160 @@ def test_completion_text_sync_omits_temperature_for_gpt5(
 
     assert "temperature" not in captured
     assert captured.get("reasoning_effort") == "minimal"
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "gpt-5.6",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+        "openai/gpt-5.6-terra",
+    ],
+)
+def test_gpt56_family_forces_reasoning_effort_none(model: str) -> None:
+    assert _is_gpt56_family(model) is True
+    assert _gpt5_reasoning_effort_for_simple_completion(model) == "none"
+
+
+def test_gpt55_is_not_gpt56_family() -> None:
+    assert _is_gpt56_family("gpt-5.5") is False
+    assert _is_gpt56_family("openai/gpt-5.5") is False
+
+
+def test_assistant_json_is_parseable() -> None:
+    assert _assistant_json_is_parseable('{"people":[]}') is True
+    assert _assistant_json_is_parseable('```json\n{"people":[]}\n```') is True
+    assert _assistant_json_is_parseable('{"people":[{"n":"Robert Kopp","m":"Kopp') is False
+    assert _assistant_json_is_parseable("") is False
+
+
+def _ok_resp(content: str, finish_reason: str = "stop") -> object:
+    class Msg:
+        refusal = None
+
+        def __init__(self, text: str) -> None:
+            self.content = text
+
+    class Choice:
+        def __init__(self, text: str, finish: str) -> None:
+            self.message = Msg(text)
+            self.finish_reason = finish
+
+    class Resp:
+        def __init__(self, text: str, finish: str) -> None:
+            self.choices = [Choice(text, finish)]
+            self.usage = {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+
+    return Resp(content, finish_reason)
+
+
+def test_completion_text_sync_gpt56_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_completion(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return _ok_resp('{"people":[]}')
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm, "completion_cost", lambda **_kw: 0.0)
+
+    completion_text_sync(
+        litellm_model="gpt-5.6-terra",
+        messages=[{"role": "user", "content": "hi"}],
+        api_key="sk-test",
+        max_tokens=None,
+        temperature=None,
+        timeout=30.0,
+        force_json_response=True,
+    )
+
+    assert captured.get("reasoning_effort") == "none"
+    assert captured.get("max_tokens") == _GPT56_DEFAULT_MAX_COMPLETION_TOKENS
+    assert captured.get("response_format") == {"type": "json_object"}
+
+
+def test_completion_text_sync_omits_max_tokens_for_non_gpt56(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_completion(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return _ok_resp("ok")
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm, "completion_cost", lambda **_kw: 0.0)
+
+    completion_text_sync(
+        litellm_model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "hi"}],
+        api_key="sk-test",
+        max_tokens=None,
+        temperature=0.0,
+        timeout=30.0,
+        force_json_response=False,
+    )
+
+    assert "max_tokens" not in captured
+
+
+def test_completion_text_sync_gpt56_retries_truncated_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_completion(**kwargs: object) -> object:
+        calls.append(dict(kwargs))
+        if len(calls) == 1:
+            return _ok_resp('{"people":[{"n":"Robert Kopp","m":"Kopp', "stop")
+        return _ok_resp('{"people":[]}')
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm, "completion_cost", lambda **_kw: 0.0)
+
+    result = completion_text_sync(
+        litellm_model="openai/gpt-5.6-luna",
+        messages=[{"role": "user", "content": "hi"}],
+        api_key="sk-test",
+        max_tokens=None,
+        temperature=None,
+        timeout=30.0,
+        force_json_response=True,
+    )
+
+    assert result.text == '{"people":[]}'
+    assert len(calls) == 2
+    assert calls[0]["max_tokens"] == _GPT56_DEFAULT_MAX_COMPLETION_TOKENS
+    assert calls[1]["max_tokens"] == _GPT56_DEFAULT_MAX_COMPLETION_TOKENS * 2
+    assert calls[0]["reasoning_effort"] == "none"
+    assert calls[1]["reasoning_effort"] == "none"
+
+
+def test_completion_text_sync_gpt56_rejects_truncated_json_after_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_completion(**kwargs: object) -> object:
+        return _ok_resp('{"people":[{"n":"Robert Kopp","m":"Kopp')
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm, "completion_cost", lambda **_kw: 0.0)
+
+    with pytest.raises(LiteLLMCompletionRejectedError) as ctx:
+        completion_text_sync(
+            litellm_model="gpt-5.6-terra",
+            messages=[{"role": "user", "content": "hi"}],
+            api_key="sk-test",
+            max_tokens=None,
+            temperature=None,
+            timeout=30.0,
+            force_json_response=True,
+        )
+    assert "truncated or invalid JSON" in str(ctx.value)
+    assert ctx.value.result.text.startswith('{"people":')
 
 
 def test_completion_text_sync_retries_empty_output_on_length(

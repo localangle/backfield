@@ -807,7 +807,8 @@ def unlink_substrate_from_canonical(
     person: SubstratePerson,
     provenance: str = "stylebook_ui_unlink",
     requeue_after_unlink: bool = True,
-) -> None:
+) -> bool:
+    """Return True when the leftover ingest-only canonical was pruned."""
     if person.id is None:
         raise ValueError("person must be persisted")
     if str(person.canonical_link_status) != CANONICAL_LINK_LINKED:
@@ -846,7 +847,7 @@ def unlink_substrate_from_canonical(
         label=str(canon.label),
         change="substrate_unlinked",
     )
-    maybe_prune_ingest_orphan_person_canonical(
+    return maybe_prune_ingest_orphan_person_canonical(
         session,
         stylebook_id=stylebook_id,
         canonical_id=old,

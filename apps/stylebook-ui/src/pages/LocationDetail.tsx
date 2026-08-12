@@ -240,7 +240,12 @@ export default function LocationDetail() {
     }
     setUnlinkingId(sub.id)
     try {
-      await unlinkSubstrateFromCanonical(sub.id, sub.project_slug)
+      const result = await unlinkSubstrateFromCanonical(sub.id, sub.project_slug)
+      if (result.canonical_pruned) {
+        setDeleting(true)
+        navigate(canonicalListHref)
+        return
+      }
       setSubstrates((prev) => prev.filter((item) => item.id !== sub.id))
       setCanonical((prev) =>
         prev
