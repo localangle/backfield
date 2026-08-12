@@ -121,7 +121,11 @@ Cleanup mutations require catalog edit access and preserve catalog tenancy.
 
 - `/v1/stylebooks/{stylebook_slug}/activity` returns a filtered, paginated catalog activity stream.
 - Person and location semantic mention search ranks indexed article evidence within project scope and can filter by canonical, saved entity, mention, occurrence, and domain-specific fields.
-- `/v1/stats` returns project-scoped canonical and pending-candidate counts for the Stylebook UI dashboard.
+- `/v1/stats` returns Stylebook UI home-card counts. Canonical totals are keyed by
+  the path/query `stylebook_slug` (or the project's assigned Stylebook when omitted).
+  Pending-candidate totals use `project_slug` only when that project owns the same
+  Stylebook; a mismatched project scope returns real canonical counts with
+  `candidate_count: 0` instead of zeroing the whole response.
 - `/v1/place-extract-location-types` exposes the shared location taxonomy used by extraction and catalog filters.
 
 There is no HTTP geocode resolve endpoint and no Work API. Pipeline geocoding runs in the Agate worker (`geocode_agent`), not through Stylebook API. Canonical organization clients should use the Stylebook-scoped canonical organization family.
