@@ -45,6 +45,10 @@ import {
   stripLegacyStylebookFromSearch,
   stylebookCatalogBasePath,
 } from "@/lib/stylebookPaths"
+import {
+  defaultWorkflowProjectSlug,
+  projectOwnsStylebook,
+} from "@/lib/workflowProjectScope"
 
 function projectSearchSuffix(searchParams: URLSearchParams): string {
   const p = new URLSearchParams()
@@ -54,12 +58,6 @@ function projectSearchSuffix(searchParams: URLSearchParams): string {
   if (filt) p.set("project", filt)
   const s = p.toString()
   return s ? `?${s}` : ""
-}
-
-/** Default Agate project for catalog workflow when the URL omits scope (sidebar + dashboard stats). */
-function defaultWorkflowProjectSlug(projects: Project[]): string {
-  const preferred = projects.find((p) => p.slug === "general")
-  return preferred?.slug ?? projects[0]?.slug ?? ""
 }
 
 const STORAGE_WORKSPACES_EXPANDED = "stylebook-sidebar-workspaces-expanded"
@@ -294,20 +292,45 @@ export default function Layout({ children, headerContent }: LayoutProps) {
     void loadStylebooks()
   }, [loadStylebooks])
 
-  /** Every stylebook catalog URL keeps workflow project scope in the query (``project_scope=``). */
+  /** Keep ``project_scope`` aligned with a project that owns the path Stylebook. */
   useEffect(() => {
-    if (!routeSlug || projects.length === 0 || workflowProjectSlug) return
-    const slug = defaultWorkflowProjectSlug(projects)
-    if (!slug) return
+    if (!routeSlug || projects.length === 0) return
+    const stylebook = stylebooks.find((row) => row.slug === routeSlug)
+    const stylebookId = stylebook?.id ?? null
+    // Wait for workspace ownership when we know the catalog id, so we do not
+    // briefly pin ``general`` before correcting to an owning project.
+    if (stylebookId != null && workspaceRows.length === 0) return
+
+    const owningSlug = defaultWorkflowProjectSlug(projects, {
+      stylebookId,
+      workspaces: workspaceRows,
+    })
+    if (!owningSlug) return
+
+    const scopeMismatched =
+      !!workflowProjectSlug &&
+      stylebookId != null &&
+      !projectOwnsStylebook(workflowProjectSlug, stylebookId, workspaceRows)
+
+    if (workflowProjectSlug && !scopeMismatched) return
+
     setSearchParams(
       (prev) => {
+        if (prev.get("project_scope") === owningSlug) return prev
         const next = new URLSearchParams(prev)
-        next.set("project_scope", slug)
+        next.set("project_scope", owningSlug)
         return next
       },
       { replace: true },
     )
-  }, [routeSlug, projects, workflowProjectSlug, setSearchParams])
+  }, [
+    routeSlug,
+    projects,
+    stylebooks,
+    workspaceRows,
+    workflowProjectSlug,
+    setSearchParams,
+  ])
 
   /** Drop legacy ``?stylebook=`` when the slug already lives in the path. */
   useEffect(() => {
@@ -333,11 +356,17 @@ export default function Layout({ children, headerContent }: LayoutProps) {
 
   const onStylebookChange = useCallback(
     (slug: string) => {
-      navigate(
-        `/stylebook/${encodeURIComponent(slug)}${projectSearchSuffix(searchParams)}`,
-      )
+      const nextStylebook = stylebooks.find((row) => row.slug === slug)
+      const owningSlug = defaultWorkflowProjectSlug(projects, {
+        stylebookId: nextStylebook?.id ?? null,
+        workspaces: workspaceRows,
+      })
+      const next = new URLSearchParams()
+      if (owningSlug) next.set("project_scope", owningSlug)
+      const suffix = next.toString() ? `?${next.toString()}` : ""
+      navigate(`/stylebook/${encodeURIComponent(slug)}${suffix}`)
     },
-    [navigate, searchParams],
+    [navigate, projects, stylebooks, workspaceRows],
   )
 
   const handleLogout = async () => {

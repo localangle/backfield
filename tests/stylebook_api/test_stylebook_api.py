@@ -1383,6 +1383,71 @@ def test_stats_reflects_canonical_and_pending_candidates(
     assert loc["candidate_count"] == 2
 
 
+def test_stats_mismatch_stylebook_returns_canonicals_not_zeros(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    """Path catalog + non-owning project_scope must not zero home-card canonicals."""
+    with Session(stylebook_test_engine) as s:
+        org = s.exec(
+            select(BackfieldOrganization).where(BackfieldOrganization.slug == "default")
+        ).one()
+        oid = int(org.id)
+        other = Stylebook(
+            organization_id=oid,
+            slug="demo-stylebook",
+            name="Demo Stylebook",
+            is_default=False,
+        )
+        s.add(other)
+        s.commit()
+        s.refresh(other)
+        other_id = int(other.id)
+        s.add(
+            StylebookLocationCanonical(
+                stylebook_id=other_id,
+                label="Mismatch Town",
+                slug="mismatch-town",
+                location_type="city",
+            )
+        )
+        s.add(
+            StylebookPersonCanonical(
+                stylebook_id=other_id,
+                label="Mismatch Person",
+                slug="mismatch-person",
+            )
+        )
+        s.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=other_id,
+                label="Mismatch Org",
+                slug="mismatch-org",
+            )
+        )
+        s.commit()
+
+    # demo-proj owns `default`, not `demo-stylebook` — the old path returned all zeros.
+    mismatched = client.get(
+        "/v1/stats?project_slug=demo-proj&stylebook_slug=demo-stylebook",
+        headers=_service_headers(),
+    )
+    assert mismatched.status_code == 200
+    body = mismatched.json()
+    assert body["locations"]["canonical_count"] == 1
+    assert body["people"]["canonical_count"] == 1
+    assert body["organizations"]["canonical_count"] == 1
+    assert body["locations"]["candidate_count"] == 0
+    assert body["people"]["candidate_count"] == 0
+    assert body["organizations"]["candidate_count"] == 0
+
+    matched = client.get(
+        "/v1/stats?project_slug=demo-proj&stylebook_slug=default",
+        headers=_service_headers(),
+    )
+    assert matched.status_code == 200
+    assert matched.json()["locations"]["canonical_count"] == 0
+
+
 def test_candidates_types_returns_place_extract_taxonomy(client: TestClient) -> None:
     r = client.get(
         "/v1/candidates/types?project_slug=demo-proj&status=open",
