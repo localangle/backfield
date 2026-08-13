@@ -16,9 +16,10 @@ Project scope has two distinct query keys:
 
 - `project_scope` carries workflow and shell context. When the URL omits it, or when
   it names a project that does not own the path Stylebook, the shell picks a visible
-  project under a workspace assigned to that catalog (preferring `general` only among
-  owners). Catalog switches reset `project_scope` the same way so home-card stats stay
-  aligned with `/v1/stats`.
+  project that owns that catalog (from Agate project `stylebook_id`, with workspace
+  assignment as fallback). Prefer `general` only among owners. If no owner is known,
+  leave the mismatched scope alone rather than rewriting in a loop. Catalog switches
+  reset `project_scope` the same way so home-card stats stay aligned with `/v1/stats`.
 - `project` filters evidence, mentions, and linked substrate rows.
 
 Canonical metadata and connections are Stylebook-wide and must not change when the
