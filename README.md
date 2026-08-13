@@ -9,7 +9,7 @@
 </h1>
 
 <p align="center">
-  <i>An open platform for turning journalism into durable, structured knowledge</i>
+  <i>Backfield turns journalism into data you can build with</i>
 </p>
 
 <p align="center">
