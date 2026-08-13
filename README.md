@@ -28,7 +28,7 @@
   </a>
 </p>
 
-Backfield turns unstructured news stories into structured data at scale. Among other things, it extracts and geocodes the locations of news events; organizes people and their quotes; and connect people, places and organizations into a knowledge graph based on your coverage.
+Backfield turns unstructured news stories into structured data at scale. Among other things, it extracts and geocodes the locations of news events; organizes people and their quotes; and connects people, places and organizations into a living knowledge graph based on your coverage.
 
 It applies journalistically useful metadata, including subjects, topics, story formats and user needs, and embeds articles so they can be searched by meaning in addition to keywords. It also allows for the extraction of custom data (think: recipes, obituaries, restaurants and things-to-do lists) that can be used to create new products and display articles in new ways.
 
