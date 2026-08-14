@@ -2026,6 +2026,44 @@
         "title": "PublicArticleTypeCountsOut",
         "type": "object"
       },
+      "PublicCanonicalMetaOut": {
+        "properties": {
+          "meta_type": {
+            "title": "Meta Type",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "title": "Value"
+          },
+          "value_type": {
+            "enum": [
+              "text",
+              "number",
+              "boolean"
+            ],
+            "title": "Value Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meta_type",
+          "value_type",
+          "value"
+        ],
+        "title": "PublicCanonicalMetaOut",
+        "type": "object"
+      },
       "PublicCanonicalSummaryOut": {
         "properties": {
           "id": {
@@ -2811,6 +2849,13 @@
             ],
             "title": "Location Type"
           },
+          "metadata": {
+            "items": {
+              "$ref": "#/components/schemas/PublicCanonicalMetaOut"
+            },
+            "title": "Metadata",
+            "type": "array"
+          },
           "slug": {
             "title": "Slug",
             "type": "string"
@@ -3526,6 +3571,13 @@
             "title": "Label",
             "type": "string"
           },
+          "metadata": {
+            "items": {
+              "$ref": "#/components/schemas/PublicCanonicalMetaOut"
+            },
+            "title": "Metadata",
+            "type": "array"
+          },
           "organization_type": {
             "anyOf": [
               {
@@ -3818,6 +3870,13 @@
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "metadata": {
+            "items": {
+              "$ref": "#/components/schemas/PublicCanonicalMetaOut"
+            },
+            "title": "Metadata",
+            "type": "array"
           },
           "person_type": {
             "anyOf": [
@@ -9352,6 +9411,36 @@
             }
           },
           {
+            "description": "Repeatable Stylebook attribute filter (AND across clauses; max 25). Forms: key (attribute exists), !key (missing), key:value (equals), key:op:value where op is eq|neq|ieq|ineq|lt|lte|gt|gte. Examples: party, !party, party:Democrat, population:gt:100000, party:ieq:democrat. OR within eq/ieq via '|': party:eq:Democrat|Independent. Distinct from article meta= filters. To return attributes in list/search responses, also pass include=metadata.",
+            "in": "query",
+            "name": "attr",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "Repeatable Stylebook attribute filter (AND across clauses; max 25). Forms: key (attribute exists), !key (missing), key:value (equals), key:op:value where op is eq|neq|ieq|ineq|lt|lte|gt|gte. Examples: party, !party, party:Democrat, population:gt:100000, party:ieq:democrat. OR within eq/ieq via '|': party:eq:Democrat|Independent. Distinct from article meta= filters. To return attributes in list/search responses, also pass include=metadata.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Attr",
+              "type": "array"
+            }
+          },
+          {
+            "description": "Repeatable include token for optional entity extras. Supported: metadata (typed Stylebook attributes on each item). Entity detail endpoints always return metadata; list/search/geo-search omit it unless include=metadata.",
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "Repeatable include token for optional entity extras. Supported: metadata (typed Stylebook attributes on each item). Entity detail endpoints always return metadata; list/search/geo-search omit it unless include=metadata.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Include",
+              "type": "array"
+            }
+          },
+          {
             "description": "label (default) or recent",
             "in": "query",
             "name": "sort",
@@ -9758,6 +9847,36 @@
             }
           },
           {
+            "description": "Repeatable Stylebook attribute filter (AND across clauses; max 25). Forms: key (attribute exists), !key (missing), key:value (equals), key:op:value where op is eq|neq|ieq|ineq|lt|lte|gt|gte. Examples: party, !party, party:Democrat, population:gt:100000, party:ieq:democrat. OR within eq/ieq via '|': party:eq:Democrat|Independent. Distinct from article meta= filters. To return attributes in list/search responses, also pass include=metadata.",
+            "in": "query",
+            "name": "attr",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "Repeatable Stylebook attribute filter (AND across clauses; max 25). Forms: key (attribute exists), !key (missing), key:value (equals), key:op:value where op is eq|neq|ieq|ineq|lt|lte|gt|gte. Examples: party, !party, party:Democrat, population:gt:100000, party:ieq:democrat. OR within eq/ieq via '|': party:eq:Democrat|Independent. Distinct from article meta= filters. To return attributes in list/search responses, also pass include=metadata.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Attr",
+              "type": "array"
+            }
+          },
+          {
+            "description": "Repeatable include token for optional entity extras. Supported: metadata (typed Stylebook attributes on each item). Entity detail endpoints always return metadata; list/search/geo-search omit it unless include=metadata.",
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "Repeatable include token for optional entity extras. Supported: metadata (typed Stylebook attributes on each item). Entity detail endpoints always return metadata; list/search/geo-search omit it unless include=metadata.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Include",
+              "type": "array"
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
@@ -10068,6 +10187,36 @@
               "minimum": 0,
               "title": "Min Mentions",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Repeatable Stylebook attribute filter (AND across clauses; max 25). Forms: key (attribute exists), !key (missing), key:value (equals), key:op:value where op is eq|neq|ieq|ineq|lt|lte|gt|gte. Examples: party, !party, party:Democrat, population:gt:100000, party:ieq:democrat. OR within eq/ieq via '|': party:eq:Democrat|Independent. Distinct from article meta= filters. To return attributes in list/search responses, also pass include=metadata.",
+            "in": "query",
+            "name": "attr",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "Repeatable Stylebook attribute filter (AND across clauses; max 25). Forms: key (attribute exists), !key (missing), key:value (equals), key:op:value where op is eq|neq|ieq|ineq|lt|lte|gt|gte. Examples: party, !party, party:Democrat, population:gt:100000, party:ieq:democrat. OR within eq/ieq via '|': party:eq:Democrat|Independent. Distinct from article meta= filters. To return attributes in list/search responses, also pass include=metadata.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Attr",
+              "type": "array"
+            }
+          },
+          {
+            "description": "Repeatable include token for optional entity extras. Supported: metadata (typed Stylebook attributes on each item). Entity detail endpoints always return metadata; list/search/geo-search omit it unless include=metadata.",
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "Repeatable include token for optional entity extras. Supported: metadata (typed Stylebook attributes on each item). Entity detail endpoints always return metadata; list/search/geo-search omit it unless include=metadata.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Include",
+              "type": "array"
             }
           },
           {
@@ -13059,6 +13208,36 @@
             }
           },
           {
+            "description": "Repeatable Stylebook attribute filter (AND across clauses; max 25). Forms: key (attribute exists), !key (missing), key:value (equals), key:op:value where op is eq|neq|ieq|ineq|lt|lte|gt|gte. Examples: party, !party, party:Democrat, population:gt:100000, party:ieq:democrat. OR within eq/ieq via '|': party:eq:Democrat|Independent. Distinct from article meta= filters. To return attributes in list/search responses, also pass include=metadata.",
+            "in": "query",
+            "name": "attr",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "Repeatable Stylebook attribute filter (AND across clauses; max 25). Forms: key (attribute exists), !key (missing), key:value (equals), key:op:value where op is eq|neq|ieq|ineq|lt|lte|gt|gte. Examples: party, !party, party:Democrat, population:gt:100000, party:ieq:democrat. OR within eq/ieq via '|': party:eq:Democrat|Independent. Distinct from article meta= filters. To return attributes in list/search responses, also pass include=metadata.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Attr",
+              "type": "array"
+            }
+          },
+          {
+            "description": "Repeatable include token for optional entity extras. Supported: metadata (typed Stylebook attributes on each item). Entity detail endpoints always return metadata; list/search/geo-search omit it unless include=metadata.",
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "Repeatable include token for optional entity extras. Supported: metadata (typed Stylebook attributes on each item). Entity detail endpoints always return metadata; list/search/geo-search omit it unless include=metadata.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Include",
+              "type": "array"
+            }
+          },
+          {
             "description": "label (default) or recent",
             "in": "query",
             "name": "sort",
@@ -13387,6 +13566,36 @@
               "minimum": 0,
               "title": "Min Mentions",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Repeatable Stylebook attribute filter (AND across clauses; max 25). Forms: key (attribute exists), !key (missing), key:value (equals), key:op:value where op is eq|neq|ieq|ineq|lt|lte|gt|gte. Examples: party, !party, party:Democrat, population:gt:100000, party:ieq:democrat. OR within eq/ieq via '|': party:eq:Democrat|Independent. Distinct from article meta= filters. To return attributes in list/search responses, also pass include=metadata.",
+            "in": "query",
+            "name": "attr",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "Repeatable Stylebook attribute filter (AND across clauses; max 25). Forms: key (attribute exists), !key (missing), key:value (equals), key:op:value where op is eq|neq|ieq|ineq|lt|lte|gt|gte. Examples: party, !party, party:Democrat, population:gt:100000, party:ieq:democrat. OR within eq/ieq via '|': party:eq:Democrat|Independent. Distinct from article meta= filters. To return attributes in list/search responses, also pass include=metadata.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Attr",
+              "type": "array"
+            }
+          },
+          {
+            "description": "Repeatable include token for optional entity extras. Supported: metadata (typed Stylebook attributes on each item). Entity detail endpoints always return metadata; list/search/geo-search omit it unless include=metadata.",
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "Repeatable include token for optional entity extras. Supported: metadata (typed Stylebook attributes on each item). Entity detail endpoints always return metadata; list/search/geo-search omit it unless include=metadata.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Include",
+              "type": "array"
             }
           },
           {
@@ -15514,6 +15723,36 @@
             }
           },
           {
+            "description": "Repeatable Stylebook attribute filter (AND across clauses; max 25). Forms: key (attribute exists), !key (missing), key:value (equals), key:op:value where op is eq|neq|ieq|ineq|lt|lte|gt|gte. Examples: party, !party, party:Democrat, population:gt:100000, party:ieq:democrat. OR within eq/ieq via '|': party:eq:Democrat|Independent. Distinct from article meta= filters. To return attributes in list/search responses, also pass include=metadata.",
+            "in": "query",
+            "name": "attr",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "Repeatable Stylebook attribute filter (AND across clauses; max 25). Forms: key (attribute exists), !key (missing), key:value (equals), key:op:value where op is eq|neq|ieq|ineq|lt|lte|gt|gte. Examples: party, !party, party:Democrat, population:gt:100000, party:ieq:democrat. OR within eq/ieq via '|': party:eq:Democrat|Independent. Distinct from article meta= filters. To return attributes in list/search responses, also pass include=metadata.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Attr",
+              "type": "array"
+            }
+          },
+          {
+            "description": "Repeatable include token for optional entity extras. Supported: metadata (typed Stylebook attributes on each item). Entity detail endpoints always return metadata; list/search/geo-search omit it unless include=metadata.",
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "Repeatable include token for optional entity extras. Supported: metadata (typed Stylebook attributes on each item). Entity detail endpoints always return metadata; list/search/geo-search omit it unless include=metadata.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Include",
+              "type": "array"
+            }
+          },
+          {
             "description": "sort_key (default), recent, or label",
             "in": "query",
             "name": "sort",
@@ -15894,6 +16133,36 @@
               "minimum": 0,
               "title": "Min Mentions",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Repeatable Stylebook attribute filter (AND across clauses; max 25). Forms: key (attribute exists), !key (missing), key:value (equals), key:op:value where op is eq|neq|ieq|ineq|lt|lte|gt|gte. Examples: party, !party, party:Democrat, population:gt:100000, party:ieq:democrat. OR within eq/ieq via '|': party:eq:Democrat|Independent. Distinct from article meta= filters. To return attributes in list/search responses, also pass include=metadata.",
+            "in": "query",
+            "name": "attr",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "Repeatable Stylebook attribute filter (AND across clauses; max 25). Forms: key (attribute exists), !key (missing), key:value (equals), key:op:value where op is eq|neq|ieq|ineq|lt|lte|gt|gte. Examples: party, !party, party:Democrat, population:gt:100000, party:ieq:democrat. OR within eq/ieq via '|': party:eq:Democrat|Independent. Distinct from article meta= filters. To return attributes in list/search responses, also pass include=metadata.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Attr",
+              "type": "array"
+            }
+          },
+          {
+            "description": "Repeatable include token for optional entity extras. Supported: metadata (typed Stylebook attributes on each item). Entity detail endpoints always return metadata; list/search/geo-search omit it unless include=metadata.",
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "default": [],
+              "description": "Repeatable include token for optional entity extras. Supported: metadata (typed Stylebook attributes on each item). Entity detail endpoints always return metadata; list/search/geo-search omit it unless include=metadata.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Include",
+              "type": "array"
             }
           },
           {

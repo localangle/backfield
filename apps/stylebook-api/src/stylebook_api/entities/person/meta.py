@@ -1,9 +1,9 @@
-"""CRUD for JSON metadata rows on ``stylebook_person_canonical``."""
+"""CRUD for typed metadata attributes on ``stylebook_person_canonical``."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from backfield_db import BackfieldProject, StylebookPersonCanonical, StylebookPersonMeta
@@ -12,24 +12,33 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from stylebook_api.deps import get_auth, get_session
-from stylebook_api.helpers.meta_utils import parse_meta_json, validate_meta_json
+from stylebook_api.helpers.meta_utils import (
+    apply_typed_values_to_row,
+    normalize_meta_type_or_400,
+    parse_meta_write,
+    serialize_meta_row,
+)
 from stylebook_api.stylebook_permissions import require_stylebook_edit_access
 from stylebook_api.stylebook_scope import require_stylebook_by_slug_in_auth_org
 
 router = APIRouter(prefix="/v1", tags=["person-meta"])
 
+ValueTypeLiteral = Literal["text", "number", "boolean"]
+
 
 class UpdateMetaRequest(BaseModel):
     meta_type: str | None = Field(
         default=None,
-        description="When set, replaces the meta type (non-empty after strip)",
+        description="When set, replaces the meta type slug",
     )
-    data: Any = Field(..., description="Meta payload (JSON object, array, or scalar)")
+    value_type: ValueTypeLiteral
+    value: str | int | float | bool
 
 
 class CreateMetaRequest(BaseModel):
     meta_type: str = Field(..., min_length=1)
-    data: Any = Field(..., description="Meta payload (JSON object, array, or scalar)")
+    value_type: ValueTypeLiteral
+    value: str | int | float | bool
 
 
 def _canonical_for_stylebook_or_404(
@@ -80,16 +89,7 @@ def get_stylebook_person_meta(
         .where(StylebookPersonMeta.stylebook_person_canonical_id == cid)
         .order_by(StylebookPersonMeta.meta_type, StylebookPersonMeta.id)
     ).all()
-    meta_out: list[dict[str, Any]] = []
-    for m in rows:
-        meta_out.append(
-            {
-                "id": m.id,
-                "meta_type": m.meta_type,
-                "data": parse_meta_json(m.data_json),
-                "created_at": m.created_at.isoformat() if m.created_at else None,
-            }
-        )
+    meta_out = [serialize_meta_row(m) for m in rows]
     return {
         "person_id": cid,
         "meta": meta_out,
@@ -98,7 +98,7 @@ def get_stylebook_person_meta(
 
 
 @router.post("/stylebooks/{stylebook_slug}/canonical-people/{canonical_id}/meta")
-def create_stylebook_person_meta(
+def upsert_stylebook_person_meta(
     stylebook_slug: str,
     canonical_id: UUID,
     payload: CreateMetaRequest,
@@ -113,26 +113,48 @@ def create_stylebook_person_meta(
         session, stylebook_slug=stylebook_slug, canonical_id=canonical_id, auth=auth
     )
     cid = str(canonical_id)
-    validate_meta_json(payload.data)
+    write = parse_meta_write(
+        meta_type=payload.meta_type,
+        value_type=payload.value_type,
+        value=payload.value,
+    )
+    existing = session.exec(
+        select(StylebookPersonMeta).where(
+            StylebookPersonMeta.stylebook_person_canonical_id == cid,
+            StylebookPersonMeta.meta_type == write.meta_type,
+        )
+    ).first()
+    if existing is not None:
+        apply_typed_values_to_row(
+            existing,
+            meta_type=write.meta_type,
+            value_type=write.value_type,
+            value=write.value,
+        )
+        existing.edited = True
+        session.add(existing)
+        session.commit()
+        session.refresh(existing)
+        return serialize_meta_row(existing)
+
     row = StylebookPersonMeta(
         project_id=_stylebook_storage_project_id(
             session, organization_id=int(sb.organization_id)
         ),
         stylebook_person_canonical_id=cid,
-        meta_type=payload.meta_type.strip(),
-        data_json=payload.data,
         added=True,
         created_at=datetime.now(UTC),
+    )
+    apply_typed_values_to_row(
+        row,
+        meta_type=write.meta_type,
+        value_type=write.value_type,
+        value=write.value,
     )
     session.add(row)
     session.commit()
     session.refresh(row)
-    return {
-        "id": row.id,
-        "meta_type": row.meta_type,
-        "data": parse_meta_json(row.data_json),
-        "created_at": row.created_at.isoformat() if row.created_at else None,
-    }
+    return serialize_meta_row(row)
 
 
 @router.patch("/stylebooks/{stylebook_slug}/canonical-people/{canonical_id}/meta/{meta_id}")
@@ -157,23 +179,41 @@ def update_stylebook_person_meta(
     ).first()
     if meta_row is None:
         raise HTTPException(status_code=404, detail="Meta record not found")
-    validate_meta_json(request.data)
-    if request.meta_type is not None:
-        mt = request.meta_type.strip()
-        if not mt:
-            raise HTTPException(status_code=400, detail="meta_type cannot be empty")
-        meta_row.meta_type = mt
-    meta_row.data_json = request.data
+
+    meta_type = (
+        normalize_meta_type_or_400(request.meta_type)
+        if request.meta_type is not None
+        else meta_row.meta_type
+    )
+    write = parse_meta_write(
+        meta_type=meta_type,
+        value_type=request.value_type,
+        value=request.value,
+    )
+    if write.meta_type != meta_row.meta_type:
+        clash = session.exec(
+            select(StylebookPersonMeta).where(
+                StylebookPersonMeta.stylebook_person_canonical_id == cid,
+                StylebookPersonMeta.meta_type == write.meta_type,
+                StylebookPersonMeta.id != meta_id,
+            )
+        ).first()
+        if clash is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Metadata key '{write.meta_type}' already exists on this record",
+            )
+    apply_typed_values_to_row(
+        meta_row,
+        meta_type=write.meta_type,
+        value_type=write.value_type,
+        value=write.value,
+    )
     meta_row.edited = True
     session.add(meta_row)
     session.commit()
     session.refresh(meta_row)
-    return {
-        "id": meta_row.id,
-        "meta_type": meta_row.meta_type,
-        "data": parse_meta_json(meta_row.data_json),
-        "created_at": meta_row.created_at.isoformat() if meta_row.created_at else None,
-    }
+    return serialize_meta_row(meta_row)
 
 
 @router.delete("/stylebooks/{stylebook_slug}/canonical-people/{canonical_id}/meta/{meta_id}")

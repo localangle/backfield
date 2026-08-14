@@ -10,18 +10,25 @@ from typing import Any
 from backfield_db import (
     StylebookLocationAlias,
     StylebookLocationCanonical,
+    StylebookLocationMeta,
     SubstrateArticle,
     SubstrateLocation,
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import case, exists, literal, or_
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, func, select
 
+from backfield_entities.catalog.canonical_meta import AttrClause
 from backfield_entities.catalog.search import catalog_label_alias_ilike_filter
 from backfield_entities.public.articles import ArticleMetaClause, PublicArticleOut
+from backfield_entities.public.canonical_metadata import (
+    PublicCanonicalMetaOut,
+    append_attr_filters,
+    load_meta_by_canonical_ids,
+)
 from backfield_entities.public.entity_articles import (
     collect_mention_article_pairs,
     paginate_public_articles_from_mention_pairs,
@@ -63,6 +70,7 @@ class PublicLocationOut(BaseModel):
     h3_cell: str | None = None
     h3_resolution: int | None = None
     counts: PublicEntityCountsOut = PublicEntityCountsOut()
+    metadata: list[PublicCanonicalMetaOut] = Field(default_factory=list)
 
 
 class PublicLocationMentionArticleOut(BaseModel):
@@ -89,6 +97,8 @@ class PublicLocationSearchParams:
     location_type: str | None = None
     natures: tuple[str, ...] = ()
     min_mentions: int = 0
+    attr_clauses: tuple[AttrClause, ...] = ()
+    include_metadata: bool = False
     sort: PublicLocationSort = PublicLocationSort.label
     limit: int = 25
     offset: int = 0
@@ -100,6 +110,7 @@ def _location_to_public_out(
     mention_count: int = 0,
     story_count: int = 0,
     stylebook_slug: str | None = None,
+    metadata: list[PublicCanonicalMetaOut] | None = None,
 ) -> PublicLocationOut:
     return PublicLocationOut(
         id=str(canon.id),
@@ -113,6 +124,7 @@ def _location_to_public_out(
         h3_cell=canon.h3_cell,
         h3_resolution=canon.h3_resolution,
         counts=PublicEntityCountsOut(mentions=mention_count, stories=story_count),
+        metadata=list(metadata or []),
     )
 
 
@@ -223,6 +235,13 @@ def location_filters(
             .having(func.count(col(SubstrateLocationMention.id)) >= params.min_mentions)
         )
         filters.append(col(StylebookLocationCanonical.id).in_(min_stmt))
+    append_attr_filters(
+        filters,
+        meta_model=StylebookLocationMeta,
+        canonical_fk_attr="stylebook_location_canonical_id",
+        canonical_id_column=StylebookLocationCanonical.id,
+        attr_clauses=params.attr_clauses,
+    )
     return filters
 
 
@@ -310,12 +329,21 @@ def search_public_locations(
         canonical_ids=canonical_ids,
     )
     stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
+    meta_by_id: dict[str, list[PublicCanonicalMetaOut]] = {}
+    if params.include_metadata:
+        meta_by_id = load_meta_by_canonical_ids(
+            session,
+            meta_model=StylebookLocationMeta,
+            canonical_fk_attr="stylebook_location_canonical_id",
+            canonical_ids=canonical_ids,
+        )
     items = [
         _location_to_public_out(
             row,
             mention_count=mention_counts.get(str(row.id), 0),
             story_count=story_counts.get(str(row.id), 0),
             stylebook_slug=stylebook_slug,
+            metadata=meta_by_id.get(str(row.id), []),
         )
         for row in rows
     ]
@@ -347,11 +375,18 @@ def get_public_location(
         canonical_ids=[str(canon.id)],
     )
     stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
+    meta_by_id = load_meta_by_canonical_ids(
+        session,
+        meta_model=StylebookLocationMeta,
+        canonical_fk_attr="stylebook_location_canonical_id",
+        canonical_ids=[str(canon.id)],
+    )
     return _location_to_public_out(
         canon,
         mention_count=mention_counts.get(str(canon.id), 0),
         story_count=story_counts.get(str(canon.id), 0),
         stylebook_slug=stylebook_slug,
+        metadata=meta_by_id.get(str(canon.id), []),
     )
 
 

@@ -63,6 +63,8 @@ def build_organization_search_params(
     sort: str | None,
     limit: int,
     offset: int,
+    attr_clauses: tuple = (),
+    include_metadata: bool = False,
 ) -> PublicOrganizationSearchParams:
     sort_value = PublicOrganizationSort.label
     if sort:
@@ -78,6 +80,8 @@ def build_organization_search_params(
         organization_type=organization_type,
         natures=natures,
         min_mentions=min_mentions,
+        attr_clauses=attr_clauses,
+        include_metadata=include_metadata,
         sort=sort_value,
         limit=limit,
         offset=offset,

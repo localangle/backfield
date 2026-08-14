@@ -17,8 +17,12 @@ from sqlmodel import Session
 
 from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import (
+    ATTR_PARAM_DESCRIPTION,
+    ENTITY_INCLUDE_PARAM_DESCRIPTION,
     NATURE_PARAM_DESCRIPTION,
+    parse_attr_clauses_or_400,
     parse_bbox,
+    parse_entity_includes,
     parse_natures,
 )
 from core_api.routers.public.deps import get_public_project
@@ -58,6 +62,8 @@ def search_project_locations_by_geo(
         description=NATURE_PARAM_DESCRIPTION,
     ),
     min_mentions: int = Query(0, ge=0, le=1_000_000),
+    attr: list[str] = Query(default=[], description=ATTR_PARAM_DESCRIPTION),
+    include: list[str] = Query(default=[], description=ENTITY_INCLUDE_PARAM_DESCRIPTION),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> PublicLocationGeoSearchResponse:
@@ -75,9 +81,12 @@ def search_project_locations_by_geo(
             detail="Provide center_lng/center_lat/radius_miles or bbox.",
         )
 
+    natures = parse_natures(nature)
+    attr_clauses = parse_attr_clauses_or_400(attr)
+    include_metadata = "metadata" in parse_entity_includes(include)
+
     if has_bbox:
         min_lng, min_lat, max_lng, max_lat = parse_bbox(bbox)
-        natures = parse_natures(nature)
         params = PublicLocationGeoSearchParams(
             mode=PublicLocationGeoSearchMode.bbox,
             min_lng=min_lng,
@@ -88,6 +97,8 @@ def search_project_locations_by_geo(
             location_type=location_type,
             natures=natures,
             min_mentions=min_mentions,
+            attr_clauses=attr_clauses,
+            include_metadata=include_metadata,
             limit=limit,
             offset=offset,
         )
@@ -98,7 +109,6 @@ def search_project_locations_by_geo(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="center_lng, center_lat, and radius_miles are required together.",
             )
-        natures = parse_natures(nature)
         params = PublicLocationGeoSearchParams(
             mode=PublicLocationGeoSearchMode.point,
             center_lng=center_lng,
@@ -108,6 +118,8 @@ def search_project_locations_by_geo(
             location_type=location_type,
             natures=natures,
             min_mentions=min_mentions,
+            attr_clauses=attr_clauses,
+            include_metadata=include_metadata,
             limit=limit,
             offset=offset,
         )

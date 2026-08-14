@@ -93,10 +93,12 @@ STYLEBOOK_META_FIELD_NAMES: tuple[str, ...] = (
     "project_id",
     "stylebook_location_canonical_id",  # per-type FK
     "meta_type",
-    "data_json",
+    "value_type",
+    "value_text",
+    "value_number",
+    "value_boolean",
     "added",
     "edited",
-    "deleted",
     "created_at",
 )
 

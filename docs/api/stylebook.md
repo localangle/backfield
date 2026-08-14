@@ -41,7 +41,11 @@ Canonical identifiers are UUID strings. Catalog responses expose immutable slugs
 
 Location geometry uses GeoJSON `Point`, `Polygon`, or `MultiPolygon` with longitude-latitude coordinate order.
 
-Canonical metadata is Stylebook-wide editorial data. Its rows retain a project association for storage and bundle transfer, but reads are not filtered to that project. Writes use the organization's first project as that association, so the organization must contain at least one project.
+Canonical metadata is Stylebook-wide editorial data: one typed scalar attribute per
+`meta_type` slug on a canonical (`text`, `number`, or `boolean`). Rows retain a project
+association for storage and bundle transfer, but reads are not filtered to that project.
+Writes use the organization's first project as that association, so the organization must
+contain at least one project. POST upserts by `meta_type`; DELETE hard-deletes.
 
 ## Saved entities and candidate review
 
@@ -92,7 +96,7 @@ Analysis returns detected input information before mutation. Imports allow parti
 
 ### Catalog transfer
 
-Organization bundle-job routes export and import complete Stylebook catalog bundles asynchronously. Current bundles carry location, person, and organization canonicals and their catalog relationships, including aliases, metadata, and connections.
+Organization bundle-job routes export and import complete Stylebook catalog bundles asynchronously. Current bundles (schema version 5) carry location, person, and organization canonicals and their catalog relationships, including aliases, typed metadata, and connections. Legacy freeform `data_json` metadata rows are not rehydrated on import.
 
 Successful export downloads use a presigned GET whose `Content-Disposition` save-as name is
 `{stylebook-slug}-stylebook-export-{YYYY-MM-DD}.zip` (UTC date from the job). Object keys in the

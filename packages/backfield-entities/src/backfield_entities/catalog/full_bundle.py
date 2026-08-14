@@ -29,9 +29,15 @@ from backfield_db import (
     StylebookPersonCanonical,
     StylebookPersonMeta,
 )
+from pydantic import ValidationError
 from sqlmodel import Session, col, select
 
 from backfield_entities.canonical.slug import allocate_unique_canonical_slug
+from backfield_entities.catalog.canonical_meta import (
+    CanonicalMetaWrite,
+    api_value_from_row,
+    apply_typed_values_to_row,
+)
 from backfield_entities.catalog.stylebook_library import (
     StylebookLibraryError,
     create_stylebook_for_import,
@@ -55,8 +61,9 @@ from backfield_entities.entities.person.types import derive_person_sort_key
 # v2: location canonical rows only (legacy path ``canonicals/part-*.jsonl``, kind ``canonical``).
 # v3: per-entity shards under ``canonicals/{entity}/`` with kinds ``canonical_location``, …
 # v4: adds aliases, project-scoped meta, and connections (see docs/api/stylebook.md).
-BUNDLE_SCHEMA_VERSION = 4
-ALLOWED_MANIFEST_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4})
+# v5: typed scalar canonical metadata (value_type + value); no freeform data_json.
+BUNDLE_SCHEMA_VERSION = 5
+ALLOWED_MANIFEST_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4, 5})
 BUNDLE_KIND_LEGACY_LOCATION = "canonical"
 BUNDLE_KIND_LOCATION = "canonical_location"
 BUNDLE_KIND_PERSON = "canonical_person"
@@ -406,6 +413,23 @@ def _iter_organization_aliases(
         offset += page
 
 
+def _meta_row_to_export_dict(meta: Any, *, canonical_id: str, project_slug: str) -> dict[str, Any]:
+    return {
+        "canonical_id": canonical_id,
+        "project_slug": project_slug,
+        "meta_type": meta.meta_type,
+        "value_type": meta.value_type,
+        "value": api_value_from_row(
+            value_type=str(meta.value_type),
+            value_text=meta.value_text,
+            value_number=meta.value_number,
+            value_boolean=meta.value_boolean,
+        ),
+        "added": bool(meta.added),
+        "edited": bool(meta.edited),
+    }
+
+
 def _iter_location_meta(session: Session, stylebook_id: int) -> Iterator[dict[str, Any]]:
     offset = 0
     page = 500
@@ -426,15 +450,11 @@ def _iter_location_meta(session: Session, stylebook_id: int) -> Iterator[dict[st
         if not batch:
             break
         for meta, project_slug in batch:
-            yield {
-                "canonical_id": str(meta.stylebook_location_canonical_id),
-                "project_slug": str(project_slug),
-                "meta_type": meta.meta_type,
-                "data_json": meta.data_json,
-                "added": bool(meta.added),
-                "edited": bool(meta.edited),
-                "deleted": bool(meta.deleted),
-            }
+            yield _meta_row_to_export_dict(
+                meta,
+                canonical_id=str(meta.stylebook_location_canonical_id),
+                project_slug=str(project_slug),
+            )
         offset += page
 
 
@@ -457,15 +477,11 @@ def _iter_person_meta(session: Session, stylebook_id: int) -> Iterator[dict[str,
         if not batch:
             break
         for meta, project_slug in batch:
-            yield {
-                "canonical_id": str(meta.stylebook_person_canonical_id),
-                "project_slug": str(project_slug),
-                "meta_type": meta.meta_type,
-                "data_json": meta.data_json,
-                "added": bool(meta.added),
-                "edited": bool(meta.edited),
-                "deleted": bool(meta.deleted),
-            }
+            yield _meta_row_to_export_dict(
+                meta,
+                canonical_id=str(meta.stylebook_person_canonical_id),
+                project_slug=str(project_slug),
+            )
         offset += page
 
 
@@ -489,15 +505,11 @@ def _iter_organization_meta(session: Session, stylebook_id: int) -> Iterator[dic
         if not batch:
             break
         for meta, project_slug in batch:
-            yield {
-                "canonical_id": str(meta.stylebook_organization_canonical_id),
-                "project_slug": str(project_slug),
-                "meta_type": meta.meta_type,
-                "data_json": meta.data_json,
-                "added": bool(meta.added),
-                "edited": bool(meta.edited),
-                "deleted": bool(meta.deleted),
-            }
+            yield _meta_row_to_export_dict(
+                meta,
+                canonical_id=str(meta.stylebook_organization_canonical_id),
+                project_slug=str(project_slug),
+            )
         offset += page
 
 
@@ -1041,6 +1053,20 @@ def _import_organization_alias_row(
     stats["aliases"] += 1
 
 
+def _typed_meta_write_from_bundle_row(row: dict[str, Any]) -> CanonicalMetaWrite | None:
+    """Parse typed meta from a bundle row; skip legacy ``data_json`` payloads."""
+    if "value_type" not in row or "value" not in row:
+        return None
+    try:
+        return CanonicalMetaWrite(
+            meta_type=str(row["meta_type"]),
+            value_type=row["value_type"],
+            value=row["value"],
+        )
+    except (ValueError, TypeError, ValidationError):
+        return None
+
+
 def _import_location_meta_row(
     session: Session,
     *,
@@ -1052,20 +1078,23 @@ def _import_location_meta_row(
     project_slug = str(row.get("project_slug") or "").strip()
     project_id = project_id_by_slug.get(project_slug)
     new_cid = _remap_canonical_id(id_map, str(row["canonical_id"]))
-    if project_id is None or new_cid is None:
+    write = _typed_meta_write_from_bundle_row(row)
+    if project_id is None or new_cid is None or write is None:
         stats["skipped_meta"] += 1
         return
-    session.add(
-        StylebookLocationMeta(
-            project_id=project_id,
-            stylebook_location_canonical_id=new_cid,
-            meta_type=str(row["meta_type"]),
-            data_json=row.get("data_json"),
-            added=bool(row.get("added")),
-            edited=bool(row.get("edited")),
-            deleted=bool(row.get("deleted")),
-        )
+    meta = StylebookLocationMeta(
+        project_id=project_id,
+        stylebook_location_canonical_id=new_cid,
+        added=bool(row.get("added")),
+        edited=bool(row.get("edited")),
     )
+    apply_typed_values_to_row(
+        meta,
+        meta_type=write.meta_type,
+        value_type=write.value_type,
+        value=write.value,
+    )
+    session.add(meta)
     stats["meta"] += 1
 
 
@@ -1080,20 +1109,23 @@ def _import_person_meta_row(
     project_slug = str(row.get("project_slug") or "").strip()
     project_id = project_id_by_slug.get(project_slug)
     new_cid = _remap_canonical_id(id_map, str(row["canonical_id"]))
-    if project_id is None or new_cid is None:
+    write = _typed_meta_write_from_bundle_row(row)
+    if project_id is None or new_cid is None or write is None:
         stats["skipped_meta"] += 1
         return
-    session.add(
-        StylebookPersonMeta(
-            project_id=project_id,
-            stylebook_person_canonical_id=new_cid,
-            meta_type=str(row["meta_type"]),
-            data_json=row.get("data_json"),
-            added=bool(row.get("added")),
-            edited=bool(row.get("edited")),
-            deleted=bool(row.get("deleted")),
-        )
+    meta = StylebookPersonMeta(
+        project_id=project_id,
+        stylebook_person_canonical_id=new_cid,
+        added=bool(row.get("added")),
+        edited=bool(row.get("edited")),
     )
+    apply_typed_values_to_row(
+        meta,
+        meta_type=write.meta_type,
+        value_type=write.value_type,
+        value=write.value,
+    )
+    session.add(meta)
     stats["meta"] += 1
 
 
@@ -1108,20 +1140,23 @@ def _import_organization_meta_row(
     project_slug = str(row.get("project_slug") or "").strip()
     project_id = project_id_by_slug.get(project_slug)
     new_cid = _remap_canonical_id(id_map, str(row["canonical_id"]))
-    if project_id is None or new_cid is None:
+    write = _typed_meta_write_from_bundle_row(row)
+    if project_id is None or new_cid is None or write is None:
         stats["skipped_meta"] += 1
         return
-    session.add(
-        StylebookOrganizationMeta(
-            project_id=project_id,
-            stylebook_organization_canonical_id=new_cid,
-            meta_type=str(row["meta_type"]),
-            data_json=row.get("data_json"),
-            added=bool(row.get("added")),
-            edited=bool(row.get("edited")),
-            deleted=bool(row.get("deleted")),
-        )
+    meta = StylebookOrganizationMeta(
+        project_id=project_id,
+        stylebook_organization_canonical_id=new_cid,
+        added=bool(row.get("added")),
+        edited=bool(row.get("edited")),
     )
+    apply_typed_values_to_row(
+        meta,
+        meta_type=write.meta_type,
+        value_type=write.value_type,
+        value=write.value,
+    )
+    session.add(meta)
     stats["meta"] += 1
 
 

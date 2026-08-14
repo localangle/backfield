@@ -1,15 +1,30 @@
 import { stylebookJsonFetch } from "@/lib/stylebook-api/client"
 
-export interface LocationMetaItem {
+export type MetaValueType = "text" | "number" | "boolean"
+
+export interface CanonicalMetaItem {
   id: number
   meta_type: string
-  data: unknown
+  value_type: MetaValueType
+  value: string | number | boolean
   created_at?: string
+}
+
+export interface CanonicalMetaWriteBody {
+  meta_type: string
+  value_type: MetaValueType
+  value: string | number | boolean
+}
+
+export interface CanonicalMetaUpdateBody {
+  meta_type?: string
+  value_type: MetaValueType
+  value: string | number | boolean
 }
 
 export interface LocationMetaListResponse {
   location_id: string
-  meta: LocationMetaItem[]
+  meta: CanonicalMetaItem[]
   count: number
 }
 
@@ -25,9 +40,9 @@ export async function getStylebookCanonicalLocationMeta(
 export async function createStylebookCanonicalLocationMeta(
   stylebookSlug: string,
   canonicalId: string,
-  body: { meta_type: string; data: unknown },
-): Promise<LocationMetaItem> {
-  return stylebookJsonFetch<LocationMetaItem>(
+  body: CanonicalMetaWriteBody,
+): Promise<CanonicalMetaItem> {
+  return stylebookJsonFetch<CanonicalMetaItem>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(canonicalId)}/meta`,
     { method: "POST", body: JSON.stringify(body) },
   )
@@ -37,9 +52,9 @@ export async function updateStylebookCanonicalLocationMeta(
   stylebookSlug: string,
   canonicalId: string,
   metaId: number,
-  body: { data: unknown; meta_type?: string },
-): Promise<LocationMetaItem> {
-  return stylebookJsonFetch<LocationMetaItem>(
+  body: CanonicalMetaUpdateBody,
+): Promise<CanonicalMetaItem> {
+  return stylebookJsonFetch<CanonicalMetaItem>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(canonicalId)}/meta/${metaId}`,
     { method: "PATCH", body: JSON.stringify(body) },
   )
@@ -56,16 +71,9 @@ export async function deleteStylebookCanonicalLocationMeta(
   )
 }
 
-export interface PersonMetaItem {
-  id: number
-  meta_type: string
-  data: unknown
-  created_at?: string
-}
-
 export interface PersonMetaListResponse {
   person_id: string
-  meta: PersonMetaItem[]
+  meta: CanonicalMetaItem[]
   count: number
 }
 
@@ -81,9 +89,9 @@ export async function getStylebookCanonicalPersonMeta(
 export async function createStylebookCanonicalPersonMeta(
   stylebookSlug: string,
   canonicalId: string,
-  body: { meta_type: string; data: unknown },
-): Promise<PersonMetaItem> {
-  return stylebookJsonFetch<PersonMetaItem>(
+  body: CanonicalMetaWriteBody,
+): Promise<CanonicalMetaItem> {
+  return stylebookJsonFetch<CanonicalMetaItem>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/${encodeURIComponent(canonicalId)}/meta`,
     { method: "POST", body: JSON.stringify(body) },
   )
@@ -93,9 +101,9 @@ export async function updateStylebookCanonicalPersonMeta(
   stylebookSlug: string,
   canonicalId: string,
   metaId: number,
-  body: { data: unknown; meta_type?: string },
-): Promise<PersonMetaItem> {
-  return stylebookJsonFetch<PersonMetaItem>(
+  body: CanonicalMetaUpdateBody,
+): Promise<CanonicalMetaItem> {
+  return stylebookJsonFetch<CanonicalMetaItem>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/${encodeURIComponent(canonicalId)}/meta/${metaId}`,
     { method: "PATCH", body: JSON.stringify(body) },
   )
@@ -112,16 +120,9 @@ export async function deleteStylebookCanonicalPersonMeta(
   )
 }
 
-export interface OrganizationMetaItem {
-  id: number
-  meta_type: string
-  data: unknown
-  created_at?: string
-}
-
 export interface OrganizationMetaListResponse {
   organization_id: string
-  meta: OrganizationMetaItem[]
+  meta: CanonicalMetaItem[]
   count: number
 }
 
@@ -137,9 +138,9 @@ export async function getStylebookCanonicalOrganizationMeta(
 export async function createStylebookCanonicalOrganizationMeta(
   stylebookSlug: string,
   canonicalId: string,
-  body: { meta_type: string; data: unknown },
-): Promise<OrganizationMetaItem> {
-  return stylebookJsonFetch<OrganizationMetaItem>(
+  body: CanonicalMetaWriteBody,
+): Promise<CanonicalMetaItem> {
+  return stylebookJsonFetch<CanonicalMetaItem>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(canonicalId)}/meta`,
     { method: "POST", body: JSON.stringify(body) },
   )
@@ -149,9 +150,9 @@ export async function updateStylebookCanonicalOrganizationMeta(
   stylebookSlug: string,
   canonicalId: string,
   metaId: number,
-  body: { data: unknown; meta_type?: string },
-): Promise<OrganizationMetaItem> {
-  return stylebookJsonFetch<OrganizationMetaItem>(
+  body: CanonicalMetaUpdateBody,
+): Promise<CanonicalMetaItem> {
+  return stylebookJsonFetch<CanonicalMetaItem>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(canonicalId)}/meta/${metaId}`,
     { method: "PATCH", body: JSON.stringify(body) },
   )

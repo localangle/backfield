@@ -63,6 +63,8 @@ def build_person_search_params(
     sort: str | None,
     limit: int,
     offset: int,
+    attr_clauses: tuple = (),
+    include_metadata: bool = False,
 ) -> PublicPersonSearchParams:
     sort_value = PublicPersonSort.sort_key
     if sort:
@@ -81,6 +83,8 @@ def build_person_search_params(
         affiliation=affiliation,
         natures=natures,
         min_mentions=min_mentions,
+        attr_clauses=attr_clauses,
+        include_metadata=include_metadata,
         sort=sort_value,
         limit=limit,
         offset=offset,

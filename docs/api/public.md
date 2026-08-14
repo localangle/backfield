@@ -128,6 +128,15 @@ Article and mention metadata filters use repeatable `meta` values. Publication
 filters use `external_source`; compatibility aliases and single metadata-field
 parameters are not part of the v1 contract.
 
+People, organizations, and locations list/search (and locations geo-search) accept
+repeatable entity-attribute filters via `attr` (distinct from article `meta=`). Forms:
+`key` (exists), `!key` (missing), `key:value` (eq), and `key:op:value` with
+`eq|neq|ieq|ineq|lt|lte|gt|gte`. OR within `eq`/`ieq` uses `|`; repeated clauses AND.
+Examples: `party`, `!party`, `party:Democrat`, `population:gt:100000`,
+`party:eq:Democrat|Independent`. Entity detail always returns typed `metadata`;
+list/search/geo-search include it only with `include=metadata` (otherwise the
+field is an empty array).
+
 Article keyword search accepts `sort=relevance|pub_date` and
 `sort_direction=asc|desc`. With `q`, the default is relevance descending;
 without `q`, the default is publication date descending. Relevance sorting

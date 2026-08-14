@@ -59,6 +59,7 @@ describe("endpoint presentation contract", () => {
         expect(presentation.control).toBeTruthy()
         if (parameter.name === "project_slug") expect(presentation.control).toBe("select")
         if (parameter.name === "meta") expect(presentation.control).toBe("meta-builder")
+        if (parameter.name === "attr") expect(presentation.control).toBe("textarea")
         if (
           parameter.name === "pub_date_from" ||
           parameter.name === "pub_date_to"
@@ -89,9 +90,13 @@ describe("endpoint presentation contract", () => {
     const coverage = operations.find(
       (operation) => operation.displayPath === "/articles/geo-cells",
     )
+    const peopleList = operations.find(
+      (operation) => operation.displayPath === "/people",
+    )
     expect(articleSearch).toBeDefined()
     expect(semanticSearch).toBeDefined()
     expect(coverage).toBeDefined()
+    expect(peopleList).toBeDefined()
 
     expect(
       presentationForField(
@@ -133,6 +138,28 @@ describe("endpoint presentation contract", () => {
         "query",
       ).helperText,
     ).toMatch(/Leave blank/)
+    expect(
+      presentationForField(
+        peopleList!,
+        "attr",
+        { type: "array", items: { type: "string" } },
+        "Attribute filter",
+        blockedContext,
+        "query",
+      ).helperText,
+    ).toMatch(/One clause per line/)
+    const peopleInclude = presentationForField(
+      peopleList!,
+      "include",
+      { type: "array", items: { type: "string" } },
+      "Include extras",
+      blockedContext,
+      "query",
+    )
+    expect(peopleInclude.options).toEqual([
+      { value: "metadata", label: "Stylebook attributes" },
+    ])
+    expect(peopleInclude.helperText).toMatch(/include metadata/i)
   })
 
   it("presents every request-body property through the shared field model", () => {

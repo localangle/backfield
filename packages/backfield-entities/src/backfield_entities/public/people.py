@@ -8,17 +8,24 @@ from enum import StrEnum
 
 from backfield_db import (
     StylebookPersonCanonical,
+    StylebookPersonMeta,
     SubstrateArticle,
     SubstratePerson,
     SubstratePersonMention,
     SubstratePersonMentionOccurrence,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import case, exists, literal, or_
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, func, select
 
+from backfield_entities.catalog.canonical_meta import AttrClause
 from backfield_entities.public.articles import ArticleMetaClause, PublicArticleOut
+from backfield_entities.public.canonical_metadata import (
+    PublicCanonicalMetaOut,
+    append_attr_filters,
+    load_meta_by_canonical_ids,
+)
 from backfield_entities.public.entity_articles import (
     collect_mention_article_pairs,
     paginate_public_articles_from_mention_pairs,
@@ -75,6 +82,7 @@ class PublicPersonOut(BaseModel):
     public_figure: bool = False
     person_type: str | None = None
     counts: PublicEntityCountsOut = PublicEntityCountsOut()
+    metadata: list[PublicCanonicalMetaOut] = Field(default_factory=list)
 
 
 class PublicPersonMentionArticleOut(BaseModel):
@@ -105,6 +113,8 @@ class PublicPersonSearchParams:
     affiliation: str | None = None
     natures: tuple[str, ...] = ()
     min_mentions: int = 0
+    attr_clauses: tuple[AttrClause, ...] = ()
+    include_metadata: bool = False
     sort: PublicPersonSort = PublicPersonSort.sort_key
     limit: int = 25
     offset: int = 0
@@ -116,6 +126,7 @@ def _person_to_public_out(
     mention_count: int = 0,
     story_count: int = 0,
     stylebook_slug: str | None = None,
+    metadata: list[PublicCanonicalMetaOut] | None = None,
 ) -> PublicPersonOut:
     return PublicPersonOut(
         id=str(canon.id),
@@ -127,6 +138,7 @@ def _person_to_public_out(
         public_figure=bool(canon.public_figure),
         person_type=canon.person_type,
         counts=PublicEntityCountsOut(mentions=mention_count, stories=story_count),
+        metadata=list(metadata or []),
     )
 
 
@@ -241,6 +253,13 @@ def _person_filters(
             .having(func.count(col(SubstratePersonMention.id)) >= params.min_mentions)
         )
         filters.append(col(StylebookPersonCanonical.id).in_(min_stmt))
+    append_attr_filters(
+        filters,
+        meta_model=StylebookPersonMeta,
+        canonical_fk_attr="stylebook_person_canonical_id",
+        canonical_id_column=StylebookPersonCanonical.id,
+        attr_clauses=params.attr_clauses,
+    )
     return filters
 
 
@@ -322,12 +341,21 @@ def search_public_people(
         canonical_ids=canonical_ids,
     )
     stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
+    meta_by_id: dict[str, list[PublicCanonicalMetaOut]] = {}
+    if params.include_metadata:
+        meta_by_id = load_meta_by_canonical_ids(
+            session,
+            meta_model=StylebookPersonMeta,
+            canonical_fk_attr="stylebook_person_canonical_id",
+            canonical_ids=canonical_ids,
+        )
     items = [
         _person_to_public_out(
             row,
             mention_count=mention_counts.get(str(row.id), 0),
             story_count=story_counts.get(str(row.id), 0),
             stylebook_slug=stylebook_slug,
+            metadata=meta_by_id.get(str(row.id), []),
         )
         for row in rows
     ]
@@ -355,11 +383,18 @@ def get_public_person(
         canonical_ids=[str(canon.id)],
     )
     stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
+    meta_by_id = load_meta_by_canonical_ids(
+        session,
+        meta_model=StylebookPersonMeta,
+        canonical_fk_attr="stylebook_person_canonical_id",
+        canonical_ids=[str(canon.id)],
+    )
     return _person_to_public_out(
         canon,
         mention_count=mention_counts.get(str(canon.id), 0),
         story_count=story_counts.get(str(canon.id), 0),
         stylebook_slug=stylebook_slug,
+        metadata=meta_by_id.get(str(canon.id), []),
     )
 
 

@@ -130,8 +130,10 @@ New entity domains follow the executable field-name contracts in
   compatibility link, and timestamps.
 - An alias carries its type-specific canonical foreign key, original and normalized text,
   provenance, suppression state, and timestamps.
-- A metadata row carries a project association, its type-specific canonical foreign key, metadata
-  type and JSON value, editor-change flags, and creation time.
+- A metadata row carries a project association, its type-specific canonical foreign key, a
+  normalized metadata type slug, a typed scalar value (`text` / `number` / `boolean` columns),
+  editor-change flags (`added` / `edited`), and creation time. Each canonical allows at most one
+  live row per metadata type.
 
 Type-specific models may add fields, but should not omit the shared contract without an explicit
 architecture decision and matching test changes.

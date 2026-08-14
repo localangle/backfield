@@ -48,6 +48,59 @@ INCLUDE_DETAIL_PARAM_DESCRIPTION = (
     "custom records, embedded flag); text (full article body in addition to preview)."
 )
 
+ENTITY_INCLUDE_PARAM_DESCRIPTION = (
+    "Repeatable include token for optional entity extras. Supported: metadata "
+    "(typed Stylebook attributes on each item). Entity detail endpoints always "
+    "return metadata; list/search/geo-search omit it unless include=metadata."
+)
+
+ATTR_PARAM_DESCRIPTION = (
+    "Repeatable Stylebook attribute filter (AND across clauses; max 25). "
+    "Forms: key (attribute exists), !key (missing), key:value (equals), "
+    "key:op:value where op is eq|neq|ieq|ineq|lt|lte|gt|gte. "
+    "Examples: party, !party, party:Democrat, population:gt:100000, "
+    "party:ieq:democrat. OR within eq/ieq via '|': party:eq:Democrat|Independent. "
+    "Distinct from article meta= filters. To return attributes in list/search "
+    "responses, also pass include=metadata."
+)
+
+ALLOWED_ENTITY_LIST_INCLUDES = frozenset({"metadata"})
+
+
+def parse_entity_includes(include: list[str]) -> set[str]:
+    """Validate repeatable ``include`` tokens for entity list routes."""
+    if not include:
+        return set()
+    tokens = {token.strip().lower() for token in include if token.strip()}
+    if not tokens:
+        return set()
+    unknown = tokens - ALLOWED_ENTITY_LIST_INCLUDES
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Unknown include token(s): {', '.join(sorted(unknown))}. "
+                "Supported: metadata."
+            ),
+        )
+    return tokens
+
+
+def parse_attr_clauses_or_400(attr: list[str]):
+    from backfield_entities.catalog.canonical_meta import (
+        AttrFilterError,
+        parse_attr_clauses,
+    )
+
+    try:
+        return parse_attr_clauses(attr)
+    except AttrFilterError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
 
 def parse_article_includes(
     include: list[str],
