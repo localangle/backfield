@@ -789,14 +789,20 @@ class StylebookLocationAlias(SQLModel, table=True):
 
 
 class StylebookLocationMeta(SQLModel, table=True):
-    """Arbitrary JSON metadata rows for a canonical location (tags, research blobs, etc.)."""
+    """Typed scalar metadata attributes for a canonical location."""
 
     __tablename__ = "stylebook_location_meta"
     __table_args__ = (
-        Index(
-            "ix_stylebook_location_meta_canonical_type",
+        UniqueConstraint(
             "stylebook_location_canonical_id",
             "meta_type",
+            name="uq_stylebook_location_meta_canonical_type",
+        ),
+        Index("ix_stylebook_location_meta_type_text", "meta_type", "value_text"),
+        Index("ix_stylebook_location_meta_type_number", "meta_type", "value_number"),
+        CheckConstraint(
+            "value_type IN ('text', 'number', 'boolean')",
+            name="ck_stylebook_location_meta_value_type",
         ),
     )
 
@@ -807,16 +813,18 @@ class StylebookLocationMeta(SQLModel, table=True):
         index=True,
     )
     meta_type: str = Field(sa_column=Column(Text, nullable=False, index=True))
-    data_json: Any | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+    value_type: str = Field(sa_column=Column(Text, nullable=False))
+    value_text: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    value_number: Decimal | None = Field(
+        default=None,
+        sa_column=Column(Numeric(24, 8), nullable=True),
+    )
+    value_boolean: bool | None = Field(default=None, sa_column=Column(Boolean, nullable=True))
     added: bool = Field(
         default=False,
         sa_column=Column(Boolean, nullable=False, server_default="false"),
     )
     edited: bool = Field(
-        default=False,
-        sa_column=Column(Boolean, nullable=False, server_default="false"),
-    )
-    deleted: bool = Field(
         default=False,
         sa_column=Column(Boolean, nullable=False, server_default="false"),
     )
@@ -908,14 +916,20 @@ class StylebookPersonAlias(SQLModel, table=True):
 
 
 class StylebookPersonMeta(SQLModel, table=True):
-    """Arbitrary JSON metadata rows for a canonical person (tags, research blobs, etc.)."""
+    """Typed scalar metadata attributes for a canonical person."""
 
     __tablename__ = "stylebook_person_meta"
     __table_args__ = (
-        Index(
-            "ix_stylebook_person_meta_canonical_type",
+        UniqueConstraint(
             "stylebook_person_canonical_id",
             "meta_type",
+            name="uq_stylebook_person_meta_canonical_type",
+        ),
+        Index("ix_stylebook_person_meta_type_text", "meta_type", "value_text"),
+        Index("ix_stylebook_person_meta_type_number", "meta_type", "value_number"),
+        CheckConstraint(
+            "value_type IN ('text', 'number', 'boolean')",
+            name="ck_stylebook_person_meta_value_type",
         ),
     )
 
@@ -926,16 +940,18 @@ class StylebookPersonMeta(SQLModel, table=True):
         index=True,
     )
     meta_type: str = Field(sa_column=Column(Text, nullable=False, index=True))
-    data_json: Any | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+    value_type: str = Field(sa_column=Column(Text, nullable=False))
+    value_text: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    value_number: Decimal | None = Field(
+        default=None,
+        sa_column=Column(Numeric(24, 8), nullable=True),
+    )
+    value_boolean: bool | None = Field(default=None, sa_column=Column(Boolean, nullable=True))
     added: bool = Field(
         default=False,
         sa_column=Column(Boolean, nullable=False, server_default="false"),
     )
     edited: bool = Field(
-        default=False,
-        sa_column=Column(Boolean, nullable=False, server_default="false"),
-    )
-    deleted: bool = Field(
         default=False,
         sa_column=Column(Boolean, nullable=False, server_default="false"),
     )
@@ -1017,14 +1033,20 @@ class StylebookOrganizationAlias(SQLModel, table=True):
 
 
 class StylebookOrganizationMeta(SQLModel, table=True):
-    """Arbitrary JSON metadata rows for a canonical organization."""
+    """Typed scalar metadata attributes for a canonical organization."""
 
     __tablename__ = "stylebook_organization_meta"
     __table_args__ = (
-        Index(
-            "ix_stylebook_organization_meta_canonical_type",
+        UniqueConstraint(
             "stylebook_organization_canonical_id",
             "meta_type",
+            name="uq_stylebook_organization_meta_canonical_type",
+        ),
+        Index("ix_stylebook_organization_meta_type_text", "meta_type", "value_text"),
+        Index("ix_stylebook_organization_meta_type_number", "meta_type", "value_number"),
+        CheckConstraint(
+            "value_type IN ('text', 'number', 'boolean')",
+            name="ck_stylebook_organization_meta_value_type",
         ),
     )
 
@@ -1035,16 +1057,18 @@ class StylebookOrganizationMeta(SQLModel, table=True):
         index=True,
     )
     meta_type: str = Field(sa_column=Column(Text, nullable=False, index=True))
-    data_json: Any | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+    value_type: str = Field(sa_column=Column(Text, nullable=False))
+    value_text: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    value_number: Decimal | None = Field(
+        default=None,
+        sa_column=Column(Numeric(24, 8), nullable=True),
+    )
+    value_boolean: bool | None = Field(default=None, sa_column=Column(Boolean, nullable=True))
     added: bool = Field(
         default=False,
         sa_column=Column(Boolean, nullable=False, server_default="false"),
     )
     edited: bool = Field(
-        default=False,
-        sa_column=Column(Boolean, nullable=False, server_default="false"),
-    )
-    deleted: bool = Field(
         default=False,
         sa_column=Column(Boolean, nullable=False, server_default="false"),
     )

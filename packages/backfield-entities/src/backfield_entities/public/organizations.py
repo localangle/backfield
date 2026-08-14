@@ -8,17 +8,24 @@ from enum import StrEnum
 
 from backfield_db import (
     StylebookOrganizationCanonical,
+    StylebookOrganizationMeta,
     SubstrateArticle,
     SubstrateOrganization,
     SubstrateOrganizationMention,
     SubstrateOrganizationMentionOccurrence,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import case, exists, literal
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, func, select
 
+from backfield_entities.catalog.canonical_meta import AttrClause
 from backfield_entities.public.articles import ArticleMetaClause, PublicArticleOut
+from backfield_entities.public.canonical_metadata import (
+    PublicCanonicalMetaOut,
+    append_attr_filters,
+    load_meta_by_canonical_ids,
+)
 from backfield_entities.public.entity_articles import (
     collect_mention_article_pairs,
     paginate_public_articles_from_mention_pairs,
@@ -59,6 +66,7 @@ class PublicOrganizationOut(BaseModel):
     stylebook_slug: str | None = None
     organization_type: str | None = None
     counts: PublicEntityCountsOut = PublicEntityCountsOut()
+    metadata: list[PublicCanonicalMetaOut] = Field(default_factory=list)
 
 
 class PublicOrganizationMentionArticleOut(BaseModel):
@@ -84,6 +92,8 @@ class PublicOrganizationSearchParams:
     organization_type: str | None = None
     natures: tuple[str, ...] = ()
     min_mentions: int = 0
+    attr_clauses: tuple[AttrClause, ...] = ()
+    include_metadata: bool = False
     sort: PublicOrganizationSort = PublicOrganizationSort.label
     limit: int = 25
     offset: int = 0
@@ -95,6 +105,7 @@ def _organization_to_public_out(
     mention_count: int = 0,
     story_count: int = 0,
     stylebook_slug: str | None = None,
+    metadata: list[PublicCanonicalMetaOut] | None = None,
 ) -> PublicOrganizationOut:
     return PublicOrganizationOut(
         id=str(canon.id),
@@ -103,6 +114,7 @@ def _organization_to_public_out(
         stylebook_slug=stylebook_slug,
         organization_type=canon.organization_type,
         counts=PublicEntityCountsOut(mentions=mention_count, stories=story_count),
+        metadata=list(metadata or []),
     )
 
 
@@ -209,6 +221,13 @@ def _organization_filters(
             .having(func.count(col(SubstrateOrganizationMention.id)) >= params.min_mentions)
         )
         filters.append(col(StylebookOrganizationCanonical.id).in_(min_stmt))
+    append_attr_filters(
+        filters,
+        meta_model=StylebookOrganizationMeta,
+        canonical_fk_attr="stylebook_organization_canonical_id",
+        canonical_id_column=StylebookOrganizationCanonical.id,
+        attr_clauses=params.attr_clauses,
+    )
     return filters
 
 
@@ -296,12 +315,21 @@ def search_public_organizations(
         canonical_ids=canonical_ids,
     )
     stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
+    meta_by_id: dict[str, list[PublicCanonicalMetaOut]] = {}
+    if params.include_metadata:
+        meta_by_id = load_meta_by_canonical_ids(
+            session,
+            meta_model=StylebookOrganizationMeta,
+            canonical_fk_attr="stylebook_organization_canonical_id",
+            canonical_ids=canonical_ids,
+        )
     items = [
         _organization_to_public_out(
             row,
             mention_count=mention_counts.get(str(row.id), 0),
             story_count=story_counts.get(str(row.id), 0),
             stylebook_slug=stylebook_slug,
+            metadata=meta_by_id.get(str(row.id), []),
         )
         for row in rows
     ]
@@ -333,11 +361,18 @@ def get_public_organization(
         canonical_ids=[str(canon.id)],
     )
     stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
+    meta_by_id = load_meta_by_canonical_ids(
+        session,
+        meta_model=StylebookOrganizationMeta,
+        canonical_fk_attr="stylebook_organization_canonical_id",
+        canonical_ids=[str(canon.id)],
+    )
     return _organization_to_public_out(
         canon,
         mention_count=mention_counts.get(str(canon.id), 0),
         story_count=story_counts.get(str(canon.id), 0),
         stylebook_slug=stylebook_slug,
+        metadata=meta_by_id.get(str(canon.id), []),
     )
 
 

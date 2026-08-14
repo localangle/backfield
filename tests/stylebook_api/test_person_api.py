@@ -637,7 +637,8 @@ def test_canonical_person_mentions_and_stylebook_meta(
                 project_id=int(proj.id),
                 stylebook_person_canonical_id=cid,
                 meta_type="note",
-                data_json={"source": "test"},
+                value_type="text",
+                value_text="test",
             )
         )
         s.commit()

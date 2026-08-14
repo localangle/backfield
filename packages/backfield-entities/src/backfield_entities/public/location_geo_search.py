@@ -5,16 +5,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from backfield_db import StylebookLocationCanonical
+from backfield_db import StylebookLocationCanonical, StylebookLocationMeta
 from sqlalchemy import text
 from sqlmodel import Session, col, select
 
+from backfield_entities.catalog.canonical_meta import AttrClause
 from backfield_entities.public.article_geo_search import (
     MILES_TO_METERS,
     _haversine_miles,
     _point_coordinates,
     _sqlite_geometry_matches,
 )
+from backfield_entities.public.canonical_metadata import load_meta_by_canonical_ids
 from backfield_entities.public.locations import (
     PublicLocationOut,
     PublicLocationSearchParams,
@@ -45,6 +47,8 @@ class PublicLocationGeoSearchParams:
     location_type: str | None = None
     natures: tuple[str, ...] = ()
     min_mentions: int = 0
+    attr_clauses: tuple[AttrClause, ...] = ()
+    include_metadata: bool = False
     limit: int = 25
     offset: int = 0
 
@@ -55,6 +59,8 @@ def _keyword_params_from_geo(params: PublicLocationGeoSearchParams) -> PublicLoc
         location_type=params.location_type,
         natures=params.natures,
         min_mentions=params.min_mentions,
+        attr_clauses=params.attr_clauses,
+        include_metadata=params.include_metadata,
         limit=params.limit,
         offset=params.offset,
     )
@@ -242,6 +248,8 @@ def search_public_locations_by_geo(
                 location_type=params.location_type,
                 natures=params.natures,
                 min_mentions=params.min_mentions,
+                attr_clauses=params.attr_clauses,
+                include_metadata=False,
                 limit=10_000,
                 offset=0,
             ),
@@ -272,12 +280,21 @@ def search_public_locations_by_geo(
         canonical_ids=canonical_ids,
     )
     stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
+    meta_by_id = {}
+    if params.include_metadata:
+        meta_by_id = load_meta_by_canonical_ids(
+            session,
+            meta_model=StylebookLocationMeta,
+            canonical_fk_attr="stylebook_location_canonical_id",
+            canonical_ids=canonical_ids,
+        )
     items = [
         _location_to_public_out(
             row,
             mention_count=mention_counts.get(str(row.id), 0),
             story_count=story_counts.get(str(row.id), 0),
             stylebook_slug=stylebook_slug,
+            metadata=meta_by_id.get(str(row.id), []),
         )
         for row in page_rows
     ]

@@ -9,6 +9,7 @@ from typing import Any
 
 from backfield_auth.gate import require_project_access
 from backfield_db import BackfieldProject, StylebookLocationMeta
+from backfield_entities.catalog.canonical_meta import coerce_import_scalar
 from backfield_entities.entities.location.persist import create_standalone_canonical
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -16,7 +17,11 @@ from sqlmodel import Session, select
 
 from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
-from stylebook_api.helpers.meta_utils import validate_meta_json
+from stylebook_api.helpers.meta_utils import (
+    apply_typed_values_to_row,
+    normalize_meta_type_or_400,
+    parse_meta_write,
+)
 from stylebook_api.helpers.project_scope import (
     project_by_slug as _project_by_slug,
 )
@@ -139,13 +144,8 @@ def _normalize_and_validate_meta_mappings_or_400(
 ) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     for i, m in enumerate(raw):
-        mt = (m.meta_type or "").strip()
+        mt = normalize_meta_type_or_400((m.meta_type or "").strip())
         pk = (m.property_key or "").strip()
-        if not mt:
-            raise HTTPException(
-                status_code=400,
-                detail=f"meta_property_mappings[{i}].meta_type must be non-empty",
-            )
         if not pk:
             raise HTTPException(
                 status_code=400,
@@ -343,22 +343,33 @@ class _GeoJsonLocationsImporter:
                         raw_val = props.get(pk)
                         if _meta_value_skipped_as_empty(raw_val):
                             continue
-                        # Single-key object so catalog UI shows Key / Value (property name → value).
-                        data_payload: dict[str, Any] = {pk: raw_val}
                         try:
-                            validate_meta_json(data_payload)
-                        except HTTPException as exc:
-                            raise _ImportMetaJsonError(str(exc.detail)) from exc
-                        session.add(
-                            StylebookLocationMeta(
-                                project_id=project_id,
-                                stylebook_location_canonical_id=canon_id,
+                            value_type, value = coerce_import_scalar(raw_val)
+                            write = parse_meta_write(
                                 meta_type=mt,
-                                data_json=data_payload,
-                                added=True,
-                                created_at=datetime.now(UTC),
+                                value_type=value_type,
+                                value=value if value_type != "number" else float(value),
                             )
+                        except (ValueError, HTTPException) as exc:
+                            detail = (
+                                str(exc.detail)
+                                if isinstance(exc, HTTPException)
+                                else str(exc)
+                            )
+                            raise _ImportMetaJsonError(detail) from exc
+                        row = StylebookLocationMeta(
+                            project_id=project_id,
+                            stylebook_location_canonical_id=canon_id,
+                            added=True,
+                            created_at=datetime.now(UTC),
                         )
+                        apply_typed_values_to_row(
+                            row,
+                            meta_type=write.meta_type,
+                            value_type=write.value_type,
+                            value=write.value,
+                        )
+                        session.add(row)
                     session.flush()
                     created.append(
                         ImportGeoJSONCreatedRow(
@@ -630,21 +641,33 @@ def import_geojson_stylebook(
                     raw_value = props.get(property_key)
                     if _meta_value_skipped_as_empty(raw_value):
                         continue
-                    data_payload: dict[str, Any] = {property_key: raw_value}
                     try:
-                        validate_meta_json(data_payload)
-                    except HTTPException as exc:
-                        raise _ImportMetaJsonError(str(exc.detail)) from exc
-                    session.add(
-                        StylebookLocationMeta(
-                            project_id=metadata_project_id,
-                            stylebook_location_canonical_id=canon_id,
+                        value_type, value = coerce_import_scalar(raw_value)
+                        write = parse_meta_write(
                             meta_type=meta_type,
-                            data_json=data_payload,
-                            added=True,
-                            created_at=datetime.now(UTC),
+                            value_type=value_type,
+                            value=value if value_type != "number" else float(value),
                         )
+                    except (ValueError, HTTPException) as exc:
+                        detail = (
+                            str(exc.detail)
+                            if isinstance(exc, HTTPException)
+                            else str(exc)
+                        )
+                        raise _ImportMetaJsonError(detail) from exc
+                    row = StylebookLocationMeta(
+                        project_id=metadata_project_id,
+                        stylebook_location_canonical_id=canon_id,
+                        added=True,
+                        created_at=datetime.now(UTC),
                     )
+                    apply_typed_values_to_row(
+                        row,
+                        meta_type=write.meta_type,
+                        value_type=write.value_type,
+                        value=write.value,
+                    )
+                    session.add(row)
                 session.flush()
                 created.append(
                     ImportGeoJSONCreatedRow(

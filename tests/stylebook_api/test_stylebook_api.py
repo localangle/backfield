@@ -733,7 +733,7 @@ def test_stylebook_scoped_import_persists_canonical_metadata(
                         "properties": {
                             "name": "Import metadata test",
                             "type": "place",
-                            "details": {"agency": "parks", "priority": 2},
+                            "agency": "parks",
                         },
                     }
                 ],
@@ -743,7 +743,7 @@ def test_stylebook_scoped_import_persists_canonical_metadata(
                 "location_type_property": "type",
             },
             "meta_property_mappings": [
-                {"property_key": "details", "meta_type": "import_details"}
+                {"property_key": "agency", "meta_type": "import_agency"}
             ],
         },
     )
@@ -761,10 +761,9 @@ def test_stylebook_scoped_import_persists_canonical_metadata(
         ).all()
 
     assert len(metadata_rows) == 1
-    assert metadata_rows[0].meta_type == "import_details"
-    assert metadata_rows[0].data_json == {
-        "details": {"agency": "parks", "priority": 2}
-    }
+    assert metadata_rows[0].meta_type == "import_agency"
+    assert metadata_rows[0].value_type == "text"
+    assert metadata_rows[0].value_text == "parks"
     assert metadata_rows[0].added is True
 
 
@@ -1021,7 +1020,8 @@ def test_import_geojson_with_meta_property_mappings(
         ).all()
         assert len(metas) == 1
         assert metas[0].meta_type == "import_ref"
-        assert metas[0].data_json == {"ref": 99}
+        assert metas[0].value_type == "number"
+        assert metas[0].value_number == 99
 
 
 def test_import_geojson_meta_rejects_unknown_property_key(client: TestClient) -> None:
@@ -1103,7 +1103,8 @@ def test_import_geojson_meta_skips_empty_property_silently(
         assert len(metas) == 1
         assert metas[0].stylebook_location_canonical_id in cids
         assert metas[0].meta_type == "note"
-        assert metas[0].data_json == {"notes": "saved"}
+        assert metas[0].value_type == "text"
+        assert metas[0].value_text == "saved"
 
 
 def test_create_location_creates_standalone_canonical_and_alias_no_substrate(
@@ -3393,23 +3394,25 @@ def test_stylebook_canonical_location_meta_crud(
 
     r1 = editor_client.post(
         f"/v1/stylebooks/default/canonical-locations/{cid}/meta",
-        json={"meta_type": "tag", "data": {"shared": True}},
+        json={"meta_type": "tag", "value_type": "boolean", "value": True},
     )
     assert r1.status_code == 200
     mid = int(r1.json()["id"])
+    assert r1.json()["value_type"] == "boolean"
+    assert r1.json()["value"] is True
 
     r2 = editor_client.get(f"/v1/stylebooks/default/canonical-locations/{cid}/meta")
     assert r2.status_code == 200
     assert r2.json()["count"] == 1
-    assert r2.json()["meta"][0]["data"] == {"shared": True}
+    assert r2.json()["meta"][0]["value"] is True
 
     r3 = editor_client.patch(
         f"/v1/stylebooks/default/canonical-locations/{cid}/meta/{mid}",
-        json={"data": {"shared": "everywhere"}, "meta_type": "note"},
+        json={"value_type": "text", "value": "everywhere", "meta_type": "note"},
     )
     assert r3.status_code == 200
     assert r3.json()["meta_type"] == "note"
-    assert r3.json()["data"] == {"shared": "everywhere"}
+    assert r3.json()["value"] == "everywhere"
 
     r4 = editor_client.delete(f"/v1/stylebooks/default/canonical-locations/{cid}/meta/{mid}")
     assert r4.status_code == 200

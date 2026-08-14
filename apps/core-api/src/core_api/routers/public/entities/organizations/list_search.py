@@ -11,7 +11,14 @@ from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
 from core_api.deps import get_session
-from core_api.routers.public.articles.helpers import NATURE_PARAM_DESCRIPTION, parse_natures
+from core_api.routers.public.articles.helpers import (
+    ATTR_PARAM_DESCRIPTION,
+    ENTITY_INCLUDE_PARAM_DESCRIPTION,
+    NATURE_PARAM_DESCRIPTION,
+    parse_attr_clauses_or_400,
+    parse_entity_includes,
+    parse_natures,
+)
 from core_api.routers.public.deps import get_public_project
 from core_api.routers.public.entities.organizations.helpers import (
     build_organization_search_params,
@@ -32,6 +39,8 @@ def _search_organizations(
     organization_type: str | None,
     natures: tuple[str, ...],
     min_mentions: int,
+    attr: list[str],
+    include: list[str],
     sort: str | None,
     limit: int,
     offset: int,
@@ -39,11 +48,14 @@ def _search_organizations(
     stylebook_id, project_id = resolve_public_organizations_scope(
         session, project, stylebook_slug=stylebook_slug
     )
+    includes = parse_entity_includes(include)
     params = build_organization_search_params(
         q=q,
         organization_type=organization_type,
         natures=natures,
         min_mentions=min_mentions,
+        attr_clauses=parse_attr_clauses_or_400(attr),
+        include_metadata="metadata" in includes,
         sort=sort,
         limit=limit,
         offset=offset,
@@ -72,6 +84,8 @@ def list_project_organizations(
         description=NATURE_PARAM_DESCRIPTION,
     ),
     min_mentions: int = Query(0, ge=0, le=1_000_000),
+    attr: list[str] = Query(default=[], description=ATTR_PARAM_DESCRIPTION),
+    include: list[str] = Query(default=[], description=ENTITY_INCLUDE_PARAM_DESCRIPTION),
     sort: str | None = Query(
         None,
         description="label (default) or recent",
@@ -89,6 +103,8 @@ def list_project_organizations(
         organization_type=organization_type,
         natures=natures,
         min_mentions=min_mentions,
+        attr=attr,
+        include=include,
         sort=sort,
         limit=limit,
         offset=offset,
@@ -107,6 +123,8 @@ def search_project_organizations(
         description=NATURE_PARAM_DESCRIPTION,
     ),
     min_mentions: int = Query(0, ge=0, le=1_000_000),
+    attr: list[str] = Query(default=[], description=ATTR_PARAM_DESCRIPTION),
+    include: list[str] = Query(default=[], description=ENTITY_INCLUDE_PARAM_DESCRIPTION),
     sort: str | None = Query(
         None,
         description="label (default) or recent",
@@ -124,6 +142,8 @@ def search_project_organizations(
         organization_type=organization_type,
         natures=natures,
         min_mentions=min_mentions,
+        attr=attr,
+        include=include,
         sort=sort,
         limit=limit,
         offset=offset,

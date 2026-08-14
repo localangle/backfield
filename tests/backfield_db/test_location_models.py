@@ -166,10 +166,12 @@ def test_location_models_satisfy_shared_entity_contracts() -> None:
         "project_id",
         "stylebook_location_canonical_id",
         "meta_type",
-        "data_json",
+        "value_type",
+        "value_text",
+        "value_number",
+        "value_boolean",
         "added",
         "edited",
-        "deleted",
         "created_at",
     )
     assert model_has_fields(StylebookLocationMeta, shared_meta)

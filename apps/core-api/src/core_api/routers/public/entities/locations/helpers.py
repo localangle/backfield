@@ -60,6 +60,8 @@ def build_location_search_params(
     sort: str | None,
     limit: int,
     offset: int,
+    attr_clauses: tuple = (),
+    include_metadata: bool = False,
 ) -> PublicLocationSearchParams:
     sort_value = PublicLocationSort.label
     if sort:
@@ -75,6 +77,8 @@ def build_location_search_params(
         location_type=location_type,
         natures=natures,
         min_mentions=min_mentions,
+        attr_clauses=attr_clauses,
+        include_metadata=include_metadata,
         sort=sort_value,
         limit=limit,
         offset=offset,

@@ -205,7 +205,8 @@ def test_export_project_slice_lookup_stays_in_source_organization(tmp_path: Path
                 project_id=int(source_project.id),  # type: ignore[arg-type]
                 stylebook_location_canonical_id=canonical_id,
                 meta_type="review",
-                data_json={},
+                value_type="text",
+                value_text="pending",
             )
         )
         session.commit()
@@ -449,7 +450,8 @@ def test_export_import_roundtrip_includes_aliases_meta_connections(tmp_path: Pat
                 project_id=project_id,
                 stylebook_location_canonical_id=loc_id,
                 meta_type="note",
-                data_json={"body": "Landmark building"},
+                value_type="text",
+                value_text="Landmark building",
                 added=True,
             )
         )
@@ -518,7 +520,8 @@ def test_export_import_roundtrip_includes_aliases_meta_connections(tmp_path: Pat
             )
         ).all()
         assert len(meta_rows) == 1
-        assert meta_rows[0].data_json == {"body": "Landmark building"}
+        assert meta_rows[0].value_type == "text"
+        assert meta_rows[0].value_text == "Landmark building"
 
         connections = session.exec(
             select(StylebookConnection).where(
