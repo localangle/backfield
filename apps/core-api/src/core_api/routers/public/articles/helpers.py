@@ -50,14 +50,18 @@ INCLUDE_DETAIL_PARAM_DESCRIPTION = (
 
 ENTITY_INCLUDE_PARAM_DESCRIPTION = (
     "Repeatable include token for optional entity extras. Supported: metadata "
-    "(typed Stylebook attributes on each item)."
+    "(typed Stylebook attributes on each item). Entity detail endpoints always "
+    "return metadata; list/search/geo-search omit it unless include=metadata."
 )
 
 ATTR_PARAM_DESCRIPTION = (
-    "Repeatable entity-attribute filter clause (AND across clauses). "
-    "Forms: key (exists), !key (missing), key:value (eq), key:op:value "
-    "(eq|neq|ieq|ineq|lt|lte|gt|gte). OR within eq/ieq via '|'. "
-    "Max 25 clauses. Distinct from article meta= filters."
+    "Repeatable Stylebook attribute filter (AND across clauses; max 25). "
+    "Forms: key (attribute exists), !key (missing), key:value (equals), "
+    "key:op:value where op is eq|neq|ieq|ineq|lt|lte|gt|gte. "
+    "Examples: party, !party, party:Democrat, population:gt:100000, "
+    "party:ieq:democrat. OR within eq/ieq via '|': party:eq:Democrat|Independent. "
+    "Distinct from article meta= filters. To return attributes in list/search "
+    "responses, also pass include=metadata."
 )
 
 ALLOWED_ENTITY_LIST_INCLUDES = frozenset({"metadata"})

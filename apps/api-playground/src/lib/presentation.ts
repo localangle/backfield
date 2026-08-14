@@ -140,7 +140,16 @@ function sortOptions(operation: PlaygroundOperation): SelectOption[] {
   return optionsFromValues(["label", "recent"])
 }
 
+function isEntityCatalogPath(displayPath: string): boolean {
+  return /^\/(people|organizations|locations)(\/(search|geo-search))?$/.test(
+    displayPath,
+  )
+}
+
 function includeOptions(operation: PlaygroundOperation): SelectOption[] {
+  if (isEntityCatalogPath(operation.displayPath)) {
+    return [{ value: "metadata", label: "Stylebook attributes" }]
+  }
   const detailPath = /^\/articles\/\{article_id\}$/.test(operation.displayPath)
   return [
     { value: "counts", label: "Mention counts" },
@@ -165,7 +174,21 @@ function helperTextForField(
   if (name === "radius_miles") {
     return "Required together with center_lng and center_lat."
   }
+  if (name === "attr") {
+    return (
+      "One clause per line. key = has attribute; !key = missing; key:value = equals; " +
+      "key:op:value with eq, neq, ieq, ineq, lt, lte, gt, or gte. " +
+      "OR values with | on eq/ieq (party:eq:Democrat|Independent). " +
+      "Multiple clauses AND together. Distinct from article meta=."
+    )
+  }
   if (name === "include") {
+    if (isEntityCatalogPath(operation.displayPath)) {
+      return (
+        "metadata adds typed Stylebook attributes on each item. " +
+        "Get-by-id responses always include metadata."
+      )
+    }
     return /^\/articles\/\{article_id\}$/.test(operation.displayPath)
       ? "counts adds mention totals; text includes the article body."
       : "counts adds mention totals for each article."
@@ -227,6 +250,16 @@ export function presentationForField(
   if (name === "meta") {
     return {
       control: "meta-builder",
+      typeLabel: "Repeatable string",
+      wide: true,
+    }
+  }
+
+  if (name === "attr") {
+    return {
+      control: "textarea",
+      helperText: helperTextForField(operation, name, location),
+      placeholder: "One clause per line (e.g. party:Democrat)",
       typeLabel: "Repeatable string",
       wide: true,
     }

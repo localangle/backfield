@@ -132,8 +132,10 @@ People, organizations, and locations list/search (and locations geo-search) acce
 repeatable entity-attribute filters via `attr` (distinct from article `meta=`). Forms:
 `key` (exists), `!key` (missing), `key:value` (eq), and `key:op:value` with
 `eq|neq|ieq|ineq|lt|lte|gt|gte`. OR within `eq`/`ieq` uses `|`; repeated clauses AND.
-Entity detail always returns typed `metadata`; list/search/geo-search include it only
-with `include=metadata`.
+Examples: `party`, `!party`, `party:Democrat`, `population:gt:100000`,
+`party:eq:Democrat|Independent`. Entity detail always returns typed `metadata`;
+list/search/geo-search include it only with `include=metadata` (otherwise the
+field is an empty array).
 
 Article keyword search accepts `sort=relevance|pub_date` and
 `sort_direction=asc|desc`. With `q`, the default is relevance descending;
