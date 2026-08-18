@@ -32,3 +32,14 @@ def test_resolve_run_graph_spec_json_falls_back_to_live_graph() -> None:
     live = '{"name":"live"}'
     resolved = resolve_run_graph_spec_json(run_result_json=None, graph_spec_json=live)
     assert resolved == live
+
+
+def test_resolve_run_graph_spec_json_prefers_override_over_snapshot() -> None:
+    live = '{"name":"live"}'
+    snap = json.dumps({GRAPH_SPEC_JSON_KEY: '{"name":"snap"}'})
+    resolved = resolve_run_graph_spec_json(
+        run_result_json=snap,
+        graph_spec_json=live,
+        override_spec_json='{"name":"override"}',
+    )
+    assert resolved == '{"name":"override"}'

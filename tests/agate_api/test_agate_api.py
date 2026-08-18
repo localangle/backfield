@@ -646,6 +646,15 @@ def test_replay_run_uses_source_snapshot_not_live_graph(monkeypatch, client: Tes
     assert sent.get("name") == "worker.tasks.execute_run_replay_setup"
     assert sent.get("args") == [source["id"], new_run["id"]]
 
+    replay_updated = client.post(
+        f"/runs/{source['id']}/replay",
+        json={"use_current_flow": True},
+    )
+    assert replay_updated.status_code == 200
+    updated_run = replay_updated.json()
+    assert "Chicago" in (updated_run.get("graph_spec_snapshot_json") or "")
+    assert "Austin" not in (updated_run.get("graph_spec_snapshot_json") or "")
+
 
 def test_graph_description_round_trip(client: TestClient):
     project_response = _post_project(client, name="Desc Project", slug="desc-proj")
@@ -1230,6 +1239,104 @@ def test_rerun_processed_item_resets_row_and_enqueues_task(monkeypatch, tmp_path
         assert captured["name"] == "worker.tasks.execute_processed_item"
         assert captured["args"] == [iid]
         assert captured["queue"] == "agate"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_rerun_processed_item_use_current_flow_passes_live_spec_without_replacing_pin(
+    monkeypatch, tmp_path
+):
+    database_path = tmp_path / "agate-rerun-current.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    captured: dict[str, object] = {}
+
+    def capture_send_task(name: str, args: list[int] | None = None, **kwargs: object) -> None:
+        captured["name"] = name
+        captured["args"] = args
+        captured["queue"] = kwargs.get("queue")
+        captured["task_kwargs"] = kwargs.get("kwargs") or {}
+
+    app.dependency_overrides[get_session] = get_test_session
+    monkeypatch.setattr(runs.celery_app, "send_task", capture_send_task)
+
+    original_spec = _minimal_text_input_spec(name="orig", text="Austin, TX")
+    live_spec = _minimal_text_input_spec(name="live", text="Chicago, IL")
+    try:
+        tc = TestClient(
+            app,
+            headers={"Authorization": "Bearer backfield-dev"},
+        )
+        project = _post_project(tc, name="Rerun Current", slug="rerun-current").json()
+        graph = tc.post(
+            "/graphs",
+            json={
+                "name": "Current",
+                "project_id": project["id"],
+                "spec": original_spec,
+            },
+        ).json()
+        with Session(engine) as s:
+            row = _insert_pending_run(s, graph["id"])
+            rid = row.id
+            row.status = "succeeded"
+            row.result_json = json.dumps({"graph_spec_json": json.dumps(original_spec)})
+            s.add(row)
+            item = AgateProcessedItem(
+                run_id=rid,
+                source_file="a.json",
+                input_json='{"text":"hello"}',
+                status="succeeded",
+            )
+            s.add(item)
+            s.commit()
+            s.refresh(item)
+            iid = item.id
+        assert iid is not None
+
+        update = tc.put(
+            f"/graphs/{graph['id']}",
+            json={
+                "name": "Current",
+                "project_id": project["id"],
+                "spec": live_spec,
+            },
+        )
+        assert update.status_code == 200
+
+        default = tc.post(f"/runs/{rid}/items/{iid}/rerun")
+        assert default.status_code == 200
+        assert captured.get("task_kwargs") == {}
+
+        current = tc.post(
+            f"/runs/{rid}/items/{iid}/rerun",
+            json={"use_current_flow": True},
+        )
+        assert current.status_code == 200
+        task_kwargs = captured.get("task_kwargs") or {}
+        assert isinstance(task_kwargs, dict)
+        spec_json = task_kwargs.get("spec_json")
+        assert isinstance(spec_json, str)
+        assert "Chicago" in spec_json
+        assert "Austin" not in spec_json
+
+        with Session(engine) as s:
+            run_row = s.get(AgateRun, rid)
+            assert run_row is not None
+            assert "Austin" in (run_row.result_json or "")
+            assert "Chicago" not in (run_row.result_json or "")
     finally:
         app.dependency_overrides.clear()
 

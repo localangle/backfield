@@ -39,9 +39,11 @@ Node panels and synced node UI are documented in
 
 - Text and JSON bookend input on the run page is saved to the graph spec before a
   run starts.
-- Rerun actions confirm that the current saved flow will run, identify the
-  Backfield Output reconciliation policy, and explain that run-local review edits
-  for affected items will be cleared.
+- Rerun and replay confirm the flow settings from when the run started. When the saved
+  flow has changed, the dialog also offers **Run updated flow**, which reprocesses the
+  same items with the current saved flow and still clears run-local review edits. **Rerun
+  original flow** remains the default. Each action names the matching Backfield Output
+  reconciliation policy.
 - Backfield Output presents **Add Only**, **Smart Merge**, and **Replace**. Runtime
   inference owns domain reconciliation details; the panel does not expose
   implementation-level ownership overrides.

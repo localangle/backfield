@@ -27,10 +27,12 @@ import { formatCurrencySummary } from '@/lib/formatRunEstimatedCost'
 import { formatDurationMs } from '@/lib/formatDuration'
 import {
   RUN_AGAIN_WARNING_TITLE,
+  promptFlowRerun,
   reconciliationPolicyFromGraph,
   runAgainWarningBody,
   rerunWarningBody,
   rerunWarningTitle,
+  shouldOfferUpdatedFlow,
 } from '@/lib/rerunWarning'
 import { isBatchFileSource, processedItemSourceLabel } from '@/lib/review/content/sourceDisplay'
 import {
@@ -53,7 +55,7 @@ import {
 } from '@/lib/processedItemTableSort'
 
 export default function RunDetail() {
-  const { showConfirm, showError } = useAppMessage()
+  const { showConfirm, showConfirmChoice, showError } = useAppMessage()
   const { runId } = useParams<{ runId: string }>()
   const navigate = useNavigate()
   const [run, setRun] = useState<Run | null>(null)
@@ -220,17 +222,33 @@ export default function RunDetail() {
 
     const snapshotJson = graphSpecSnapshotJsonFromRun(run)
     const { spec: runTimeSpec } = resolveRunGraphSpecForDisplay(snapshotJson, graph?.spec)
-    const policy = reconciliationPolicyFromGraph({ spec: runTimeSpec ?? undefined })
-    const ok = await showConfirm(runAgainWarningBody({ flowName: graph.name, policy }), {
+    const originalPolicy = reconciliationPolicyFromGraph({ spec: runTimeSpec ?? undefined })
+    const updatedPolicy = reconciliationPolicyFromGraph(graph)
+    const flowChanged = flowChangedSinceRun(
+      snapshotJson,
+      graph.spec ? JSON.stringify(graph.spec) : null,
+      run.flow_changed_since_run,
+    )
+    const offerUpdatedFlow = shouldOfferUpdatedFlow(flowChanged)
+    const decision = await promptFlowRerun({
+      flowChanged,
       title: RUN_AGAIN_WARNING_TITLE,
-      confirmLabel: 'Replay run',
-      destructive: policy === 'replace',
+      unchangedConfirmLabel: 'Replay run',
+      description: runAgainWarningBody({
+        flowName: graph.name,
+        policy: originalPolicy,
+        offerUpdatedFlow,
+      }),
+      originalPolicy,
+      updatedPolicy,
+      showConfirm,
+      showConfirmChoice,
     })
-    if (!ok) return
+    if (!decision) return
 
     try {
       setRunningAgain(true)
-      const newRun = await replayRun(runId)
+      const newRun = await replayRun(runId, { useCurrentFlow: decision === 'updated' })
       navigate(`/runs/${newRun.id}`)
     } catch (error) {
       console.error('Failed to replay run:', error)
@@ -313,13 +331,29 @@ export default function RunDetail() {
     const count = selectedItems.size
     const snapshotJson = run ? graphSpecSnapshotJsonFromRun(run) : null
     const { spec: runTimeSpec } = resolveRunGraphSpecForDisplay(snapshotJson, graph?.spec)
-    const policy = reconciliationPolicyFromGraph({ spec: runTimeSpec ?? undefined })
-    const ok = await showConfirm(rerunWarningBody(count, { flowName: graph?.name, policy }), {
+    const originalPolicy = reconciliationPolicyFromGraph({ spec: runTimeSpec ?? undefined })
+    const updatedPolicy = reconciliationPolicyFromGraph(graph)
+    const flowChanged = flowChangedSinceRun(
+      snapshotJson,
+      graph?.spec ? JSON.stringify(graph.spec) : null,
+      run?.flow_changed_since_run,
+    )
+    const offerUpdatedFlow = shouldOfferUpdatedFlow(flowChanged)
+    const decision = await promptFlowRerun({
+      flowChanged,
       title: rerunWarningTitle(count),
-      confirmLabel: count === 1 ? 'Rerun' : `Rerun ${count} items`,
-      destructive: policy === 'replace',
+      unchangedConfirmLabel: count === 1 ? 'Rerun' : `Rerun ${count} items`,
+      description: rerunWarningBody(count, {
+        flowName: graph?.name,
+        policy: originalPolicy,
+        offerUpdatedFlow,
+      }),
+      originalPolicy,
+      updatedPolicy,
+      showConfirm,
+      showConfirmChoice,
     })
-    if (!ok) return
+    if (!decision) return
 
     const itemIds = Array.from(selectedItems)
     setRerunningItems(new Set(itemIds))
@@ -327,7 +361,9 @@ export default function RunDetail() {
     try {
       // Rerun all selected items in parallel
       await Promise.all(
-        itemIds.map(itemId => rerunProcessedItem(runId, itemId))
+        itemIds.map(itemId =>
+          rerunProcessedItem(runId, itemId, { useCurrentFlow: decision === 'updated' }),
+        ),
       )
       
       // Clear selection and refresh data

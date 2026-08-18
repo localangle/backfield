@@ -724,7 +724,7 @@ def _finalize_s3_parent_run(session: Session, run_id: str) -> None:
 
 
 @celery_app.task(name="worker.tasks.execute_agate_run")
-def execute_agate_run(run_id: str) -> None:
+def execute_agate_run(run_id: str, spec_json: str | None = None) -> None:
     engine = get_engine()
     with Session(engine) as session:
         run = session.get(AgateRun, run_id)
@@ -779,6 +779,7 @@ def execute_agate_run(run_id: str) -> None:
                 resolve_run_graph_spec_json(
                     run_result_json=run.result_json,
                     graph_spec_json=graph.spec_json,
+                    override_spec_json=spec_json,
                 )
             )
             overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
@@ -1243,9 +1244,11 @@ def execute_run_replay_setup(source_run_id: str, new_run_id: str) -> None:
         s3_batch = source_payload.get("s3_batch")
         if isinstance(s3_batch, dict):
             merge_updates["s3_batch"] = s3_batch
-        snap = source_payload.get(GRAPH_SPEC_JSON_KEY)
-        if isinstance(snap, str) and snap.strip():
-            merge_updates[GRAPH_SPEC_JSON_KEY] = snap
+        existing_pin = parse_run_result_payload(new_run.result_json).get(GRAPH_SPEC_JSON_KEY)
+        if not (isinstance(existing_pin, str) and existing_pin.strip()):
+            snap = source_payload.get(GRAPH_SPEC_JSON_KEY)
+            if isinstance(snap, str) and snap.strip():
+                merge_updates[GRAPH_SPEC_JSON_KEY] = snap
 
         new_run.status = "running"
         new_run.updated_at = datetime.now(UTC)
@@ -1298,15 +1301,15 @@ def execute_run_replay_setup(source_run_id: str, new_run_id: str) -> None:
     acks_late=True,
     reject_on_worker_lost=True,
 )
-def execute_processed_item(item_id: int) -> None:
+def execute_processed_item(item_id: int, spec_json: str | None = None) -> None:
     token = _current_processed_item_id.set(int(item_id))
     try:
-        _execute_processed_item_impl(item_id)
+        _execute_processed_item_impl(item_id, spec_json=spec_json)
     finally:
         _current_processed_item_id.reset(token)
 
 
-def _execute_processed_item_impl(item_id: int) -> None:
+def _execute_processed_item_impl(item_id: int, spec_json: str | None = None) -> None:
     engine = get_engine()
     claimed_at: datetime
     with Session(engine) as session:
@@ -1394,6 +1397,7 @@ def _execute_processed_item_impl(item_id: int) -> None:
                 resolve_run_graph_spec_json(
                     run_result_json=run.result_json,
                     graph_spec_json=graph.spec_json,
+                    override_spec_json=spec_json,
                 )
             )
 

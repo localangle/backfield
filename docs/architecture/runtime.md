@@ -37,7 +37,8 @@ TextInput and JSONInput runs create one `agate_processed_item` and enqueue
    revisions so unchanged objects can be claimed again.
 
 Run replay clones replayable processed-item inputs and executes them against the graph snapshot
-carried by the replay run; it does not consult the S3 ingestion ledger.
+carried by the replay run (the source pin, or the current saved flow when `use_current_flow` is
+true); it does not consult the S3 ingestion ledger.
 
 ## Item execution
 

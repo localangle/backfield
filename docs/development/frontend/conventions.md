@@ -39,6 +39,7 @@ Do not use browser `alert()` or `confirm()`. Each app mounts
 - `showMessage(description, options)` for a notice.
 - `showError(description, options)` for a failure.
 - `await showConfirm(description, options)` for a two-action confirmation.
+- `await showConfirmChoice(description, options)` for Cancel plus two confirm actions.
 
 The shared dialog treatment keeps copy, destructive styling, keyboard behavior, and
 accessibility consistent.

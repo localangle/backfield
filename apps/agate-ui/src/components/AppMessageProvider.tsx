@@ -39,6 +39,17 @@ export type ShowAppConfirmOptions = {
   destructive?: boolean
 }
 
+export type ConfirmChoice = "primary" | "secondary" | false
+
+export type ShowAppConfirmChoiceOptions = {
+  title?: string
+  primaryLabel: string
+  secondaryLabel: string
+  cancelLabel?: string
+  primaryDestructive?: boolean
+  secondaryDestructive?: boolean
+}
+
 type AppDialogState =
   | { kind: "closed" }
   | {
@@ -57,11 +68,26 @@ type AppDialogState =
       destructive: boolean
       resolve: (value: boolean) => void
     }
+  | {
+      kind: "confirm_choice"
+      title: string
+      description: string
+      primaryLabel: string
+      secondaryLabel: string
+      cancelLabel: string
+      primaryDestructive: boolean
+      secondaryDestructive: boolean
+      resolve: (value: ConfirmChoice) => void
+    }
 
 type AppMessageContextValue = {
   showMessage: (description: string, options?: ShowAppMessageOptions) => MessageDialogHandle
   showError: (description: string, options?: { title?: string }) => void
   showConfirm: (description: string, options?: ShowAppConfirmOptions) => Promise<boolean>
+  showConfirmChoice: (
+    description: string,
+    options: ShowAppConfirmChoiceOptions,
+  ) => Promise<ConfirmChoice>
 }
 
 const AppMessageContext = createContext<AppMessageContextValue | null>(null)
@@ -87,6 +113,9 @@ export function AppMessageProvider({ children }: { children: ReactNode }) {
     }
     setState((prev) => {
       if (prev.kind === "confirm") {
+        prev.resolve(false)
+      }
+      if (prev.kind === "confirm_choice") {
         prev.resolve(false)
       }
       return { kind: "closed" }
@@ -139,13 +168,33 @@ export function AppMessageProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const showConfirmChoice = useCallback(
+    (description: string, options: ShowAppConfirmChoiceOptions): Promise<ConfirmChoice> => {
+      return new Promise((resolve) => {
+        setState({
+          kind: "confirm_choice",
+          title: options.title ?? "Confirm",
+          description,
+          primaryLabel: options.primaryLabel,
+          secondaryLabel: options.secondaryLabel,
+          cancelLabel: options.cancelLabel ?? "Cancel",
+          primaryDestructive: options.primaryDestructive ?? false,
+          secondaryDestructive: options.secondaryDestructive ?? false,
+          resolve,
+        })
+      })
+    },
+    [],
+  )
+
   const value = useMemo(
     () => ({
       showMessage,
       showError,
       showConfirm,
+      showConfirmChoice,
     }),
-    [showConfirm, showError, showMessage],
+    [showConfirm, showConfirmChoice, showError, showMessage],
   )
 
   const open = state.kind !== "closed"
@@ -165,7 +214,7 @@ export function AppMessageProvider({ children }: { children: ReactNode }) {
         }}
       >
         <DialogContent
-          className="sm:max-w-md"
+          className={state.kind === "confirm_choice" ? "sm:max-w-lg" : "sm:max-w-md"}
           hideCloseButton={state.kind === "message" && state.pending}
           onPointerDownOutside={(e) => e.preventDefault()}
           onEscapeKeyDown={(e) => {
@@ -237,6 +286,45 @@ export function AppMessageProvider({ children }: { children: ReactNode }) {
                   }}
                 >
                   {state.confirmLabel}
+                </Button>
+              </DialogFooter>
+            </>
+          ) : null}
+          {state.kind === "confirm_choice" ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>{state.title}</DialogTitle>
+                <DialogDescription className="text-left whitespace-pre-wrap break-words">
+                  {state.description}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="gap-2 sm:flex-wrap">
+                <Button type="button" variant="outline" onClick={close}>
+                  {state.cancelLabel}
+                </Button>
+                <Button
+                  type="button"
+                  variant={state.primaryDestructive ? "destructive" : "default"}
+                  onClick={() => {
+                    suppressConfirmDismissRef.current = true
+                    const r = state.resolve
+                    setState({ kind: "closed" })
+                    r("primary")
+                  }}
+                >
+                  {state.primaryLabel}
+                </Button>
+                <Button
+                  type="button"
+                  variant={state.secondaryDestructive ? "destructive" : "secondary"}
+                  onClick={() => {
+                    suppressConfirmDismissRef.current = true
+                    const r = state.resolve
+                    setState({ kind: "closed" })
+                    r("secondary")
+                  }}
+                >
+                  {state.secondaryLabel}
                 </Button>
               </DialogFooter>
             </>
