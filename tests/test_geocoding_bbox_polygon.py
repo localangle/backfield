@@ -6,7 +6,7 @@ from agate_utils.geocoding.geocoding_types import (
     GeometryPolygon,
     bbox_west_south_east_north_to_polygon_coordinates,
 )
-from worker.substrate.entities.location.upsert import _geojson_to_wkt
+from backfield_entities.geo.geometry_bind import geojson_to_wkt
 
 
 def test_bbox_to_polygon_is_closed_ring_of_lon_lat_pairs() -> None:
@@ -28,7 +28,7 @@ def test_geometry_polygon_accepts_normalized_bbox_coordinates() -> None:
 
 def test_geojson_to_wkt_accepts_polygon_from_bbox_helper() -> None:
     coords = bbox_west_south_east_north_to_polygon_coordinates([-87.8, 41.7, -87.6, 41.9])
-    wkt = _geojson_to_wkt({"type": "Polygon", "coordinates": coords})
+    wkt = geojson_to_wkt({"type": "Polygon", "coordinates": coords})
     assert wkt is not None
     assert wkt.startswith("POLYGON ((")
     assert wkt.endswith("))")

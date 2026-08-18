@@ -1,5 +1,9 @@
 """Location canonical persist, policy, and PlaceExtract type helpers."""
 
+from backfield_entities.entities.location.geometry_apply import (
+    apply_canonical_geometry_to_substrates,
+    suggest_substrate_for_geometry_apply,
+)
 from backfield_entities.entities.location.persist import (
     apply_canonical_persist_plan,
     apply_canonical_persist_plan_review_only,
@@ -21,6 +25,7 @@ from backfield_entities.entities.location.policy import (
 )
 
 __all__ = [
+    "apply_canonical_geometry_to_substrates",
     "apply_canonical_persist_plan",
     "apply_canonical_persist_plan_review_only",
     "assert_canonical_link_invariant",
@@ -36,4 +41,5 @@ __all__ = [
     "rank_scored_canonical_recall_matches",
     "refresh_aliases_for_linked_location",
     "substrate_may_materialize_canonical_after_recall",
+    "suggest_substrate_for_geometry_apply",
 ]

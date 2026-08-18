@@ -524,7 +524,8 @@ export default function LocationDetail() {
             stylebookSlug={stylebookSlug}
             geometry={geometry}
             canEdit={canEdit}
-            onGeometrySaved={() => void loadCanonical(canonical.id, stylebookSlug, true)}
+            projectFilterSlug={evidenceProjectSlug || undefined}
+            onGeometrySaved={() => void refreshCanonicalPage(true)}
           />
         ) : null
       }

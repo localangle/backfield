@@ -131,6 +131,12 @@ reflected in API query parameters and UI filters:
 - editing a story row from Agate review affects that story's substrate evidence and
   does not silently rewrite the canonical.
 
+Location catalog geography can be copied onto selected linked saved places from Stylebook.
+That override stays on the saved-place row (including PostGIS and H3) so article geo-search
+follows the catalog shape. The next ingest of the same geocode finds the existing row by
+identity fingerprint and keeps the editorial geometry unless an authoritative geocode
+rejection clears it.
+
 Occurrence offsets are written only for a normalization-equivalent article slice.
 When whitespace or encoding artifacts cannot be mapped back exactly, the evidence
 text remains but its offsets are null.

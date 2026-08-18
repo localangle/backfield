@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -24,7 +24,7 @@ from backfield_entities.entities.linking.substrate_actions import (
     unlink_substrate_from_canonical,
 )
 from backfield_entities.entities.location.types import PLACE_EXTRACT_LOCATION_TYPES
-from backfield_entities.geo.h3_index import apply_h3_fields
+from backfield_entities.geo.geometry_bind import assign_geojson_geometry
 from backfield_entities.ingest.semantic_indexing.reindex import (
     location_patch_affects_semantic_index,
 )
@@ -653,12 +653,8 @@ def patch_location_geometry(
     loc = session.get(SubstrateLocation, location_id)
     if loc is None or int(loc.project_id) != int(proj.id):
         raise HTTPException(status_code=404, detail="Location not found")
-    loc.geometry_json = body.geometry_json
-    loc.geometry_type = body.geometry_json.get("type") if body.geometry_json else None
-    loc.geometry = None
-    h3_cell, h3_resolution = apply_h3_fields(geometry_json=body.geometry_json)
-    loc.h3_cell = h3_cell
-    loc.h3_resolution = h3_resolution
+    assign_geojson_geometry(session, loc, body.geometry_json)
+    loc.updated_at = datetime.now(UTC)
     session.add(loc)
     session.commit()
     session.refresh(loc)
