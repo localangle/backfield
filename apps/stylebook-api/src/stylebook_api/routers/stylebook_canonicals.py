@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from backfield_db import (
@@ -19,7 +20,12 @@ from backfield_entities.activity import (
     log_stylebook_activity_safe,
 )
 from backfield_entities.catalog.search import catalog_label_alias_ilike_filter
+from backfield_entities.entities.location.geometry_apply import (
+    apply_canonical_geometry_to_substrates,
+    suggest_substrate_for_geometry_apply,
+)
 from backfield_entities.entities.location.persist import create_standalone_canonical
+from backfield_entities.geo.geometry_bind import assign_geojson_geometry
 from backfield_events import record_canonical_updated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -116,6 +122,21 @@ class PatchCanonicalGeometryBody(BaseModel):
     geometry_json: dict[str, Any] | None = None
 
 
+class ApplyCanonicalGeometryBody(BaseModel):
+    substrate_location_ids: list[int] = Field(min_length=1)
+
+
+class ApplyCanonicalGeometrySkipped(BaseModel):
+    id: int
+    reason: str
+
+
+class ApplyCanonicalGeometryResponse(BaseModel):
+    updated_ids: list[int]
+    skipped: list[ApplyCanonicalGeometrySkipped] = Field(default_factory=list)
+    cache_rows_purged: int = 0
+
+
 def _canonical_filters(
     *, stylebook_id: int, q: str | None, type_filter: str | None
 ) -> list[ColumnElement[bool]]:
@@ -187,6 +208,8 @@ class LinkedSubstrateItem(BaseModel):
     location_type: str
     canonical_link_status: str
     formatted_address: str | None = None
+    geometry_type: str | None = None
+    suggested_for_geometry: bool = False
     project_id: int
     project_slug: str
     project_name: str
@@ -587,7 +610,20 @@ def patch_canonical_location_geometry(
     canon = session.get(StylebookLocationCanonical, canonical_id)
     if canon is None or int(canon.stylebook_id) != int(sb.id):
         raise HTTPException(status_code=404, detail="Canonical location not found")
-    canon.geometry_json = body.geometry_json
+    assign_geojson_geometry(session, canon, body.geometry_json)
+    canon.updated_at = datetime.now(UTC)
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="manual_ui",
+        event_type=EVENT_CANONICAL_UPDATED,
+        entity_type="location",
+        entity_id=str(canon.id),
+        entity_label=str(canon.label),
+        payload_json={"geometry_updated": True},
+    )
     record_canonical_updated(
         session,
         stylebook_id=int(sb.id),
@@ -598,6 +634,77 @@ def patch_canonical_location_geometry(
     session.add(canon)
     session.commit()
     return {"message": "ok", "id": str(canon.id)}
+
+
+@router.post(
+    "/{stylebook_slug}/canonical-locations/{canonical_id}/geometry/apply-to-substrates",
+    response_model=ApplyCanonicalGeometryResponse,
+)
+def apply_canonical_location_geometry_to_substrates(
+    stylebook_slug: str,
+    canonical_id: str,
+    body: ApplyCanonicalGeometryBody,
+    project: str | None = Query(
+        None,
+        description=(
+            "Optional project slug to limit visible saved places "
+            "(default: all visible projects)."
+        ),
+    ),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> ApplyCanonicalGeometryResponse:
+    require_stylebook_edit_access(session, auth=auth, stylebook_slug=stylebook_slug)
+    sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    canon = session.get(StylebookLocationCanonical, canonical_id)
+    if canon is None or int(canon.stylebook_id) != int(sb.id):
+        raise HTTPException(status_code=404, detail="Canonical location not found")
+    project_ids = optional_project_filter_to_ids(
+        session,
+        auth=auth,
+        project_slug=project,
+        organization_id=int(sb.organization_id),
+    )
+    result = apply_canonical_geometry_to_substrates(
+        session,
+        canon=canon,
+        substrate_ids=body.substrate_location_ids,
+        visible_project_ids=project_ids,
+    )
+    log_stylebook_activity_safe(
+        session,
+        stylebook_id=int(sb.id),
+        actor_type="user",
+        actor_user_id=_created_by_user_id(auth),
+        source="manual_ui",
+        event_type=EVENT_CANONICAL_UPDATED,
+        entity_type="location",
+        entity_id=str(canon.id),
+        entity_label=str(canon.label),
+        payload_json={
+            "applied_geometry_to_saved_places": True,
+            "updated_ids": list(result.updated_ids),
+            "skipped": [{"id": item.id, "reason": item.reason} for item in result.skipped],
+            "cache_rows_purged": result.cache_rows_purged,
+        },
+    )
+    record_canonical_updated(
+        session,
+        stylebook_id=int(sb.id),
+        entity_type="location",
+        canonical_id=str(canon.id),
+        label=str(canon.label),
+    )
+    session.commit()
+    return ApplyCanonicalGeometryResponse(
+        updated_ids=list(result.updated_ids),
+        skipped=[
+            ApplyCanonicalGeometrySkipped(id=item.id, reason=item.reason) for item in result.skipped
+        ],
+        cache_rows_purged=result.cache_rows_purged,
+    )
 
 
 @router.delete("/{stylebook_slug}/canonical-locations/{canonical_id}")
@@ -709,6 +816,11 @@ def list_canonical_linked_substrates(
                 location_type=str(loc.location_type or ""),
                 canonical_link_status=str(loc.canonical_link_status or ""),
                 formatted_address=(loc.formatted_address or "").strip() or None,
+                geometry_type=(str(loc.geometry_type) if loc.geometry_type else None),
+                suggested_for_geometry=suggest_substrate_for_geometry_apply(
+                    substrate_location_type=loc.location_type,
+                    canonical_location_type=canon.location_type,
+                ),
                 project_id=int(project_row.id),  # type: ignore[arg-type]
                 project_slug=str(project_row.slug),
                 project_name=str(project_row.name),

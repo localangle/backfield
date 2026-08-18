@@ -142,6 +142,8 @@ export interface LinkedSubstrateItem {
   location_type: string
   canonical_link_status: string
   formatted_address?: string | null
+  geometry_type?: string | null
+  suggested_for_geometry?: boolean
   project_id: number
   project_slug: string
   project_name: string
@@ -277,6 +279,29 @@ export async function updateCanonicalLocationGeometry(
       canonicalId,
     )}/geometry`,
     { method: "PATCH", body: JSON.stringify({ geometry_json: geometryJson }) },
+  )
+}
+
+export interface ApplyCanonicalGeometryResult {
+  updated_ids: number[]
+  skipped: Array<{ id: number; reason: string }>
+  cache_rows_purged: number
+}
+
+export async function applyCanonicalGeometryToSavedPlaces(
+  canonicalId: string,
+  stylebookSlug: string,
+  savedPlaceIds: number[],
+  projectFilterSlug?: string,
+): Promise<ApplyCanonicalGeometryResult> {
+  const params = new URLSearchParams()
+  if (projectFilterSlug) params.set("project", projectFilterSlug)
+  const query = params.toString()
+  return stylebookJsonFetch<ApplyCanonicalGeometryResult>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(
+      canonicalId,
+    )}/geometry/apply-to-substrates${query ? `?${query}` : ""}`,
+    { method: "POST", body: JSON.stringify({ substrate_location_ids: savedPlaceIds }) },
   )
 }
 

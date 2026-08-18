@@ -35,6 +35,7 @@ export {
   patchCanonicalLocation,
   unlinkSubstrateFromCanonical,
   updateCanonicalLocationGeometry,
+  applyCanonicalGeometryToSavedPlaces,
   updateLocation,
   updateLocationGeometry,
 } from "@/lib/stylebook-api/locations"

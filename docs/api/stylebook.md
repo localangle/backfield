@@ -39,7 +39,7 @@ Stylebook-scoped families under `/v1/stylebooks/{stylebook_slug}` provide list/s
 
 Canonical identifiers are UUID strings. Catalog responses expose immutable slugs for stable links. Project filters narrow mention and evidence counts without changing catalog ownership.
 
-Location geometry uses GeoJSON `Point`, `Polygon`, or `MultiPolygon` with longitude-latitude coordinate order.
+Location geometry uses GeoJSON `Point`, `Polygon`, or `MultiPolygon` with longitude-latitude coordinate order. Canonical and saved-place geometry PATCH routes write GeoJSON together with PostGIS `geometry`, `geometry_type`, and H3. Editors can copy a canonical location’s current geography onto selected linked saved places with `POST /v1/stylebooks/{stylebook_slug}/canonical-locations/{id}/geometry/apply-to-substrates`. That write marks those saved places so later ingest does not replace the editorial shape, and it deletes matching project geocode-cache rows.
 
 Canonical metadata is Stylebook-wide editorial data: one typed scalar attribute per
 `meta_type` slug on a canonical (`text`, `number`, or `boolean`). Rows retain a project

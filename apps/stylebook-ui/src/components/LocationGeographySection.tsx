@@ -1,12 +1,28 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import SimpleGeoJsonGeometry from "@/components/SimpleGeoJsonGeometry"
-import { updateCanonicalLocationGeometry } from "@/lib/stylebook-api/locations"
+import {
+  applyCanonicalGeometryToSavedPlaces,
+  listCanonicalLinkedSubstrates,
+  updateCanonicalLocationGeometry,
+  type LinkedSubstrateItem,
+} from "@/lib/stylebook-api/locations"
+import { defaultSelectedSavedPlaceIds } from "@/lib/applyCatalogGeography"
+import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { GeometryEditLeafletMap } from "@backfield/ui/GeometryEditLeafletMap"
 import { useOrgMapDefaultViewport } from "@/lib/useOrgMapDefaultViewport"
 import {
@@ -121,6 +137,7 @@ export interface LocationGeographySectionProps {
   stylebookSlug: string
   geometry: Record<string, unknown> | null
   canEdit: boolean
+  projectFilterSlug?: string
   onGeometrySaved: () => void | Promise<void>
 }
 
@@ -129,9 +146,10 @@ export default function LocationGeographySection({
   stylebookSlug,
   geometry,
   canEdit,
+  projectFilterSlug,
   onGeometrySaved,
 }: LocationGeographySectionProps) {
-  const { showError, showConfirm } = useAppMessage()
+  const { showError, showConfirm, showMessage } = useAppMessage()
   const orgMapDefault = useOrgMapDefaultViewport()
   const [geometryEditing, setGeometryEditing] = useState(false)
   const [geometryDraft, setGeometryDraft] = useState<Record<string, unknown> | null>(geometry)
@@ -141,12 +159,45 @@ export default function LocationGeographySection({
     southWest: { lat: number; lng: number }
     northEast: { lat: number; lng: number }
   } | null>(null)
+  const [applyOpen, setApplyOpen] = useState(false)
+  const [applyLoading, setApplyLoading] = useState(false)
+  const [applySaving, setApplySaving] = useState(false)
+  const [linkedPlaces, setLinkedPlaces] = useState<LinkedSubstrateItem[]>([])
+  const [selectedPlaceIds, setSelectedPlaceIds] = useState<number[]>([])
 
   useEffect(() => {
     if (!geometryEditing) {
       setGeometryDraft(geometry)
     }
   }, [geometry, geometryEditing])
+
+  const openApplyDialog = useCallback(
+    async ({ quietIfEmpty }: { quietIfEmpty: boolean }) => {
+      setApplyLoading(true)
+      try {
+        const response = await listCanonicalLinkedSubstrates(
+          canonicalId,
+          stylebookSlug,
+          projectFilterSlug,
+        )
+        const places = response.substrates
+        if (places.length === 0) {
+          if (!quietIfEmpty) {
+            showMessage("This location has no linked saved places.")
+          }
+          return
+        }
+        setLinkedPlaces(places)
+        setSelectedPlaceIds(defaultSelectedSavedPlaceIds(places))
+        setApplyOpen(true)
+      } catch (e) {
+        showError(e instanceof Error ? e.message : "Could not load linked saved places.")
+      } finally {
+        setApplyLoading(false)
+      }
+    },
+    [canonicalId, projectFilterSlug, showError, showMessage, stylebookSlug],
+  )
 
   const saveGeometry = async () => {
     setGeometrySaving(true)
@@ -156,6 +207,7 @@ export default function LocationGeographySection({
       setGeometryAddMode(null)
       setRectanglePreview(null)
       await onGeometrySaved()
+      await openApplyDialog({ quietIfEmpty: true })
     } catch (e) {
       console.error(e)
       const msg =
@@ -164,6 +216,40 @@ export default function LocationGeographySection({
     } finally {
       setGeometrySaving(false)
     }
+  }
+
+  const applySelectedGeography = async () => {
+    if (selectedPlaceIds.length === 0) return
+    setApplySaving(true)
+    try {
+      const result = await applyCanonicalGeometryToSavedPlaces(
+        canonicalId,
+        stylebookSlug,
+        selectedPlaceIds,
+        projectFilterSlug,
+      )
+      setApplyOpen(false)
+      const count = result.updated_ids.length
+      showMessage(
+        count === 1
+          ? "Updated geography on 1 saved place."
+          : `Updated geography on ${count} saved places.`,
+      )
+      await onGeometrySaved()
+    } catch (e) {
+      showError(e instanceof Error ? e.message : "Could not apply catalog geography.")
+    } finally {
+      setApplySaving(false)
+    }
+  }
+
+  const togglePlace = (placeId: number, checked: boolean) => {
+    setSelectedPlaceIds((prev) => {
+      if (checked) {
+        return prev.includes(placeId) ? prev : [...prev, placeId]
+      }
+      return prev.filter((id) => id !== placeId)
+    })
   }
 
   const geometrySource = geometryEditing ? geometryDraft : geometry
@@ -237,6 +323,7 @@ export default function LocationGeographySection({
   }, [geometry])
 
   return (
+    <>
     <Card
       className={cn(
         "relative z-0 isolate",
@@ -263,7 +350,7 @@ export default function LocationGeographySection({
               : "View canonical geometry."}
           </CardDescription>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {geometryEditing ? (
             <>
               <Button variant="outline" onClick={cancelGeometryEdit} disabled={geometrySaving}>
@@ -274,18 +361,27 @@ export default function LocationGeographySection({
               </Button>
             </>
           ) : (
-            <Button
-              variant="outline"
-              onClick={() => {
-                setGeometryDraft(geometry)
-                setGeometryAddMode(null)
-                setRectanglePreview(null)
-                setGeometryEditing(true)
-              }}
-              disabled={!canEdit}
-            >
-              Edit geography
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                onClick={() => void openApplyDialog({ quietIfEmpty: false })}
+                disabled={!canEdit || applyLoading || geometrySaving}
+              >
+                {applyLoading ? "Loading…" : "Apply to linked saved places"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setGeometryDraft(geometry)
+                  setGeometryAddMode(null)
+                  setRectanglePreview(null)
+                  setGeometryEditing(true)
+                }}
+                disabled={!canEdit}
+              >
+                Edit geography
+              </Button>
+            </>
           )}
         </div>
       </CardHeader>
@@ -388,5 +484,52 @@ export default function LocationGeographySection({
         ) : null}
       </CardContent>
     </Card>
+    <Dialog open={applyOpen} onOpenChange={(open) => !applySaving && setApplyOpen(open)}>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Apply catalog geography?</DialogTitle>
+          <DialogDescription>
+            Search uses each saved place’s geography. Applying this catalog shape updates the
+            selected saved places so they match this location.
+          </DialogDescription>
+        </DialogHeader>
+        <ul className="space-y-2">
+          {linkedPlaces.map((place) => {
+            const checked = selectedPlaceIds.includes(place.id)
+            return (
+              <li key={place.id} className="flex items-start gap-3 rounded-md border p-3">
+                <Checkbox
+                  checked={checked}
+                  onCheckedChange={(next) => togglePlace(place.id, next)}
+                  disabled={applySaving}
+                  aria-label={`Select ${place.name}`}
+                />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium leading-5">{place.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {place.project_name}
+                    {place.location_type
+                      ? ` · ${placeExtractTypeLabel(place.location_type)}`
+                      : ""}
+                  </p>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setApplyOpen(false)} disabled={applySaving}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => void applySelectedGeography()}
+            disabled={applySaving || selectedPlaceIds.length === 0}
+          >
+            {applySaving ? "Applying…" : "Apply geography"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }

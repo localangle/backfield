@@ -145,7 +145,7 @@ behavior. Type-specific filters live in the list configuration.
 Each canonical detail page uses this section order:
 
 1. Details
-2. Geography for locations only
+2. Geography for locations only (including applying catalog geography to linked saved places)
 3. Mentions grouped by linked substrate row
 4. Metadata
 5. Connections

@@ -22,6 +22,7 @@ from backfield_db import (
     StylebookPersonCanonical,
     SubstrateArticle,
     SubstrateLocation,
+    SubstrateLocationCache,
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
     SubstrateOrganization,
@@ -35,6 +36,7 @@ from backfield_entities.canonical.link import (
     CANONICAL_LINK_UNLINKED,
     CANONICAL_LINK_WAIVED,
 )
+from backfield_entities.entities.location.geometry_apply import GEOMETRY_EDITORIAL_OVERRIDE_KEY
 from backfield_entities.entities.location.persist import materialize_new_canonical_and_link
 from fastapi.testclient import TestClient
 from sqlalchemy import event
@@ -2245,6 +2247,239 @@ def test_patch_saved_place_geometry_clear_with_null(
         assert row is not None
         assert row.geometry_json is None
         assert row.geometry_type is None
+        assert row.geometry is None
+
+
+def test_patch_saved_place_geometry_writes_bind_value(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    gj: dict = {"type": "Point", "coordinates": [-87.6298, 41.8781]}
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        loc = SubstrateLocation(
+            project_id=int(proj.id),
+            name="WriteGeom",
+            normalized_name="writegeom",
+            location_type="place",
+            identity_fingerprint="fp-write-geom-1",
+        )
+        s.add(loc)
+        s.commit()
+        s.refresh(loc)
+        sid = int(loc.id)  # type: ignore[arg-type]
+
+    r = client.patch(
+        f"/v1/locations/{sid}/geometry?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"geometry_json": gj},
+    )
+    assert r.status_code == 200
+    with Session(engine) as s:
+        row = s.get(SubstrateLocation, sid)
+        assert row is not None
+        assert row.geometry_json == gj
+        assert row.geometry_type == "Point"
+        assert row.geometry is not None
+        assert str(row.geometry).startswith("POINT")
+        assert row.h3_cell
+
+
+def test_patch_canonical_geometry_writes_postgis_and_h3(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    gj: dict = {
+        "type": "Polygon",
+        "coordinates": [
+            [[-87.8, 41.7], [-87.6, 41.7], [-87.6, 41.9], [-87.8, 41.9], [-87.8, 41.7]]
+        ],
+    }
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        canon = StylebookLocationCanonical(
+            stylebook_id=int(ws.stylebook_id),
+            label="Northalsted",
+            slug="northalsted-geom-patch",
+            location_type="neighborhood",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(canon)
+        user = BackfieldUser(email="geom-patch-admin@example.com", password_hash="x")
+        s.add(user)
+        s.commit()
+        s.refresh(canon)
+        s.refresh(user)
+        cid = str(canon.id)
+        admin_id = int(user.id)  # type: ignore[arg-type]
+
+    def _admin_auth() -> dict[str, Any]:
+        with Session(engine) as s:
+            u = s.get(BackfieldUser, admin_id)
+            assert u is not None
+            return _session_auth_for_user(u, org_id=1, org_role="org_admin")
+
+    app.dependency_overrides[get_auth_dep] = _admin_auth
+    try:
+        r = client.patch(
+            f"/v1/stylebooks/default/canonical-locations/{cid}/geometry",
+            json={"geometry_json": gj},
+        )
+        assert r.status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_auth_dep, None)
+    with Session(engine) as s:
+        row = s.get(StylebookLocationCanonical, cid)
+        assert row is not None
+        assert row.geometry_json == gj
+        assert row.geometry_type == "Polygon"
+        assert row.geometry is not None
+        assert str(row.geometry).startswith("POLYGON")
+        assert row.h3_cell
+
+
+def test_apply_canonical_geometry_to_linked_saved_places(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    catalog_gj: dict = {
+        "type": "Polygon",
+        "coordinates": [
+            [[-87.7, 41.9], [-87.6, 41.9], [-87.6, 42.0], [-87.7, 42.0], [-87.7, 41.9]]
+        ],
+    }
+    stale_gj: dict = {"type": "Point", "coordinates": [-87.6, 41.8]}
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Northalsted",
+            slug="northalsted-apply",
+            location_type="neighborhood",
+            geometry_json=catalog_gj,
+            geometry_type="Polygon",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        other = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Other Place",
+            slug="other-place-apply",
+            location_type="neighborhood",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(canon)
+        s.add(other)
+        s.commit()
+        s.refresh(canon)
+        s.refresh(other)
+        cid = str(canon.id)
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Northalsted",
+            normalized_name="northalsted",
+            location_type="neighborhood",
+            identity_fingerprint="fp-northalsted-stale",
+            stylebook_location_canonical_id=cid,
+            canonical_link_status=CANONICAL_LINK_LINKED,
+            geometry_json=stale_gj,
+            geometry_type="Point",
+        )
+        other_loc = SubstrateLocation(
+            project_id=pid,
+            name="Elsewhere",
+            normalized_name="elsewhere",
+            location_type="neighborhood",
+            identity_fingerprint="fp-elsewhere-apply",
+            stylebook_location_canonical_id=str(other.id),
+            canonical_link_status=CANONICAL_LINK_LINKED,
+            geometry_json=stale_gj,
+            geometry_type="Point",
+        )
+        s.add(loc)
+        s.add(other_loc)
+        s.add(
+            SubstrateLocationCache(
+                project_id=pid,
+                query_text="Northalsted",
+                normalized_query="northalsted",
+                query_fingerprint="fp-cache-northalsted",
+                location_name="Northalsted",
+                location_type="neighborhood",
+                geometry_json=stale_gj,
+                geometry_type="Point",
+                response_payload_json={},
+            )
+        )
+        user = BackfieldUser(email="geom-apply-admin@example.com", password_hash="x")
+        s.add(user)
+        s.commit()
+        s.refresh(loc)
+        s.refresh(other_loc)
+        s.refresh(user)
+        sid = int(loc.id)  # type: ignore[arg-type]
+        other_sid = int(other_loc.id)  # type: ignore[arg-type]
+        fingerprint_before = str(loc.identity_fingerprint)
+        admin_id = int(user.id)  # type: ignore[arg-type]
+
+    def _admin_auth() -> dict[str, Any]:
+        with Session(engine) as s:
+            u = s.get(BackfieldUser, admin_id)
+            assert u is not None
+            return _session_auth_for_user(u, org_id=1, org_role="org_admin")
+
+    app.dependency_overrides[get_auth_dep] = _admin_auth
+    try:
+        listed = client.get(
+            f"/v1/stylebooks/default/canonical-locations/{cid}/linked-substrates",
+        )
+        assert listed.status_code == 200
+        items = listed.json()["substrates"]
+        assert len(items) == 1
+        assert items[0]["id"] == sid
+        assert items[0]["suggested_for_geometry"] is True
+        assert items[0]["geometry_type"] == "Point"
+
+        r = client.post(
+            f"/v1/stylebooks/default/canonical-locations/{cid}/geometry/apply-to-substrates",
+            json={"substrate_location_ids": [sid, other_sid, 999999]},
+        )
+        assert r.status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_auth_dep, None)
+    body = r.json()
+    assert body["updated_ids"] == [sid]
+    reasons = {item["id"]: item["reason"] for item in body["skipped"]}
+    assert reasons[other_sid] == "not_linked"
+    assert reasons[999999] == "not_found"
+    assert body["cache_rows_purged"] == 1
+
+    with Session(engine) as s:
+        row = s.get(SubstrateLocation, sid)
+        assert row is not None
+        assert row.geometry_json == catalog_gj
+        assert row.geometry_type == "Polygon"
+        assert row.geometry is not None
+        assert str(row.geometry).startswith("POLYGON")
+        assert row.identity_fingerprint == fingerprint_before
+        details = row.source_details_json if isinstance(row.source_details_json, dict) else {}
+        assert details.get(GEOMETRY_EDITORIAL_OVERRIDE_KEY) is True
+        leftover = s.exec(
+            select(SubstrateLocationCache).where(
+                SubstrateLocationCache.project_id == int(row.project_id),
+                SubstrateLocationCache.normalized_query == "northalsted",
+            )
+        ).all()
+        assert leftover == []
+        other_row = s.get(SubstrateLocation, other_sid)
+        assert other_row is not None
+        assert other_row.geometry_json == stale_gj
 
 
 def test_accept_candidate_create_new_location_type_override(
