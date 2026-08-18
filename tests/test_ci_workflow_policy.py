@@ -49,6 +49,23 @@ def test_ci_pins_third_party_actions_to_shas() -> None:
         assert len(pin) >= 40, f"expected commit SHA pin: {action}"
 
 
+def test_litellm_upgrade_workflow_is_gated_and_pins_actions() -> None:
+    workflow = (
+        _REPO_ROOT / ".github" / "workflows" / "upgrade-litellm.yml"
+    ).read_text(encoding="utf-8")
+    assert "github.repository == 'localangle/backfield'" in workflow
+    assert "make upgrade-litellm" in workflow
+    assert "uv.lock" in workflow
+    for line in workflow.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("- uses:"):
+            continue
+        action = stripped.removeprefix("- uses:").strip()
+        pin = action.rsplit("@", 1)[1].split()[0]
+        assert not pin.startswith("v"), f"mutable tag not allowed: {action}"
+        assert len(pin) >= 40, f"expected commit SHA pin: {action}"
+
+
 def test_publish_packages_all_three_ui_archives() -> None:
     assert "apps/api-playground/dist" in _CI
     assert "dist-artifacts/api-playground.tar.gz" in _CI

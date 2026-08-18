@@ -1,11 +1,11 @@
 /**
  * Presentation helpers for curated AI preset lists (`GET …/ai-models/curated-options`).
  *
- * Source of truth for *which* models exist stays in Core API `CURATED_TEMPLATES`. Each option
- * includes `provider` (e.g. `openai`, `anthropic`); we only group and label for the UI. New
- * templates with a `provider` slug appear under the right section automatically once the API
- * lists them. To change section order or display names, adjust
- * `CURATED_PROVIDER_SECTION_ORDER` and `curatedProviderSectionTitle` below.
+ * Source of truth for *which* models exist is Core API `GET …/ai-models/curated-options`
+ * (flagship presets generated from LiteLLM). Each option includes `provider` (e.g. `openai`,
+ * `anthropic`); we only group and label for the UI. New templates with a `provider` slug appear
+ * under the right section automatically once the API lists them. To change section order or display
+ * names, adjust `CURATED_PROVIDER_SECTION_ORDER` and `curatedProviderSectionTitle` below.
  */
 
 import type { CuratedAiModelOption } from '@/lib/core-api'

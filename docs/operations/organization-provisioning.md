@@ -29,7 +29,10 @@ backfield organization create \
 
 Repeat `--curated-model` for each preset to snapshot. At least one model is required; the command
 never selects all current presets or an implicit default. Preset identifiers are the same values
-shown by the organization AI-model administration surface.
+shown by the organization AI-model administration surface. That list is generated at process start
+from LiteLLM's model catalog (flagship OpenAI, Anthropic, Gemini, OpenRouter Qwen/DeepSeek, and
+Mistral models), not a hardcoded table. Stable ids such as `openai:gpt-5-nano` remain valid while
+LiteLLM still lists them.
 
 The temporary-password file is caller-owned JSON:
 

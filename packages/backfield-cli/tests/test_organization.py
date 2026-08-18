@@ -13,6 +13,19 @@ from backfield_db.organization_provisioning import (
     ProvisionedUserReport,
 )
 
+_STUB_CURATED_TEMPLATES = {
+    "openai:gpt-5-nano": object(),
+    "openai:text-embedding-3-small": object(),
+}
+
+
+@pytest.fixture(autouse=True)
+def _stub_curated_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "backfield_ai.curated_catalog.list_curated_templates",
+        lambda: _STUB_CURATED_TEMPLATES,
+    )
+
 
 def _args(password_file: str) -> list[str]:
     return [
@@ -100,9 +113,10 @@ def test_organization_create_passes_explicit_inputs_and_prints_safe_json(
     )
     captured: dict[str, object] = {}
 
-    def fake_run(request, passwords):
+    def fake_run(request, passwords, templates=None):
         captured["request"] = request
         captured["passwords"] = passwords
+        captured["templates"] = templates
         return _report()
 
     monkeypatch.setattr(
@@ -118,6 +132,7 @@ def test_organization_create_passes_explicit_inputs_and_prints_safe_json(
         "openai:gpt-5-nano",
         "openai:text-embedding-3-small",
     )
+    assert captured["templates"] is _STUB_CURATED_TEMPLATES
     output = capsys.readouterr()
     payload = json.loads(output.out)
     assert payload["organization_id"] == 1
@@ -186,7 +201,7 @@ def test_organization_create_password_policy_error_does_not_leak_secret(
         encoding="utf-8",
     )
 
-    def reject_weak_password(*_args):
+    def reject_weak_password(*_args, **_kwargs):
         raise ValueError("Choose a stronger password")
 
     monkeypatch.setattr(

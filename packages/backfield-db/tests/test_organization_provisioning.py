@@ -17,6 +17,13 @@ from backfield_db import (
     BackfieldWorkspace,
     Stylebook,
 )
+from backfield_db.curated_ai_models import (
+    AI_CAPABILITY_EMBEDDING,
+    AI_CAPABILITY_JSON,
+    AI_CAPABILITY_TEXT,
+    AI_MODEL_KIND_EMBEDDING,
+    CuratedAiModelTemplate,
+)
 from backfield_db.organization_provisioning import (
     OrganizationProvisioningConflict,
     OrganizationProvisioningRequest,
@@ -24,11 +31,30 @@ from backfield_db.organization_provisioning import (
     TemporaryPasswordInput,
     load_temporary_passwords,
     provision_organization,
+    resolve_selected_templates,
     run_organization_provisioning,
 )
 from backfield_db.passwords import hash_password, verify_password
 from pydantic import SecretStr, ValidationError
 from sqlmodel import Session, SQLModel, create_engine, select
+
+PROVISION_TEMPLATES = {
+    "openai:gpt-5-nano": CuratedAiModelTemplate(
+        template_id="openai:gpt-5-nano",
+        provider="openai",
+        provider_model_id="gpt-5-nano",
+        label="GPT-5 Nano",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openai:text-embedding-3-small": CuratedAiModelTemplate(
+        template_id="openai:text-embedding-3-small",
+        provider="openai",
+        provider_model_id="text-embedding-3-small",
+        label="text-embedding-3-small",
+        capabilities=(AI_CAPABILITY_EMBEDDING,),
+        model_kind=AI_MODEL_KIND_EMBEDDING,
+    ),
+}
 
 
 @pytest.fixture
@@ -73,12 +99,25 @@ def _passwords(*, support: str | None = None) -> TemporaryPasswordInput:
     )
 
 
+def _provision(
+    session: Session,
+    request: OrganizationProvisioningRequest,
+    passwords: TemporaryPasswordInput,
+) -> provisioning.OrganizationProvisioningReport:
+    return provision_organization(
+        session,
+        request,
+        passwords,
+        templates=PROVISION_TEMPLATES,
+    )
+
+
 def _provision_and_commit(
     session: Session,
     request: OrganizationProvisioningRequest,
     passwords: TemporaryPasswordInput,
 ) -> provisioning.OrganizationProvisioningReport:
-    report = provision_organization(session, request, passwords)
+    report = _provision(session, request, passwords)
     session.commit()
     return report
 
@@ -239,7 +278,7 @@ def test_rerun_conflicts_when_requested_support_admin_is_omitted(sqlite_engine) 
             OrganizationProvisioningConflict,
             match="org_admin set does not match",
         ):
-            provision_organization(session, _request(), _passwords())
+            _provision(session, _request(), _passwords())
 
 
 def test_rerun_conflicts_when_support_admin_email_changes(sqlite_engine) -> None:
@@ -254,7 +293,7 @@ def test_rerun_conflicts_when_support_admin_email_changes(sqlite_engine) -> None
             OrganizationProvisioningConflict,
             match="org_admin set does not match",
         ):
-            provision_organization(
+            _provision(
                 session,
                 _request(support_email="other-support@example.com"),
                 _passwords(support="other-support-temporary-61"),
@@ -284,13 +323,13 @@ def test_rerun_conflicts_with_unrequested_existing_org_admin(sqlite_engine) -> N
             OrganizationProvisioningConflict,
             match="org_admin set does not match",
         ):
-            provision_organization(session, _request(), _passwords())
+            _provision(session, _request(), _passwords())
 
 
 def test_missing_support_password_rolls_back_entire_new_organization(sqlite_engine) -> None:
     with Session(sqlite_engine) as session:
         with pytest.raises(ValueError, match="temporary password is required"):
-            provision_organization(
+            _provision(
                 session,
                 _request(support_email="support@example.com"),
                 _passwords(),
@@ -305,7 +344,7 @@ def test_missing_support_password_rolls_back_entire_new_organization(sqlite_engi
 def test_service_leaves_transaction_completion_to_caller(sqlite_engine) -> None:
     with Session(sqlite_engine) as session:
         session.add(BackfieldOrganization(name="Unrelated", slug="unrelated"))
-        report = provision_organization(session, _request(), _passwords())
+        report = _provision(session, _request(), _passwords())
         assert report.organization_created is True
         session.rollback()
 
@@ -317,7 +356,7 @@ def test_service_does_not_rollback_unrelated_caller_work_on_error(sqlite_engine)
     with Session(sqlite_engine) as session:
         session.add(BackfieldOrganization(name="Unrelated", slug="unrelated"))
         with pytest.raises(ValueError, match="temporary password is required"):
-            provision_organization(
+            _provision(
                 session,
                 _request(support_email="support@example.com"),
                 _passwords(),
@@ -343,7 +382,7 @@ def test_existing_partial_or_conflicting_organization_fails_without_mutation(
             OrganizationProvisioningConflict,
             match="missing the requested Stylebook",
         ):
-            provision_organization(session, _request(), _passwords())
+            _provision(session, _request(), _passwords())
 
     with Session(sqlite_engine) as session:
         assert len(session.exec(select(BackfieldOrganization)).all()) == 1
@@ -363,7 +402,7 @@ def test_disabled_existing_user_is_rejected_for_create_and_rerun(sqlite_engine) 
         session.commit()
     with Session(sqlite_engine) as session:
         with pytest.raises(OrganizationProvisioningConflict, match="is disabled"):
-            provision_organization(session, _request(), _passwords())
+            _provision(session, _request(), _passwords())
         session.rollback()
 
     with Session(sqlite_engine) as session:
@@ -384,7 +423,7 @@ def test_disabled_existing_user_is_rejected_for_create_and_rerun(sqlite_engine) 
         session.commit()
     with Session(sqlite_engine) as session:
         with pytest.raises(OrganizationProvisioningConflict, match="is disabled"):
-            provision_organization(session, _request(), _passwords())
+            _provision(session, _request(), _passwords())
 
 
 def test_new_admin_password_uses_shared_strength_policy_without_leaking(
@@ -394,7 +433,7 @@ def test_new_admin_password_uses_shared_strength_policy_without_leaking(
     passwords = TemporaryPasswordInput(client_admin_password=SecretStr(secret))
     with Session(sqlite_engine) as session:
         with pytest.raises(ValueError, match="stronger") as exc_info:
-            provision_organization(session, _request(), passwords)
+            _provision(session, _request(), passwords)
         session.rollback()
     assert secret not in str(exc_info.value)
 
@@ -404,7 +443,7 @@ def test_new_admin_password_policy_uses_normalized_email(sqlite_engine) -> None:
     passwords = TemporaryPasswordInput(client_admin_password=SecretStr(secret))
     with Session(sqlite_engine) as session:
         with pytest.raises(ValueError, match="email local part"):
-            provision_organization(
+            _provision(
                 session,
                 _request(client_email=" ClientAdmin@Example.com "),
                 passwords,
@@ -420,7 +459,7 @@ def test_new_admin_password_policy_enforces_shared_utf8_byte_limit(
     )
     with Session(sqlite_engine) as session:
         with pytest.raises(ValueError, match="at most 72 UTF-8 bytes"):
-            provision_organization(session, _request(), passwords)
+            _provision(session, _request(), passwords)
         session.rollback()
 
 
@@ -438,7 +477,7 @@ def test_changed_curated_snapshot_conflicts_on_rerun(sqlite_engine) -> None:
             OrganizationProvisioningConflict,
             match="AI catalog does not match",
         ):
-            provision_organization(session, _request(), _passwords())
+            _provision(session, _request(), _passwords())
 
 
 def test_same_project_slug_is_allowed_in_different_organizations(sqlite_engine) -> None:
@@ -474,7 +513,11 @@ def test_isolated_runner_reloads_exact_concurrent_winner(
 
     monkeypatch.setattr(provisioning, "create_direct_engine", lambda: sqlite_engine)
     monkeypatch.setattr(provisioning, "provision_organization", lose_race)
-    report = run_organization_provisioning(_request(), _passwords())
+    report = run_organization_provisioning(
+        _request(),
+        _passwords(),
+        templates=PROVISION_TEMPLATES,
+    )
     assert report.reused is True
     assert report.organization_id == expected.organization_id
 
@@ -482,8 +525,9 @@ def test_isolated_runner_reloads_exact_concurrent_winner(
 def test_request_requires_explicit_nonempty_curated_selection() -> None:
     with pytest.raises(ValidationError):
         _request(models=())
-    with pytest.raises(ValidationError, match="Unknown curated model"):
-        _request(models=("not:a-model",))
+    request = _request(models=("not:a-model",))
+    with pytest.raises(ValueError, match="Unknown curated model"):
+        resolve_selected_templates(request.curated_model_ids, PROVISION_TEMPLATES)
 
 
 def test_password_file_loader_is_strict_and_secret_safe(tmp_path) -> None:

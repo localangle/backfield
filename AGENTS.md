@@ -16,7 +16,8 @@ canonical agent/engineering checklist.
   browser memory only.
 - `apps/core-api`: Sessions, users, organization and project administration, integrations, AI configuration, and `/public/v1`.
 - `packages/backfield-agate`: `agate-runtime` graph types, execution, run helpers, node definitions, metadata, and node-panel source files.
-- `packages/backfield-ai`: Model resolution, LiteLLM integration, embeddings, and AI call accounting.
+- `packages/backfield-ai`: Model resolution, LiteLLM integration, embeddings, AI call accounting,
+  and flagship curated presets generated from LiteLLM's model catalog.
 - `packages/backfield-ui`: Shared React components and `@backfield/ui/nodeOutputs`.
 - `packages/backfield-auth`: Session, service, and project API-key authentication.
 - `packages/backfield-observability`: Runtime identity, CloudWatch EMF metric emission, and shared observability helpers.
