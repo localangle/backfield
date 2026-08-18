@@ -32,6 +32,8 @@ Synthetic `items/1` views are available for whole-flow runs without a stored pro
 - Invalid supported geometry returns `400`.
 - The API never mutates `result_json` when applying review edits.
 - Item rerun clears the overlay, reviewed output, and version before requeueing execution.
+  Optional `{ "use_current_flow": true }` executes the current saved flow for that item
+  without replacing the run’s pinned spec.
 
 Clients must merge their local edits into the latest complete overlay before sending the replacement payload.
 

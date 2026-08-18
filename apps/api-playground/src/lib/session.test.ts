@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   fetchPlatformContext,
+  fetchProjectApiKeys,
   logoutSession,
   SessionAuthRequiredError,
   switchOrganization,
@@ -108,6 +109,33 @@ describe("Playground session", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "https://agate.newsroom.backfield.news/v1/organizations/7/settings",
       expect.objectContaining({ credentials: "include" }),
+    )
+  })
+
+  it("lists project API key metadata with session credentials and ignores failed lists", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      if (String(input).endsWith("/v1/projects/2/api-keys")) {
+        return new Response(
+          JSON.stringify([{ key_prefix: "bfk_testprefixxxxxxxx", label: "Local testing" }]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        )
+      }
+      return new Response(JSON.stringify({ detail: "Forbidden" }), { status: 403 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(
+      fetchProjectApiKeys("https://agate.newsroom.backfield.news", 2),
+    ).resolves.toEqual([{ key_prefix: "bfk_testprefixxxxxxxx", label: "Local testing" }])
+    await expect(
+      fetchProjectApiKeys("https://agate.newsroom.backfield.news", 9),
+    ).resolves.toEqual([])
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://agate.newsroom.backfield.news/v1/projects/2/api-keys",
+      expect.objectContaining({
+        credentials: "include",
+        referrerPolicy: "no-referrer",
+      }),
     )
   })
 

@@ -28,10 +28,13 @@ import {
 } from '@/lib/review/content/detailTab'
 import {
   RERUN_WARNING_TITLE,
+  promptFlowRerun,
   reconciliationPolicyFromGraph,
   rerunWarningBody,
+  shouldOfferUpdatedFlow,
 } from '@/lib/rerunWarning'
 import {
+  flowChangedSinceRun,
   graphSpecSnapshotJsonFromRun,
   resolveRunGraphSpecForDisplay,
 } from '@/lib/runGraphSpec'
@@ -63,7 +66,7 @@ const PROCESSED_ITEM_TAB_LABELS: Record<ProcessedItemDetailTab, string> = {
 }
 
 export default function ProcessedItemDetail() {
-  const { showError, showConfirm, showMessage } = useAppMessage()
+  const { showError, showConfirm, showConfirmChoice, showMessage } = useAppMessage()
   const { runId, itemId } = useParams<{ runId: string; itemId: string }>()
   const navigate = useNavigate()
   const location = useLocation()
@@ -648,18 +651,38 @@ export default function ProcessedItemDetail() {
                   snapshotJson,
                   graph?.spec,
                 )
-                const policy = reconciliationPolicyFromGraph({ spec: runTimeSpec ?? undefined })
-                const ok = await showConfirm(rerunWarningBody(1, { flowName: graph?.name, policy }), {
-                  title: RERUN_WARNING_TITLE,
-                  confirmLabel: 'Rerun',
-                  destructive: policy === 'replace',
+                const originalPolicy = reconciliationPolicyFromGraph({
+                  spec: runTimeSpec ?? undefined,
                 })
-                if (!ok) return
+                const updatedPolicy = reconciliationPolicyFromGraph(graph)
+                const flowChanged = flowChangedSinceRun(
+                  snapshotJson,
+                  graph?.spec ? JSON.stringify(graph.spec) : null,
+                  run?.flow_changed_since_run,
+                )
+                const offerUpdatedFlow = shouldOfferUpdatedFlow(flowChanged)
+                const decision = await promptFlowRerun({
+                  flowChanged,
+                  title: RERUN_WARNING_TITLE,
+                  unchangedConfirmLabel: 'Rerun',
+                  description: rerunWarningBody(1, {
+                    flowName: graph?.name,
+                    policy: originalPolicy,
+                    offerUpdatedFlow,
+                  }),
+                  originalPolicy,
+                  updatedPolicy,
+                  showConfirm,
+                  showConfirmChoice,
+                })
+                if (!decision) return
                 rerunSawInFlightRef.current = false
                 setRerunRequested(true)
                 try {
                   setRerunning(true)
-                  const rerunRes = await rerunProcessedItem(runId, parseInt(itemId, 10))
+                  const rerunRes = await rerunProcessedItem(runId, parseInt(itemId, 10), {
+                    useCurrentFlow: decision === 'updated',
+                  })
                   if (rerunRes.status === 'pending' || rerunRes.status === 'running') {
                     rerunSawInFlightRef.current = true
                     setItem((prev) =>

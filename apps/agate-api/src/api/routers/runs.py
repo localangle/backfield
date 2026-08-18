@@ -73,7 +73,7 @@ from backfield_events import (
 from backfield_observability.celery_publish import register_publish_timestamp_hook
 from backfield_observability.lifecycle import api_identity, emit_item_terminal, emit_run_terminal
 from celery import Celery
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import case, delete, desc, func, or_, update
 from sqlmodel import Session, asc, col, select
@@ -341,6 +341,12 @@ class ProcessedItemOverlayPatchIn(BaseModel):
     overlay: dict[str, Any]
 
 
+class UseCurrentFlowBody(BaseModel):
+    """Optional body for rerun and replay: execute the current saved flow."""
+
+    use_current_flow: bool = False
+
+
 class RerunItemResponse(BaseModel):
     """Response when re-queuing a single batch processed item."""
 
@@ -436,6 +442,41 @@ def _run_graph_spec_snapshot_json(run: AgateRun) -> str | None:
     if isinstance(snap, str) and snap.strip():
         return snap
     return None
+
+
+def _use_current_flow(body: UseCurrentFlowBody | None) -> bool:
+    return bool(body and body.use_current_flow)
+
+
+def _live_graph_spec_json(session: Session, graph_id: str) -> str:
+    graph = session.get(AgateGraph, graph_id)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Graph not found")
+    return graph.spec_json
+
+
+def _send_execute_processed_item(item_id: int, spec_json: str | None = None) -> None:
+    kwargs: dict[str, Any] = {}
+    if spec_json:
+        kwargs["spec_json"] = spec_json
+    celery_app.send_task(
+        "worker.tasks.execute_processed_item",
+        args=[item_id],
+        kwargs=kwargs,
+        queue=_celery_queue(),
+    )
+
+
+def _send_execute_agate_run(run_id: str, spec_json: str | None = None) -> None:
+    kwargs: dict[str, Any] = {}
+    if spec_json:
+        kwargs["spec_json"] = spec_json
+    celery_app.send_task(
+        "worker.tasks.execute_agate_run",
+        args=[run_id],
+        kwargs=kwargs,
+        queue=_celery_queue(),
+    )
 
 
 def _s3_batch_summary_from_run(run: AgateRun) -> S3BatchSummaryOut | None:
@@ -1165,6 +1206,7 @@ def replay_run(
     run_id: str,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
+    body: UseCurrentFlowBody | None = Body(default=None),
 ):
     """Create a new run that replays the source run's pinned flow settings and item inputs."""
     source = session.get(AgateRun, run_id)
@@ -1177,7 +1219,11 @@ def replay_run(
     if graph is None:
         raise HTTPException(status_code=404, detail="Graph not found")
 
-    snapshot_json = _resolved_run_snapshot_json(session, source)
+    snapshot_json = (
+        graph.spec_json
+        if _use_current_flow(body)
+        else _resolved_run_snapshot_json(session, source)
+    )
     replayable = _replayable_processed_items(session, source.id)
 
     new_run = AgateRun(
@@ -2404,6 +2450,7 @@ def rerun_run_processed_item(
     item_id: int,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
+    body: UseCurrentFlowBody | None = Body(default=None),
 ) -> RerunItemResponse:
     """Re-queue processing for one item or a whole-graph run.
 
@@ -2418,6 +2465,10 @@ def rerun_run_processed_item(
     if pid:
         require_project_access(session, auth, pid)
 
+    spec_override: str | None = None
+    if _use_current_flow(body):
+        spec_override = _live_graph_spec_json(session, r.graph_id)
+
     if _is_synthetic_whole_graph_item_view(session, run_id, item_id):
         snapshot = _run_graph_spec_snapshot_json(r)
         if r.status in ("succeeded", "failed", "timed_out"):
@@ -2425,18 +2476,15 @@ def rerun_run_processed_item(
             r.execution_attempt = int(r.execution_attempt or 1) + 1
         r.status = "pending"
         r.error_message = None
-        r.result_json = (
-            merge_run_result_payload(None, graph_spec_json=snapshot) if snapshot else None
-        )
+        if spec_override is None:
+            r.result_json = (
+                merge_run_result_payload(None, graph_spec_json=snapshot) if snapshot else None
+            )
         r.updated_at = datetime.now(UTC)
         session.add(r)
         session.commit()
         session.refresh(r)
-        celery_app.send_task(
-            "worker.tasks.execute_agate_run",
-            args=[r.id],
-            queue=_celery_queue(),
-        )
+        _send_execute_agate_run(r.id, spec_json=spec_override)
         return RerunItemResponse(
             item_id=1,
             run_id=r.id,
@@ -2472,11 +2520,7 @@ def rerun_run_processed_item(
     session.commit()
     session.refresh(item)
 
-    celery_app.send_task(
-        "worker.tasks.execute_processed_item",
-        args=[item.id],
-        queue=_celery_queue(),
-    )
+    _send_execute_processed_item(int(item.id), spec_json=spec_override)
 
     iid = item.id
     if iid is None:

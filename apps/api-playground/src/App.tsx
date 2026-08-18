@@ -19,6 +19,18 @@ import {
   parsePlaygroundHost,
 } from "./lib/origin"
 import {
+  API_KEY_ACTIVE_SESSION_STORAGE,
+  displayLabelForSecret,
+  fetchAccessibleProjectApiKeyMetadata,
+  forgetAllProjectApiKeys,
+  projectApiKeyPrefix,
+  readRememberedApiKeys,
+  rememberApiKey,
+  secretForPrefix,
+  writeRememberedApiKeys,
+  type ProjectApiKeyMetadata,
+} from "./lib/projectApiKeys"
+import {
   fetchPlatformContext,
   logoutSession,
   SessionAuthRequiredError,
@@ -31,7 +43,6 @@ interface OperationGroup {
   operations: PlaygroundOperation[]
 }
 
-const API_KEY_SESSION_STORAGE = "backfield-playground-project-api-key"
 const SELECTED_OPERATION_SESSION_STORAGE = "backfield-playground-selected-operation"
 const ENDPOINT_FILTER_SESSION_STORAGE = "backfield-playground-endpoint-filter"
 const EXPANDED_GROUPS_SESSION_STORAGE = "backfield-playground-expanded-groups"
@@ -76,6 +87,42 @@ function isPlaygroundHomePath(pathname: string): boolean {
   return normalized === "/"
 }
 
+function RememberedKeySelect({
+  id,
+  secrets,
+  activeSecret,
+  metadata,
+  onSelect,
+}: {
+  id: string
+  secrets: string[]
+  activeSecret: string
+  metadata: ProjectApiKeyMetadata[]
+  onSelect: (secret: string) => void
+}) {
+  return (
+    <select
+      id={id}
+      aria-label="Remembered keys"
+      value={activeSecret ? projectApiKeyPrefix(activeSecret) : ""}
+      onChange={(event) => {
+        const next = secretForPrefix(secrets, event.target.value)
+        if (next) onSelect(next)
+      }}
+    >
+      {!activeSecret && <option value="">Select a remembered key</option>}
+      {secrets.map((secret) => {
+        const prefix = projectApiKeyPrefix(secret)
+        return (
+          <option key={prefix} value={prefix}>
+            {displayLabelForSecret(secret, metadata)}
+          </option>
+        )
+      })}
+    </select>
+  )
+}
+
 export default function App() {
   if (!isPlaygroundHomePath(window.location.pathname)) {
     return <NotFound />
@@ -106,8 +153,12 @@ function PlaygroundHome() {
   // Local Compose exposes Core session routes on :8004. Cloud keeps /v1 session
   // and admin routes on the Agate UI host; api.* only serves /public/v1.
   const sessionOrigin = localAvailable ? apiOrigin : agateOrigin
-  const [apiKey, setApiKey] = useState(() => readSessionValue(API_KEY_SESSION_STORAGE))
-  const [apiKeyDraft, setApiKeyDraft] = useState(apiKey)
+  const [rememberedKeys, setRememberedKeys] = useState(readRememberedApiKeys)
+  const [apiKey, setApiKey] = useState(() =>
+    readSessionValue(API_KEY_ACTIVE_SESSION_STORAGE),
+  )
+  const [apiKeyDraft, setApiKeyDraft] = useState("")
+  const [keyMetadata, setKeyMetadata] = useState<ProjectApiKeyMetadata[]>([])
   const [document, setDocument] = useState<OpenApiDocument>()
   const [platformContext, setPlatformContext] = useState<PlatformContext>()
   const [sessionError, setSessionError] = useState("")
@@ -133,14 +184,35 @@ function PlaygroundHome() {
   useEffect(() => {
     try {
       if (apiKey) {
-        sessionStorage.setItem(API_KEY_SESSION_STORAGE, apiKey)
+        sessionStorage.setItem(API_KEY_ACTIVE_SESSION_STORAGE, apiKey)
       } else {
-        sessionStorage.removeItem(API_KEY_SESSION_STORAGE)
+        sessionStorage.removeItem(API_KEY_ACTIVE_SESSION_STORAGE)
       }
     } catch {
       // Storage may be unavailable; the key remains usable in memory for this page.
     }
   }, [apiKey])
+
+  useEffect(() => {
+    writeRememberedApiKeys(rememberedKeys)
+  }, [rememberedKeys])
+
+  useEffect(() => {
+    if (!sessionOrigin || !platformContext) {
+      setKeyMetadata([])
+      return
+    }
+    const projects = platformContext.workspaces.flatMap((workspace) => workspace.projects)
+    let cancelled = false
+    void fetchAccessibleProjectApiKeyMetadata(sessionOrigin, projects)
+      .then((rows) => {
+        if (!cancelled) setKeyMetadata(rows)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [platformContext, sessionOrigin])
 
   useEffect(() => {
     try {
@@ -296,7 +368,7 @@ function PlaygroundHome() {
   }
 
   async function logout() {
-    clearApiKey()
+    forgetAllKeys()
     if (sessionOrigin) {
       await logoutSession(sessionOrigin)
     }
@@ -314,7 +386,7 @@ function PlaygroundHome() {
       throw new Error("Could not switch organizations.")
     }
     await switchOrganization(sessionOrigin, nextOrganizationId)
-    clearApiKey()
+    forgetAllKeys()
     if (localAvailable) {
       window.location.reload()
       return
@@ -322,14 +394,29 @@ function PlaygroundHome() {
     window.location.assign(`${derivePlaygroundOrigin(selected.slug, parentDomain)}/`)
   }
 
+  function applyApiKey(secret: string) {
+    const trimmed = secret.trim()
+    if (!trimmed) return
+    setRememberedKeys((current) => rememberApiKey(trimmed, current))
+    setApiKey(trimmed)
+    setApiKeyDraft("")
+  }
+
   function clearApiKey() {
     setApiKey("")
     setApiKeyDraft("")
     try {
-      sessionStorage.removeItem(API_KEY_SESSION_STORAGE)
+      sessionStorage.removeItem(API_KEY_ACTIVE_SESSION_STORAGE)
     } catch {
       // Storage may be unavailable; in-memory state is still cleared above.
     }
+  }
+
+  function forgetAllKeys() {
+    setRememberedKeys([])
+    setApiKey("")
+    setApiKeyDraft("")
+    forgetAllProjectApiKeys()
   }
 
   return (
@@ -405,6 +492,15 @@ function PlaygroundHome() {
                 </div>
               </div>
               <div className="connection-compact-actions">
+                {rememberedKeys.length > 0 && (
+                  <RememberedKeySelect
+                    id="remembered-api-key-compact"
+                    secrets={rememberedKeys}
+                    activeSecret={apiKey}
+                    metadata={keyMetadata}
+                    onSelect={setApiKey}
+                  />
+                )}
                 <button
                   className="secondary-button"
                   type="button"
@@ -439,9 +535,25 @@ function PlaygroundHome() {
                 </div>
               </div>
               <div className="connection-grid connection-grid-key-only">
+                {rememberedKeys.length > 0 && (
+                  <div className="field">
+                    <label htmlFor="remembered-api-key">
+                      <span className="field-name">Remembered keys</span>
+                    </label>
+                    <RememberedKeySelect
+                      id="remembered-api-key"
+                      secrets={rememberedKeys}
+                      activeSecret={apiKey}
+                      metadata={keyMetadata}
+                      onSelect={setApiKey}
+                    />
+                  </div>
+                )}
                 <div className="field">
                   <label htmlFor="project-api-key">
-                    <span className="field-name">Project API key</span>
+                    <span className="field-name">
+                      {rememberedKeys.length > 0 ? "Paste another key" : "Project API key"}
+                    </span>
                   </label>
                   <div className="secret-row">
                     <input
@@ -467,7 +579,7 @@ function PlaygroundHome() {
                   className="connect-button"
                   type="button"
                   disabled={!apiKeyDraft.trim()}
-                  onClick={() => setApiKey(apiKeyDraft.trim())}
+                  onClick={() => applyApiKey(apiKeyDraft)}
                 >
                   Use API key
                 </button>

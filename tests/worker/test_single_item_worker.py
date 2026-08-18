@@ -121,6 +121,41 @@ def test_execute_processed_item_text_input_shim(single_engine, monkeypatch):
         assert len(wrap["items"]) == 1
 
 
+def test_execute_processed_item_spec_json_override_wins_over_run_snapshot(
+    single_engine, monkeypatch
+):
+    engine, item_id, run_id = single_engine
+    monkeypatch.setattr(
+        worker_tasks,
+        "merge_project_and_org_llm_api_keys",
+        lambda *_a, **_k: {},
+    )
+    bad_snapshot = json.dumps(
+        {
+            "name": "broken",
+            "nodes": [{"id": "x", "type": "NotARealNode", "params": {}}],
+            "edges": [],
+        }
+    )
+    with Session(engine) as s:
+        run = s.get(AgateRun, run_id)
+        assert run is not None
+        run.result_json = json.dumps({"graph_spec_json": bad_snapshot})
+        s.add(run)
+        s.commit()
+
+    worker_tasks.execute_processed_item(item_id, spec_json=_text_flow_spec())
+
+    with Session(engine) as s:
+        item = s.get(AgateProcessedItem, item_id)
+        assert item is not None
+        assert item.status == "succeeded"
+        run = s.get(AgateRun, run_id)
+        assert run is not None
+        wrap = json.loads(run.result_json or "{}")
+        assert json.loads(wrap["graph_spec_json"])["name"] == "broken"
+
+
 def test_worker_cannot_store_output_after_cancellation(single_engine):
     engine, item_id, run_id = single_engine
     claimed_at = datetime.now(UTC)

@@ -806,9 +806,15 @@ export async function createRun(graphId: string | number, data: RunCreate = {}):
   return normalizeRun(raw)
 }
 
-export async function replayRun(runId: string): Promise<Run> {
+export async function replayRun(
+  runId: string,
+  options: { useCurrentFlow?: boolean } = {},
+): Promise<Run> {
   const raw = (await fetchAPI(`/runs/${runId}/replay`, {
     method: 'POST',
+    body: JSON.stringify(
+      options.useCurrentFlow ? { use_current_flow: true } : {},
+    ),
   })) as RawRun
   return normalizeRun(raw)
 }
@@ -1139,10 +1145,14 @@ export interface RerunItemResponse {
 
 export async function rerunProcessedItem(
   runId: string | number,
-  itemId: number
+  itemId: number,
+  options: { useCurrentFlow?: boolean } = {},
 ): Promise<RerunItemResponse> {
   return fetchAPI(`/runs/${runId}/items/${itemId}/rerun`, {
     method: 'POST',
+    body: JSON.stringify(
+      options.useCurrentFlow ? { use_current_flow: true } : {},
+    ),
   }) as Promise<RerunItemResponse>
 }
 

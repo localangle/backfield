@@ -81,6 +81,9 @@ Deleting a flow removes its run-control records and detaches durable article row
   items, preserves completed items, and returns the same compact status shape used for polling.
   Repeating cancellation returns that terminal status without changing the run again.
 - Replay creates a new run from an existing run contract; item rerun requeues an existing processed item and clears its review state.
+- `POST /runs/{run_id}/replay` and `POST /runs/{run_id}/items/{item_id}/rerun` accept optional
+  JSON `{ "use_current_flow": true }` to execute the current saved flow. Omit the flag (the default)
+  to keep the run’s pinned spec. In-place item rerun does not replace that pin.
 
 For active runs, poll `GET /runs/{run_id}/status` and page summaries through `GET /runs/{run_id}/items`. Full `GET /runs/{run_id}` remains supported for callers that need the complete run response.
 
@@ -93,7 +96,8 @@ Important item routes are:
 - `GET /runs/{run_id}/items/{item_id}` for input, immutable execution output, review state, enriched review lanes, article context, indexing state, connection state, and item cost;
 - `PATCH /runs/{run_id}/items/{item_id}` to replace the review overlay with optimistic concurrency;
 - article metadata create, update, and delete routes below the item;
-- `POST …/rerun` to requeue the item and clear overlay and reviewed output;
+- `POST …/rerun` to requeue the item and clear overlay and reviewed output (optional
+  `{ "use_current_flow": true }` runs the current saved flow without replacing the run pin);
 - `POST …/s3-sync` to overwrite the item's recorded S3 Output object with reviewed output when present.
 
 Synthetic `items/1` views support whole-flow runs that have no stored processed-item row. They are readable, but mutations that require an `agate_processed_item` row reject them.

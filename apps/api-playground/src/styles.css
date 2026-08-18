@@ -239,6 +239,15 @@ pre,
   gap: 8px;
 }
 
+.connection-compact-actions select {
+  width: auto;
+  min-width: 12rem;
+  max-width: 18rem;
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 0.8125rem;
+}
+
 .connection-compact-actions .secondary-button {
   min-height: 34px;
   padding: 6px 10px;

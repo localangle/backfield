@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createProject } from './api'
+import { createProject, replayRun, rerunProcessedItem } from './api'
 
 function stubFetch() {
   const fetchMock = vi.fn(
@@ -46,5 +46,17 @@ describe('createProject', () => {
     await createProject({ name: 'Investigations', workspace_id: 3, stylebook_id: null })
 
     expect(sentBody(fetchMock)).not.toHaveProperty('stylebook_id')
+  })
+})
+
+describe('rerun and replay current flow', () => {
+  it('omits use_current_flow unless the caller chose the updated flow', async () => {
+    const fetchMock = stubFetch()
+    await rerunProcessedItem('run-1', 9)
+    expect(sentBody(fetchMock)).toEqual({})
+
+    const replayMock = stubFetch()
+    await replayRun('run-1', { useCurrentFlow: true })
+    expect(sentBody(replayMock)).toEqual({ use_current_flow: true })
   })
 })
