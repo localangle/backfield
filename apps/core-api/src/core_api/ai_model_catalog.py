@@ -17,6 +17,7 @@ from backfield_ai.constants import (
     DEFAULT_AI_CURRENCY,
     is_project_model_override_integration_key,
 )
+from backfield_ai.curated_catalog import list_curated_templates
 from backfield_ai.litellm_model import (
     effective_litellm_model_row,
     litellm_model_cost_lookup_keys,
@@ -29,7 +30,6 @@ from backfield_db import (
     BackfieldOrganizationIntegrationSecret,
 )
 from backfield_db.crypto import decrypt_secret
-from backfield_db.curated_ai_models import CURATED_TEMPLATES
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
@@ -133,7 +133,7 @@ class AiModelConfigPatchBody(BaseModel):
 
 
 def list_curated_options_out() -> list[CuratedAiModelOptionOut]:
-    templates = list(CURATED_TEMPLATES.values())
+    templates = list(list_curated_templates().values())
     return [
         CuratedAiModelOptionOut(
             curated_id=t.template_id,
@@ -383,7 +383,7 @@ def create_org_model_config(
                 status_code=400,
                 detail="Curated presets must not set litellm_model",
             )
-        tmpl = CURATED_TEMPLATES.get(body.curated_id.strip())
+        tmpl = list_curated_templates().get(body.curated_id.strip())
         if tmpl is None:
             raise HTTPException(status_code=400, detail="Unknown curated_id")
         model_kind = _validate_model_kind(tmpl.model_kind)

@@ -1,0 +1,58 @@
+name: Upgrade LiteLLM
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  upgrade:
+    if: github.repository == 'localangle/backfield'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+      - name: Upgrade LiteLLM lockfile
+        run: make upgrade-litellm
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- uv.lock; then
+            echo "LiteLLM lockfile already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          branch="chore/upgrade-litellm"
+          git checkout -B "$branch"
+          git add uv.lock
+          git commit -m "$(cat <<'EOF'
+          chore: upgrade LiteLLM
+
+          Weekly lockfile bump so routing and cost maps stay current. CI is the merge gate.
+          EOF
+          )"
+          git push --force origin "$branch"
+          if [ "$(gh pr list --head "$branch" --state open --json number --jq 'length')" = "0" ]; then
+            gh pr create \
+              --title "chore: upgrade LiteLLM" \
+              --body "$(cat <<'EOF'
+          ## Summary
+          - Refresh `uv.lock` to the latest LiteLLM matching `packages/backfield-ai`.
+          - Flagship Settings presets are generated at runtime from LiteLLM's cost map; this PR updates the SDK used for routing and bundled fallback prices.
+
+          ## Test plan
+          - [ ] CI lint/test on this PR is green
+          - [ ] Do not raise the `litellm>=` floor unless an old version is actually broken
+          EOF
+          )"
+          fi

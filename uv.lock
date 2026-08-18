@@ -393,6 +393,7 @@ name = "backfield-cli"
 version = "0.1.0"
 source = { editable = "packages/backfield-cli" }
 dependencies = [
+    { name = "backfield-ai" },
     { name = "backfield-auth" },
     { name = "backfield-db" },
     { name = "cryptography" },
@@ -402,6 +403,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "backfield-ai", editable = "packages/backfield-ai" },
     { name = "backfield-auth", editable = "packages/backfield-auth" },
     { name = "backfield-db", editable = "packages/backfield-db" },
     { name = "cryptography", specifier = ">=42.0.0" },

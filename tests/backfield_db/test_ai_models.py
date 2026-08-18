@@ -14,7 +14,7 @@ from backfield_db import (
     BackfieldAiProjectModelOverride,
     BackfieldOrganizationIntegrationSecret,
 )
-from backfield_db.curated_ai_models import CURATED_TEMPLATES
+from backfield_db.curated_ai_models import CuratedAiModelTemplate
 from sqlalchemy import CheckConstraint, Numeric, UniqueConstraint
 
 
@@ -45,41 +45,16 @@ def test_ai_table_names_use_shared_backfield_prefix() -> None:
     assert BackfieldAiCallRecord.__tablename__ == "backfield_ai_call_record"
 
 
-def test_shared_curated_catalog_preserves_every_preset_and_order() -> None:
-    assert tuple(CURATED_TEMPLATES) == (
-        "openai:gpt-5.6",
-        "openai:gpt-5.6-sol",
-        "openai:gpt-5.6-terra",
-        "openai:gpt-5.6-luna",
-        "openai:gpt-5.5",
-        "openai:gpt-5.4",
-        "openai:gpt-5.4-mini",
-        "openai:gpt-5.4-nano",
-        "openai:gpt-5",
-        "openai:gpt-5-mini",
-        "openai:gpt-5-nano",
-        "openai:gpt-4.1",
-        "openai:gpt-4.1-mini",
-        "anthropic:claude-opus-4-6",
-        "anthropic:claude-sonnet-4-6",
-        "anthropic:claude-opus-4-5",
-        "anthropic:claude-sonnet-4-5",
-        "anthropic:claude-opus-4-1",
-        "anthropic:claude-sonnet-4",
-        "anthropic:claude-3-7-sonnet-20250219",
-        "gemini:gemini-2.5-pro",
-        "gemini:gemini-2.5-flash",
-        "gemini:gemini-2.5-flash-lite",
-        "gemini:gemini-2.0-flash",
-        "openrouter:qwen-qwen3.6-plus",
-        "openrouter:qwen-qwen3.6-35b-a3b",
-        "openrouter:qwen-qwen3-235b-a22b-2507",
-        "openrouter:deepseek-deepseek-r1",
-        "openrouter:deepseek-deepseek-v3.2",
-        "mistral:mistral-large-latest",
-        "openai:text-embedding-3-small",
-        "openai:text-embedding-3-large",
+def test_curated_template_shape_is_shared_package_data() -> None:
+    template = CuratedAiModelTemplate(
+        template_id="openai:gpt-5-nano",
+        provider="openai",
+        provider_model_id="gpt-5-nano",
+        label="GPT-5 Nano",
+        capabilities=("text", "json"),
     )
+    assert template.model_kind == "generative"
+    assert template.template_id == "openai:gpt-5-nano"
 
 
 def test_organization_integration_secret_org_scoped_keys() -> None:

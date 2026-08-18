@@ -38,8 +38,8 @@ Redis and Celery.
 - `packages/backfield-entities` owns entity registry, catalog resolution, matching and
   canonicalization policy, public entity queries, ingest settings, connections, cleanup, and
   semantic-document synchronization.
-- `packages/backfield-ai` owns model resolution, LiteLLM integration, embeddings, and AI call
-  accounting.
+- `packages/backfield-ai` owns model resolution, LiteLLM integration, embeddings, AI call
+  accounting, and the flagship curated preset list generated from LiteLLM's model catalog.
 - `packages/backfield-events` owns event contracts and envelopes, webhook payload signing,
   event-feed cursors, destination (SSRF) validation, transactional run-event recording, and
   delivery claim/terminalize helpers. It stays HTTP-free; transport lives in the worker. See
@@ -77,7 +77,7 @@ backfield-auth -> backfield-db
 backfield-ai -> backfield-db
 backfield-entities -> backfield-db
 backfield-events -> backfield-db
-backfield-cli -> backfield-db
+backfield-cli -> backfield-ai, backfield-auth, backfield-db
 backfield-observability -> (stdlib / typing only; no DB)
 ```
 

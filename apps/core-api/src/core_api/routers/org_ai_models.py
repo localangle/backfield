@@ -29,7 +29,7 @@ def get_ai_model_curated_options(
     session: Session = Depends(get_session),
     auth: dict = Depends(get_auth),
 ) -> list[CuratedAiModelOptionOut]:
-    """Curated OpenAI and Anthropic presets for quick catalog setup."""
+    """Flagship presets derived from LiteLLM for quick catalog setup."""
     require_org_admin(session, auth, org_id)
     return list_curated_options_out()
 

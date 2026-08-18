@@ -44,11 +44,11 @@ All schema changes use the single Alembic chain under `packages/backfield-db/ale
   `backfield_organization_integration_secret`.
 - Shared AI catalog and accounting: `backfield_ai_model_config`,
   `backfield_ai_project_model_override`, `backfield_ai_default_model_role`,
-  `backfield_ai_call_record`. Curated preset metadata is Backfield-owned shared package data;
-  provisioning snapshots only the operator's explicit selection into organization-owned rows.
-  The immutable preset registry lives in `backfield-db`, the lowest package shared by provisioning
-  and Core API; this avoids either package depending upward on an application or on `backfield-ai`,
-  which already depends on `backfield-db`.
+  `backfield_ai_call_record`. Curated preset *shape* is shared package data in `backfield-db`;
+  the live flagship list is generated in `backfield-ai` from LiteLLM's model cost map.
+  Provisioning snapshots only the operator's explicit selection into organization-owned rows.
+  Core API and `backfield organization create` use the same generated catalog. `backfield-db`
+  does not import LiteLLM.
 
 ### Agate execution
 

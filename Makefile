@@ -14,7 +14,8 @@ DOCKER_BAKE_ENV := APP_VERSION=$(APP_VERSION) GIT_SHA=$(GIT_SHA) BUILD_TIME=$(BU
 	lint format test smoke smoke-fast smoke-observability \
 	ui-bootstrap ui-typecheck ui-test ui-build agate-ui-build stylebook-ui-build \
 	api-playground-bootstrap api-playground-lint api-playground-test api-playground-build \
-	docker-build-prod-apis docker-build-prod-worker
+	docker-build-prod-apis docker-build-prod-worker \
+	upgrade-litellm
 
 help:
 	@echo "Backfield"
@@ -44,6 +45,9 @@ help:
 	@echo "Deploy builds"
 	@echo "  make ui-build            - Production-build all UIs (includes typecheck)"
 	@echo "  make docker-build-prod-apis / docker-build-prod-worker"
+	@echo ""
+	@echo "Dependencies"
+	@echo "  make upgrade-litellm     - Refresh uv.lock to the latest LiteLLM"
 
 # --- Local stack -------------------------------------------------------------
 
@@ -186,3 +190,6 @@ docker-build-prod-apis:
 
 docker-build-prod-worker:
 	$(DOCKER_BAKE_ENV) docker buildx bake worker --load
+
+upgrade-litellm:
+	uv lock --upgrade-package litellm

@@ -89,6 +89,9 @@ Important contracts:
 
 - Secret responses expose metadata only; plaintext and ciphertext are never returned.
 - Custom model credentials must belong to the same organization as the model.
+- Organization `curated-options` are flagship presets generated from LiteLLM's model catalog, not a
+  hardcoded id list. Creating from `curated_id` still snapshots provider, model id, and capabilities
+  onto the organization catalog row.
 - Project overrides do not alter the organization catalog.
 - Deleting a model or credential clears dependent selections while retaining historical AI call records without the removed foreign key.
 - Secret writes require the configured master encryption key.

@@ -57,6 +57,7 @@ def register_subcommand(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _run_create(args: argparse.Namespace) -> int:
+    from backfield_ai.curated_catalog import list_curated_templates
     from backfield_db.organization_provisioning import (
         OrganizationProvisioningRequest,
         StarterResourceInput,
@@ -88,7 +89,11 @@ def _run_create(args: argparse.Namespace) -> int:
             curated_model_ids=tuple(args.curated_models),
         )
         passwords = load_temporary_passwords(args.temporary_password_file)
-        report = run_organization_provisioning(request, passwords)
+        report = run_organization_provisioning(
+            request,
+            passwords,
+            templates=list_curated_templates(),
+        )
     except (ValidationError, ValueError) as exc:
         logger.error("%s", exc)
         return 1

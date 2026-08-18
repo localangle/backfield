@@ -16,7 +16,7 @@ export const SEMANTIC_EMBEDDING_DEFAULT_ROLE = 'semantic.embedding'
 /** Core API role for the project default generative model (HyDE, headless LLM uses). */
 export const GENERATIVE_DEFAULT_ROLE = 'generative.default'
 
-/** Curated embedding presets shipped by Core API (`CURATED_TEMPLATES`). */
+/** Known embedding preset ids (API `model_kind` is authoritative). */
 export const EMBEDDING_CURATED_PRESET_IDS = [
   'openai:text-embedding-3-small',
   'openai:text-embedding-3-large',

@@ -146,9 +146,11 @@ Project and organization integration resolution can supply:
 
 Configure AI credentials through **Settings → AI models** and platform credentials through
 **Settings → Integrations**. Project overrides take precedence over organization integrations.
-Container environment keys remain available for unattended CI and operator compatibility, but are
-not the normal credential-management path. `STYLEBOOK_API_URL`, `PROJECT_SLUG`, and
-`SERVICE_API_TOKEN` enable worker/node access to Stylebook caching and APIs.
+The Settings preset dropdown is generated from LiteLLM's model cost map at process start. LiteLLM
+fetches that map from GitHub unless `LITELLM_LOCAL_MODEL_COST_MAP=true`, which forces the JSON
+bundled in the installed package. Container environment keys remain available for unattended CI and
+operator compatibility, but are not the normal credential-management path. `STYLEBOOK_API_URL`,
+`PROJECT_SLUG`, and `SERVICE_API_TOKEN` enable worker/node access to Stylebook caching and APIs.
 
 Overpass controls:
 

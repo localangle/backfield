@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from pathlib import Path
 
 from pydantic import (
@@ -16,10 +17,7 @@ from pydantic import (
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
-from backfield_db.curated_ai_models import (
-    CURATED_TEMPLATES,
-    CuratedAiModelTemplate,
-)
+from backfield_db.curated_ai_models import CuratedAiModelTemplate
 from backfield_db.models import (
     BackfieldAiModelConfig,
     BackfieldOrganization,
@@ -100,9 +98,6 @@ class OrganizationProvisioningRequest(BaseModel):
             raise ValueError("curated model ids must not be empty")
         if len(set(normalized)) != len(normalized):
             raise ValueError("curated model ids must be unique")
-        unknown = sorted(set(normalized) - CURATED_TEMPLATES.keys())
-        if unknown:
-            raise ValueError(f"Unknown curated model ids: {', '.join(unknown)}")
         return normalized
 
     @model_validator(mode="after")
@@ -163,6 +158,17 @@ class OrganizationProvisioningReport(BaseModel):
 
     def to_json(self) -> str:
         return self.model_dump_json()
+
+
+def resolve_selected_templates(
+    selected_ids: tuple[str, ...],
+    templates: Mapping[str, CuratedAiModelTemplate],
+) -> tuple[CuratedAiModelTemplate, ...]:
+    """Resolve operator-selected curated ids against a caller-supplied catalog."""
+    unknown = sorted(set(selected_ids) - set(templates))
+    if unknown:
+        raise ValueError(f"Unknown curated model ids: {', '.join(unknown)}")
+    return tuple(templates[model_id] for model_id in selected_ids)
 
 
 def load_temporary_passwords(path: str | Path) -> TemporaryPasswordInput:
@@ -291,13 +297,14 @@ def _validate_existing_models(
     *,
     organization_id: int,
     selected_ids: tuple[str, ...],
+    templates: Mapping[str, CuratedAiModelTemplate],
 ) -> tuple[str, ...]:
     rows = session.exec(
         select(BackfieldAiModelConfig)
         .where(BackfieldAiModelConfig.organization_id == organization_id)
         .order_by(col(BackfieldAiModelConfig.name))
     ).all()
-    expected = {CURATED_TEMPLATES[model_id].label: model_id for model_id in selected_ids}
+    expected = {templates[model_id].label: model_id for model_id in selected_ids}
     if len(rows) != len(expected):
         raise _conflict(
             "Existing organization AI catalog does not match the requested curated snapshot"
@@ -305,7 +312,7 @@ def _validate_existing_models(
     model_config_ids: list[str] = []
     for row in rows:
         model_id = expected.get(str(row.name))
-        if model_id is None or not _model_matches_template(row, CURATED_TEMPLATES[model_id]):
+        if model_id is None or not _model_matches_template(row, templates[model_id]):
             raise _conflict(
                 "Existing organization AI catalog does not match the requested curated snapshot"
             )
@@ -352,6 +359,7 @@ def _validate_existing_organization(
     session: Session,
     request: OrganizationProvisioningRequest,
     organization: BackfieldOrganization,
+    templates: Mapping[str, CuratedAiModelTemplate],
 ) -> OrganizationProvisioningReport:
     _require_resource_match(
         resource="organization",
@@ -399,6 +407,7 @@ def _validate_existing_organization(
         session,
         organization_id=organization_id,
         selected_ids=request.curated_model_ids,
+        templates=templates,
     )
     return OrganizationProvisioningReport(
         organization_id=organization_id,
@@ -461,6 +470,7 @@ def _create_organization(
     session: Session,
     request: OrganizationProvisioningRequest,
     passwords: TemporaryPasswordInput,
+    templates: Mapping[str, CuratedAiModelTemplate],
 ) -> OrganizationProvisioningReport:
     organization = BackfieldOrganization(
         name=request.organization.name,
@@ -520,8 +530,7 @@ def _create_organization(
         )
 
     model_config_ids: list[str] = []
-    for model_id in request.curated_model_ids:
-        template = CURATED_TEMPLATES[model_id]
+    for template in resolve_selected_templates(request.curated_model_ids, templates):
         row = BackfieldAiModelConfig(
             organization_id=organization_id,
             name=template.label,
@@ -556,32 +565,35 @@ def provision_organization(
     session: Session,
     request: OrganizationProvisioningRequest,
     passwords: TemporaryPasswordInput,
+    templates: Mapping[str, CuratedAiModelTemplate],
 ) -> OrganizationProvisioningReport:
     """Create or verify starter rows within the caller-owned transaction.
 
     This function flushes as needed but never commits or rolls back. The caller owns the
     surrounding transaction and must roll it back after any exception.
     """
+    resolve_selected_templates(request.curated_model_ids, templates)
     organization = session.exec(
         select(BackfieldOrganization).where(
             BackfieldOrganization.slug == request.organization.slug
         )
     ).first()
     if organization is None:
-        return _create_organization(session, request, passwords)
-    return _validate_existing_organization(session, request, organization)
+        return _create_organization(session, request, passwords, templates)
+    return _validate_existing_organization(session, request, organization, templates)
 
 
 def run_organization_provisioning(
     request: OrganizationProvisioningRequest,
     passwords: TemporaryPasswordInput,
+    templates: Mapping[str, CuratedAiModelTemplate],
 ) -> OrganizationProvisioningReport:
     """Provision atomically through an isolated direct-database transaction."""
     engine = create_direct_engine()
     try:
         try:
             with Session(engine) as session, session.begin():
-                return provision_organization(session, request, passwords)
+                return provision_organization(session, request, passwords, templates)
         except IntegrityError:
             # A concurrent exact invocation may have committed the same organization first.
             with Session(engine) as winner_session, winner_session.begin():
@@ -598,6 +610,7 @@ def run_organization_provisioning(
                     winner_session,
                     request,
                     organization,
+                    templates,
                 )
     finally:
         engine.dispose()
