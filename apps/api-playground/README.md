@@ -66,17 +66,24 @@ operation remains in the API contract but is intentionally omitted from the Play
 - The public OpenAPI schema still loads without a project API key so every endpoint can be
   browsed once signed in. A project API key is required only to execute requests and load
   project-scoped field choices.
-- The project API key is held in React state and this tab's `sessionStorage`, so it survives a
-  reload but is discarded when the tab closes. It is never put in local storage, cookies, URL
+- Project API keys are pasted into this tab and held in React state plus `sessionStorage` (the
+  active secret and a tab-scoped vault of secrets this tab has already applied). They survive a
+  reload and are discarded when the tab closes. They are never put in local storage, cookies, URL
   state, analytics, request history, or third-party scripts. Public API requests omit browser
   credentials.
+- The remembered-key dropdown is that vault, labeled from session `GET /v1/projects/{id}/api-keys`
+  metadata (`label`, `key_prefix`, project name) when a pasted secret's prefix matches. Core does
+  not return `raw_key` on list, so Settings keys this tab has never pasted cannot be selected or
+  executed.
 - When a tab-scoped key is present after a reload, the Playground automatically reloads the public
   schema and restores the selected endpoint, endpoint filter, and expanded endpoint groups. Endpoint
   groups start collapsed, and searching temporarily reveals matching endpoints. Once loaded, the
-  connection form collapses to a compact schema status and reload/clear controls.
+  connection form collapses to a compact schema status, remembered-key selector, and reload/clear
+  controls.
 - The organization slug comes only from the Playground hostname. No organization selector, project
   slug, API key, request values, or response data is put in the URL.
-- Closing the tab clears the key. **Clear key** removes it immediately.
+- Closing the tab clears remembered secrets. **Clear key** unsets the active secret (the vault
+  remains so you can pick it again). Logout clears the vault.
 - Generated curl uses `$BACKFIELD_PROJECT_API_KEY` instead of printing the entered key.
 - The production build injects a restrictive Content Security Policy. `index.html` also sets
   `Referrer-Policy: no-referrer` through a meta policy, which works on any static host.

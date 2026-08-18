@@ -90,7 +90,21 @@ function sessionResponse(input: RequestInfo | URL): Response | undefined {
       headers: { "Content-Type": "application/json" },
     })
   }
+  if (/\/v1\/projects\/\d+\/api-keys$/.test(url)) {
+    return new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    })
+  }
   return undefined
+}
+
+const KEY_ONE = `bfk_${"a".repeat(40)}`
+const KEY_TWO = `bfk_${"b".repeat(40)}`
+
+function readVault(): string[] {
+  const raw = sessionStorage.getItem("backfield-playground-project-api-keys")
+  return raw ? (JSON.parse(raw) as string[]) : []
 }
 
 describe("API key handling", () => {
@@ -260,6 +274,7 @@ describe("API key handling", () => {
         sessionStorage.getItem("backfield-playground-project-api-key"),
       ).toBe("top-secret-key"),
     )
+    expect(readVault()).toEqual(["top-secret-key"])
 
     // A fresh mount models a reload in the same browser tab.
     firstRender.unmount()
@@ -271,6 +286,7 @@ describe("API key handling", () => {
     expect(screen.getByRole("heading", { name: "API schema loaded" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Reload schema" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Clear key" })).toBeInTheDocument()
+    expect(screen.getByLabelText("Remembered keys")).toBeInTheDocument()
     expect(screen.queryByLabelText(/Project API key/)).not.toBeInTheDocument()
     fireEvent.change(screen.getByLabelText(/project_slug/), {
       target: { value: "daily-news" },
@@ -315,6 +331,9 @@ describe("API key handling", () => {
         sessionStorage.getItem("backfield-playground-project-api-key"),
       ).toBeNull(),
     )
+    expect(readVault()).toEqual(["top-secret-key"])
+    expect(screen.getByLabelText("Remembered keys")).toBeInTheDocument()
+    expect(screen.getByLabelText("Paste another key")).toBeInTheDocument()
   })
 
   it("clears the project API key from storage and UI on logout", async () => {
@@ -351,11 +370,114 @@ describe("API key handling", () => {
 
     await waitFor(() => expect(assign).toHaveBeenCalled())
     expect(sessionStorage.getItem("backfield-playground-project-api-key")).toBeNull()
+    expect(sessionStorage.getItem("backfield-playground-project-api-keys")).toBeNull()
     expect(screen.queryByDisplayValue("logout-secret-key")).not.toBeInTheDocument()
+  })
+
+  it("lets the tab pick among remembered keys without listing unused Settings keys", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      const url = String(input)
+      if (url.endsWith("/v1/projects/2/api-keys")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                key_prefix: KEY_ONE.slice(0, 22),
+                label: "Local testing",
+                revoked_at: null,
+              },
+              {
+                key_prefix: KEY_TWO.slice(0, 22),
+                label: "Never pasted",
+                revoked_at: null,
+              },
+            ]),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        )
+      }
+      const session = sessionResponse(input)
+      if (session) return Promise.resolve(session)
+      if (url.endsWith("/openapi.json")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(schema), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        )
+      }
+      if (url.endsWith("/articles/facets")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ authors: [], external_sources: [] }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        )
+      }
+      if (init?.method === "GET" && url.includes("/articles/search")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: [] }), {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              "X-Request-ID": "request-456",
+            },
+          }),
+        )
+      }
+      return Promise.reject(new Error(`Unexpected request: ${url}`))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(<App />)
+    fireEvent.change(await screen.findByLabelText(/Project API key/), {
+      target: { value: KEY_ONE },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Use API key" }))
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Remembered keys")).toHaveTextContent(
+        "Daily News — Local testing",
+      ),
+    )
+    expect(screen.getByLabelText("Remembered keys")).not.toHaveTextContent("Never pasted")
+    expect(document.body.textContent).not.toContain(KEY_ONE)
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear key" }))
+    fireEvent.change(await screen.findByLabelText("Paste another key"), {
+      target: { value: KEY_TWO },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Use API key" }))
+
+    const switchedSelect = await screen.findByLabelText("Remembered keys")
+    await waitFor(() => expect(switchedSelect.querySelectorAll("option")).toHaveLength(2))
+    expect(readVault()).toEqual([KEY_ONE, KEY_TWO])
+    fireEvent.change(switchedSelect, { target: { value: KEY_ONE.slice(0, 22) } })
+    fireEvent.change(screen.getByLabelText(/project_slug/), {
+      target: { value: "daily-news" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Execute request" }))
+    expect(await screen.findByText("request-456")).toBeInTheDocument()
+
+    const apiRequest = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        String(input).includes("/articles/search") &&
+        new Headers(init?.headers).has("Authorization"),
+    )
+    expect(new Headers(apiRequest?.[1]?.headers).get("Authorization")).toBe(
+      `Bearer ${KEY_ONE}`,
+    )
+    expect(document.body.textContent).not.toContain(KEY_ONE)
+    expect(document.body.textContent).not.toContain(KEY_TWO)
+    expect(window.localStorage.getItem("backfield-playground-project-api-keys")).toBeNull()
   })
 })
 
 describe("tenant session host", () => {
+  beforeEach(() => {
+    sessionStorage.clear()
+  })
+
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
@@ -427,7 +549,13 @@ describe("tenant session host", () => {
 
     const requested = fetchMock.mock.calls.map(([input]) => String(input))
     expect(requested).toContain("https://agate.canary.stg.backfield.news/v1/auth/me")
+    expect(requested).toContain(
+      "https://agate.canary.stg.backfield.news/v1/projects/2/api-keys",
+    )
     expect(requested).toContain("https://api.canary.stg.backfield.news/public/v1/openapi.json")
     expect(requested).not.toContain("https://api.canary.stg.backfield.news/v1/auth/me")
+    expect(requested).not.toContain(
+      "https://api.canary.stg.backfield.news/v1/projects/2/api-keys",
+    )
   })
 })

@@ -87,6 +87,29 @@ async function sessionJson<T>(origin: string, path: string): Promise<T> {
   return (await response.json()) as T
 }
 
+export interface SessionProjectApiKey {
+  key_prefix?: string
+  label?: string | null
+  revoked_at?: string | null
+}
+
+/** Session-scoped project key metadata only — Core never returns `raw_key` on list. */
+export async function fetchProjectApiKeys(
+  origin: string,
+  projectId: number,
+): Promise<SessionProjectApiKey[]> {
+  const response = await fetch(`${origin}/v1/projects/${projectId}/api-keys`, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+    referrerPolicy: "no-referrer",
+  })
+  if (!response.ok) {
+    return []
+  }
+  const payload: unknown = await response.json()
+  return Array.isArray(payload) ? (payload as SessionProjectApiKey[]) : []
+}
+
 export async function logoutSession(coreOrigin: string): Promise<void> {
   try {
     await fetch(`${coreOrigin}/v1/auth/logout`, {
