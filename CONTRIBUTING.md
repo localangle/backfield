@@ -91,6 +91,8 @@ See [Testing](docs/development/testing.md) for layout and the fork-safe CI contr
 - Link the related issue when one exists.
 - Describe intent, risk, and how you validated the change.
 - Keep commits reviewable; force-pushes are fine on your feature branch before merge.
+- Public `/public/v1` changes should update the API Playground (`apps/api-playground`)
+  as well as the OpenAPI export; see [AGENTS.md](AGENTS.md).
 
 Maintainers may ask for smaller PRs, extra tests, or doc updates before merge.
 
