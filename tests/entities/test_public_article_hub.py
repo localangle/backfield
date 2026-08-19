@@ -24,6 +24,7 @@ from backfield_entities.public.article_hub import (
     article_hub_counts_batch,
     article_is_embedded,
     articles_embedded_batch,
+    inline_article_images_batch,
 )
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -247,3 +248,34 @@ def test_article_is_embedded_helpers() -> None:
         assert article_is_embedded(session, article_id=embedded_id) is True
         assert article_is_embedded(session, article_id=plain_id) is False
         assert articles_embedded_batch(session, [embedded_id, plain_id]) == {embedded_id}
+
+
+def test_inline_article_images_batch_caps_per_article() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project_id, _stylebook_id = _seed_stylebook(session)
+        first = SubstrateArticle(project_id=project_id, headline="One", text="a")
+        second = SubstrateArticle(project_id=project_id, headline="Two", text="b")
+        session.add(first)
+        session.add(second)
+        session.commit()
+        session.refresh(first)
+        session.refresh(second)
+        first_id = int(first.id)  # type: ignore[arg-type]
+        second_id = int(second.id)  # type: ignore[arg-type]
+        for index in range(3):
+            session.add(
+                SubstrateImage(
+                    article_id=first_id,
+                    image_id=f"img-{index}",
+                    url=f"https://example.com/{index}.jpg",
+                    caption=f"Photo {index}",
+                )
+            )
+        session.commit()
+
+        images = inline_article_images_batch(session, [first_id, second_id], cap=2)
+
+    assert [row.image_id for row in images[first_id]] == ["img-0", "img-1"]
+    assert images[second_id] == []

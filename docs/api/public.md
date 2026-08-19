@@ -142,9 +142,19 @@ Article keyword search accepts `sort=relevance|pub_date` and
 without `q`, the default is publication date descending. Relevance sorting
 requires a non-empty `q`. Responses echo the effective sort and direction.
 
-Canonical person, organization, and location article-list endpoints accept the same
-repeatable `meta` grammar plus `author`, `external_source`, and repeatable
-`include=counts`. Article-scoped people, organizations, and locations share
+`external_source` is the publication/outlet name (not the ingest pipeline). S3-backed
+articles store the S3 ledger UUID in `external_id` and the outlet in `external_source`.
+Filter `external_source=Chicago Sun-Times` therefore includes S3-era rows after those
+articles are persisted or repaired. The former pipeline value `backfield_s3_ingestion`
+is not written for new articles.
+
+Article keyword, semantic, and geographic search, plus canonical person,
+organization, and location article-list endpoints, accept repeatable
+`include=counts` (mention and entity totals, image count, custom records, and
+the embedded flag) and `include=images` (up to 10 attached images with url,
+caption, and image_id; the full set remains on the article images route).
+Canonical article-list endpoints also accept the same repeatable `meta` grammar
+plus `author` and `external_source`. Article-scoped people, organizations, and locations share
 repeatable `nature` (OR) and `quote` filters; location lists additionally accept
 `location_type`. Entity list/search/geo routes use the same repeatable `nature`
 filter for “has a matching mention.” Entity connection lists use the standard

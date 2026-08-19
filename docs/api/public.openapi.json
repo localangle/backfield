@@ -1700,7 +1700,7 @@
       "PublicArticleSemanticSearchIn": {
         "properties": {
           "include": {
-            "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag).",
+            "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); images (up to 10 attached images with url, caption, and image_id).",
             "items": {
               "type": "string"
             },
@@ -5684,13 +5684,13 @@
             }
           },
           {
-            "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag).",
+            "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); images (up to 10 attached images with url, caption, and image_id).",
             "in": "query",
             "name": "include",
             "required": false,
             "schema": {
               "default": [],
-              "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag).",
+              "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); images (up to 10 attached images with url, caption, and image_id).",
               "items": {
                 "type": "string"
               },
@@ -6504,13 +6504,13 @@
             }
           },
           {
-            "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag).",
+            "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); images (up to 10 attached images with url, caption, and image_id).",
             "in": "query",
             "name": "include",
             "required": false,
             "schema": {
               "default": [],
-              "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag).",
+              "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); images (up to 10 attached images with url, caption, and image_id).",
               "items": {
                 "type": "string"
               },
@@ -6975,13 +6975,13 @@
             }
           },
           {
-            "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); text (full article body in addition to preview).",
+            "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); text (full article body in addition to preview). Article detail always includes up to 10 images.",
             "in": "query",
             "name": "include",
             "required": false,
             "schema": {
               "default": [],
-              "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); text (full article body in addition to preview).",
+              "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); text (full article body in addition to preview). Article detail always includes up to 10 images.",
               "items": {
                 "type": "string"
               },
@@ -10996,13 +10996,13 @@
             }
           },
           {
-            "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag).",
+            "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); images (up to 10 attached images with url, caption, and image_id).",
             "in": "query",
             "name": "include",
             "required": false,
             "schema": {
               "default": [],
-              "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag).",
+              "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); images (up to 10 attached images with url, caption, and image_id).",
               "items": {
                 "type": "string"
               },
@@ -14375,13 +14375,13 @@
             }
           },
           {
-            "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag).",
+            "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); images (up to 10 attached images with url, caption, and image_id).",
             "in": "query",
             "name": "include",
             "required": false,
             "schema": {
               "default": [],
-              "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag).",
+              "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); images (up to 10 attached images with url, caption, and image_id).",
               "items": {
                 "type": "string"
               },
@@ -16942,13 +16942,13 @@
             }
           },
           {
-            "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag).",
+            "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); images (up to 10 attached images with url, caption, and image_id).",
             "in": "query",
             "name": "include",
             "required": false,
             "schema": {
               "default": [],
-              "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag).",
+              "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); images (up to 10 attached images with url, caption, and image_id).",
               "items": {
                 "type": "string"
               },

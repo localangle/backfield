@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from backfield_db import BackfieldProject
-from backfield_entities.public.article_hub import enrich_articles_with_counts
 from backfield_entities.public.articles import PublicArticleOut
 from backfield_entities.public.people import get_public_person, list_public_person_articles
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -15,6 +14,7 @@ from core_api.routers.public.articles.helpers import (
     INCLUDE_PARAM_DESCRIPTION,
     META_PARAM_DESCRIPTION,
     NATURE_PARAM_DESCRIPTION,
+    apply_public_article_list_includes,
     parse_article_includes,
     parse_meta_clauses,
     parse_natures,
@@ -80,8 +80,7 @@ def list_project_person_articles(
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
     items, total = result
-    if "counts" in includes:
-        enrich_articles_with_counts(session, items)
+    apply_public_article_list_includes(session, items, includes)
     person = get_public_person(
         session,
         stylebook_id=stylebook_id,

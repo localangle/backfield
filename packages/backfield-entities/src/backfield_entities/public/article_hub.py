@@ -444,6 +444,25 @@ def enrich_articles_with_counts(session: Session, articles: list) -> None:
         article.embedded = aid in embedded_ids
 
 
+def enrich_articles_with_images(
+    session: Session,
+    articles: list,
+    *,
+    cap: int = PUBLIC_ARTICLE_INLINE_IMAGES_CAP,
+) -> None:
+    """Attach capped ``images`` lists to article output rows (in place)."""
+    if not articles:
+        return
+    from backfield_entities.public.articles import PublicArticleOut
+
+    article_ids = [int(article.id) for article in articles]
+    images_by_id = inline_article_images_batch(session, article_ids, cap=cap)
+    for article in articles:
+        if not isinstance(article, PublicArticleOut):
+            continue
+        article.images = images_by_id.get(int(article.id), [])
+
+
 def _mention_union_stmt(
     article_id: int,
     entity_type: PublicEntityMentionType | None,
@@ -1024,6 +1043,15 @@ def list_article_custom_records(
     return items, total
 
 
+def _article_image_out(row: SubstrateImage) -> PublicArticleImageOut:
+    return PublicArticleImageOut(
+        id=int(row.id),  # type: ignore[arg-type]
+        image_id=str(row.image_id),
+        url=str(row.url),
+        caption=row.caption,
+    )
+
+
 def list_article_images(
     session: Session,
     *,
@@ -1036,16 +1064,31 @@ def list_article_images(
     rows = session.exec(
         base.order_by(col(SubstrateImage.id).asc()).limit(limit).offset(offset)
     ).all()
-    items = [
-        PublicArticleImageOut(
-            id=int(row.id),  # type: ignore[arg-type]
-            image_id=str(row.image_id),
-            url=str(row.url),
-            caption=row.caption,
-        )
-        for row in rows
-    ]
-    return items, total
+    return [_article_image_out(row) for row in rows], total
+
+
+def inline_article_images_batch(
+    session: Session,
+    article_ids: list[int],
+    *,
+    cap: int = PUBLIC_ARTICLE_INLINE_IMAGES_CAP,
+) -> dict[int, list[PublicArticleImageOut]]:
+    """Return up to ``cap`` images per article, ordered by image id."""
+    out: dict[int, list[PublicArticleImageOut]] = {aid: [] for aid in article_ids}
+    if not article_ids or cap <= 0:
+        return out
+    rows = session.exec(
+        select(SubstrateImage)
+        .where(col(SubstrateImage.article_id).in_(article_ids))
+        .order_by(col(SubstrateImage.article_id).asc(), col(SubstrateImage.id).asc())
+    ).all()
+    for row in rows:
+        aid = int(row.article_id)
+        bucket = out.setdefault(aid, [])
+        if len(bucket) >= cap:
+            continue
+        bucket.append(_article_image_out(row))
+    return out
 
 
 def inline_article_images(
@@ -1055,5 +1098,4 @@ def inline_article_images(
     cap: int = PUBLIC_ARTICLE_INLINE_IMAGES_CAP,
 ) -> list[PublicArticleImageOut]:
     """Return up to ``cap`` images for inline detail responses."""
-    items, _ = list_article_images(session, article_id=article_id, limit=cap, offset=0)
-    return items
+    return inline_article_images_batch(session, [article_id], cap=cap).get(article_id, [])

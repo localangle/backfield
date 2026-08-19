@@ -3,17 +3,25 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
 from backfield_db import AgateProcessedItem, SubstrateArticle, SubstrateImage
 from backfield_db.text_sanitize import strip_nul_bytes
+from backfield_entities.ingest.article_external_identity import (
+    ARTICLE_TEXT_FINGERPRINT_SOURCE,
+    S3_INGESTION_EXTERNAL_SOURCE,
+    resolve_article_outlet_external_source,
+    try_rewrite_article_external_identity,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
-from worker.s3_ingestion_ledger import S3_INGESTION_EXTERNAL_SOURCE
 from worker.substrate.common import _parse_date, _sha256_hex, _utcnow
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -38,12 +46,28 @@ def _find_existing_article(
     external_source: str | None,
     external_id: str | None,
     text_fingerprint: str,
+    legacy_external_source: str | None = None,
 ) -> SubstrateArticle | None:
     if external_source and external_id:
         article = session.exec(
             select(SubstrateArticle).where(
                 col(SubstrateArticle.project_id) == project_id,
                 col(SubstrateArticle.external_source) == external_source,
+                col(SubstrateArticle.external_id) == external_id,
+            )
+        ).first()
+        if article is not None:
+            return article
+
+    if (
+        legacy_external_source
+        and external_id
+        and legacy_external_source != external_source
+    ):
+        article = session.exec(
+            select(SubstrateArticle).where(
+                col(SubstrateArticle.project_id) == project_id,
+                col(SubstrateArticle.external_source) == legacy_external_source,
                 col(SubstrateArticle.external_id) == external_id,
             )
         ).first()
@@ -63,7 +87,7 @@ def _find_existing_article(
     return session.exec(
         select(SubstrateArticle).where(
             col(SubstrateArticle.project_id) == project_id,
-            col(SubstrateArticle.external_source) == "backfield_text_fingerprint",
+            col(SubstrateArticle.external_source) == ARTICLE_TEXT_FINGERPRINT_SOURCE,
             col(SubstrateArticle.external_id) == text_fingerprint,
         )
     ).first()
@@ -77,6 +101,7 @@ def _fetch_substrate_article_after_unique_violation(
     external_source: str | None,
     external_id: str | None,
     text_fingerprint: str,
+    legacy_external_source: str | None = None,
 ) -> SubstrateArticle | None:
     return _find_existing_article(
         session,
@@ -85,10 +110,12 @@ def _fetch_substrate_article_after_unique_violation(
         external_source=external_source,
         external_id=external_id,
         text_fingerprint=text_fingerprint,
+        legacy_external_source=legacy_external_source,
     )
 
 
 def _apply_article_merge(
+    session: Session,
     article: SubstrateArticle,
     *,
     url_str: str | None,
@@ -98,6 +125,8 @@ def _apply_article_merge(
     text_str: str,
     run_id: str,
     processed_item_id: int | None = None,
+    external_source: str | None = None,
+    external_id: str | None = None,
 ) -> bool:
     """Merge incoming fields onto the existing row; True when content changed."""
     resolved_url = url_str or article.url
@@ -117,6 +146,22 @@ def _apply_article_merge(
     article.source_run_id = run_id
     if processed_item_id is not None:
         article.source_item_id = processed_item_id
+    if external_source and external_id:
+        rewritten = try_rewrite_article_external_identity(
+            session,
+            article,
+            external_source=external_source,
+            external_id=external_id,
+        )
+        if not rewritten:
+            logger.warning(
+                "Skipped article external_source rewrite for article_id=%s; "
+                "(%s, %s) already exists in project_id=%s",
+                article.id,
+                external_source,
+                external_id,
+                article.project_id,
+            )
     article.updated_at = now
     article.edited = True
     return content_changed
@@ -150,15 +195,16 @@ def _upsert_article(
     pub_date = _parse_date(consolidated.get("pub_date"))
 
     publication = consolidated.get("publication")
-    external_source = None
-    if isinstance(publication, str) and publication.strip():
-        external_source = str(publication).strip()
+    publication_str = str(publication).strip() if isinstance(publication, str) else None
+    if publication_str == "":
+        publication_str = None
 
     entry_id = consolidated.get("entry_id")
     external_id = None
     if entry_id is not None and str(entry_id).strip():
         external_id = str(entry_id).strip()
 
+    ledger_id = ""
     if processed_item_id is not None:
         processed_item = session.get(AgateProcessedItem, processed_item_id)
         ledger_id = (
@@ -167,20 +213,37 @@ def _upsert_article(
             else ""
         )
         if ledger_id:
-            external_source = S3_INGESTION_EXTERNAL_SOURCE
             external_id = ledger_id
 
+    if ledger_id:
+        outlet_source = resolve_article_outlet_external_source(
+            publication=publication_str,
+            url=url_str,
+        )
+        lookup_source = outlet_source
+        lookup_id = ledger_id
+        legacy_source = S3_INGESTION_EXTERNAL_SOURCE
+        resolved_external_source = outlet_source
+        resolved_external_id = ledger_id
+    else:
+        lookup_source = publication_str
+        lookup_id = external_id
+        legacy_source = None
+        resolved_external_source = publication_str or ARTICLE_TEXT_FINGERPRINT_SOURCE
+        resolved_external_id = external_id or _text_fingerprint(
+            project_id=project_id, text_str=text_str
+        )
+
     text_fingerprint = _text_fingerprint(project_id=project_id, text_str=text_str)
-    resolved_external_source = external_source or "backfield_text_fingerprint"
-    resolved_external_id = external_id or text_fingerprint
 
     article = _find_existing_article(
         session,
         project_id=project_id,
         url_str=url_str,
-        external_source=external_source,
-        external_id=external_id,
+        external_source=lookup_source,
+        external_id=lookup_id,
         text_fingerprint=text_fingerprint,
+        legacy_external_source=legacy_source,
     )
 
     headline = consolidated.get("headline")
@@ -191,6 +254,19 @@ def _upsert_article(
         headline_str = existing if existing else "Article"
     else:
         headline_str = "Article"
+
+    merge_kwargs: dict[str, Any] = {
+        "url_str": url_str,
+        "headline_str": headline_str,
+        "author_str": author_str,
+        "pub_date": pub_date,
+        "text_str": text_str,
+        "run_id": run_id,
+        "processed_item_id": processed_item_id,
+    }
+    if ledger_id:
+        merge_kwargs["external_source"] = resolved_external_source
+        merge_kwargs["external_id"] = resolved_external_id
 
     if article is None:
         new_article = SubstrateArticle(
@@ -215,9 +291,10 @@ def _upsert_article(
                 session,
                 project_id=project_id,
                 url_str=url_str,
-                external_source=external_source,
-                external_id=external_id,
+                external_source=lookup_source,
+                external_id=lookup_id,
                 text_fingerprint=text_fingerprint,
+                legacy_external_source=legacy_source,
             )
             if article is None:
                 article = _fetch_substrate_article_after_unique_violation(
@@ -227,22 +304,14 @@ def _upsert_article(
                     external_source=resolved_external_source,
                     external_id=resolved_external_id,
                     text_fingerprint=text_fingerprint,
+                    legacy_external_source=legacy_source,
                 )
             if article is None:
                 raise RuntimeError(
                     "substrate_article insert collided on unique key but concurrent row "
                     "was not visible; retry the persistence step"
                 ) from exc
-            content_changed = _apply_article_merge(
-                article,
-                url_str=url_str,
-                headline_str=headline_str,
-                author_str=author_str,
-                pub_date=pub_date,
-                text_str=text_str,
-                run_id=run_id,
-                processed_item_id=processed_item_id,
-            )
+            content_changed = _apply_article_merge(session, article, **merge_kwargs)
             session.add(article)
             session.flush()
             return ArticleUpsertResult(
@@ -252,16 +321,7 @@ def _upsert_article(
             )
         return ArticleUpsertResult(article=new_article, created=True, content_changed=False)
 
-    content_changed = _apply_article_merge(
-        article,
-        url_str=url_str,
-        headline_str=headline_str,
-        author_str=author_str,
-        pub_date=pub_date,
-        text_str=text_str,
-        run_id=run_id,
-        processed_item_id=processed_item_id,
-    )
+    content_changed = _apply_article_merge(session, article, **merge_kwargs)
     session.add(article)
     session.flush()
     return ArticleUpsertResult(article=article, created=False, content_changed=content_changed)

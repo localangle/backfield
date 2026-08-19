@@ -14,14 +14,15 @@ from agate_runtime.s3_batch import (
     logical_item_id,
 )
 from backfield_db import AgateS3IngestionLedger
+from backfield_entities.ingest.article_external_identity import (
+    S3_INGESTION_EXTERNAL_SOURCE as S3_INGESTION_EXTERNAL_SOURCE,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select, update
 
 LEDGER_STATUS_PROCESSING = "processing"
 LEDGER_STATUS_SUCCEEDED = "succeeded"
 LEDGER_STATUS_FAILED = "failed"
-
-S3_INGESTION_EXTERNAL_SOURCE = "backfield_s3_ingestion"
 
 
 @dataclass(frozen=True)

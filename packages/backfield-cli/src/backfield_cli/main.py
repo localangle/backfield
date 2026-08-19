@@ -9,6 +9,7 @@ from backfield_cli import doctor as doctor_cmd
 from backfield_cli import init as init_cmd
 from backfield_cli import migrate as migrate_cmd
 from backfield_cli import organization as organization_cmd
+from backfield_cli import repair_s3_article_sources as repair_s3_article_sources_cmd
 from backfield_cli import seed as seed_cmd
 from backfield_cli import stack_cmd
 from backfield_cli import tenancy_audit as tenancy_audit_cmd
@@ -22,6 +23,7 @@ def main(argv: list[str] | None = None) -> int:
     init_cmd.register_subcommand(subparsers)
     doctor_cmd.register_subcommand(subparsers)
     tenancy_audit_cmd.register_subcommand(subparsers)
+    repair_s3_article_sources_cmd.register_subcommand(subparsers)
     organization_cmd.register_subcommand(subparsers)
     stack_cmd.register_subcommands(subparsers)
     args = parser.parse_args(argv)

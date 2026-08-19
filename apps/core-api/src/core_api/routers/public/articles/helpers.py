@@ -5,7 +5,11 @@ from __future__ import annotations
 from datetime import date
 
 from backfield_db import BackfieldProject
-from backfield_entities.public.article_hub import PublicEntityMentionType
+from backfield_entities.public.article_hub import (
+    PublicEntityMentionType,
+    enrich_articles_with_counts,
+    enrich_articles_with_images,
+)
 from backfield_entities.public.article_scope import get_public_article_row
 from backfield_entities.public.articles import ArticleMetaClause
 from fastapi import HTTPException, status
@@ -33,19 +37,21 @@ META_PARAM_DESCRIPTION = (
     "Repeat a type to require all listed categories. Max 25 clauses; max 50 categories per clause."
 )
 
-ALLOWED_ARTICLE_LIST_INCLUDES = frozenset({"counts"})
+ALLOWED_ARTICLE_LIST_INCLUDES = frozenset({"counts", "images"})
 ALLOWED_ARTICLE_DETAIL_INCLUDES = frozenset({"counts", "text"})
 
 INCLUDE_PARAM_DESCRIPTION = (
     "Repeatable include token for optional article extras. "
     "Supported: counts (mention and canonical entity totals, image count, "
-    "custom records, embedded flag)."
+    "custom records, embedded flag); images (up to 10 attached images with "
+    "url, caption, and image_id)."
 )
 
 INCLUDE_DETAIL_PARAM_DESCRIPTION = (
     "Repeatable include token for optional article extras. "
     "Supported: counts (mention and canonical entity totals, image count, "
-    "custom records, embedded flag); text (full article body in addition to preview)."
+    "custom records, embedded flag); text (full article body in addition to preview). "
+    "Article detail always includes up to 10 images."
 )
 
 ENTITY_INCLUDE_PARAM_DESCRIPTION = (
@@ -100,6 +106,14 @@ def parse_attr_clauses_or_400(attr: list[str]):
             detail=str(exc),
         ) from exc
 
+
+
+def apply_public_article_list_includes(session: Session, items: list, includes: set[str]) -> None:
+    """Attach optional extras requested via repeatable ``include`` tokens."""
+    if "counts" in includes:
+        enrich_articles_with_counts(session, items)
+    if "images" in includes:
+        enrich_articles_with_images(session, items)
 
 
 def parse_article_includes(

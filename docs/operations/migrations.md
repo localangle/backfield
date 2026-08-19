@@ -21,6 +21,24 @@ projects or graphs, or change canonical links. Canonical-link mismatches are agg
 project, entity type, expected Stylebook, and actual Stylebook, with an affected count and a
 five-id sample so large datasets still produce practical reports.
 
+## S3 article outlet source repair
+
+Rows persisted while S3 ingest wrote `substrate_article.external_source = backfield_s3_ingestion`
+can be rewritten to the publication/outlet name (then URL host, then the text-fingerprint
+source) with an operator command. This is not a schema migration.
+
+```bash
+backfield repair-s3-article-sources
+backfield repair-s3-article-sources --apply
+backfield repair-s3-article-sources --project-slug general --json
+```
+
+Dry-run is the default. `--apply` commits updates. Unique-key collisions are skipped and listed;
+those rows stay `backfield_s3_ingestion`. The command uses `BACKFIELD_DATABASE_URL` (then
+`DATABASE_URL`), the same as `backfield tenancy-audit`. After apply, public `external_source`
+filters and facets use outlet names; `backfield_s3_ingestion` is no longer a facet value for
+repaired rows.
+
 The strict project runtime migration validates retained projects before making `workspace_id` and
 `stylebook_id` required. It stops with the first project or workspace that has a null, missing, or
 cross-organization assignment. Repair those rows and rerun the migration; it does not guess a

@@ -99,3 +99,23 @@ def test_tenancy_audit_json_exits_zero_when_clean(monkeypatch, capsys) -> None:
     assert main(["tenancy-audit", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload == {"ok": True, "blocker_count": 0, "blockers": []}
+
+
+def test_repair_s3_article_sources_dry_run_json(monkeypatch, capsys) -> None:
+    from backfield_entities.ingest.article_external_identity import S3ArticleSourceRepairReport
+
+    report = S3ArticleSourceRepairReport(scanned=3, updated=2, unchanged=1)
+    monkeypatch.setattr(
+        "backfield_cli.repair_s3_article_sources.get_engine",
+        lambda: create_engine("sqlite://"),
+    )
+    monkeypatch.setattr(
+        "backfield_cli.repair_s3_article_sources.repair_s3_article_external_sources",
+        lambda _session, **_kwargs: report,
+    )
+
+    assert main(["repair-s3-article-sources", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["scanned"] == 3
+    assert payload["updated"] == 2
+    assert payload["unchanged"] == 1
