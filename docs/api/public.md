@@ -236,6 +236,13 @@ A filtered public-only OpenAPI document is committed at
 uv run python scripts/export_public_openapi.py
 ```
 
+When a public route gains or changes query/body fields, `include` tokens, filters, or
+discovery values, update the Playground in `apps/api-playground` in the same change
+(especially `src/lib/presentation.ts` include pickers and helper text). The Playground
+loads OpenAPI for the catalog, but several controls are hardcoded and will not pick up
+new tokens from the spec alone. See the
+[`apps/api-playground` guide](../../apps/api-playground/README.md).
+
 Core API serves this public-only contract without authentication at
 `/public/v1/openapi.json`. The document contains only public paths and schemas
 reachable from them, declares project API key Bearer authentication, and lists

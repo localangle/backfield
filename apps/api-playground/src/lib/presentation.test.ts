@@ -160,6 +160,63 @@ describe("endpoint presentation contract", () => {
       { value: "metadata", label: "Stylebook attributes" },
     ])
     expect(peopleInclude.helperText).toMatch(/include metadata/i)
+
+    const articleSearchInclude = presentationForField(
+      articleSearch!,
+      "include",
+      { type: "array", items: { type: "string" } },
+      "Include extras",
+      blockedContext,
+      "query",
+    )
+    expect(articleSearchInclude.options).toEqual([
+      { value: "counts", label: "Mention counts" },
+      { value: "images", label: "Attached images" },
+    ])
+    expect(articleSearchInclude.helperText).toMatch(/images includes up to 10/)
+
+    const semanticInclude = presentationForField(
+      semanticSearch!,
+      "include",
+      { type: "array", items: { type: "string" } },
+      "Include extras",
+      blockedContext,
+      "body",
+    )
+    expect(semanticInclude.options).toEqual(articleSearchInclude.options)
+
+    const articleDetail = operations.find(
+      (operation) => operation.displayPath === "/articles/{article_id}",
+    )
+    expect(articleDetail).toBeDefined()
+    const detailInclude = presentationForField(
+      articleDetail!,
+      "include",
+      { type: "array", items: { type: "string" } },
+      "Include extras",
+      blockedContext,
+      "query",
+    )
+    expect(detailInclude.options).toEqual([
+      { value: "counts", label: "Mention counts" },
+      { value: "text", label: "Full article text" },
+    ])
+    expect(detailInclude.helperText).toMatch(/already includes up to 10 images/)
+
+    const personArticles = operations.find(
+      (operation) => operation.displayPath === "/people/{person_id}/articles",
+    )
+    expect(personArticles).toBeDefined()
+    expect(
+      presentationForField(
+        personArticles!,
+        "include",
+        { type: "array", items: { type: "string" } },
+        "Include extras",
+        blockedContext,
+        "query",
+      ).options,
+    ).toEqual(articleSearchInclude.options)
   })
 
   it("presents every request-body property through the shared field model", () => {

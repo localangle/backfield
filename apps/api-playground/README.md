@@ -58,6 +58,17 @@ The semantic-search and geo-cell batch request bodies use the same structured fi
 validated against their OpenAPI constraints before the request is sent. The public trigger-run
 operation remains in the API contract but is intentionally omitted from the Playground interface.
 
+## Keeping pace with the public API
+
+The Playground is schema-first for endpoint discovery, but several request controls are
+hardcoded so they can use product labels and helpers. Public API changes that add or rename
+query parameters, request-body fields, `include` tokens, filters, or project-scoped discovery
+values must update those controls in the same change—typically
+[`src/lib/presentation.ts`](src/lib/presentation.ts) (`includeOptions`, `helperTextForField`,
+facet/metadata loaders) plus tests in `src/lib/presentation.test.ts`. Regenerating
+[`docs/api/public.openapi.json`](../../docs/api/public.openapi.json) is required and not
+sufficient by itself.
+
 ## Security boundary
 
 - Opening the Playground requires a signed-in Backfield session, matching Agate and Stylebook.

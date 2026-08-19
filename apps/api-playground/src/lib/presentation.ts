@@ -146,15 +146,32 @@ function isEntityCatalogPath(displayPath: string): boolean {
   )
 }
 
+function isArticleDetailPath(displayPath: string): boolean {
+  return /^\/articles\/\{article_id\}$/.test(displayPath)
+}
+
+function isArticleCollectionPath(displayPath: string): boolean {
+  return (
+    displayPath === "/articles/search" ||
+    displayPath === "/articles/semantic-search" ||
+    displayPath === "/articles/geo-search" ||
+    /^\/(people|organizations|locations)\/\{[^}]+}\/articles$/.test(displayPath)
+  )
+}
+
+/** Keep tokens in sync with public `include=` allow-lists when those routes change. */
 function includeOptions(operation: PlaygroundOperation): SelectOption[] {
   if (isEntityCatalogPath(operation.displayPath)) {
     return [{ value: "metadata", label: "Stylebook attributes" }]
   }
-  const detailPath = /^\/articles\/\{article_id\}$/.test(operation.displayPath)
-  return [
-    { value: "counts", label: "Mention counts" },
-    ...(detailPath ? [{ value: "text", label: "Full article text" }] : []),
-  ]
+  const options: SelectOption[] = [{ value: "counts", label: "Mention counts" }]
+  if (isArticleCollectionPath(operation.displayPath)) {
+    options.push({ value: "images", label: "Attached images" })
+  }
+  if (isArticleDetailPath(operation.displayPath)) {
+    options.push({ value: "text", label: "Full article text" })
+  }
+  return options
 }
 
 function helperTextForField(
@@ -189,9 +206,10 @@ function helperTextForField(
         "Get-by-id responses always include metadata."
       )
     }
-    return /^\/articles\/\{article_id\}$/.test(operation.displayPath)
-      ? "counts adds mention totals; text includes the article body."
-      : "counts adds mention totals for each article."
+    if (isArticleDetailPath(operation.displayPath)) {
+      return "counts adds mention totals; text includes the article body. Detail already includes up to 10 images."
+    }
+    return "counts adds mention totals; images includes up to 10 attached images."
   }
   return undefined
 }
