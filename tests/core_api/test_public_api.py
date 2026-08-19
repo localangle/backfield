@@ -699,6 +699,31 @@ def test_public_article_semantic_search_include_counts(
     assert item["counts"]["mentions"]["total"] == 3
     assert item["counts"]["entities"]["total"] == 3
     assert item["score"] > 0
+    assert item.get("images") is None
+
+
+@patch("core_api.routers.public.articles.semantic_search.embed_semantic_search_query")
+def test_public_article_semantic_search_include_images(
+    mock_embed: MagicMock,
+    public_client: TestClient,
+) -> None:
+    mock_embed.return_value = SemanticQueryEmbedding(
+        vector=[1.0, 0.0],
+        model_config_id="emb-test",
+        embedding_model="openai/text-embedding-3-small",
+        embedding_dimensions=2,
+    )
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.post(
+        "/public/v1/projects/general/articles/semantic-search",
+        headers=headers,
+        json={"query": "city budget debate", "include": ["images"]},
+    )
+    assert r.status_code == 200
+    item = r.json()["items"][0]
+    assert item["images"][0]["image_id"] == "img-1"
+    assert item["images"][0]["caption"] == "Council chamber"
 
 
 @patch("core_api.routers.public.articles.semantic_search.embed_semantic_search_query")
@@ -1213,6 +1238,36 @@ def test_public_article_search_include_counts(public_client: TestClient) -> None
     assert item["counts"]["mentions"]["total"] == 3
     assert item["counts"]["entities"]["total"] == 3
     assert item.get("images") is None
+
+
+def test_public_article_search_include_images(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"q": "budget", "include": "images"},
+    )
+    assert r.status_code == 200
+    item = r.json()["items"][0]
+    assert item.get("counts") is None
+    assert item["images"][0]["image_id"] == "img-1"
+    assert item["images"][0]["url"] == "https://example.com/photo.jpg"
+    assert item["images"][0]["caption"] == "Council chamber"
+
+
+def test_public_article_search_include_counts_and_images(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params=[("q", "budget"), ("include", "counts"), ("include", "images")],
+    )
+    assert r.status_code == 200
+    item = r.json()["items"][0]
+    assert item["counts"]["images"] == 1
+    assert item["images"][0]["image_id"] == "img-1"
 
 
 def test_public_article_include_invalid_token(public_client: TestClient) -> None:
@@ -1909,11 +1964,13 @@ def test_public_entity_articles_share_article_filters_and_includes(
                 ("meta", "topic:local_government_politics"),
                 ("author", "jane doe"),
                 ("include", "counts"),
+                ("include", "images"),
             ],
         )
         assert matched.status_code == 200
         assert matched.json()["pagination"]["total"] == 1
         assert matched.json()["items"][0]["counts"]["mentions"]["total"] == 3
+        assert matched.json()["items"][0]["images"][0]["image_id"] == "img-1"
 
         excluded = public_client.get(
             f"/public/v1/projects/general/{entity_type}/{entity_id}/articles",

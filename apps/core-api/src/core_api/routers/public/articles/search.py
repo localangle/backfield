@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from backfield_db import BackfieldProject
-from backfield_entities.public.article_hub import enrich_articles_with_counts
 from backfield_entities.public.articles import (
     PublicArticleSearchParams,
     PublicArticleSort,
@@ -19,6 +18,7 @@ from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import (
     INCLUDE_PARAM_DESCRIPTION,
     META_PARAM_DESCRIPTION,
+    apply_public_article_list_includes,
     parse_article_includes,
     parse_has_mentions,
     parse_meta_clauses,
@@ -93,8 +93,7 @@ def search_project_articles(
         project_id=int(project.id),  # type: ignore[arg-type]
         params=params,
     )
-    if "counts" in includes:
-        enrich_articles_with_counts(session, items)
+    apply_public_article_list_includes(session, items, includes)
     query = public_article_search_query_out(params)
     return PublicArticleSearchOut(
         **query.model_dump(),

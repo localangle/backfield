@@ -9,7 +9,6 @@ from backfield_entities.public.article_geo_search import (
     public_article_geo_search_query_out,
     search_public_articles_by_geo,
 )
-from backfield_entities.public.article_hub import enrich_articles_with_counts
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session
 
@@ -18,6 +17,7 @@ from core_api.routers.public.articles.helpers import (
     INCLUDE_PARAM_DESCRIPTION,
     META_PARAM_DESCRIPTION,
     NATURE_PARAM_DESCRIPTION,
+    apply_public_article_list_includes,
     parse_article_includes,
     parse_bbox,
     parse_location_types,
@@ -134,8 +134,7 @@ def search_project_articles_by_geo(
         project_id=int(project.id),  # type: ignore[arg-type]
         params=params,
     )
-    if "counts" in includes:
-        enrich_articles_with_counts(session, items)
+    apply_public_article_list_includes(session, items, includes)
     query = public_article_geo_search_query_out(params)
     return PublicArticleGeoSearchOut(
         **query.model_dump(),

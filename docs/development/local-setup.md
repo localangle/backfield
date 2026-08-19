@@ -174,6 +174,10 @@ workspace once with `uv sync`; a healthy install does not sync on every command.
 | `make migrate` | One-off Compose **`migrate`** service (`docker compose … run --rm migrate`) |
 | `make migrate-host` | Host CLI (`backfield migrate`) against Postgres published on `127.0.0.1:5433` |
 
+`backfield repair-s3-article-sources` rewrites legacy S3 article `external_source` values to
+outlet names (dry-run by default; `--apply` to write). See
+[migrations](../operations/migrations.md#s3-article-outlet-source-repair).
+
 Prefer `make migrate` when working entirely through Compose. Use `make migrate-host` when you want
 the host-installed CLI and direct database URL behavior.
 

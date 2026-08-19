@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import date
 from enum import StrEnum
-from urllib.parse import urlparse
 
 from backfield_db import (
     SubstrateArticle,
@@ -18,6 +17,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, literal, or_
 from sqlmodel import Session, col, select
 
+from backfield_entities.ingest.article_external_identity import (
+    ARTICLE_TEXT_FINGERPRINT_SOURCE,
+    outlet_host_from_url,
+)
 from backfield_entities.public.article_hub import (
     PublicArticleCountsOut,
     PublicArticleImageOut,
@@ -25,7 +28,7 @@ from backfield_entities.public.article_hub import (
 from backfield_entities.public.keyword_query import article_keyword_tsquery
 
 PUBLIC_ARTICLE_PREVIEW_MAX_LEN = 280
-_INTERNAL_ARTICLE_SOURCE_ID = "backfield_text_fingerprint"
+_INTERNAL_ARTICLE_SOURCE_ID = ARTICLE_TEXT_FINGERPRINT_SOURCE
 
 
 class PublicArticleSort(StrEnum):
@@ -181,12 +184,9 @@ def article_public_source(
     source_id = (external_source or "").strip()
     if source_id and source_id != _INTERNAL_ARTICLE_SOURCE_ID:
         return PublicArticleSourceOut(id=source_id, name=source_id)
-    if url and url.strip():
-        parsed = urlparse(url.strip())
-        hostname = parsed.hostname or ""
-        if hostname:
-            host = hostname.removeprefix("www.")
-            return PublicArticleSourceOut(id=host, name=host)
+    host = outlet_host_from_url(url)
+    if host:
+        return PublicArticleSourceOut(id=host, name=host)
     return None
 
 

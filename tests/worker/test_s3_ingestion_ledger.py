@@ -17,6 +17,7 @@ from backfield_db import (
     AgateS3IngestionLedger,
     BackfieldOrganization,
     BackfieldProject,
+    SubstrateArticle,
 )
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -597,7 +598,7 @@ def test_article_upsert_prefers_ledger_identity(ledger_engine):
         session.commit()
         article = upsert.article
         assert upsert.created is True
-        assert article.external_source == S3_INGESTION_EXTERNAL_SOURCE
+        assert article.external_source == "OtherPub"
         assert article.external_id == str(ledger.id)
 
         again = _upsert_article(
@@ -617,3 +618,113 @@ def test_article_upsert_prefers_ledger_identity(ledger_engine):
         assert again.content_changed is True
         assert int(again.article.id) == int(article.id)
         assert again.article.headline == "H2"
+        assert again.article.external_source == "OtherPub"
+
+
+def _ledger_processed_item(session, *, project_id: int, graph_id: str):
+    run = AgateRun(graph_id=graph_id, status="running")
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    ledger = AgateS3IngestionLedger(
+        project_id=project_id,
+        source_id="src-fixed",
+        logical_item_id="my-bucket/p/good.json",
+        bucket="my-bucket",
+        key="p/good.json",
+        content_fingerprint="abc",
+        status="processing",
+        claim_token=str(uuid4()),
+        attempt_count=1,
+        flow_run_id=str(run.id),
+    )
+    session.add(ledger)
+    session.commit()
+    session.refresh(ledger)
+    item = AgateProcessedItem(
+        run_id=str(run.id),
+        source_file="p/good.json",
+        input_json=json.dumps({"text": "hello"}),
+        status="running",
+        ingestion_ledger_id=str(ledger.id),
+    )
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return run, ledger, item
+
+
+def test_article_upsert_rewrites_legacy_s3_source_on_reprocess(ledger_engine):
+    engine, graph_id, pid = ledger_engine
+    with Session(engine) as session:
+        run, ledger, item = _ledger_processed_item(session, project_id=pid, graph_id=graph_id)
+        existing = SubstrateArticle(
+            project_id=pid,
+            external_source=S3_INGESTION_EXTERNAL_SOURCE,
+            external_id=str(ledger.id),
+            headline="Old",
+            text="hello",
+            source_run_id=str(run.id),
+            source_item_id=int(item.id),
+        )
+        session.add(existing)
+        session.commit()
+        session.refresh(existing)
+
+        again = _upsert_article(
+            session,
+            project_id=pid,
+            consolidated={
+                "text": "hello",
+                "publication": "Chicago Sun-Times",
+                "headline": "Old",
+            },
+            run_id=str(run.id),
+            processed_item_id=int(item.id),
+        )
+        session.commit()
+        assert again.created is False
+        assert again.content_changed is False
+        assert int(again.article.id) == int(existing.id)
+        assert again.article.external_source == "Chicago Sun-Times"
+        assert again.article.external_id == str(ledger.id)
+
+
+def test_article_upsert_ledger_uses_url_host_without_publication(ledger_engine):
+    engine, graph_id, pid = ledger_engine
+    with Session(engine) as session:
+        run, ledger, item = _ledger_processed_item(session, project_id=pid, graph_id=graph_id)
+        upsert = _upsert_article(
+            session,
+            project_id=pid,
+            consolidated={
+                "text": "hello",
+                "url": "https://www.suntimes.com/story/1",
+                "headline": "H",
+            },
+            run_id=str(run.id),
+            processed_item_id=int(item.id),
+        )
+        session.commit()
+        assert upsert.created is True
+        assert upsert.article.external_source == "suntimes.com"
+        assert upsert.article.external_id == str(ledger.id)
+
+
+def test_article_upsert_ledger_falls_back_to_fingerprint_without_publication_or_url(
+    ledger_engine,
+):
+    engine, graph_id, pid = ledger_engine
+    with Session(engine) as session:
+        run, ledger, item = _ledger_processed_item(session, project_id=pid, graph_id=graph_id)
+        upsert = _upsert_article(
+            session,
+            project_id=pid,
+            consolidated={"text": "hello", "headline": "H"},
+            run_id=str(run.id),
+            processed_item_id=int(item.id),
+        )
+        session.commit()
+        assert upsert.created is True
+        assert upsert.article.external_source == "backfield_text_fingerprint"
+        assert upsert.article.external_id == str(ledger.id)
