@@ -107,7 +107,7 @@ embed absolute API hosts.
 - Update the appropriate typed API module when a contract changes.
 - Public `/public/v1` contract changes: update the API Playground presentation in
   `apps/api-playground` (include pickers, helpers, discovery controls) as well as
-  OpenAPI export. See [`../../apps/api-playground/README.md`](../../apps/api-playground/README.md).
+  OpenAPI export. See [`../../../apps/api-playground/README.md`](../../../apps/api-playground/README.md).
 - Preserve URL-backed filters and deep-link state when changing navigation.
 - Reuse shared shells and split components that have become hard to scan.
 - For node metadata or panel changes, follow
