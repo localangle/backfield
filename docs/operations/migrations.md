@@ -61,6 +61,10 @@ backfield migrate-connection-kg --apply
 make migrate
 ```
 
+After cutover, Stylebook Remove soft-closes edges (`closed_at`); reopen clears it.
+Public entity connection lists hide closed rows unless `include_closed=true`.
+Hard-delete remains for internal/migrate paths only.
+
 ## Local workflow
 
 With the Compose stack configuration:

@@ -15,7 +15,7 @@ export default function ConnectionEvidenceBlock({ evidence }: ConnectionEvidence
     <div className="mt-1.5 max-w-xl space-y-1">
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge variant="secondary" className="h-5 px-1.5 text-[11px] font-normal">
-          Automatic
+          {view.sourceLabel}
         </Badge>
         {view.confidencePercent != null ? (
           <span className="text-[11px] text-muted-foreground tabular-nums">

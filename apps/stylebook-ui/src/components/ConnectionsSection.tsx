@@ -14,9 +14,12 @@ import {
   updateStylebookConnectionForLocation,
   updateStylebookConnectionForOrganization,
   updateStylebookConnectionForPerson,
-  deleteStylebookConnectionForLocation,
-  deleteStylebookConnectionForOrganization,
-  deleteStylebookConnectionForPerson,
+  closeStylebookConnectionForLocation,
+  closeStylebookConnectionForOrganization,
+  closeStylebookConnectionForPerson,
+  reopenStylebookConnectionForLocation,
+  reopenStylebookConnectionForOrganization,
+  reopenStylebookConnectionForPerson,
 } from "@/lib/stylebook-api/connections"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -31,7 +34,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, Pencil, Trash2, ExternalLink, List, Network } from "lucide-react"
+import { Plus, Pencil, Ban, RotateCcw, ExternalLink, List, Network } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import LocationSelector from "@/components/LocationSelector"
 import PersonSelector from "@/components/PersonSelector"
@@ -41,7 +44,7 @@ import ConnectionEvidenceBlock from "@/components/ConnectionEvidenceBlock"
 import ConnectionsGraph from "@/components/ConnectionsGraph"
 import NatureAutocomplete from "@/components/NatureAutocomplete"
 import Pagination from "@/components/Pagination"
-import { formatConnectionSummaryLabel } from "@/lib/connectionEvidence"
+import { bestEvidenceRecord, formatConnectionSummaryLabel } from "@/lib/connectionEvidence"
 import type { EntityType as ConnectionsEntityType } from "@/lib/entityTypes"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { fetchProjects, type Project } from "@/lib/stylebook-api/projects"
@@ -116,6 +119,7 @@ export default function ConnectionsSection({
 
   const [deleteConnection, setDeleteConnection] = useState<Connection | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [showClosed, setShowClosed] = useState(false)
   const selectorProjectSlug = projectScopeSlug || projects[0]?.slug || ""
 
   useEffect(() => {
@@ -139,7 +143,11 @@ export default function ConnectionsSection({
       try {
         const canonicalId = String(entityId)
         const offset = (pageNum - 1) * CONNECTIONS_PER_PAGE
-        const options = { limit: CONNECTIONS_PER_PAGE, offset }
+        const options = {
+          limit: CONNECTIONS_PER_PAGE,
+          offset,
+          includeClosed: showClosed,
+        }
         let res: Awaited<ReturnType<typeof listStylebookConnectionsForLocation>>
         if (entityType === "location") {
           res = await listStylebookConnectionsForLocation(stylebookSlug, canonicalId, options)
@@ -168,14 +176,18 @@ export default function ConnectionsSection({
         setLoading(false)
       }
     },
-    [entityType, entityId, stylebookSlug],
+    [entityType, entityId, stylebookSlug, showClosed],
   )
 
   const fetchGraphConnections = useCallback(async () => {
     setGraphLoading(true)
     try {
       const canonicalId = String(entityId)
-      const options = { limit: CONNECTIONS_GRAPH_FETCH_LIMIT, offset: 0 }
+      const options = {
+        limit: CONNECTIONS_GRAPH_FETCH_LIMIT,
+        offset: 0,
+        includeClosed: showClosed,
+      }
       let res: Awaited<ReturnType<typeof listStylebookConnectionsForLocation>>
       if (entityType === "location") {
         res = await listStylebookConnectionsForLocation(stylebookSlug, canonicalId, options)
@@ -198,12 +210,12 @@ export default function ConnectionsSection({
     } finally {
       setGraphLoading(false)
     }
-  }, [entityType, entityId, stylebookSlug, showError])
+  }, [entityType, entityId, stylebookSlug, showError, showClosed])
 
   useEffect(() => {
     setConnectionsPage(1)
     setGraphConnections(null)
-  }, [entityType, entityId, stylebookSlug])
+  }, [entityType, entityId, stylebookSlug, showClosed])
 
   useEffect(() => {
     void fetchConnectionsPage(connectionsPage)
@@ -341,32 +353,50 @@ export default function ConnectionsSection({
     setDeleting(true)
     try {
       if (entityType === "location") {
-        await deleteStylebookConnectionForLocation(
+        await closeStylebookConnectionForLocation(
           stylebookSlug,
           canonicalId,
           deleteConnection.id,
         )
       } else if (entityType === "person") {
-        await deleteStylebookConnectionForPerson(
+        await closeStylebookConnectionForPerson(
           stylebookSlug,
           canonicalId,
           deleteConnection.id,
         )
       } else if (entityType === "organization") {
-        await deleteStylebookConnectionForOrganization(
+        await closeStylebookConnectionForOrganization(
           stylebookSlug,
           canonicalId,
           deleteConnection.id,
         )
       } else {
-        throw new Error("Connections cannot be deleted from this entity type yet.")
+        throw new Error("Connections cannot be closed from this entity type yet.")
       }
       setDeleteConnection(null)
       refreshConnections()
     } catch (e) {
-      showError(e instanceof Error ? e.message : "Failed to delete connection")
+      showError(e instanceof Error ? e.message : "Failed to close connection")
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const handleReopen = async (conn: Connection) => {
+    const canonicalId = String(entityId)
+    try {
+      if (entityType === "location") {
+        await reopenStylebookConnectionForLocation(stylebookSlug, canonicalId, conn.id)
+      } else if (entityType === "person") {
+        await reopenStylebookConnectionForPerson(stylebookSlug, canonicalId, conn.id)
+      } else if (entityType === "organization") {
+        await reopenStylebookConnectionForOrganization(stylebookSlug, canonicalId, conn.id)
+      } else {
+        throw new Error("Connections cannot be reopened from this entity type yet.")
+      }
+      refreshConnections()
+    } catch (e) {
+      showError(e instanceof Error ? e.message : "Failed to reopen connection")
     }
   }
 
@@ -390,18 +420,29 @@ export default function ConnectionsSection({
             <div className="space-y-1.5 min-w-0">
               <CardTitle>Connections</CardTitle>
               <CardDescription>
-                Directed links between this {entityType} and other canonicals.
+                Links between this {entityType} and other catalog entries.
               </CardDescription>
             </div>
-            <Button
-              type="button"
-              className="shrink-0"
-              onClick={handleAddOpen}
-              disabled={loading || entityType === "work"}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add connection
-            </Button>
+            <div className="flex shrink-0 items-center gap-3">
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={showClosed}
+                  onChange={(e) => setShowClosed(e.target.checked)}
+                  className="rounded border-input"
+                />
+                Show closed
+              </label>
+              <Button
+                type="button"
+                className="shrink-0"
+                onClick={handleAddOpen}
+                disabled={loading || entityType === "work"}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add connection
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -484,11 +525,16 @@ export default function ConnectionsSection({
                           </>
                         )}
                       </div>
-                      <p className="mt-0.5 text-sm text-foreground">{connectionSummaryLabel(conn)}</p>
+                      <p className="mt-0.5 text-sm text-foreground">
+                        {connectionSummaryLabel(conn)}
+                        {conn.closed_at ? (
+                          <span className="ml-2 text-xs text-muted-foreground">(closed)</span>
+                        ) : null}
+                      </p>
                       {conn.nature?.trim() ? (
                         <p className="mt-0.5 text-xs text-muted-foreground">{conn.nature.replace(/_/g, " ")}</p>
                       ) : null}
-                      <ConnectionEvidenceBlock evidence={conn.evidence_json} />
+                      <ConnectionEvidenceBlock evidence={bestEvidenceRecord(conn)} />
                     </TableCell>
                     <TableCell className="align-top">
                       <div className="flex gap-2">
@@ -497,17 +543,29 @@ export default function ConnectionsSection({
                           size="sm"
                           onClick={() => handleEditOpen(conn)}
                           title="Edit connection"
+                          disabled={Boolean(conn.closed_at)}
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => setDeleteConnection(conn)}
-                          title="Delete connection"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {conn.closed_at ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void handleReopen(conn)}
+                            title="Reopen connection"
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => setDeleteConnection(conn)}
+                            title="Close connection"
+                          >
+                            <Ban className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -783,11 +841,12 @@ export default function ConnectionsSection({
       <Dialog open={!!deleteConnection} onOpenChange={(open) => !open && setDeleteConnection(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete connection</DialogTitle>
+            <DialogTitle>Close connection</DialogTitle>
             <DialogDescription>
-              Remove the connection between &quot;{entityDisplayName}&quot; and &quot;
+              Close the connection between &quot;{entityDisplayName}&quot; and &quot;
               {deleteConnection && otherDisplayName(deleteConnection)}&quot;
-              {deleteConnection ? ` (${connectionSummaryLabel(deleteConnection)})` : ""}? This cannot be undone.
+              {deleteConnection ? ` (${connectionSummaryLabel(deleteConnection)})` : ""}?
+              You can show closed connections later and reopen them if needed.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -795,7 +854,7 @@ export default function ConnectionsSection({
               Cancel
             </Button>
             <Button variant="destructive" onClick={handleDeleteConfirm} disabled={deleting}>
-              {deleting ? 'Deleting...' : 'Delete'}
+              {deleting ? 'Closing...' : 'Close connection'}
             </Button>
           </DialogFooter>
         </DialogContent>

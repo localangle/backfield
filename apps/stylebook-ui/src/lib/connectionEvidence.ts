@@ -1,10 +1,11 @@
-/** User-facing helpers for automatic connection evidence on Stylebook edges. */
+/** User-facing helpers for connection evidence on Stylebook edges. */
 
 export interface ConnectionCreationEvidenceView {
   confidencePercent: number | null
   quote: string
   showReason: boolean
   reason: string
+  sourceLabel: string
 }
 
 const MATCH_BASIS_PATTERN = /match_basis\s*=\s*[\w-]+/gi
@@ -40,7 +41,7 @@ export function formatConnectionSummaryLabel(conn: {
 export function hasConnectionEvidence(
   evidence: Record<string, unknown> | null | undefined,
 ): boolean {
-  return Boolean(evidence && typeof evidence === 'object' && Object.keys(evidence).length > 0)
+  return Boolean(evidence && typeof evidence === "object" && Object.keys(evidence).length > 0)
 }
 
 export function shouldShowEvidenceReason(quote: string, reason: string): boolean {
@@ -58,6 +59,14 @@ export function shouldShowEvidenceReason(quote: string, reason: string): boolean
   return reason.trim().length <= 160
 }
 
+function sourceLabel(source: string | null | undefined): string {
+  const value = (source || "").trim().toLowerCase()
+  if (value === "manual" || value === "legacy_manual") return "Manual"
+  if (value.includes("auto") || value === "dboutput_auto_connections") return "Automatic"
+  if (value) return "Saved"
+  return "Saved"
+}
+
 export function formatConnectionEvidence(
   evidence: Record<string, unknown> | null | undefined,
 ): ConnectionCreationEvidenceView | null {
@@ -65,23 +74,43 @@ export function formatConnectionEvidence(
     return null
   }
   const row = evidence as Record<string, unknown>
-  const quote = typeof row.quote === 'string' ? row.quote.trim() : ''
+  const quote = typeof row.quote === "string" ? row.quote.trim() : ""
+  const description =
+    typeof row.description === "string" ? row.description.trim() : ""
   const reason = sanitizeConnectionDisplayText(
-    typeof row.reason === 'string' ? row.reason.trim() : '',
+    typeof row.reason === "string" ? row.reason.trim() : "",
   )
-  if (!quote && !reason) {
+  const displayQuote = quote || description
+  if (!displayQuote && !reason) {
     return null
   }
   const confidenceRaw = row.confidence
   let confidencePercent: number | null = null
-  if (typeof confidenceRaw === 'number' && !Number.isNaN(confidenceRaw)) {
+  if (typeof confidenceRaw === "number" && !Number.isNaN(confidenceRaw)) {
     confidencePercent = Math.round(confidenceRaw * 100)
   }
-  const resolvedReason = reason || quote
+  const resolvedReason = reason || displayQuote
   return {
     confidencePercent,
-    quote,
-    showReason: shouldShowEvidenceReason(quote, resolvedReason),
+    quote: displayQuote,
+    showReason: shouldShowEvidenceReason(displayQuote, resolvedReason),
     reason: resolvedReason,
+    sourceLabel: sourceLabel(typeof row.source === "string" ? row.source : null),
   }
+}
+
+export function bestEvidenceRecord(conn: {
+  evidence?: Array<Record<string, unknown> | null | undefined> | null
+  evidence_json?: Record<string, unknown> | null
+}): Record<string, unknown> | null {
+  const rows = Array.isArray(conn.evidence) ? conn.evidence : []
+  for (const row of rows) {
+    if (row && typeof row === "object") {
+      return row as Record<string, unknown>
+    }
+  }
+  if (conn.evidence_json && typeof conn.evidence_json === "object") {
+    return conn.evidence_json
+  }
+  return null
 }

@@ -2,10 +2,27 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from backfield_db import StylebookConnectionEvidence
+from pydantic import BaseModel
 from sqlmodel import Session, select
+
+
+class ConnectionEvidenceOut(BaseModel):
+    id: int | None = None
+    article_id: int | None = None
+    description: str | None = None
+    quote: str | None = None
+    reason: str | None = None
+    confidence: float | None = None
+    source: str | None = None
+    prompt_version: str | None = None
+    run_id: str | None = None
+    processed_item_id: int | None = None
+    match_basis: str | None = None
+    observed_at: datetime | None = None
 
 
 def list_connection_evidence(
@@ -28,6 +45,32 @@ def list_connection_evidence(
 
     rows.sort(key=_sort_key, reverse=True)
     return rows
+
+
+def evidence_out_list(
+    session: Session,
+    *,
+    connection_id: int,
+) -> list[ConnectionEvidenceOut]:
+    return [
+        ConnectionEvidenceOut(
+            id=int(row.id) if row.id is not None else None,
+            article_id=int(row.article_id) if row.article_id is not None else None,
+            description=row.description,
+            quote=row.quote,
+            reason=row.reason,
+            confidence=float(row.confidence) if row.confidence is not None else None,
+            source=row.source,
+            prompt_version=row.prompt_version,
+            run_id=row.run_id,
+            processed_item_id=(
+                int(row.processed_item_id) if row.processed_item_id is not None else None
+            ),
+            match_basis=row.match_basis,
+            observed_at=row.observed_at,
+        )
+        for row in list_connection_evidence(session, connection_id=connection_id)
+    ]
 
 
 def best_connection_evidence(

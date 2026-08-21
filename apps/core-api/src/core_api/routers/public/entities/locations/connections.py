@@ -34,6 +34,7 @@ def list_project_location_connections(
     session: Session = Depends(get_session),
     to_entity_type: PublicConnectionEntityType | None = Query(None),
     nature: list[str] = Query(default=[], description=NATURE_PARAM_DESCRIPTION),
+    include_closed: bool = Query(False),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> PaginatedResponse[PublicConnectionOut]:
@@ -57,6 +58,7 @@ def list_project_location_connections(
         entity_id=parsed_id,
         to_entity_type=to_entity_type,
         natures=natures,
+        include_closed=include_closed,
         limit=limit,
         offset=offset,
     )

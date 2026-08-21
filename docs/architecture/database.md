@@ -103,7 +103,9 @@ shared entity rows are not trusted because sibling batch items may reuse the sam
   `stylebook_connection_nature_custom`, `stylebook_activity`. Preferred natures live in code
   (`backfield_entities.connections.natures`); see [`knowledge-graph.md`](knowledge-graph.md).
   Connection narrative lives on evidence only (no connection-level `description` /
-  `evidence_json`).
+  `evidence_json`). Stylebook Remove soft-closes (`closed_at`); public and Stylebook
+  lists hide closed by default (`include_closed=true` to show). Reopen clears
+  `closed_at`.
 - Transfer and review workflows: `stylebook_bundle_job`, `stylebook_cleanup_dismissal`,
   `stylebook_cleanup_ai_review`, `stylebook_cleanup_ai_proposal`,
   `stylebook_cleanup_check_run`, `stylebook_cleanup_check_result`,

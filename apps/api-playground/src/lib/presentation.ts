@@ -211,6 +211,9 @@ function helperTextForField(
     }
     return "counts adds mention totals; images includes up to 10 attached images."
   }
+  if (name === "include_closed") {
+    return "When true, includes connections that have been closed. Defaults to open connections only."
+  }
   return undefined
 }
 
@@ -456,7 +459,7 @@ export function presentationForField(
 }
 
 const PAGING_NAMES = new Set(["sort", "sort_direction", "limit", "offset"])
-const RESPONSE_NAMES = new Set(["include"])
+const RESPONSE_NAMES = new Set(["include", "include_closed"])
 const SEARCH_NAMES = new Set(["q", "query"])
 const AREA_NAMES = new Set([
   "bbox",

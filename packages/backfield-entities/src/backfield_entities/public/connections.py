@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from backfield_db import StylebookConnection
@@ -9,7 +10,11 @@ from pydantic import BaseModel
 from sqlalchemy import and_, or_
 from sqlmodel import Session, col, select
 
-from backfield_entities.connections.display import derived_connection_description
+from backfield_entities.connections.display import (
+    ConnectionEvidenceOut,
+    derived_connection_description,
+    evidence_out_list,
+)
 from backfield_entities.public.canonical_display import public_canonical_label
 from backfield_entities.public.nature_filters import normalize_natures
 
@@ -26,6 +31,8 @@ class PublicConnectionOut(BaseModel):
     to_label: str
     description: str | None = None
     nature: str | None = None
+    closed_at: datetime | None = None
+    evidence: list[ConnectionEvidenceOut] = []
 
 
 def _connection_label(
@@ -55,6 +62,7 @@ def list_public_entity_connections(
     entity_id: str,
     to_entity_type: PublicConnectionEntityType | None = None,
     natures: tuple[str, ...] = (),
+    include_closed: bool = False,
     limit: int = 25,
     offset: int = 0,
 ) -> tuple[list[PublicConnectionOut], int]:
@@ -81,15 +89,20 @@ def list_public_entity_connections(
         ),
     ]
     filters = [
-        StylebookConnection.project_id == project_id,
+        or_(
+            StylebookConnection.stylebook_id == int(stylebook_id),
+            and_(
+                col(StylebookConnection.stylebook_id).is_(None),
+                StylebookConnection.project_id == int(project_id),
+            ),
+        ),
         or_(*directional_filters),
     ]
+    if not include_closed:
+        filters.append(col(StylebookConnection.closed_at).is_(None))
     if nature_values:
         filters.append(col(StylebookConnection.nature).in_(nature_values))
-    rows = session.exec(
-        select(StylebookConnection)
-        .where(*filters)
-    ).all()
+    rows = session.exec(select(StylebookConnection).where(*filters)).all()
     out: list[PublicConnectionOut] = []
     for conn in rows:
         if conn.id is None:
@@ -117,8 +130,11 @@ def list_public_entity_connections(
                     session, connection_id=int(conn.id)
                 ),
                 nature=conn.nature,
+                closed_at=conn.closed_at,
+                evidence=evidence_out_list(session, connection_id=int(conn.id)),
             )
         )
+
     def target_sort_key(connection: PublicConnectionOut) -> tuple[str, str, int]:
         if (
             connection.from_entity_type == entity_type
