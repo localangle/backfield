@@ -28,8 +28,13 @@ def connection_edge_key(
     to_entity_type: str,
     to_entity_id: str,
     nature: str | None,
-    description: str | None,
-) -> tuple[int, str, str, str, str, str, str]:
+    description: str | None = None,
+) -> tuple[int, str, str, str, str, str]:
+    """Batch / in-memory identity for reinforce: ends + nature (description ignored).
+
+    ``description`` is accepted for call-site compatibility but is not part of the key.
+    """
+    _ = description
     return (
         int(project_id),
         from_entity_type.strip().lower(),
@@ -37,7 +42,6 @@ def connection_edge_key(
         to_entity_type.strip().lower(),
         str(to_entity_id),
         normalize_connection_nature(nature) or "",
-        normalize_connection_description(description) or "",
     )
 
 

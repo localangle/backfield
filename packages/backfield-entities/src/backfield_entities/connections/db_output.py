@@ -102,7 +102,7 @@ def run_auto_connections_for_db_output(
                 AutoConnectionEdgeProposal,
             ]
         ] = []
-        pending_edge_keys: set[tuple[int, str, str, str, str, str, str]] = set()
+        pending_edge_keys: set[tuple[int, str, str, str, str, str]] = set()
 
         for from_type, to_type in AUTO_CONNECTION_FAMILIES:
             from_entities, to_entities = _family_entities(
@@ -125,7 +125,6 @@ def run_auto_connections_for_db_output(
                         to_entity_type=to_type,
                         to_entity_id=edge.to_entity_id,
                         nature=edge.nature,
-                        description=edge.description,
                     )
                     if edge_key in pending_edge_keys:
                         continue
@@ -160,7 +159,6 @@ def run_auto_connections_for_db_output(
                     to_entity_type=to_type,
                     to_entity_id=edge.to_entity_id,
                     nature=edge.nature,
-                    description=edge.description,
                 )
                 if edge_key in pending_edge_keys:
                     continue
@@ -172,7 +170,7 @@ def run_auto_connections_for_db_output(
             created_cap_skipped = len(pending_edges) - MAX_CREATED_EDGES_PER_ITEM
             pending_edges = pending_edges[:MAX_CREATED_EDGES_PER_ITEM]
 
-        write_result = AutoConnectionWriteResult(created=[], skipped_existing_count=0)
+        write_result = AutoConnectionWriteResult()
         for from_type, to_type, from_entities, to_entities, edge in pending_edges:
             batch = write_auto_connections(
                 session,
@@ -189,6 +187,7 @@ def run_auto_connections_for_db_output(
                 adjudication_ai_model_config_id=model_config_id,
             )
             write_result.created.extend(batch.created)
+            write_result.reinforced.extend(batch.reinforced)
             write_result.skipped_existing_count += batch.skipped_existing_count
 
         return build_auto_connections_summary(

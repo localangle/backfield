@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
+from backfield_db import StylebookConnectionEvidence
 from pydantic import BaseModel, Field, field_validator
 
 from backfield_entities.connections.taxonomy import (
@@ -97,4 +99,43 @@ def build_connection_creation_evidence(
         adjudication_model=adjudication_model,
         adjudication_ai_model_config_id=adjudication_ai_model_config_id,
         match_basis=match_basis,
+    )
+
+
+def evidence_row_from_creation(
+    *,
+    connection_id: int,
+    evidence: ConnectionCreationEvidence,
+    description: str | None,
+    observed_at: datetime | None = None,
+) -> StylebookConnectionEvidence:
+    """Map typed creation evidence into a ``stylebook_connection_evidence`` row."""
+    payload: dict[str, Any] = {}
+    for key, value in (
+        ("from_entity_type", evidence.from_entity_type),
+        ("from_entity_id", evidence.from_entity_id),
+        ("from_display_name", evidence.from_display_name),
+        ("to_entity_type", evidence.to_entity_type),
+        ("to_entity_id", evidence.to_entity_id),
+        ("to_display_name", evidence.to_display_name),
+        ("adjudication_model", evidence.adjudication_model),
+        ("adjudication_ai_model_config_id", evidence.adjudication_ai_model_config_id),
+    ):
+        if value is not None:
+            payload[key] = value
+
+    return StylebookConnectionEvidence(
+        connection_id=int(connection_id),
+        article_id=evidence.article_id,
+        description=(description or "").strip() or None,
+        quote=evidence.quote,
+        reason=evidence.reason,
+        confidence=float(evidence.confidence),
+        source=evidence.source,
+        prompt_version=evidence.prompt_version,
+        run_id=evidence.run_id,
+        processed_item_id=evidence.processed_item_id,
+        match_basis=evidence.match_basis,
+        observed_at=observed_at,
+        payload_json=payload or None,
     )

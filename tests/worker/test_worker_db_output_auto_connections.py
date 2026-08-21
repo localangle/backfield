@@ -12,6 +12,7 @@ from backfield_db import (
     BackfieldProject,
     BackfieldWorkspace,
     StylebookConnection,
+    StylebookConnectionEvidence,
     StylebookOrganizationCanonical,
     StylebookPersonCanonical,
     SubstrateArticle,
@@ -287,9 +288,15 @@ def test_auto_connections_creates_high_confidence_edge() -> None:
         assert row.to_entity_type == "organization"
         assert row.to_entity_id == fixture.organization_canonical_id
         assert row.nature == "works_for"
+        assert row.description is None
         assert row.evidence_json is not None
         assert "Chicago City Hall" in row.evidence_json["quote"]
         assert row.evidence_json["confidence"] >= AUTO_CONNECTION_MIN_CONFIDENCE
+        evidence = session.exec(select(StylebookConnectionEvidence)).all()
+        assert len(evidence) == 1
+        assert evidence[0].article_id == fixture.article_id
+        assert evidence[0].quote is not None
+        assert "Chicago City Hall" in evidence[0].quote
 
 
 def test_auto_connections_skips_low_confidence_edge() -> None:
@@ -321,13 +328,18 @@ def test_auto_connections_skips_low_confidence_edge() -> None:
         assert session.exec(select(StylebookConnection)).all() == []
 
 
-def test_auto_connections_skips_duplicate_existing_edge() -> None:
+def test_auto_connections_reinforces_existing_edge() -> None:
     engine = _engine()
     with Session(engine) as session:
         fixture = _seed_linked_person_org(session, person_affiliation="")
         session.add(
             StylebookConnection(
                 project_id=fixture.project_id,
+                stylebook_id=session.exec(
+                    select(BackfieldProject).where(BackfieldProject.id == fixture.project_id)
+                )
+                .one()
+                .stylebook_id,
                 from_entity_type="person",
                 from_entity_id=fixture.person_canonical_id,
                 to_entity_type="organization",
@@ -361,9 +373,73 @@ def test_auto_connections_skips_duplicate_existing_edge() -> None:
         session.commit()
 
     assert summary["created"] == 0
-    assert summary["skipped_existing"] == 1
+    assert summary["reinforced"] == 1
+    assert summary["skipped_existing"] == 0
     with Session(engine) as session:
         assert len(session.exec(select(StylebookConnection)).all()) == 1
+        evidence = session.exec(select(StylebookConnectionEvidence)).all()
+        assert len(evidence) == 1
+        assert evidence[0].article_id == fixture.article_id
+
+
+def test_auto_connections_skips_when_article_already_cited() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        fixture = _seed_linked_person_org(session, person_affiliation="")
+        project = session.exec(
+            select(BackfieldProject).where(BackfieldProject.id == fixture.project_id)
+        ).one()
+        conn = StylebookConnection(
+            project_id=fixture.project_id,
+            stylebook_id=project.stylebook_id,
+            from_entity_type="person",
+            from_entity_id=fixture.person_canonical_id,
+            to_entity_type="organization",
+            to_entity_id=fixture.organization_canonical_id,
+            nature="works_for",
+            description=None,
+        )
+        session.add(conn)
+        session.commit()
+        session.refresh(conn)
+        session.add(
+            StylebookConnectionEvidence(
+                connection_id=int(conn.id),  # type: ignore[arg-type]
+                article_id=fixture.article_id,
+                description="already cited",
+                quote="Mayor Jane Smith works for Chicago City Hall",
+                source="dboutput_auto_connections",
+                confidence=0.95,
+            )
+        )
+        session.commit()
+
+        quote = "Mayor Jane Smith works for Chicago City Hall"
+
+        def _mock_llm(prompt: str, **_kwargs: object) -> str:
+            if "person to organization" in prompt:
+                return _llm_edges_response(
+                    from_id=fixture.person_canonical_id,
+                    to_id=fixture.organization_canonical_id,
+                    quote=quote,
+                )
+            return json.dumps({"edges": []})
+
+        summary = run_auto_connections_for_db_output(
+            session,
+            project_id=fixture.project_id,
+            article_id=fixture.article_id,
+            article_text=fixture.article_text,
+            settings=_eligible_settings(),
+            call_llm=MagicMock(side_effect=_mock_llm),
+        )
+        session.commit()
+
+    assert summary["created"] == 0
+    assert summary["reinforced"] == 0
+    assert summary["skipped_existing"] == 1
+    with Session(engine) as session:
+        assert len(session.exec(select(StylebookConnectionEvidence)).all()) == 1
 
 
 def test_auto_connections_skips_invalid_llm_json() -> None:

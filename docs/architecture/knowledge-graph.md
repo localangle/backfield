@@ -1,8 +1,10 @@
 # Knowledge graph target architecture
 
 **Status:** Phase A implementation in progress on `explore/knowledge-graph-architecture`.
-Decision record below; additive schema landed in migration `077_conn_kg_phase_a`. Cutover
-(evidence backfill, uniqueness, drop `description`/`evidence_json`) and reinforce writer are next.
+Additive schema: migration `077_conn_kg_phase_a`. Offline data command:
+`backfield migrate-connection-kg`. Reinforce auto-writer ships (one open edge + evidence
+children; dual-writes `evidence_json` until cutover). Next: uniqueness cutover, Stylebook/public
+APIs.
 
 This document is the decision record for evolving Stylebook relationships and coverage packaging
 into a news-archive knowledge graph. It is **not** current runtime behavior. When slices ship,
@@ -247,9 +249,20 @@ first; customs optional in editor flows.
 Applies to Phase A only (connections). Storylines are additive — no backfill of historical
 packages required for v1.
 
-Run as an **explicit offline / one-off command** (CLI or Alembic data step), not silently inside
-API traffic. Prefer: schema migration (new tables/columns, dual-write readiness) → data command →
-cut over uniqueness + drop `evidence_json` → ship reinforce writer.
+Run as an **explicit offline / one-off command**, not silently inside API traffic:
+
+```bash
+backfield migrate-connection-kg                 # dry-run inventory + plan
+backfield migrate-connection-kg --inventory-only
+backfield migrate-connection-kg --apply         # commit remaps, merges, evidence
+backfield migrate-connection-kg --stylebook-id N --json
+```
+
+Prefer: schema migration `077_conn_kg_phase_a` (additive) → this data command →
+later cutover uniqueness + drop `evidence_json` → ship reinforce writer.
+
+Implementation: `backfield_entities.connections.migrate_kg_phase_a` + CLI
+`backfield migrate-connection-kg`.
 
 #### Step 0 — Inventory (preflight)
 

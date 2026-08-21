@@ -29,6 +29,7 @@ def build_auto_connections_summary(
             "reason": reason,
             "error": error,
             "created": 0,
+            "reinforced": 0,
             "skipped_existing": 0,
             "families": [],
         }
@@ -39,6 +40,7 @@ def build_auto_connections_summary(
             "status": "ineligible",
             "reason": reason,
             "created": 0,
+            "reinforced": 0,
             "skipped_existing": 0,
             "families": [],
         }
@@ -64,12 +66,14 @@ def build_auto_connections_summary(
         )
 
     created_rows = write_result.created if write_result is not None else []
+    reinforced_rows = write_result.reinforced if write_result is not None else []
     return {
         "enabled": True,
         "eligible": True,
         "status": "succeeded",
         "reason": reason,
         "created": len(created_rows),
+        "reinforced": len(reinforced_rows),
         "skipped_existing": (
             write_result.skipped_existing_count if write_result is not None else 0
         ),
@@ -78,7 +82,7 @@ def build_auto_connections_summary(
         "accepted": total_accepted,
         "skipped": total_skipped,
         "families": family_summaries,
-        "edges": [_written_edge_dict(edge) for edge in created_rows],
+        "edges": [_written_edge_dict(edge) for edge in created_rows + reinforced_rows],
     }
 
 
@@ -93,4 +97,5 @@ def _written_edge_dict(edge: WrittenAutoConnection) -> dict[str, Any]:
         "description": edge.description,
         "nature": edge.nature,
         "confidence": edge.confidence,
+        "reinforced": edge.reinforced,
     }
