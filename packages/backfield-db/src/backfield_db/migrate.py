@@ -70,8 +70,12 @@ def build_alembic_config() -> Config:
 
 
 def is_transient_db_error(exc: BaseException) -> bool:
-    """Return True when a migration failure may clear after Postgres finishes starting."""
-    if isinstance(exc, (OperationalError, DBAPIError)):
+    """Return True when a migration failure may clear after Postgres finishes starting.
+
+    Only connection/startup failures are treated as transient. SQL programming and
+    integrity errors must fail fast so operators see the real cause.
+    """
+    if isinstance(exc, OperationalError):
         return True
 
     try:
@@ -80,6 +84,11 @@ def is_transient_db_error(exc: BaseException) -> bool:
         psycopg = None
 
     if psycopg is not None and isinstance(exc, psycopg.OperationalError):
+        return True
+
+    # DBAPIError is the base for almost all SQLAlchemy DB failures; do not treat
+    # every IntegrityError/ProgrammingError as "Postgres still starting".
+    if isinstance(exc, DBAPIError) and getattr(exc, "connection_invalidated", False):
         return True
 
     message = str(exc).lower()

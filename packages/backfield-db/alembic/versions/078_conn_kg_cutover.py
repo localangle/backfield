@@ -66,7 +66,18 @@ def upgrade() -> None:
                     )
                     SELECT
                         c.id,
-                        NULLIF(c.evidence_json->>'article_id', '')::integer,
+                        CASE
+                            WHEN NULLIF(c.evidence_json->>'article_id', '')::integer
+                                 IS NOT NULL
+                                 AND EXISTS (
+                                     SELECT 1
+                                     FROM substrate_article AS a
+                                     WHERE a.id =
+                                         NULLIF(c.evidence_json->>'article_id', '')::integer
+                                 )
+                            THEN NULLIF(c.evidence_json->>'article_id', '')::integer
+                            ELSE NULL
+                        END,
                         NULLIF(trim(COALESCE(c.description, '')), ''),
                         NULLIF(trim(COALESCE(c.evidence_json->>'quote', '')), ''),
                         NULLIF(
@@ -80,7 +91,7 @@ def upgrade() -> None:
                             ''
                         ),
                         CASE
-                            WHEN c.evidence_json ? 'confidence'
+                            WHEN (c.evidence_json::jsonb) ? 'confidence'
                                  AND NULLIF(c.evidence_json->>'confidence', '') IS NOT NULL
                             THEN (c.evidence_json->>'confidence')::double precision
                             ELSE NULL
@@ -158,6 +169,55 @@ def upgrade() -> None:
             )
 
         # Collapse remaining open duplicates on (stylebook_id, ends, nature).
+        # Reassign at most one evidence row per (survivor, article_id) so the partial
+        # unique index cannot fire when multiple dups share the same article.
+        op.execute(
+            sa.text(
+                """
+                WITH ranked AS (
+                    SELECT
+                        id,
+                        FIRST_VALUE(id) OVER (
+                            PARTITION BY
+                                stylebook_id,
+                                from_entity_type,
+                                from_entity_id,
+                                to_entity_type,
+                                to_entity_id,
+                                coalesce(nature, '')
+                            ORDER BY id ASC
+                        ) AS survivor_id
+                    FROM stylebook_connections
+                    WHERE closed_at IS NULL
+                      AND stylebook_id IS NOT NULL
+                ),
+                dups AS (
+                    SELECT id, survivor_id
+                    FROM ranked
+                    WHERE id <> survivor_id
+                ),
+                movable AS (
+                    SELECT DISTINCT ON (d.survivor_id, e.article_id)
+                        e.id AS evidence_id,
+                        d.survivor_id
+                    FROM stylebook_connection_evidence AS e
+                    JOIN dups AS d ON e.connection_id = d.id
+                    WHERE e.article_id IS NOT NULL
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM stylebook_connection_evidence AS keep
+                          WHERE keep.connection_id = d.survivor_id
+                            AND keep.article_id = e.article_id
+                      )
+                    ORDER BY d.survivor_id, e.article_id, e.id ASC
+                )
+                UPDATE stylebook_connection_evidence AS e
+                SET connection_id = m.survivor_id
+                FROM movable AS m
+                WHERE e.id = m.evidence_id
+                """
+            )
+        )
         op.execute(
             sa.text(
                 """
@@ -187,14 +247,7 @@ def upgrade() -> None:
                 SET connection_id = d.survivor_id
                 FROM dups AS d
                 WHERE e.connection_id = d.id
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM stylebook_connection_evidence AS keep
-                      WHERE keep.connection_id = d.survivor_id
-                        AND keep.article_id IS NOT NULL
-                        AND e.article_id IS NOT NULL
-                        AND keep.article_id = e.article_id
-                  )
+                  AND e.article_id IS NULL
                 """
             )
         )
