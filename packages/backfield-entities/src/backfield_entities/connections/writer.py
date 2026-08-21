@@ -9,6 +9,7 @@ from backfield_db import StylebookConnection
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
+from backfield_entities.catalog.resolve import resolve_stylebook_id_for_project_id
 from backfield_entities.connections.dedupe import (
     connection_description_coalesced,
     connection_nature_coalesced,
@@ -16,6 +17,7 @@ from backfield_entities.connections.dedupe import (
     normalize_connection_nature,
 )
 from backfield_entities.connections.evidence import build_connection_creation_evidence
+from backfield_entities.connections.natures import normalize_preferred_nature_slug
 from backfield_entities.connections.taxonomy import AUTO_CONNECTION_PROMPT_VERSION
 from backfield_entities.connections.types import AutoConnectionEdgeProposal, LinkedEntitySnapshot
 
@@ -84,10 +86,17 @@ def write_auto_connections(
         if from_entity is None or to_entity is None:
             continue
 
-        nature = normalize_connection_nature(edge.nature)
+        nature = normalize_preferred_nature_slug(
+            normalize_connection_nature(edge.nature)
+        )
         description = normalize_connection_description(edge.description)
         if not description:
             continue
+
+        try:
+            stylebook_id = resolve_stylebook_id_for_project_id(session, int(project_id))
+        except (LookupError, ValueError):
+            stylebook_id = None
 
         existing = session.exec(
             select(StylebookConnection).where(
@@ -129,6 +138,7 @@ def write_auto_connections(
         )
         row = StylebookConnection(
             project_id=int(project_id),
+            stylebook_id=int(stylebook_id) if stylebook_id is not None else None,
             from_entity_type=from_entity_type,
             from_entity_id=edge.from_entity_id,
             to_entity_type=to_entity_type,

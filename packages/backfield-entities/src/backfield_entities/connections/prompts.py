@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from backfield_entities.connections.same_site_hints import SameSiteOrgLocationHint
 from backfield_entities.connections.taxonomy import (
-    AUTO_CONNECTION_PROMPT_VERSION_DESCRIPTION_FIRST,
+    AUTO_CONNECTION_PROMPT_VERSION_NATURE_CATALOG,
     AUTO_CONNECTION_PROMPT_VERSION_WITH_HINTS,
     auto_link_natures_for_pair,
 )
@@ -64,7 +64,7 @@ def build_family_classification_prompt(
     prompt_version = (
         AUTO_CONNECTION_PROMPT_VERSION_WITH_HINTS
         if same_site_hints
-        else AUTO_CONNECTION_PROMPT_VERSION_DESCRIPTION_FIRST
+        else AUTO_CONNECTION_PROMPT_VERSION_NATURE_CATALOG
     )
     hints_section = _format_same_site_hints_section(same_site_hints)
     same_site_rules = ""
@@ -90,13 +90,16 @@ def build_family_classification_prompt(
         "relationship in narrative terms.\n"
         "- Set nature to one allowed slug only when it clearly fits; otherwise use null.\n"
         "- confidence must be 0.0-1.0; only return edges you would score >= 0.9.\n"
-        "- Multiple edges for the same pair are allowed only when each is explicitly "
-        "supported by separate evidence.\n"
+        "- Multiple edges for the same pair+nature are not needed; one edge with the best "
+        "quote is enough (systems will attach further articles as evidence).\n"
         "- For organization→location, prefer located_at over based_in when a specific "
         "address/place is supported.\n"
         "- For person→organization, prefer leads over works_for when leadership is explicit.\n"
-        "- Athletes and coaches: team nicknames before a player name or role descriptor "
-        '(e.g. "Phillies masher Kyle Schwarber") support member_of to that sports_team.\n'
+        "- Athletes on a sports team: use plays_for (not member_of).\n"
+        "- Coaches of a sports team: use coaches (not works_for or leads).\n"
+        "- Mayors, governors, sheriffs, and similar executives of a jurisdiction: use "
+        "holds_office_in (not represents).\n"
+        "- Elected legislators for a district: use represents to that location.\n"
         "- Person→location must not use address-like locations.\n"
         "- Prefer the most specific supported geography.\n"
         "- Never connect an entity to itself.\n"

@@ -23,5 +23,12 @@ def apply_subsumption_rules(
             filtered = [edge for edge in filtered if edge.nature != "works_for"]
         if "located_at" in natures and "based_in" in natures:
             filtered = [edge for edge in filtered if edge.nature != "based_in"]
+        if "plays_for" in natures and "member_of" in natures:
+            filtered = [edge for edge in filtered if edge.nature != "member_of"]
+        if "coaches" in natures and "works_for" in natures:
+            filtered = [edge for edge in filtered if edge.nature != "works_for"]
+        if "holds_office_in" in natures and "represents" in natures:
+            # Prefer office-holding over district representation when both proposed.
+            filtered = [edge for edge in filtered if edge.nature != "represents"]
         out.extend(filtered)
     return out

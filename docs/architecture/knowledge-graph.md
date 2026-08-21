@@ -1,8 +1,8 @@
 # Knowledge graph target architecture
 
-**Status:** Proposed (not implemented). Recorded on branch
-`explore/knowledge-graph-architecture` after design grilling against Graphiti and the OpenAI
-temporal-agents cookbook.
+**Status:** Phase A implementation in progress on `explore/knowledge-graph-architecture`.
+Decision record below; additive schema landed in migration `077_conn_kg_phase_a`. Cutover
+(evidence backfill, uniqueness, drop `description`/`evidence_json`) and reinforce writer are next.
 
 This document is the decision record for evolving Stylebook relationships and coverage packaging
 into a news-archive knowledge graph. It is **not** current runtime behavior. When slices ship,

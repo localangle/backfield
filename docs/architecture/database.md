@@ -97,7 +97,10 @@ shared entity rows are not trusted because sibling batch items may reuse the sam
 - People: `stylebook_person_canonical`, `stylebook_person_alias`, `stylebook_person_meta`.
 - Organizations: `stylebook_organization_canonical`, `stylebook_organization_alias`,
   `stylebook_organization_meta`.
-- Relationships and history: `stylebook_connections`, `stylebook_activity`.
+- Relationships and history: `stylebook_connections` (additive Phase A: `stylebook_id`,
+  `closed_at`, `updated_at`), `stylebook_connection_evidence`,
+  `stylebook_connection_nature_custom`, `stylebook_activity`. Preferred natures live in code
+  (`backfield_entities.connections.natures`); see [`knowledge-graph.md`](knowledge-graph.md).
 - Transfer and review workflows: `stylebook_bundle_job`, `stylebook_cleanup_dismissal`,
   `stylebook_cleanup_ai_review`, `stylebook_cleanup_ai_proposal`,
   `stylebook_cleanup_check_run`, `stylebook_cleanup_check_result`,
