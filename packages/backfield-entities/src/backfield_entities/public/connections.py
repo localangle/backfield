@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import and_, or_
 from sqlmodel import Session, col, select
 
+from backfield_entities.connections.display import derived_connection_description
 from backfield_entities.public.canonical_display import public_canonical_label
 from backfield_entities.public.nature_filters import normalize_natures
 
@@ -112,7 +113,9 @@ def list_public_entity_connections(
                     entity_type=str(conn.to_entity_type),
                     entity_id=str(conn.to_entity_id),
                 ),
-                description=conn.description,
+                description=derived_connection_description(
+                    session, connection_id=int(conn.id)
+                ),
                 nature=conn.nature,
             )
         )

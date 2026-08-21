@@ -1,10 +1,10 @@
 # Knowledge graph target architecture
 
-**Status:** Phase A implementation in progress on `explore/knowledge-graph-architecture`.
-Additive schema: migration `077_conn_kg_phase_a`. Offline data command:
-`backfield migrate-connection-kg`. Reinforce auto-writer ships (one open edge + evidence
-children; dual-writes `evidence_json` until cutover). Next: uniqueness cutover, Stylebook/public
-APIs.
+**Status:** Phase A cutover in progress on `explore/knowledge-graph-architecture`.
+Additive schema: `077_conn_kg_phase_a`. Data remap: `backfield migrate-connection-kg`.
+Schema cutover: `078_conn_kg_cutover` (open-edge unique index; drop connection
+`description` / `evidence_json`; evidence FK cascades). Reinforce writer + derived API
+display fields ship. Next: richer Stylebook/public evidence arrays and UI polish.
 
 This document is the decision record for evolving Stylebook relationships and coverage packaging
 into a news-archive knowledge graph. It is **not** current runtime behavior. When slices ship,

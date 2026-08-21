@@ -10,6 +10,7 @@ from backfield_auth.gate import require_project_access
 from backfield_db import (
     BackfieldProject,
     StylebookConnection,
+    StylebookConnectionEvidence,
     StylebookLocationCanonical,
     StylebookOrganizationCanonical,
     StylebookPersonCanonical,
@@ -20,14 +21,15 @@ from backfield_entities.activity import (
     EVENT_CONNECTION_UPDATED,
     log_stylebook_activity_safe,
 )
-from backfield_entities.connections.dedupe import (
-    connection_description_coalesced,
-    connection_nature_coalesced,
+from backfield_entities.connections.dedupe import connection_nature_coalesced
+from backfield_entities.connections.display import (
+    derived_connection_description,
+    legacy_evidence_json_for_connection,
 )
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import and_, or_
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
@@ -85,7 +87,12 @@ def _log_stylebook_connection_event(
         event_type=event_type,
         entity_type="connection",
         entity_id=str(conn.id),
-        entity_label=(conn.description or conn.nature or "").strip() or None,
+        entity_label=(
+            derived_connection_description(session, connection_id=int(conn.id))  # type: ignore[arg-type]
+            or conn.nature
+            or ""
+        ).strip()
+        or None,
         related_entity_type=conn.to_entity_type,
         related_entity_id=conn.to_entity_id,
         related_entity_label=None,
@@ -95,7 +102,9 @@ def _log_stylebook_connection_event(
             "to_entity_type": conn.to_entity_type,
             "to_entity_id": conn.to_entity_id,
             "nature": conn.nature,
-            "description": conn.description,
+            "description": derived_connection_description(
+                session, connection_id=int(conn.id)  # type: ignore[arg-type]
+            ),
             **(payload_json or {}),
         },
     )
@@ -202,10 +211,35 @@ def _connection_response_from_row(
             conn.to_entity_id,
             catalog_stylebook_id,
         ),
-        description=conn.description,
+        description=derived_connection_description(
+            session, connection_id=int(conn.id)  # type: ignore[arg-type]
+        ),
         nature=conn.nature,
-        evidence_json=conn.evidence_json if isinstance(conn.evidence_json, dict) else None,
+        evidence_json=legacy_evidence_json_for_connection(
+            session, connection_id=int(conn.id)  # type: ignore[arg-type]
+        ),
         created_at=conn.created_at,
+    )
+
+
+def _add_manual_evidence(
+    session: Session,
+    *,
+    connection_id: int,
+    description: str | None,
+) -> None:
+    text = (description or "").strip()
+    if not text:
+        return
+    session.add(
+        StylebookConnectionEvidence(
+            connection_id=int(connection_id),
+            article_id=None,
+            description=text,
+            quote=text,
+            reason=text,
+            source="manual",
+        )
     )
 
 
@@ -307,23 +341,26 @@ def _canonical_organization_in_stylebook_or_404(
         raise HTTPException(status_code=404, detail="Canonical organization not found")
 
 
-def _connection_dedupe_key(c: StylebookConnection) -> tuple[str, str, str, str, str, str]:
+def _connection_dedupe_key(c: StylebookConnection) -> tuple[str, str, str, str, str]:
     return (
         str(c.from_entity_type),
         str(c.from_entity_id),
         str(c.to_entity_type),
         str(c.to_entity_id),
         str(c.nature or ""),
-        str(c.description or ""),
     )
 
 
 def _apply_connection_update(
+    session: Session,
     conn: StylebookConnection,
     payload: UpdateConnectionRequest,
 ) -> StylebookConnection:
     new_nature = conn.nature
-    new_description = conn.description
+    current_description = derived_connection_description(
+        session, connection_id=int(conn.id)  # type: ignore[arg-type]
+    )
+    new_description = current_description
     if payload.nature is not None:
         new_nature = validate_manual_connection_labels(
             nature=payload.nature,
@@ -335,7 +372,12 @@ def _apply_connection_update(
             description=payload.description,
         )
     conn.nature = new_nature
-    conn.description = new_description
+    if payload.description is not None and new_description:
+        _add_manual_evidence(
+            session,
+            connection_id=int(conn.id),  # type: ignore[arg-type]
+            description=new_description,
+        )
     return conn
 
 
@@ -348,9 +390,10 @@ def _find_existing_connection(
     to_entity_type: str,
     to_entity_id: str,
     nature: str | None,
-    description: str | None,
+    description: str | None = None,
 ) -> StylebookConnection | None:
-    normalized_nature, normalized_description = validate_manual_connection_labels(
+    _ = description
+    normalized_nature, _normalized_description = validate_manual_connection_labels(
         nature=nature,
         description=description,
     )
@@ -363,7 +406,7 @@ def _find_existing_connection(
             StylebookConnection.to_entity_type == to_entity_type,
             StylebookConnection.to_entity_id == to_entity_id,
             connection_nature_coalesced() == (normalized_nature or ""),
-            connection_description_coalesced() == (normalized_description or ""),
+            col(StylebookConnection.closed_at).is_(None),
         )
         .order_by(StylebookConnection.created_at, StylebookConnection.id)
     ).first()
@@ -438,7 +481,7 @@ def _matching_stylebook_connection_rows(
             StylebookConnection.to_entity_type == connection.to_entity_type,
             StylebookConnection.to_entity_id == connection.to_entity_id,
             connection_nature_coalesced() == (connection.nature or ""),
-            connection_description_coalesced() == (connection.description or ""),
+            col(StylebookConnection.closed_at).is_(None),
         )
         .order_by(StylebookConnection.id.asc())
     ).all()
@@ -532,14 +575,18 @@ def create_location_connection(
     )
     conn = StylebookConnection(
         project_id=int(proj.id),
+        stylebook_id=int(sb_id),
         from_entity_type="location",
         from_entity_id=loc_key,
         to_entity_type=payload.to_entity_type,
         to_entity_id=to_key,
         nature=nature,
-        description=description,
     )
     session.add(conn)
+    session.flush()
+    _add_manual_evidence(
+        session, connection_id=int(conn.id), description=description  # type: ignore[arg-type]
+    )
     session.commit()
     session.refresh(conn)
     return _connection_response_from_row(
@@ -586,20 +633,7 @@ def update_location_connection(
     ).first()
     if conn is None:
         raise HTTPException(status_code=404, detail="Connection not found")
-    new_nature = conn.nature
-    new_description = conn.description
-    if payload.nature is not None:
-        new_nature = validate_manual_connection_labels(
-            nature=payload.nature,
-            description=new_description,
-        )[0]
-    if payload.description is not None:
-        new_nature, new_description = validate_manual_connection_labels(
-            nature=new_nature,
-            description=payload.description,
-        )
-    conn.nature = new_nature
-    conn.description = new_description
+    _apply_connection_update(session, conn, payload)
     session.add(conn)
     session.commit()
     session.refresh(conn)
@@ -842,14 +876,20 @@ def create_stylebook_location_connection(
     if existing is None:
         existing = StylebookConnection(
             project_id=storage_project_id,
+            stylebook_id=int(sb.id),
             from_entity_type="location",
             from_entity_id=loc_key,
             to_entity_type=payload.to_entity_type,
             to_entity_id=to_key,
             nature=nature,
-            description=description,
         )
         session.add(existing)
+        session.flush()
+        _add_manual_evidence(
+            session,
+            connection_id=int(existing.id),  # type: ignore[arg-type]
+            description=description,
+        )
         session.commit()
         session.refresh(existing)
         _log_stylebook_connection_event(
@@ -860,6 +900,14 @@ def create_stylebook_location_connection(
             conn=existing,
         )
         session.commit()
+    else:
+        _add_manual_evidence(
+            session,
+            connection_id=int(existing.id),  # type: ignore[arg-type]
+            description=description,
+        )
+        session.commit()
+        session.refresh(existing)
     return _connection_response_from_row(
         session,
         project_id=storage_project_id,
@@ -916,7 +964,7 @@ def update_stylebook_location_connection(
         session, project_ids=project_ids, connection=conn
     )
     for row in rows:
-        _apply_connection_update(row, payload)
+        _apply_connection_update(session, row, payload)
         session.add(row)
     _log_stylebook_connection_event(
         session,
@@ -1038,14 +1086,20 @@ def _create_stylebook_entity_connection(
     if existing is None:
         existing = StylebookConnection(
             project_id=storage_project_id,
+            stylebook_id=int(catalog_stylebook_id),
             from_entity_type=from_entity_type,
             from_entity_id=from_entity_id,
             to_entity_type=payload.to_entity_type,
             to_entity_id=to_key,
             nature=nature,
-            description=description,
         )
         session.add(existing)
+        session.flush()
+        _add_manual_evidence(
+            session,
+            connection_id=int(existing.id),  # type: ignore[arg-type]
+            description=description,
+        )
         session.commit()
         session.refresh(existing)
         _log_stylebook_connection_event(
@@ -1056,6 +1110,14 @@ def _create_stylebook_entity_connection(
             conn=existing,
         )
         session.commit()
+    else:
+        _add_manual_evidence(
+            session,
+            connection_id=int(existing.id),  # type: ignore[arg-type]
+            description=description,
+        )
+        session.commit()
+        session.refresh(existing)
     return _connection_response_from_row(
         session,
         project_id=storage_project_id,
@@ -1167,7 +1229,7 @@ def update_stylebook_person_connection(
         session, project_ids=project_ids, connection=conn
     )
     for row in rows:
-        _apply_connection_update(row, payload)
+        _apply_connection_update(session, row, payload)
         session.add(row)
     _log_stylebook_connection_event(
         session,
@@ -1309,7 +1371,7 @@ def update_stylebook_organization_connection(
         session, project_ids=project_ids, connection=conn
     )
     for row in rows:
-        _apply_connection_update(row, payload)
+        _apply_connection_update(session, row, payload)
         session.add(row)
     _log_stylebook_connection_event(
         session,

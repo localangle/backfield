@@ -5,7 +5,7 @@ from __future__ import annotations
 from backfield_db import StylebookConnection
 
 
-def test_stylebook_connection_description_defaults_to_none() -> None:
+def test_stylebook_connection_open_edge_fields() -> None:
     row = StylebookConnection(
         project_id=1,
         stylebook_id=1,
@@ -14,15 +14,18 @@ def test_stylebook_connection_description_defaults_to_none() -> None:
         to_entity_type="organization",
         to_entity_id="org-uuid",
         nature="works_for",
-        description="Jane Doe works for Acme Corp.",
     )
-    assert row.description == "Jane Doe works for Acme Corp."
     assert row.nature == "works_for"
     assert row.closed_at is None
     assert row.stylebook_id == 1
+    assert not hasattr(row, "description") or "description" not in StylebookConnection.model_fields
+    assert (
+        not hasattr(row, "evidence_json")
+        or "evidence_json" not in StylebookConnection.model_fields
+    )
 
 
-def test_stylebook_connection_allows_null_nature_with_description() -> None:
+def test_stylebook_connection_allows_null_nature() -> None:
     row = StylebookConnection(
         project_id=1,
         stylebook_id=1,
@@ -31,10 +34,8 @@ def test_stylebook_connection_allows_null_nature_with_description() -> None:
         to_entity_type="person",
         to_entity_id="person-uuid-2",
         nature=None,
-        description="They served together on the police reform task force.",
     )
     assert row.nature is None
-    assert row.description is not None
 
 
 def test_stylebook_connection_evidence_defaults() -> None:

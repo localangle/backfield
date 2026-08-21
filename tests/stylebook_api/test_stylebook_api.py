@@ -3757,20 +3757,27 @@ def test_stylebook_person_and_organization_connections_list(
         person_id = str(person.id)
         org_id = str(organization.id)
         proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        conn = StylebookConnection(
+            project_id=int(proj.id),
+            stylebook_id=int(proj.stylebook_id) if proj.stylebook_id else None,
+            from_entity_type="person",
+            from_entity_id=person_id,
+            to_entity_type="organization",
+            to_entity_id=org_id,
+            nature="works_for",
+        )
+        s.add(conn)
+        s.commit()
+        s.refresh(conn)
+        from backfield_db import StylebookConnectionEvidence
+
         s.add(
-            StylebookConnection(
-                project_id=int(proj.id),
-                from_entity_type="person",
-                from_entity_id=person_id,
-                to_entity_type="organization",
-                to_entity_id=org_id,
-                nature="works_for",
-                evidence_json={
-                    "source": "dboutput_auto_connections",
-                    "confidence": 0.95,
-                    "quote": "Jane works for Conn Org.",
-                    "reason": "Explicit employment in text.",
-                },
+            StylebookConnectionEvidence(
+                connection_id=int(conn.id),
+                source="dboutput_auto_connections",
+                confidence=0.95,
+                quote="Jane works for Conn Org.",
+                reason="Explicit employment in text.",
             )
         )
         s.commit()
@@ -3906,15 +3913,27 @@ def test_stylebook_connection_lists_auto_connection_evidence(
     }
     with Session(engine) as s:
         proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        conn = StylebookConnection(
+            project_id=int(proj.id),
+            stylebook_id=int(proj.stylebook_id) if proj.stylebook_id else None,
+            from_entity_type="location",
+            from_entity_id=aid,
+            to_entity_type="location",
+            to_entity_id=bid,
+            nature="near",
+        )
+        s.add(conn)
+        s.commit()
+        s.refresh(conn)
+        from backfield_db import StylebookConnectionEvidence
+
         s.add(
-            StylebookConnection(
-                project_id=int(proj.id),
-                from_entity_type="location",
-                from_entity_id=aid,
-                to_entity_type="location",
-                to_entity_id=bid,
-                nature="near",
-                evidence_json=evidence,
+            StylebookConnectionEvidence(
+                connection_id=int(conn.id),
+                source=str(evidence.get("source") or "dboutput_auto_connections"),
+                confidence=evidence.get("confidence"),
+                quote=evidence.get("quote"),
+                reason=evidence.get("reason"),
             )
         )
         s.commit()

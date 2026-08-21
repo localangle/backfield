@@ -1080,9 +1080,10 @@ class StylebookOrganizationMeta(SQLModel, table=True):
 class StylebookConnection(SQLModel, table=True):
     """Directed edge between two Stylebook canonicals (polymorphic entity ids).
 
-    Identity scope is ``stylebook_id`` (Phase A KG redesign). ``project_id`` remains during
-    migration as a legacy write/read path until cutover. ``description`` and ``evidence_json``
-    remain until evidence rows are backfilled and the cutover migration drops them.
+    Identity scope is ``stylebook_id``: one open edge per
+    ``(stylebook_id, ends, coalesce(nature, ''))`` (see ``uq_stylebook_connection_open_edge``).
+    Narrative and citations live on ``stylebook_connection_evidence`` children.
+    ``project_id`` remains for write provenance / project-scoped lists.
 
     ``from_entity_id`` / ``to_entity_id`` are TEXT UUID strings for ``location``, ``person``,
     and ``organization``; decimal strings for stub work ids until that catalog uses UUIDs.
@@ -1131,11 +1132,6 @@ class StylebookConnection(SQLModel, table=True):
     to_entity_type: str = Field(sa_column=Column(Text, nullable=False, index=True))
     to_entity_id: str = Field(sa_column=Column(Text, nullable=False, index=True))
     nature: str | None = Field(default=None, sa_column=Column(Text, nullable=True, index=True))
-    description: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
-    evidence_json: dict[str, Any] | None = Field(
-        default=None,
-        sa_column=Column(JSON, nullable=True),
-    )
     closed_at: datetime | None = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
@@ -1158,7 +1154,14 @@ class StylebookConnectionEvidence(SQLModel, table=True):
     )
 
     id: int | None = Field(default=None, primary_key=True)
-    connection_id: int = Field(foreign_key="stylebook_connections.id", index=True)
+    connection_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("stylebook_connections.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
     article_id: int | None = Field(
         default=None,
         foreign_key="substrate_article.id",

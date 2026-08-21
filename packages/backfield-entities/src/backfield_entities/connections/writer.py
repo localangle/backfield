@@ -134,9 +134,8 @@ def _find_open_edge(
 
 
 def _prefer_survivor(rows: list[StylebookConnection]) -> StylebookConnection:
-    """Among legacy duplicates, prefer a row that already has evidence_json."""
-    with_evidence = [row for row in rows if row.evidence_json]
-    return with_evidence[0] if with_evidence else rows[0]
+    """Among legacy duplicates, prefer the earliest row (stable reinforce target)."""
+    return rows[0]
 
 
 def _evidence_exists_for_article(
@@ -290,9 +289,6 @@ def write_auto_connections(
             to_entity_type=to_entity_type,
             to_entity_id=edge.to_entity_id,
             nature=nature,
-            description=None,
-            # Dual-write until cutover drops the column; primary store is evidence children.
-            evidence_json=creation.to_storage_dict(),
         )
         try:
             with session.begin_nested():

@@ -288,15 +288,12 @@ def test_auto_connections_creates_high_confidence_edge() -> None:
         assert row.to_entity_type == "organization"
         assert row.to_entity_id == fixture.organization_canonical_id
         assert row.nature == "works_for"
-        assert row.description is None
-        assert row.evidence_json is not None
-        assert "Chicago City Hall" in row.evidence_json["quote"]
-        assert row.evidence_json["confidence"] >= AUTO_CONNECTION_MIN_CONFIDENCE
         evidence = session.exec(select(StylebookConnectionEvidence)).all()
         assert len(evidence) == 1
         assert evidence[0].article_id == fixture.article_id
         assert evidence[0].quote is not None
         assert "Chicago City Hall" in evidence[0].quote
+        assert (evidence[0].confidence or 0) >= AUTO_CONNECTION_MIN_CONFIDENCE
 
 
 def test_auto_connections_skips_low_confidence_edge() -> None:
@@ -345,7 +342,6 @@ def test_auto_connections_reinforces_existing_edge() -> None:
                 to_entity_type="organization",
                 to_entity_id=fixture.organization_canonical_id,
                 nature="works_for",
-                description="Mayor Jane Smith works for Chicago City Hall",
             )
         )
         session.commit()
@@ -397,7 +393,6 @@ def test_auto_connections_skips_when_article_already_cited() -> None:
             to_entity_type="organization",
             to_entity_id=fixture.organization_canonical_id,
             nature="works_for",
-            description=None,
         )
         session.add(conn)
         session.commit()

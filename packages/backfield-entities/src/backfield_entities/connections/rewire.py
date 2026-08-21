@@ -9,9 +9,7 @@ from sqlalchemy import and_, or_
 from sqlmodel import Session, col, select
 
 from backfield_entities.connections.dedupe import (
-    connection_description_coalesced,
     connection_nature_coalesced,
-    normalize_connection_description,
     normalize_connection_nature,
 )
 
@@ -100,21 +98,24 @@ def rewire_connections_for_canonical_merge(
             dropped_self += 1
             continue
 
-        existing = session.exec(
-            select(StylebookConnection).where(
-                StylebookConnection.project_id == int(conn.project_id),
-                StylebookConnection.from_entity_type == conn.from_entity_type,
-                StylebookConnection.from_entity_id == new_from_id,
-                StylebookConnection.to_entity_type == conn.to_entity_type,
-                StylebookConnection.to_entity_id == new_to_id,
-                connection_nature_coalesced() == (
-                    normalize_connection_nature(conn.nature) or ""
-                ),
-                connection_description_coalesced() == (
-                    normalize_connection_description(conn.description) or ""
-                ),
+        nature_key = normalize_connection_nature(conn.nature) or ""
+        existing_stmt = select(StylebookConnection).where(
+            StylebookConnection.from_entity_type == conn.from_entity_type,
+            StylebookConnection.from_entity_id == new_from_id,
+            StylebookConnection.to_entity_type == conn.to_entity_type,
+            StylebookConnection.to_entity_id == new_to_id,
+            connection_nature_coalesced() == nature_key,
+            col(StylebookConnection.closed_at).is_(None),
+        )
+        if conn.stylebook_id is not None:
+            existing_stmt = existing_stmt.where(
+                StylebookConnection.stylebook_id == int(conn.stylebook_id)
             )
-        ).first()
+        else:
+            existing_stmt = existing_stmt.where(
+                StylebookConnection.project_id == int(conn.project_id)
+            )
+        existing = session.exec(existing_stmt).first()
         if existing is not None and existing.id != conn.id:
             session.delete(conn)
             deduped += 1

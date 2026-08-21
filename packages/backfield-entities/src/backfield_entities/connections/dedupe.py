@@ -30,10 +30,7 @@ def connection_edge_key(
     nature: str | None,
     description: str | None = None,
 ) -> tuple[int, str, str, str, str, str]:
-    """Batch / in-memory identity for reinforce: ends + nature (description ignored).
-
-    ``description`` is accepted for call-site compatibility but is not part of the key.
-    """
+    """Batch / in-memory identity for reinforce: ends + nature (description ignored)."""
     _ = description
     return (
         int(project_id),
@@ -46,8 +43,4 @@ def connection_edge_key(
 
 
 def connection_nature_coalesced(column: object = StylebookConnection.nature) -> object:
-    return func.coalesce(column, "")
-
-
-def connection_description_coalesced(column: object = StylebookConnection.description) -> object:
     return func.coalesce(column, "")

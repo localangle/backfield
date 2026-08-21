@@ -44,6 +44,23 @@ The strict project runtime migration validates retained projects before making `
 cross-organization assignment. Repair those rows and rerun the migration; it does not guess a
 replacement catalog.
 
+## Connection knowledge-graph cutover
+
+Phase A connection redesign ships in two schema steps plus an offline data command:
+
+1. `077_conn_kg_phase_a` — additive `stylebook_id` / `closed_at` / evidence + custom nature tables.
+2. `backfield migrate-connection-kg --apply` — remap natures, merge duplicates, backfill evidence.
+3. `078_conn_kg_cutover` — open-edge unique index on Stylebook scope, drop connection
+   `description` / `evidence_json`, cascade-delete evidence with parent.
+
+Run the data command before applying `078` on retained databases. Dry-run first:
+
+```bash
+backfield migrate-connection-kg --json
+backfield migrate-connection-kg --apply
+make migrate
+```
+
 ## Local workflow
 
 With the Compose stack configuration:

@@ -122,7 +122,6 @@ def test_write_creates_edge_and_evidence_child() -> None:
     assert len(result.created) == 1
     assert result.reinforced == []
     conn = session.exec(select(StylebookConnection)).one()
-    assert conn.description is None
     assert conn.nature == "works_for"
     evidence = session.exec(select(StylebookConnectionEvidence)).one()
     assert evidence.article_id == article_id
@@ -141,7 +140,6 @@ def test_write_reinforces_same_nature_different_description() -> None:
             to_entity_type="organization",
             to_entity_id=org_id,
             nature="works_for",
-            description="old narrative",
         )
     )
     session.commit()

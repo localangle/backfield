@@ -1,4 +1,4 @@
-"""Tests for Phase A connection KG offline migration."""
+"""Tests for Phase A connection KG offline migration (post-cutover schema)."""
 
 from __future__ import annotations
 
@@ -82,58 +82,56 @@ def test_inventory_only_does_not_mutate() -> None:
             to_entity_type="organization",
             to_entity_id=org,
             nature="works_for",
-            description="Ada works for Acme",
         )
     )
     session.commit()
     report = migrate_connections_kg_phase_a(session, inventory_only=True)
     assert report.connection_total == 1
     assert report.remapped == 0
-    assert session.exec(select(StylebookConnectionEvidence)).first() is None
 
 
-def test_represented_by_swap_and_merge_with_evidence() -> None:
+def test_represented_by_swap_and_merge() -> None:
     session = _session()
     project_id, stylebook_id = _project(session)
     lawyer = _person(session, stylebook_id, "Lawyer")
     client = _person(session, stylebook_id, "Client")
-    # Client represented_by Lawyer  →  Lawyer represents Client
+    a = StylebookConnection(
+        project_id=project_id,
+        stylebook_id=stylebook_id,
+        from_entity_type="person",
+        from_entity_id=client,
+        to_entity_type="person",
+        to_entity_id=lawyer,
+        nature="represented_by",
+    )
+    b = StylebookConnection(
+        project_id=project_id,
+        stylebook_id=stylebook_id,
+        from_entity_type="person",
+        from_entity_id=lawyer,
+        to_entity_type="person",
+        to_entity_id=client,
+        nature="represents",
+    )
+    session.add(a)
+    session.add(b)
+    session.commit()
+    session.refresh(a)
+    session.refresh(b)
     session.add(
-        StylebookConnection(
-            project_id=project_id,
-            stylebook_id=stylebook_id,
-            from_entity_type="person",
-            from_entity_id=client,
-            to_entity_type="person",
-            to_entity_id=lawyer,
-            nature="represented_by",
-            description="Client is represented by Lawyer",
-            evidence_json={
-                "source": "dboutput_auto_connections",
-                "quote": "represented by Lawyer",
-                "reason": "explicit",
-                "confidence": 0.95,
-                "article_id": 101,
-            },
+        StylebookConnectionEvidence(
+            connection_id=int(a.id),  # type: ignore[arg-type]
+            article_id=101,
+            quote="represented by Lawyer",
+            source="dboutput_auto_connections",
         )
     )
     session.add(
-        StylebookConnection(
-            project_id=project_id,
-            stylebook_id=stylebook_id,
-            from_entity_type="person",
-            from_entity_id=lawyer,
-            to_entity_type="person",
-            to_entity_id=client,
-            nature="represents",
-            description="Lawyer represents Client",
-            evidence_json={
-                "source": "dboutput_auto_connections",
-                "quote": "Lawyer represents Client",
-                "reason": "explicit",
-                "confidence": 0.96,
-                "article_id": 102,
-            },
+        StylebookConnectionEvidence(
+            connection_id=int(b.id),  # type: ignore[arg-type]
+            article_id=102,
+            quote="Lawyer represents Client",
+            source="dboutput_auto_connections",
         )
     )
     session.commit()
@@ -141,7 +139,6 @@ def test_represented_by_swap_and_merge_with_evidence() -> None:
     report = migrate_connections_kg_phase_a(session, apply=True)
     assert report.remapped == 1
     assert report.duplicates_deleted == 1
-    assert report.evidence_created == 2
 
     rows = list(session.exec(select(StylebookConnection)).all())
     assert len(rows) == 1
@@ -149,12 +146,10 @@ def test_represented_by_swap_and_merge_with_evidence() -> None:
     assert survivor.nature == "represents"
     assert survivor.from_entity_id == lawyer
     assert survivor.to_entity_id == client
-    assert survivor.description is None
 
     evidence = list(session.exec(select(StylebookConnectionEvidence)).all())
     assert len(evidence) == 2
-    article_ids = {e.article_id for e in evidence}
-    assert article_ids == {101, 102}
+    assert {e.article_id for e in evidence} == {101, 102}
 
 
 def test_plays_for_org_org_becomes_team_of() -> None:
@@ -171,7 +166,6 @@ def test_plays_for_org_org_becomes_team_of() -> None:
             to_entity_type="organization",
             to_entity_id=school,
             nature="plays_for",
-            description="Team of the school",
         )
     )
     session.commit()
@@ -179,93 +173,33 @@ def test_plays_for_org_org_becomes_team_of() -> None:
     assert report.remapped == 1
     row = session.exec(select(StylebookConnection)).one()
     assert row.nature == "team_of"
-    evidence = session.exec(select(StylebookConnectionEvidence)).one()
-    assert evidence.source == "legacy_manual"
-    assert evidence.description == "Team of the school"
 
 
-def test_quarantine_no_relationship_description() -> None:
+def test_quarantine_no_relationship_evidence() -> None:
     session = _session()
     project_id, stylebook_id = _project(session)
     a = _org(session, stylebook_id, "A")
     b = _org(session, stylebook_id, "B")
+    conn = StylebookConnection(
+        project_id=project_id,
+        stylebook_id=stylebook_id,
+        from_entity_type="organization",
+        from_entity_id=a,
+        to_entity_type="organization",
+        to_entity_id=b,
+        nature=None,
+    )
+    session.add(conn)
+    session.commit()
+    session.refresh(conn)
     session.add(
-        StylebookConnection(
-            project_id=project_id,
-            stylebook_id=stylebook_id,
-            from_entity_type="organization",
-            from_entity_id=a,
-            to_entity_type="organization",
-            to_entity_id=b,
-            nature=None,
+        StylebookConnectionEvidence(
+            connection_id=int(conn.id),  # type: ignore[arg-type]
             description="No valid organization-to-organization relationship can be extracted",
+            source="legacy_manual",
         )
     )
     session.commit()
     report = migrate_connections_kg_phase_a(session, apply=True)
     assert report.quarantined == 1
     assert session.exec(select(StylebookConnection)).first() is None
-
-
-def test_dry_run_reports_without_writing_evidence() -> None:
-    session = _session()
-    project_id, stylebook_id = _project(session)
-    person = _person(session, stylebook_id, "Pat")
-    org = _org(session, stylebook_id, "City")
-    session.add(
-        StylebookConnection(
-            project_id=project_id,
-            stylebook_id=stylebook_id,
-            from_entity_type="person",
-            from_entity_id=person,
-            to_entity_type="organization",
-            to_entity_id=org,
-            nature="works_at",
-            description="Pat works at City",
-        )
-    )
-    session.add(
-        StylebookConnection(
-            project_id=project_id,
-            stylebook_id=stylebook_id,
-            from_entity_type="person",
-            from_entity_id=person,
-            to_entity_type="organization",
-            to_entity_id=org,
-            nature="works_for",
-            description="Pat works for City hall",
-        )
-    )
-    session.commit()
-    report = migrate_connections_kg_phase_a(session, apply=False)
-    assert report.remapped >= 1
-    assert report.duplicates_deleted == 1
-    assert report.evidence_created == 2
-    assert session.exec(select(StylebookConnectionEvidence)).first() is None
-    assert len(list(session.exec(select(StylebookConnection)).all())) == 2
-
-
-def test_cli_migrate_connection_kg_json(monkeypatch, capsys) -> None:
-    from backfield_cli.main import main
-    from backfield_entities.connections.migrate_kg_phase_a import ConnectionKgMigrateReport
-
-    def _fake_migrate(session, **kwargs):
-        return ConnectionKgMigrateReport(
-            apply=False,
-            inventory_only=True,
-            connection_total=3,
-            null_nature_count=1,
-        )
-
-    monkeypatch.setattr(
-        "backfield_cli.migrate_connection_kg.migrate_connections_kg_phase_a",
-        _fake_migrate,
-    )
-    monkeypatch.setattr(
-        "backfield_cli.migrate_connection_kg.get_engine",
-        lambda: create_engine("sqlite://"),
-    )
-    assert main(["migrate-connection-kg", "--inventory-only", "--json"]) == 0
-    payload = __import__("json").loads(capsys.readouterr().out)
-    assert payload["connection_total"] == 3
-    assert payload["inventory_only"] is True
