@@ -1,7 +1,8 @@
 import {
   isJsonInputInvalidNodeData,
+  isJsonInputMultiDocument,
   isValidJsonInputData,
-  stripJsonInputEditorMarkers,
+  normalizeJsonInputParamsForSave,
 } from '@/lib/jsonInputValidation'
 import { INGRESS_NODE_TYPES, inferIngressPublicAlias } from '@/lib/ingressApiRuns'
 import { resolvedStylebookId } from '@/lib/nodePanelAiModel'
@@ -100,18 +101,20 @@ export function validateJsonInputNodes(nodes: FlowGraphNode[]): FlowValidationRe
     if (isJsonInputInvalidNodeData(node.data)) {
       return {
         ok: false,
-        title: 'Invalid JSON input',
+        title: 'Invalid content',
         description:
-          'Fix the JSON in your content source step before saving. It must be valid JSON with a string "text" field.',
+          'Fix the content in your JSON source step before saving. Each item needs valid structure with a text field.',
         severity: 'error',
       }
     }
     if (!isValidJsonInputData(node.data)) {
+      const multiHint = isJsonInputMultiDocument(node.data as Record<string, unknown>)
       return {
         ok: false,
-        title: 'Invalid JSON input',
-        description:
-          'Your content source JSON must be an object with a string "text" field.',
+        title: 'Invalid content',
+        description: multiHint
+          ? 'Each uploaded file must be an object with a text field. You can include up to 20 files.'
+          : 'Your content must be an object with a text field.',
         severity: 'error',
       }
     }
@@ -125,7 +128,7 @@ export function paramsForGraphSave(
 ): Record<string, unknown> {
   let raw = { ...(node.data ?? {}) }
   if (node.type === 'JSONInput') {
-    raw = stripJsonInputEditorMarkers(raw)
+    raw = normalizeJsonInputParamsForSave(raw)
   }
   if (node.type === 'GeocodeAgent') {
     delete raw.stylebookId

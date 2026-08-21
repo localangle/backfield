@@ -19,6 +19,7 @@ _RUN_ID_TASKS = frozenset(
     {
         "worker.tasks.execute_agate_run",
         "worker.tasks.execute_s3_batch_setup",
+        "worker.tasks.execute_json_input_batch_setup",
         "worker.tasks.execute_run_replay_setup",
         "worker.tasks.finalize_s3_parent_run",
     }

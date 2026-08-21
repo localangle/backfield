@@ -20,6 +20,7 @@ from agate_nodes.s3_output.node import (
     upload_s3_output_body,
 )
 from agate_runtime import GraphSpec, execute_graph
+from agate_runtime.json_input_batch import json_input_batch_documents_from_spec
 from agate_runtime.nodes import NODE_RUNNERS
 from agate_runtime.nodes.json_input import json_input_output_from_dict
 from agate_runtime.run_graph_spec import (
@@ -858,6 +859,161 @@ def execute_agate_run(run_id: str, spec_json: str | None = None) -> None:
             correlation={"run_id": run_id},
         )
         _kick_webhook_dispatch(session)
+
+
+@celery_app.task(name="worker.tasks.execute_json_input_batch_setup")
+def execute_json_input_batch_setup(run_id: str) -> None:
+    """Create processed items from multi-file JSONInput ``documents`` and chord execution."""
+    engine = get_engine()
+    with Session(engine) as session:
+        run = session.get(AgateRun, run_id)
+        if not run:
+            return
+        graph = session.get(AgateGraph, run.graph_id)
+        if not graph:
+            previous_status = run.status
+            run.status = "failed"
+            run.error_message = "Graph not found"
+            run.updated_at = datetime.now(UTC)
+            session.add(run)
+            record_run_terminal_event(session, run)
+            session.commit()
+            emit_run_terminal(
+                previous_status=previous_status,
+                new_status="failed",
+                identity=worker_identity(),
+                correlation={"run_id": run_id},
+            )
+            _kick_webhook_dispatch(session)
+            return
+
+        claimed_at = datetime.now(UTC)
+        claim_result = session.execute(
+            update(AgateRun)
+            .where(
+                AgateRun.id == run_id,
+                AgateRun.status == "pending",
+            )
+            .values(status="running", updated_at=claimed_at)
+        )
+        session.commit()
+        if int(claim_result.rowcount or 0) != 1:
+            return
+
+        run = session.get(AgateRun, run_id)
+        if not run or run.status != "running":
+            return
+
+        try:
+            spec_json = resolve_run_graph_spec_json(
+                run_result_json=run.result_json,
+                graph_spec_json=graph.spec_json,
+            )
+            spec = GraphSpec.model_validate_json(spec_json)
+            documents = json_input_batch_documents_from_spec(spec)
+
+            pending: list[tuple[int, int]] = []
+            for source_file, doc in documents:
+                row = AgateProcessedItem(
+                    run_id=run_id,
+                    source_file=source_file,
+                    input_json=json.dumps(doc),
+                    status="pending",
+                )
+                session.add(row)
+                session.flush()
+                if row.id is None:
+                    raise RuntimeError("Processed item id missing after save")
+                text_len = len(str(doc.get("text") or ""))
+                pending.append((int(row.id), text_len))
+
+            batch_meta = {
+                "total_documents": len(documents),
+                "valid_executed": len(pending),
+            }
+            run = session.exec(
+                select(AgateRun)
+                .where(AgateRun.id == run_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            ).first()
+            if run is None or run.status != "running":
+                session.rollback()
+                return
+            run.result_json = merge_run_result_payload(
+                run.result_json,
+                json_input_batch=batch_meta,
+                graph_spec_json=spec_json,
+            )
+            run.updated_at = datetime.now(UTC)
+            session.add(run)
+            session.commit()
+
+            if not pending:
+                run = session.exec(
+                    select(AgateRun)
+                    .where(AgateRun.id == run_id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                ).first()
+                if run is None or run.status != "running":
+                    session.rollback()
+                    return
+                previous_status = run.status
+                run.status = "failed"
+                run.error_message = (
+                    "No valid JSON documents with a non-empty article body to process."
+                )
+                run.updated_at = datetime.now(UTC)
+                session.add(run)
+                record_run_terminal_event(session, run)
+                session.commit()
+                emit_run_terminal(
+                    previous_status=previous_status,
+                    new_status="failed",
+                    identity=worker_identity(),
+                    correlation={"run_id": run_id},
+                )
+                _kick_webhook_dispatch(session)
+                return
+
+            logger.info(
+                "execute_json_input_batch_setup: queueing chord of %d "
+                "execute_processed_item task(s) for run %s",
+                len(pending),
+                run_id,
+            )
+            pending_sorted = sorted(pending, key=lambda row: row[1], reverse=True)
+            ordered_ids = [item_id for item_id, _ in pending_sorted]
+            header = group(execute_processed_item.s(item_id) for item_id in ordered_ids)
+            _queue = os.environ.get("CELERY_QUEUE", "agate")
+            chord(header, finalize_s3_parent_run.s(run_id)).apply_async(queue=_queue)
+        except Exception as e:
+            logger.exception("JSON Input batch setup failed for run %s", run_id)
+            with Session(engine) as session3:
+                run_fail = session3.exec(
+                    select(AgateRun)
+                    .where(AgateRun.id == run_id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                ).first()
+                if run_fail is None or run_fail.status != "running":
+                    session3.rollback()
+                    return
+                previous_status = run_fail.status
+                run_fail.status = "failed"
+                run_fail.error_message = str(e)
+                run_fail.updated_at = datetime.now(UTC)
+                session3.add(run_fail)
+                record_run_terminal_event(session3, run_fail)
+                session3.commit()
+                emit_run_terminal(
+                    previous_status=previous_status,
+                    new_status="failed",
+                    identity=worker_identity(),
+                    correlation={"run_id": run_id},
+                )
+                _kick_webhook_dispatch(session3)
 
 
 @celery_app.task(name="worker.tasks.execute_s3_batch_setup")

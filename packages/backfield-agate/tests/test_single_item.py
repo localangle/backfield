@@ -44,6 +44,29 @@ def test_build_from_json_input() -> None:
     assert source == "inline:json"
 
 
+def test_rejects_json_input_multi_document_batch() -> None:
+    spec = json.dumps(
+        {
+            "name": "j",
+            "nodes": [
+                {
+                    "id": "a",
+                    "type": "JSONInput",
+                    "params": {
+                        "documents": [
+                            {"text": "a", "source_file": "a.json"},
+                            {"text": "b", "source_file": "b.json"},
+                        ]
+                    },
+                },
+            ],
+            "edges": [],
+        }
+    )
+    with pytest.raises(ValueError, match="batch setup"):
+        build_single_item_input_from_graph_spec_json(spec)
+
+
 def test_rejects_s3_graph() -> None:
     spec = json.dumps(
         {

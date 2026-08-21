@@ -12,6 +12,7 @@ from backfield_db import AgateGraph, AgateProcessedItem, AgateRun
 from sqlmodel import Session
 
 from agate_runtime.graph_validation import validate_graph_invariants
+from agate_runtime.json_input_batch import graph_spec_json_contains_json_input_batch
 from agate_runtime.nodes.json_input import json_input_output_from_dict
 from agate_runtime.run_graph_spec import merge_run_result_payload
 from agate_runtime.s3_batch import graph_spec_json_contains_s3_input, s3_max_files_from_params
@@ -165,9 +166,12 @@ def trigger_agate_run(
     effective = apply_inputs_to_spec(spec, inputs)
     effective_json = effective.model_dump_json()
     is_s3_batch = graph_spec_json_contains_s3_input(effective_json)
+    is_json_input_batch = (
+        not is_s3_batch and graph_spec_json_contains_json_input_batch(effective_json)
+    )
     input_doc: dict[str, Any] | None = None
     source_file: str | None = None
-    if not is_s3_batch:
+    if not is_s3_batch and not is_json_input_batch:
         input_doc, source_file = build_single_item_input_from_graph_spec_json(effective_json)
 
     run = AgateRun(
@@ -192,6 +196,25 @@ def trigger_agate_run(
             run=run,
             processed_item=None,
             enqueue_task_name="worker.tasks.execute_s3_batch_setup",
+            enqueue_args=[run.id],
+        )
+        if commit:
+            result.enqueue(enqueue)
+        return result
+
+    if is_json_input_batch:
+        run.result_json = merge_run_result_payload(None, graph_spec_json=effective_json)
+        run.updated_at = datetime.now(UTC)
+        session.add(run)
+        if commit:
+            session.commit()
+        else:
+            session.flush()
+        session.refresh(run)
+        result = TriggerRunResult(
+            run=run,
+            processed_item=None,
+            enqueue_task_name="worker.tasks.execute_json_input_batch_setup",
             enqueue_args=[run.id],
         )
         if commit:
