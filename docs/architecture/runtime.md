@@ -84,9 +84,12 @@ regenerates chunks from the original `input_json` and pinned graph.
 ## Backfield Output
 
 Backfield Output consolidates article content and supported domains, then persists them through
-worker handlers. Current handlers cover locations, people, and organizations; article metadata,
-custom records, images, and article embeddings use their own persistence paths. Node settings
-control:
+worker handlers. A non-empty article body alone is enough to upsert the article (for example
+Text/JSON Input wired directly to Backfield Output). Current handlers cover locations, people,
+and organizations; article metadata, custom records, images, and article embeddings use their
+own persistence paths. Stylebook matching, automatic connections, and semantic indexing apply
+only when this run produces the relevant domains or mentions; otherwise they are no-ops. Node
+settings control:
 
 - Stylebook matching and optional explicit Stylebook id;
 - rules or AI-assisted canonicalization;

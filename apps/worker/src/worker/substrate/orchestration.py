@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from agate_runtime.nodes.json_input import resolve_document_body_text
 from backfield_entities.ingest.db_output_settings import (
     DbOutputCanonicalSettings,
     ReconciliationPolicy,
@@ -92,12 +93,18 @@ def _has_custom_records(consolidated: dict[str, Any]) -> bool:
     return isinstance(block, dict) and bool(block)
 
 
+def _has_article_body(consolidated: dict[str, Any]) -> bool:
+    """True when consolidated has a non-empty resolvable article body (JSON Input aliases)."""
+    return bool(resolve_document_body_text(consolidated))
+
+
 def _has_persistable_consolidated_content(consolidated: dict[str, Any]) -> bool:
     return (
         bool(_active_handler_keys(consolidated))
         or _has_article_embedding(consolidated)
         or _has_article_metadata(consolidated)
         or _has_custom_records(consolidated)
+        or _has_article_body(consolidated)
     )
 
 
@@ -134,9 +141,10 @@ def persist_from_consolidated(
     active_keys = _active_handler_keys(consolidated)
     if not _has_persistable_consolidated_content(consolidated):
         raise RuntimeError(
-            "DBOutput persistence requires consolidated['places'], consolidated['people'], "
-            "consolidated['organizations'], consolidated['article_embedding'], "
-            "consolidated['article_metadata'], and/or consolidated['custom_records']"
+            "DBOutput persistence requires a non-empty article body, and/or "
+            "consolidated['places'], consolidated['people'], consolidated['organizations'], "
+            "consolidated['article_embedding'], consolidated['article_metadata'], "
+            "and/or consolidated['custom_records']"
         )
 
     upsert = _upsert_article(
