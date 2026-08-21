@@ -65,6 +65,8 @@ Boundaries and runtime behavior:
 - [`architecture/runtime.md`](architecture/runtime.md) — run dispatch, graph execution, persistence
 - [`architecture/database.md`](architecture/database.md) — schema ownership, pooling, secrets
 - [`architecture/canonicalization.md`](architecture/canonicalization.md) — ingest and matching policy
+- [`architecture/knowledge-graph.md`](architecture/knowledge-graph.md) — proposed news-archive graph (storylines, connection evidence, natures); not implemented yet
+- [`architecture/connection-natures.md`](architecture/connection-natures.md) — proposed preferred nature catalog (TAC KBP / FollowTheMoney backbone); not implemented yet
 
 ## Agent workflows
 
