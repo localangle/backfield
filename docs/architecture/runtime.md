@@ -17,8 +17,12 @@ request hash, run link, and enqueue descriptor—never the input body. Unkeyed p
 enqueue best-effort after commit; clients that need durable trigger semantics should send
 `Idempotency-Key`.
 
-TextInput and JSONInput runs create one `agate_processed_item` and enqueue
-`execute_processed_item`. S3Input runs enqueue `execute_s3_batch_setup`, which:
+TextInput runs create one `agate_processed_item` and enqueue `execute_processed_item`.
+JSONInput with a single document (pasted or one uploaded file) does the same. JSONInput with
+two or more uploaded files stores them under node `documents` (capped at 20) and enqueues
+`execute_json_input_batch_setup`, which creates one processed item per file and dispatches a
+Celery chord—the same completion path as S3 (`finalize_s3_parent_run`). S3Input runs enqueue
+`execute_s3_batch_setup`, which:
 
 1. Ensures a stable `source_id` on the S3 Input node (minted and persisted when missing).
 2. Lists JSON objects under the snapshotted bucket and prefix (paginated), including list
@@ -80,9 +84,12 @@ regenerates chunks from the original `input_json` and pinned graph.
 ## Backfield Output
 
 Backfield Output consolidates article content and supported domains, then persists them through
-worker handlers. Current handlers cover locations, people, and organizations; article metadata,
-custom records, images, and article embeddings use their own persistence paths. Node settings
-control:
+worker handlers. A non-empty article body alone is enough to upsert the article (for example
+Text/JSON Input wired directly to Backfield Output). Current handlers cover locations, people,
+and organizations; article metadata, custom records, images, and article embeddings use their
+own persistence paths. Stylebook matching, automatic connections, and semantic indexing apply
+only when this run produces the relevant domains or mentions; otherwise they are no-ops. Node
+settings control:
 
 - Stylebook matching and optional explicit Stylebook id;
 - rules or AI-assisted canonicalization;

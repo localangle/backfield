@@ -133,3 +133,52 @@ def test_trigger_agate_run_pins_effective_spec_and_enqueues() -> None:
         item = result.processed_item
         assert item.input_json is not None
         assert "From API" in item.input_json
+
+
+def _json_multi_spec() -> GraphSpec:
+    return GraphSpec(
+        name="json-batch",
+        nodes=[
+            NodeConfig(
+                id="j1",
+                type="JSONInput",
+                params={
+                    "documents": [
+                        {"text": "First body", "source_file": "a.json"},
+                        {"text": "Second body", "source_file": "b.json"},
+                    ]
+                },
+            ),
+            NodeConfig(id="n2", type="Output", params={}),
+        ],
+        edges=[],
+    )
+
+
+def test_trigger_agate_run_json_input_batch_enqueues_setup() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    enqueued: list[tuple[str, list[object]]] = []
+
+    def enqueue(name: str, args: list[object]) -> None:
+        enqueued.append((name, args))
+
+    with Session(engine) as session:
+        graph = AgateGraph(
+            id="g-json-batch",
+            name="JSON Batch",
+            spec_json=_json_multi_spec().model_dump_json(),
+            project_id=1,
+        )
+        session.add(graph)
+        session.commit()
+
+        result = trigger_agate_run(session, graph=graph, enqueue=enqueue)
+        assert result.processed_item is None
+        assert result.run.status == "pending"
+        assert enqueued == [
+            ("worker.tasks.execute_json_input_batch_setup", [result.run.id])
+        ]
+        run = session.get(AgateRun, result.run.id)
+        assert run is not None
+        assert "graph_spec_json" in parse_run_result_payload(run.result_json)

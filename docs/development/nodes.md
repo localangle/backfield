@@ -13,7 +13,7 @@ Use `.cursor/skills/add-agate-node/SKILL.md` for a new pipeline node.
 
 | Profile | Role | Current examples | Typical review |
 |---|---|---|---|
-| Input | Ingress text, JSON, or an S3 batch | `TextInput`, `JSONInput`, `S3Input` | None |
+| Input | Ingress text, JSON (one or many files), or an S3 batch | `TextInput`, `JSONInput`, `S3Input` | None |
 | Output | Return JSON, persist Backfield data, or write S3 | `Output`, `DBOutput`, `S3Output` | JSON; entity review after DBOutput |
 | Extract | Produce grounded structured records | `PlaceExtract`, `PersonExtract`, `OrganizationExtract`, `CustomExtract` | Entity tabs or Custom |
 | Enrich | Transform or resolve upstream values | `GeocodeAgent`, `ArticleMetadata` | Existing entity tab or Meta |
@@ -220,6 +220,11 @@ Input bookends are `TextInput`, `JSONInput`, and `S3Input`. Output bookends are
 `Output`, `DBOutput`, and `S3Output`; all other enabled metadata nodes are middle
 steps.
 
+JSON Input accepts pasted content or uploaded `.json` files (drag-and-drop or file
+picker). A single document stays on the flat params / single-item run path. Two or
+more files (capped at 20) are stored under `documents` on the node and run as an
+inline batch—one `agate_processed_item` per file—via `execute_json_input_batch_setup`.
+
 S3 Input scans claim object revisions through `agate_s3_ingestion_ledger` so unchanged
 content is skipped across runs. A stable `source_id` is stored on the node params
 (minted automatically). The **Reprocess completed files** setting reclaims previously succeeded
@@ -236,6 +241,11 @@ needs a useful product label.
 bookend. At most one Chunker is allowed per flow, and every first-hop branch must go
 through it when present (enforced in guided UI, Agate API graph create/update, run
 trigger, and `execute_graph`).
+
+`GeocodeAgent` must have `PlaceExtract` in its transitive branch ancestry (same rule as
+metadata `requiredUpstreamNodes`). Guided save, canvas invalid highlighting, Run, Agate
+API create/update, run trigger, and `execute_graph` all reject Geocode without Place
+Extract on that branch.
 
 Defaults are approximately 4,000-token pieces with 250-token overlap. Splitting prefers
 paragraph boundaries, then sentence boundaries, then a hard cut. Short documents emit

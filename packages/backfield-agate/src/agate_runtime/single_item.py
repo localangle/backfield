@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from agate_runtime.nodes.json_input import json_input_output_from_dict
+from agate_runtime.json_input_batch import graph_spec_json_contains_json_input_batch
+from agate_runtime.nodes.json_input import (
+    json_input_output_from_dict,
+    single_document_from_params,
+)
 from agate_runtime.s3_batch import graph_spec_json_contains_s3_input
 from agate_runtime.types import GraphSpec, NodeConfig
 
@@ -22,6 +26,10 @@ def build_single_item_input_from_graph_spec_json(spec_json: str) -> tuple[dict[s
     """
     if graph_spec_json_contains_s3_input(spec_json):
         raise ValueError("Graphs with S3Input use batch setup, not single-item ingress.")
+    if graph_spec_json_contains_json_input_batch(spec_json):
+        raise ValueError(
+            "JSONInput with multiple documents uses batch setup, not single-item ingress."
+        )
 
     spec = GraphSpec.model_validate_json(spec_json)
     ingress = _ingress_nodes(spec)
@@ -46,6 +54,7 @@ def build_single_item_input_from_graph_spec_json(spec_json: str) -> tuple[dict[s
 
     if node.type == "JSONInput":
         params = dict(node.params) if isinstance(node.params, dict) else {}
-        return json_input_output_from_dict(params), "inline:json"
+        payload, source_file = single_document_from_params(params)
+        return json_input_output_from_dict(payload), source_file
 
     raise ValueError(f"Unsupported ingress node type: {node.type!r}")
