@@ -498,6 +498,8 @@ def test_graph_write_normalizes_runtime_nodes_to_project_stylebook(
             "spec": {
                 "name": "normalized",
                 "nodes": [
+                    {"id": "in", "type": "TextInput", "params": {"text": "hello"}},
+                    {"id": "pe", "type": "PlaceExtract", "params": {}},
                     {
                         "id": "geo",
                         "type": "GeocodeAgent",
@@ -509,17 +511,23 @@ def test_graph_write_normalizes_runtime_nodes_to_project_stylebook(
                         "params": {"stylebook_id": ownership_fixture.original_stylebook_id},
                     },
                 ],
-                "edges": [],
+                "edges": [
+                    {"source": "in", "target": "pe"},
+                    {"source": "pe", "target": "geo"},
+                    {"source": "geo", "target": "out"},
+                ],
             },
         },
     )
 
     assert response.status_code == 200, response.text
-    params = [node["params"] for node in response.json()["spec"]["nodes"]]
-    assert params == [
-        {"stylebook_id": ownership_fixture.original_stylebook_id},
-        {"stylebook_id": ownership_fixture.original_stylebook_id},
-    ]
+    by_type = {node["type"]: node["params"] for node in response.json()["spec"]["nodes"]}
+    assert by_type["GeocodeAgent"] == {
+        "stylebook_id": ownership_fixture.original_stylebook_id,
+    }
+    assert by_type["DBOutput"] == {
+        "stylebook_id": ownership_fixture.original_stylebook_id,
+    }
 
 
 def test_graph_create_and_update_reject_conflicting_runtime_stylebook(

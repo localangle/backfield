@@ -9,6 +9,11 @@ from agate_runtime.types import GraphSpec
 INPUT_BOOKEND_TYPES = frozenset({"TextInput", "JSONInput", "S3Input"})
 DOCUMENT_CHUNKER_TYPE = "DocumentChunker"
 
+# Mirrors metadata ``requiredUpstreamNodes`` (at least one type must appear in ancestry).
+REQUIRED_UPSTREAM_BY_TYPE: dict[str, frozenset[str]] = {
+    "GeocodeAgent": frozenset({"PlaceExtract"}),
+}
+
 
 class GraphInvariantError(ValueError):
     """Raised when a graph violates product placement rules."""
@@ -62,9 +67,52 @@ def validate_document_chunker_placement(spec: GraphSpec) -> None:
         )
 
 
+def _ancestor_types(spec: GraphSpec, node_id: str) -> set[str]:
+    """Return node types reachable by walking incoming edges (excludes ``node_id`` itself)."""
+    by_id = {node.id: node for node in spec.nodes}
+    incoming: dict[str, list[str]] = defaultdict(list)
+    for edge in spec.edges:
+        if edge.source in by_id and edge.target in by_id:
+            incoming[edge.target].append(edge.source)
+
+    found: set[str] = set()
+    queue: deque[str] = deque(incoming.get(node_id, []))
+    seen: set[str] = set()
+    while queue:
+        current = queue.popleft()
+        if current in seen:
+            continue
+        seen.add(current)
+        node = by_id.get(current)
+        if node is None:
+            continue
+        found.add(node.type)
+        queue.extend(incoming.get(current, []))
+    return found
+
+
+def validate_required_upstream_nodes(spec: GraphSpec) -> None:
+    """Enforce metadata-style ``requiredUpstreamNodes`` via transitive ancestry."""
+    for node in spec.nodes:
+        required = REQUIRED_UPSTREAM_BY_TYPE.get(node.type)
+        if not required:
+            continue
+        ancestors = _ancestor_types(spec, node.id)
+        if ancestors.isdisjoint(required):
+            if node.type == "GeocodeAgent":
+                raise GraphInvariantError(
+                    "Geocode Agent must follow Place Extract in the same branch."
+                )
+            needed = ", ".join(sorted(required))
+            raise GraphInvariantError(
+                f"{node.type} requires one of these earlier steps in the same branch: {needed}."
+            )
+
+
 def validate_graph_invariants(spec: GraphSpec) -> None:
     """Run all product-level graph invariants."""
     validate_document_chunker_placement(spec)
+    validate_required_upstream_nodes(spec)
     _assert_acyclic(spec)
 
 

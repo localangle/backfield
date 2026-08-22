@@ -99,3 +99,56 @@ def test_validate_graph_invariants_rejects_cycles() -> None:
     )
     with pytest.raises(GraphInvariantError, match="cycle"):
         validate_graph_invariants(spec)
+
+
+def test_validate_graph_invariants_allows_geocode_after_place_extract() -> None:
+    spec = _spec(
+        [
+            NodeConfig(id="in", type="TextInput"),
+            NodeConfig(id="pe", type="PlaceExtract"),
+            NodeConfig(id="geo", type="GeocodeAgent"),
+            NodeConfig(id="out", type="DBOutput"),
+        ],
+        [
+            Edge(source="in", target="pe"),
+            Edge(source="pe", target="geo"),
+            Edge(source="geo", target="out"),
+        ],
+    )
+    validate_graph_invariants(spec)
+
+
+def test_validate_graph_invariants_rejects_geocode_without_place_extract() -> None:
+    spec = _spec(
+        [
+            NodeConfig(id="in", type="TextInput"),
+            NodeConfig(id="geo", type="GeocodeAgent"),
+            NodeConfig(id="out", type="DBOutput"),
+        ],
+        [
+            Edge(source="in", target="geo"),
+            Edge(source="geo", target="out"),
+        ],
+    )
+    with pytest.raises(GraphInvariantError, match="Geocode Agent must follow Place Extract"):
+        validate_graph_invariants(spec)
+
+
+def test_validate_graph_invariants_rejects_geocode_on_sibling_branch_without_place() -> None:
+    """Place Extract on another branch does not satisfy Geocode ancestry."""
+    spec = _spec(
+        [
+            NodeConfig(id="in", type="TextInput"),
+            NodeConfig(id="pe", type="PlaceExtract"),
+            NodeConfig(id="geo", type="GeocodeAgent"),
+            NodeConfig(id="out", type="DBOutput"),
+        ],
+        [
+            Edge(source="in", target="pe"),
+            Edge(source="in", target="geo"),
+            Edge(source="pe", target="out"),
+            Edge(source="geo", target="out"),
+        ],
+    )
+    with pytest.raises(GraphInvariantError, match="Geocode Agent must follow Place Extract"):
+        validate_graph_invariants(spec)

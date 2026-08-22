@@ -414,6 +414,59 @@ export function validateDocumentChunkerPlacement(graph: FlowGraph): FlowValidati
   return { ok: true }
 }
 
+/** Reject steps that declare requiredUpstreamNodes without a matching ancestor. */
+export function validateRequiredUpstreamNodes(graph: FlowGraph): FlowValidationResult {
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]))
+  const incoming = new Map<string, string[]>()
+  for (const edge of graph.edges) {
+    if (!byId.has(edge.source) || !byId.has(edge.target)) continue
+    const parents = incoming.get(edge.target) ?? []
+    parents.push(edge.source)
+    incoming.set(edge.target, parents)
+  }
+
+  const ancestorTypes = (nodeId: string): Set<string> => {
+    const found = new Set<string>()
+    const queue = [...(incoming.get(nodeId) ?? [])]
+    const seen = new Set<string>()
+    while (queue.length > 0) {
+      const current = queue.shift()
+      if (!current || seen.has(current)) continue
+      seen.add(current)
+      const node = byId.get(current)
+      if (!node?.type) continue
+      found.add(node.type)
+      queue.push(...(incoming.get(current) ?? []))
+    }
+    return found
+  }
+
+  for (const node of graph.nodes) {
+    if (!node.type) continue
+    const meta = nodeMetadata.find((entry) => entry.type === node.type)
+    const required = meta?.requiredUpstreamNodes ?? []
+    if (required.length === 0) continue
+    const ancestors = ancestorTypes(node.id)
+    if (!required.some((type) => ancestors.has(type))) {
+      if (node.type === 'GeocodeAgent') {
+        return {
+          ok: false,
+          title: 'Geocode needs places',
+          description: 'Add Place Extract before Geocode Agent on the same branch.',
+          severity: 'error',
+        }
+      }
+      return {
+        ok: false,
+        title: 'Missing earlier step',
+        description: `${nodeDisplayLabel(node.type)} needs a required earlier step on the same branch.`,
+        severity: 'error',
+      }
+    }
+  }
+  return { ok: true }
+}
+
 /** Run all graph save validations; returns the first failure or success. */
 export function validateGraphForSave(graph: FlowGraph): FlowValidationResult {
   const checks: Array<(g: FlowGraph) => FlowValidationResult> = [
@@ -421,6 +474,7 @@ export function validateGraphForSave(graph: FlowGraph): FlowValidationResult {
     validateNoOrphans,
     validateInputConnections,
     validateDocumentChunkerPlacement,
+    validateRequiredUpstreamNodes,
     validateCustomExtractRecordTypes,
     (g) => validateJsonInputNodes(g.nodes),
     (g) => validateS3InputBuckets(g.nodes),

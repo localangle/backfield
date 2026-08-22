@@ -242,6 +242,11 @@ bookend. At most one Chunker is allowed per flow, and every first-hop branch mus
 through it when present (enforced in guided UI, Agate API graph create/update, run
 trigger, and `execute_graph`).
 
+`GeocodeAgent` must have `PlaceExtract` in its transitive branch ancestry (same rule as
+metadata `requiredUpstreamNodes`). Guided save, canvas invalid highlighting, Run, Agate
+API create/update, run trigger, and `execute_graph` all reject Geocode without Place
+Extract on that branch.
+
 Defaults are approximately 4,000-token pieces with 250-token overlap. Splitting prefers
 paragraph boundaries, then sentence boundaries, then a hard cut. Short documents emit
 one chunk with `split_required=false`. Flows reject documents that would exceed 50

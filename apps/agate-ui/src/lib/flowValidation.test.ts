@@ -9,6 +9,7 @@ import {
   validateInputConnections,
   validateJsonInputNodes,
   validateNoOrphans,
+  validateRequiredUpstreamNodes,
   validateSingleBookends,
   type FlowGraph,
 } from './flowValidation'
@@ -443,7 +444,71 @@ describe('validateGraphForSave', () => {
         edges: [{ source: 'json', target: 'out' }],
       }),
     )
-    expect(result).toMatchObject({ ok: false, severity: 'error', title: 'Invalid JSON input' })
+    expect(result).toMatchObject({ ok: false, severity: 'error', title: 'Invalid content' })
+  })
+
+  it('fails when Geocode Agent has no Place Extract upstream', () => {
+    const result = validateGraphForSave(
+      graph({
+        nodes: [
+          { id: 'in', type: 'TextInput' },
+          { id: 'geo', type: 'GeocodeAgent' },
+          { id: 'out', type: 'DBOutput' },
+        ],
+        edges: [
+          { source: 'in', target: 'geo' },
+          { source: 'geo', target: 'out' },
+        ],
+      }),
+    )
+    expect(result).toMatchObject({
+      ok: false,
+      title: 'Geocode needs places',
+      severity: 'error',
+    })
+  })
+})
+
+describe('validateRequiredUpstreamNodes', () => {
+  it('passes when Geocode follows Place Extract', () => {
+    expect(
+      validateRequiredUpstreamNodes(
+        graph({
+          nodes: [
+            { id: 'in', type: 'TextInput' },
+            { id: 'pe', type: 'PlaceExtract' },
+            { id: 'geo', type: 'GeocodeAgent' },
+            { id: 'out', type: 'DBOutput' },
+          ],
+          edges: [
+            { source: 'in', target: 'pe' },
+            { source: 'pe', target: 'geo' },
+            { source: 'geo', target: 'out' },
+          ],
+        }),
+      ).ok,
+    ).toBe(true)
+  })
+
+  it('rejects Geocode on a sibling branch without Place Extract', () => {
+    expect(
+      validateRequiredUpstreamNodes(
+        graph({
+          nodes: [
+            { id: 'in', type: 'TextInput' },
+            { id: 'pe', type: 'PlaceExtract' },
+            { id: 'geo', type: 'GeocodeAgent' },
+            { id: 'out', type: 'DBOutput' },
+          ],
+          edges: [
+            { source: 'in', target: 'pe' },
+            { source: 'in', target: 'geo' },
+            { source: 'pe', target: 'out' },
+            { source: 'geo', target: 'out' },
+          ],
+        }),
+      ),
+    ).toMatchObject({ ok: false, title: 'Geocode needs places' })
   })
 })
 
