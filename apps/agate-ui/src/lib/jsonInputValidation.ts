@@ -255,15 +255,9 @@ export function parseJsonInputFileText(
   }
 }
 
-function flatHasUserContent(data: Record<string, unknown>): boolean {
-  const fields = articleFieldsFromNodeData(data)
-  if (typeof fields.text === 'string' && fields.text.trim()) return true
-  return Object.keys(fields).some((key) => key !== 'text')
-}
-
 /**
  * Merge newly parsed uploads into node data.
- * One file on a flat node replaces content; additional files promote to ``documents``.
+ * Uploads on a flat node replace editor content; uploads append when already multi-file.
  */
 export function mergeJsonInputUploads(
   current: Record<string, unknown> | undefined,
@@ -274,26 +268,11 @@ export function mergeJsonInputUploads(
   }
 
   const existing = current ?? {}
-  if (!isJsonInputMultiDocument(existing) && uploads.length === 1) {
+  if (!isJsonInputMultiDocument(existing)) {
     return { ok: true, data: buildJsonInputNodeData(uploads, existing) }
   }
 
-  let baseDocs: JsonInputDocument[]
-  if (isJsonInputMultiDocument(existing)) {
-    baseDocs = getJsonInputDocumentList(existing)
-  } else if (flatHasUserContent(existing)) {
-    baseDocs = [
-      {
-        ...articleFieldsFromNodeData(existing),
-        text:
-          typeof existing.text === 'string' ? existing.text : '',
-        [JSON_INPUT_SOURCE_FILE_KEY]: 'Current content.json',
-      },
-    ]
-  } else {
-    baseDocs = []
-  }
-
+  const baseDocs = getJsonInputDocumentList(existing)
   const merged = [...baseDocs, ...uploads]
   if (merged.length > JSON_INPUT_MAX_DOCUMENTS) {
     return {

@@ -80,13 +80,13 @@ describe('jsonInputValidation', () => {
     expect(parseJsonInputFileText('[1]', 'bad.json').ok).toBe(false)
   })
 
-  it('merges uploads: one file replaces flat; multiple files promote existing content', () => {
-    const first = mergeJsonInputUploads({ text: '' }, [
+  it('merges uploads: flat node uses uploads only; multi node appends', () => {
+    const single = mergeJsonInputUploads({ text: '' }, [
       { text: 'one', source_file: 'a.json' },
     ])
-    expect(first.ok).toBe(true)
-    if (first.ok) {
-      expect(first.data).toEqual({ text: 'one' })
+    expect(single.ok).toBe(true)
+    if (single.ok) {
+      expect(single.data).toEqual({ text: 'one' })
     }
 
     const replace = mergeJsonInputUploads({ text: 'kept', headline: 'H' }, [
@@ -97,13 +97,31 @@ describe('jsonInputValidation', () => {
       expect(replace.data).toEqual({ text: 'two' })
     }
 
-    const multi = mergeJsonInputUploads({ text: 'kept', headline: 'H' }, [
+    const batch = mergeJsonInputUploads({ text: 'kept', headline: 'H' }, [
       { text: 'two', source_file: 'b.json' },
       { text: 'three', source_file: 'c.json' },
     ])
-    expect(multi.ok).toBe(true)
-    if (multi.ok) {
-      expect(multi.data.documents).toHaveLength(3)
+    expect(batch.ok).toBe(true)
+    if (batch.ok) {
+      expect(batch.data.documents).toHaveLength(2)
+      expect(batch.data.documents).toEqual([
+        { text: 'two', source_file: 'b.json' },
+        { text: 'three', source_file: 'c.json' },
+      ])
+    }
+
+    const append = mergeJsonInputUploads(
+      {
+        documents: [
+          { text: 'a', source_file: 'a.json' },
+          { text: 'b', source_file: 'b.json' },
+        ],
+      },
+      [{ text: 'c', source_file: 'c.json' }],
+    )
+    expect(append.ok).toBe(true)
+    if (append.ok) {
+      expect(append.data.documents).toHaveLength(3)
     }
   })
 })
