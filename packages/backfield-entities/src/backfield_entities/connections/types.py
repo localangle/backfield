@@ -20,7 +20,37 @@ class LinkedEntitySnapshot:
     snippets: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class PairEvidencePacket:
+    """Evidence and lower-trust hints for one candidate canonical pair."""
+
+    snippets: tuple[str, ...]
+    source: str
+    score: int
+    match_basis: str | None = None
+    hints: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class AutoConnectionCandidatePair:
+    """One endpoint pair submitted to connection classification."""
+
+    candidate_id: str
+    from_entity: LinkedEntitySnapshot
+    to_entity: LinkedEntitySnapshot
+    evidence: PairEvidencePacket
+
+    @property
+    def from_entity_type(self) -> str:
+        return self.from_entity.entity_type
+
+    @property
+    def to_entity_type(self) -> str:
+        return self.to_entity.entity_type
+
+
 class AutoConnectionEdgeProposal(BaseModel):
+    candidate_id: str | None = None
     from_entity_id: str
     to_entity_id: str
     description: str = Field(min_length=1)

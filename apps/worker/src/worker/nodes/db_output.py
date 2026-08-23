@@ -121,6 +121,47 @@ def _kick_webhook_dispatch_after_commit(session: Session) -> None:
         )
 
 
+def _kick_deferred_connection_inference_after_commit(
+    result: dict[str, Any],
+    *,
+    project_id: int,
+    settings: DbOutputCanonicalSettings,
+    run_id: str,
+    processed_item_id: int | None,
+) -> None:
+    connections = result.get("connections")
+    if not isinstance(connections, dict):
+        return
+    candidate_ids = connections.get("deferred_candidate_ids")
+    if not isinstance(candidate_ids, list) or not candidate_ids:
+        return
+    article_id = result.get("article_id")
+    if not isinstance(article_id, int):
+        return
+    try:
+        celery_current_app.send_task(
+            "worker.tasks.infer_deferred_article_connections",
+            args=[
+                int(project_id),
+                int(article_id),
+                [str(candidate_id) for candidate_id in candidate_ids],
+                settings.model_dump(mode="json"),
+                run_id,
+                processed_item_id,
+            ],
+            queue=os.environ.get("CELERY_QUEUE", "agate"),
+        )
+        connections["deferred_status"] = "queued"
+    except Exception:
+        connections["deferred_status"] = "enqueue_failed"
+        logger.warning(
+            "Deferred connection inference enqueue failed project_id=%s article_id=%s",
+            project_id,
+            article_id,
+            exc_info=True,
+        )
+
+
 def _record_run_output_association(
     session: Session,
     *,
@@ -152,6 +193,7 @@ def _persist_db_output_in_session(
     replace_geography: bool,
     processed_item_id: int | None,
     settings: DbOutputCanonicalSettings,
+    infer_connections: bool = True,
 ) -> dict[str, Any]:
     persist_result = persist_from_consolidated(
         session,
@@ -252,22 +294,25 @@ def _persist_db_output_in_session(
     )
 
     article_text = str(body.get("text") or "")
-    connections = run_auto_connections_for_db_output(
-        session,
-        project_id=project_id,
-        article_id=article_id,
-        article_text=article_text,
-        settings=settings,
-        run_id=run_id,
-        processed_item_id=processed_item_id,
-        call_llm=lambda prompt, **kwargs: call_llm(
-            prompt,
-            openai_api_key=os.getenv("OPENAI_API_KEY"),
-            max_retries=ADJUDICATION_LLM_MAX_RETRIES,
-            timeout=ADJUDICATION_LLM_TIMEOUT_S,
-            **kwargs,
-        ),
-    )
+    connections = None
+    if infer_connections:
+        connections = run_auto_connections_for_db_output(
+            session,
+            project_id=project_id,
+            article_id=article_id,
+            article_text=article_text,
+            settings=settings,
+            run_id=run_id,
+            processed_item_id=processed_item_id,
+            call_llm=lambda prompt, **kwargs: call_llm(
+                prompt,
+                openai_api_key=os.getenv("OPENAI_API_KEY"),
+                max_retries=ADJUDICATION_LLM_MAX_RETRIES,
+                timeout=ADJUDICATION_LLM_TIMEOUT_S,
+                allow_max_tokens_bump=False,
+                **kwargs,
+            ),
+        )
 
     clear_replace_article_geography_flags(
         session,
@@ -336,11 +381,13 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
 
     from backfield_db.session import get_engine
 
+    engine = get_engine()
     last_exc: SQLAlchemyError | None = None
+    result: dict[str, Any] | None = None
     with _dboutput_persist_slot():
         for attempt in range(_DBOUTPUT_DEADLOCK_MAX_ATTEMPTS):
             try:
-                with Session(get_engine()) as session:
+                with Session(engine) as session:
                     result = _persist_db_output_in_session(
                         session,
                         body=body,
@@ -351,10 +398,11 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
                         replace_geography=replace_geography,
                         processed_item_id=processed_item_id,
                         settings=settings,
+                        infer_connections=False,
                     )
                     session.commit()
                     _kick_webhook_dispatch_after_commit(session)
-                return result
+                break
             except SQLAlchemyError as exc:
                 last_exc = exc
                 if not is_postgres_deadlock(exc) or attempt >= _DBOUTPUT_DEADLOCK_MAX_ATTEMPTS - 1:
@@ -369,6 +417,56 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
                 )
                 time.sleep(delay_s)
 
-    if last_exc is not None:
+    if result is None and last_exc is not None:
         raise last_exc
-    raise RuntimeError("DBOutput persist failed without an exception")
+    if result is None:
+        raise RuntimeError("DBOutput persist failed without an exception")
+
+    try:
+        with Session(engine) as session:
+            result["connections"] = run_auto_connections_for_db_output(
+                session,
+                project_id=project_id,
+                article_id=int(result["article_id"]),
+                article_text=str(result.get("text") or ""),
+                settings=settings,
+                run_id=run_id,
+                processed_item_id=processed_item_id,
+                call_llm=lambda prompt, **kwargs: call_llm(
+                    prompt,
+                    openai_api_key=os.getenv("OPENAI_API_KEY"),
+                    max_retries=ADJUDICATION_LLM_MAX_RETRIES,
+                    timeout=ADJUDICATION_LLM_TIMEOUT_S,
+                    allow_max_tokens_bump=False,
+                    **kwargs,
+                ),
+            )
+            session.commit()
+    except Exception as exc:
+        logger.warning(
+            "Post-persist automatic connection inference failed project_id=%s article_id=%s",
+            project_id,
+            result["article_id"],
+            exc_info=True,
+        )
+        result["connections"] = {
+            "enabled": bool(settings.auto_connections_enabled),
+            "eligible": True,
+            "status": "failed",
+            "reason": "post_persist_inference_failed",
+            "error": str(exc),
+            "created": 0,
+            "reinforced": 0,
+            "skipped_existing": 0,
+            "families": [],
+            "edges": [],
+        }
+
+    _kick_deferred_connection_inference_after_commit(
+        result,
+        project_id=project_id,
+        settings=settings,
+        run_id=run_id,
+        processed_item_id=processed_item_id,
+    )
+    return result

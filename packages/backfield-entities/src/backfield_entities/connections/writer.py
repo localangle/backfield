@@ -21,7 +21,10 @@ from backfield_entities.connections.evidence import (
     build_connection_creation_evidence,
     evidence_row_from_creation,
 )
-from backfield_entities.connections.natures import normalize_preferred_nature_slug
+from backfield_entities.connections.natures import (
+    nature_def,
+    normalize_preferred_nature_slug,
+)
 from backfield_entities.connections.taxonomy import AUTO_CONNECTION_PROMPT_VERSION
 from backfield_entities.connections.types import AutoConnectionEdgeProposal, LinkedEntitySnapshot
 
@@ -212,12 +215,27 @@ def write_auto_connections(
         stylebook_id = None
 
     for edge in edges:
+        if edge.from_entity_id == edge.to_entity_id:
+            result.skipped_existing_count += 1
+            continue
+        nature = normalize_preferred_nature_slug(normalize_connection_nature(edge.nature))
+        definition = nature_def(nature, from_entity_type, to_entity_type) if nature else None
+        if (
+            definition is not None
+            and definition.symmetric
+            and edge.to_entity_id < edge.from_entity_id
+        ):
+            edge = edge.model_copy(
+                update={
+                    "from_entity_id": edge.to_entity_id,
+                    "to_entity_id": edge.from_entity_id,
+                }
+            )
         from_entity = from_by_id.get(edge.from_entity_id)
         to_entity = to_by_id.get(edge.to_entity_id)
         if from_entity is None or to_entity is None:
             continue
 
-        nature = normalize_preferred_nature_slug(normalize_connection_nature(edge.nature))
         description = normalize_connection_description(edge.description)
         if not description:
             continue
@@ -352,6 +370,7 @@ def write_auto_connections(
             with session.begin_nested():
                 session.flush()
         except IntegrityError:
+            session.delete(row)
             result.skipped_existing_count += 1
             continue
 

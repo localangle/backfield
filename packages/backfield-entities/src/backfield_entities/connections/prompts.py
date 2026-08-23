@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from backfield_entities.connections.same_site_hints import SameSiteOrgLocationHint
 from backfield_entities.connections.taxonomy import (
+    AUTO_CONNECTION_PROMPT_VERSION_EVIDENCE_PAIRS,
     AUTO_CONNECTION_PROMPT_VERSION_NATURE_CATALOG,
     AUTO_CONNECTION_PROMPT_VERSION_WITH_HINTS,
     auto_link_natures_for_pair,
 )
-from backfield_entities.connections.types import LinkedEntitySnapshot
+from backfield_entities.connections.types import (
+    AutoConnectionCandidatePair,
+    LinkedEntitySnapshot,
+)
 
 
 def _format_entity_block(entity: LinkedEntitySnapshot) -> str:
@@ -112,4 +116,69 @@ def build_family_classification_prompt(
         'Return JSON only: {"edges": [{"from_entity_id": "...", "to_entity_id": "...", '
         '"description": "...", "nature": null, "confidence": 0.95, "quote": "...", '
         '"reason": "..."}]}'
+    )
+
+
+def build_candidate_batch_prompt(
+    candidates: tuple[AutoConnectionCandidatePair, ...],
+) -> str:
+    """Build a prompt whose evidence is explicitly scoped to candidate pairs."""
+    blocks: list[str] = []
+    for candidate in candidates:
+        allowed = sorted(
+            auto_link_natures_for_pair(
+                candidate.from_entity_type,
+                candidate.to_entity_type,
+            )
+        )
+        evidence = "\n".join(f'    - "{snippet}"' for snippet in candidate.evidence.snippets)
+        hints = "\n".join(f"    - {hint}" for hint in candidate.evidence.hints)
+        blocks.append(
+            "\n".join(
+                [
+                    f"- candidate_id={candidate.candidate_id}",
+                    (
+                        f"  family: {candidate.from_entity_type} to "
+                        f"{candidate.to_entity_type}"
+                    ),
+                    (
+                        f"  from: type={candidate.from_entity_type} "
+                        f"id={candidate.from_entity.canonical_id} "
+                        f"label={candidate.from_entity.label!r}"
+                    ),
+                    (
+                        f"  to: type={candidate.to_entity_type} "
+                        f"id={candidate.to_entity.canonical_id} "
+                        f"label={candidate.to_entity.label!r}"
+                    ),
+                    f"  allowed_natures: {', '.join(allowed) if allowed else '(none)'}",
+                    f"  evidence_source: {candidate.evidence.source}",
+                    "  article_evidence:",
+                    evidence or "    - (none)",
+                    "  lower_trust_hints:",
+                    hints or "    - (none)",
+                ]
+            )
+        )
+    candidate_section = "\n\n".join(blocks)
+    return (
+        f"prompt_version: {AUTO_CONNECTION_PROMPT_VERSION_EVIDENCE_PAIRS}\n"
+        "Identify explicit relationships only for the candidate pairs below.\n\n"
+        "Rules:\n"
+        "- Evaluate each candidate independently and return its candidate_id.\n"
+        "- Article evidence must state or strongly entail a direct relationship.\n"
+        "- Lower-trust hints may help interpret article evidence but never prove a relationship.\n"
+        "- Do not infer a relationship from co-mention, proximity, shared event, "
+        "or metadata alone.\n"
+        "- Copy the supporting quote exactly from that candidate's article_evidence.\n"
+        "- Use only the submitted endpoints and one allowed nature; use null only when the "
+        "relationship is explicit but no nature fits.\n"
+        "- Prefer leads over works_for when leadership is explicit.\n"
+        "- Athletes on a sports team use plays_for; coaches use coaches.\n"
+        "- Return every independently supported relationship, but no duplicate pair+nature.\n"
+        "- confidence must be at least 0.9; prefer no edge when uncertain.\n\n"
+        f"Candidates:\n{candidate_section}\n\n"
+        'Return JSON only: {"edges": [{"candidate_id": "candidate-...", '
+        '"from_entity_id": "...", "to_entity_id": "...", "description": "...", '
+        '"nature": "...", "confidence": 0.95, "quote": "...", "reason": "..."}]}'
     )

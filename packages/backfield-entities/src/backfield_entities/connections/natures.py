@@ -14,6 +14,25 @@ from backfield_entities.entities.location.types import ADDRESS_LIKE_LOCATION_TYP
 TemporalKind = Literal["static", "dynamic"]
 EntityEndpoint = Literal["person", "organization", "location"]
 
+# More-specific natures suppress broader descriptions for the same ordered pair.
+NATURE_SUBSUMPTIONS: dict[str, frozenset[str]] = {
+    "leads": frozenset({"works_for", "member_of"}),
+    "coaches": frozenset({"works_for", "member_of"}),
+    "plays_for": frozenset({"member_of"}),
+    "located_at": frozenset({"based_in"}),
+    "holds_office_in": frozenset({"represents"}),
+    "spouse_of": frozenset({"family_of"}),
+    "parent_of": frozenset({"family_of"}),
+    "sibling_of": frozenset({"family_of"}),
+}
+
+# Keep this intentionally small. Unlisted natures may legitimately coexist.
+NATURE_CONFLICTS: frozenset[frozenset[str]] = frozenset(
+    {
+        frozenset({"supports", "opposes"}),
+    }
+)
+
 # Location granularity (carried from taxonomy v1; extended for new natures).
 LOCATED_AT_LOCATION_TYPES: frozenset[str] = frozenset(
     {

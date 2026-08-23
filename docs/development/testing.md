@@ -119,6 +119,22 @@ Session-shaped smoke configuration:
 
 Most live DB-writing lanes remove their temporary data by default.
 
+### Connection inference validation
+
+Candidate, batching, resolution, writer, and DB Output coverage lives in:
+
+```bash
+uv run pytest -q tests/entities/test_connection_candidate_pairs.py \
+  tests/entities/test_connection_candidate_batching.py \
+  tests/entities/test_connection_proposal_resolution.py
+uv run pytest -q tests/worker/test_worker_db_output_auto_connections.py
+```
+
+Before applying historical inference, run `backfield backfill-connections` without `--apply` on a
+representative scoped sample. Review candidate source/rejection counts, accepted previews,
+ambiguous conflicts, requests per article, elapsed time, and false positives. Runtime changes to
+inline or deferred inference also require `make smoke`.
+
 ## When to run what
 
 - Documentation-only changes: targeted link or command checks when examples changed

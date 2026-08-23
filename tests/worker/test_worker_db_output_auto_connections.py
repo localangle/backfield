@@ -28,7 +28,10 @@ from backfield_entities.connections.db_output import run_auto_connections_for_db
 from backfield_entities.connections.taxonomy import AUTO_CONNECTION_MIN_CONFIDENCE
 from backfield_entities.ingest.db_output_settings import DbOutputCanonicalSettings
 from sqlmodel import Session, SQLModel, create_engine, select
-from worker.nodes.db_output import run_db_output
+from worker.nodes.db_output import (
+    _kick_deferred_connection_inference_after_commit,
+    run_db_output,
+)
 
 from tests.worker.test_person_substrate_persistence import _sample_person_entry
 from tests.worker.test_substrate_persistence import _bootstrap_project, _empty_places
@@ -296,6 +299,35 @@ def test_auto_connections_creates_high_confidence_edge() -> None:
         assert (evidence[0].confidence or 0) >= AUTO_CONNECTION_MIN_CONFIDENCE
 
 
+def test_auto_connections_dry_run_previews_without_writing() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        fixture = _seed_linked_person_org(session, person_affiliation="")
+        quote = "Mayor Jane Smith works for Chicago City Hall"
+        summary = run_auto_connections_for_db_output(
+            session,
+            project_id=fixture.project_id,
+            article_id=fixture.article_id,
+            article_text=fixture.article_text,
+            settings=_eligible_settings(),
+            call_llm=MagicMock(
+                return_value=_llm_edges_response(
+                    from_id=fixture.person_canonical_id,
+                    to_id=fixture.organization_canonical_id,
+                    quote=quote,
+                )
+            ),
+            dry_run=True,
+        )
+        session.commit()
+
+        assert summary["dry_run"] is True
+        assert summary["created"] == 0
+        assert summary["diagnostics"]["preview_edges"][0]["nature"] == "works_for"
+        assert session.exec(select(StylebookConnection)).all() == []
+        assert session.exec(select(StylebookConnectionEvidence)).all() == []
+
+
 def test_auto_connections_skips_low_confidence_edge() -> None:
     engine = _engine()
     with Session(engine) as session:
@@ -453,6 +485,108 @@ def test_auto_connections_skips_invalid_llm_json() -> None:
 
     assert summary["created"] == 0
     assert summary["families"][0]["skip_reasons"].get("invalid_llm_json") == 1
+
+
+def test_deferred_candidate_processing_is_idempotent() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        fixture = _seed_linked_person_org(session, person_affiliation="")
+        inline = run_auto_connections_for_db_output(
+            session,
+            project_id=fixture.project_id,
+            article_id=fixture.article_id,
+            article_text=fixture.article_text,
+            settings=_eligible_settings(),
+            call_llm=MagicMock(),
+            max_requests=0,
+        )
+        candidate_ids = tuple(inline["deferred_candidate_ids"])
+        assert candidate_ids
+
+        response = _llm_edges_response(
+            from_id=fixture.person_canonical_id,
+            to_id=fixture.organization_canonical_id,
+            quote="Mayor Jane Smith works for Chicago City Hall",
+        )
+        first = run_auto_connections_for_db_output(
+            session,
+            project_id=fixture.project_id,
+            article_id=fixture.article_id,
+            article_text=fixture.article_text,
+            settings=_eligible_settings(),
+            call_llm=MagicMock(return_value=response),
+            candidate_ids=candidate_ids,
+            defer_overflow=False,
+        )
+        session.commit()
+        second = run_auto_connections_for_db_output(
+            session,
+            project_id=fixture.project_id,
+            article_id=fixture.article_id,
+            article_text=fixture.article_text,
+            settings=_eligible_settings(),
+            call_llm=MagicMock(return_value=response),
+            candidate_ids=candidate_ids,
+            defer_overflow=False,
+        )
+        session.commit()
+
+        assert first["created"] == 1
+        assert second["created"] == 0
+        assert second["skipped_existing"] == 1
+        assert len(session.exec(select(StylebookConnection)).all()) == 1
+        assert len(session.exec(select(StylebookConnectionEvidence)).all()) == 1
+
+
+@patch("worker.nodes.db_output.celery_current_app.send_task")
+def test_deferred_dispatch_includes_compact_candidate_keys(send_task: MagicMock) -> None:
+    result = {
+        "article_id": 42,
+        "connections": {
+            "deferred_candidate_ids": ["candidate-a", "candidate-b"],
+        },
+    }
+    settings = _eligible_settings()
+
+    _kick_deferred_connection_inference_after_commit(
+        result,
+        project_id=7,
+        settings=settings,
+        run_id="run-1",
+        processed_item_id=9,
+    )
+
+    send_task.assert_called_once()
+    assert send_task.call_args.args[0] == "worker.tasks.infer_deferred_article_connections"
+    assert send_task.call_args.kwargs["args"][0:3] == [
+        7,
+        42,
+        ["candidate-a", "candidate-b"],
+    ]
+    assert result["connections"]["deferred_status"] == "queued"
+
+
+@patch(
+    "worker.nodes.db_output.celery_current_app.send_task",
+    side_effect=RuntimeError("broker unavailable"),
+)
+def test_deferred_dispatch_failure_is_reported_without_raising(
+    _send_task: MagicMock,
+) -> None:
+    result = {
+        "article_id": 42,
+        "connections": {"deferred_candidate_ids": ["candidate-a"]},
+    }
+
+    _kick_deferred_connection_inference_after_commit(
+        result,
+        project_id=7,
+        settings=_eligible_settings(),
+        run_id="run-1",
+        processed_item_id=9,
+    )
+
+    assert result["connections"]["deferred_status"] == "enqueue_failed"
 
 
 @patch("backfield_entities.connections.db_output.collect_auto_connection_article_context")

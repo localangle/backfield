@@ -356,13 +356,41 @@ Quarantine table or migration report is enough; no need for a permanent product 
   suggest job).
 - Temporal `valid_at` / `invalid_at`.
 - Storyline membership for historical articles.
-- Re-running LLM inference over the whole archive (too expensive; reinforce handles forward path).
+- Unbounded archive-wide inference. Historical inference uses the scoped, budgeted backfill below.
 
 #### Rollback
 
 Keep a backup dump or staging clone through Step 4. Schema rollback = restore
 `evidence_json` from children if needed (reversible while column exists). After column drop,
 rollback requires restore from backup.
+
+### Evidence-first automatic connection inference
+
+Backfield Output generates canonical pairs only when article text or linked mention occurrences put
+the entities in the same or adjacent sentence, or when a high-precision construction identifies
+the pair. Extracted affiliation and entity metadata are labeled lower-trust hints: they can help
+interpret text but cannot prove an edge. Every model proposal must identify its candidate and copy
+an exact quote from that pair's evidence packet.
+
+Classification batches at most eight pairs per request. The inline path permits four requests with
+concurrency two; the article-wide ceiling is eight requests. Candidate pairs are ranked by direct
+grammar, same-sentence evidence, adjacent-sentence evidence, then metadata-assisted evidence.
+Overflow candidate keys are queued only after the article transaction commits and are processed by
+an idempotent Celery task.
+
+All deterministic and model proposals are resolved together before writing:
+
+- symmetric natures use stable endpoint order;
+- exact endpoint+nature duplicates retain the strongest direct evidence;
+- declared specific natures suppress only their broader equivalents;
+- explicitly incompatible natures require a confidence or evidence margin, otherwise neither is
+  written as an `ambiguous_conflict`;
+- independent natures, including `founded` and `leads`, may coexist.
+
+The reinforce writer appends article evidence to an existing open edge and never closes editorial
+or historical edges. Inference summaries report candidate sources/rejections, entity and candidate
+truncation, request and batch sizes, prompt characters, elapsed time, duplicate/subsumption/conflict
+counts, and create/reinforce outcomes.
 
 ### Phase B — Storylines
 

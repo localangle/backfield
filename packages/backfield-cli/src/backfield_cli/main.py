@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from backfield_cli import backfill_connections as backfill_connections_cmd
 from backfield_cli import doctor as doctor_cmd
 from backfield_cli import init as init_cmd
 from backfield_cli import migrate as migrate_cmd
@@ -23,6 +24,7 @@ def main(argv: list[str] | None = None) -> int:
     seed_cmd.register_subcommand(subparsers)
     init_cmd.register_subcommand(subparsers)
     doctor_cmd.register_subcommand(subparsers)
+    backfill_connections_cmd.register_subcommand(subparsers)
     tenancy_audit_cmd.register_subcommand(subparsers)
     repair_s3_article_sources_cmd.register_subcommand(subparsers)
     migrate_connection_kg_cmd.register_subcommand(subparsers)

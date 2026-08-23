@@ -65,6 +65,25 @@ After cutover, Stylebook Remove soft-closes edges (`closed_at`); reopen clears i
 Public entity connection lists hide closed rows unless `include_closed=true`.
 Hard-delete remains for internal/migrate paths only.
 
+## Historical connection inference
+
+`backfield backfill-connections` reuses the forward evidence, budget, resolution, and reinforce
+paths. It requires an explicit project or Stylebook scope and defaults to dry-run:
+
+```bash
+backfield backfill-connections --project-id 42 --limit 100
+backfield backfill-connections --stylebook-id 7 --after-article-id 12000 --limit 100 \
+  --report connection-backfill.json
+backfield backfill-connections --project-id 42 --after-article-id 12000 --apply
+```
+
+The JSON report includes per-article diagnostics, budget-limited `unprocessed` candidate counts,
+and `resume_cursor`; pass that value back through `--after-article-id` after an interruption.
+`--start-article-id`, `--end-article-id`,
+`--max-requests-per-article` (maximum eight), `--model`, and `--model-config-id` provide bounded
+control. Apply mode is idempotent: it reinforces existing endpoint+nature edges, skips article
+evidence already attached, and never closes existing edges.
+
 ## Local workflow
 
 With the Compose stack configuration:

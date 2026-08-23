@@ -16,6 +16,8 @@ def build_auto_connections_summary(
     families: list[FamilyInferenceResult] | None = None,
     write_result: AutoConnectionWriteResult | None = None,
     created_cap_skipped: int = 0,
+    diagnostics: dict[str, Any] | None = None,
+    deferred_candidate_ids: tuple[str, ...] = (),
     error: str | None = None,
 ) -> dict[str, Any]:
     """Build the DBOutput ``connections`` summary payload."""
@@ -67,7 +69,7 @@ def build_auto_connections_summary(
 
     created_rows = write_result.created if write_result is not None else []
     reinforced_rows = write_result.reinforced if write_result is not None else []
-    return {
+    summary = {
         "enabled": True,
         "eligible": True,
         "status": "succeeded",
@@ -84,6 +86,14 @@ def build_auto_connections_summary(
         "families": family_summaries,
         "edges": [_written_edge_dict(edge) for edge in created_rows + reinforced_rows],
     }
+    if diagnostics:
+        summary["diagnostics"] = diagnostics
+    if deferred_candidate_ids:
+        summary["deferred_candidate_ids"] = list(deferred_candidate_ids)
+        summary["deferred"] = len(deferred_candidate_ids)
+    else:
+        summary["deferred"] = 0
+    return summary
 
 
 def _written_edge_dict(edge: WrittenAutoConnection) -> dict[str, Any]:
