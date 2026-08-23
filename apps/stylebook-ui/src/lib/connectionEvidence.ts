@@ -100,7 +100,7 @@ export function formatConnectionEvidence(
 }
 
 export function bestEvidenceRecord(conn: {
-  evidence?: Array<Record<string, unknown> | null | undefined> | null
+  evidence?: ReadonlyArray<object | null | undefined> | null
   evidence_json?: Record<string, unknown> | null
 }): Record<string, unknown> | null {
   const rows = Array.isArray(conn.evidence) ? conn.evidence : []

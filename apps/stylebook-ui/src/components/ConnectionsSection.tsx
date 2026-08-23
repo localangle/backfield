@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from "react"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import type { Connection } from "@/lib/stylebook-api/connections"
 import {
-  CONNECTIONS_GRAPH_FETCH_LIMIT,
   CONNECTIONS_PER_PAGE,
   listStylebookConnectionsForLocation,
   listStylebookConnectionsForOrganization,
@@ -21,6 +20,11 @@ import {
   reopenStylebookConnectionForOrganization,
   reopenStylebookConnectionForPerson,
 } from "@/lib/stylebook-api/connections"
+import {
+  fetchConnectionNeighborhood,
+  type ConnectionNeighborhood,
+} from "@/lib/connectionGraph"
+import type { GraphEntityProfileLines } from "@/lib/connectionGraphEntityProfile"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -56,6 +60,7 @@ interface ConnectionsSectionProps {
   entityId: string | number
   stylebookSlug: string
   entityDisplayName: string
+  entityProfileLines?: GraphEntityProfileLines
 }
 
 function getDetailUrl(
@@ -87,13 +92,14 @@ export default function ConnectionsSection({
   entityId,
   stylebookSlug,
   entityDisplayName,
+  entityProfileLines,
 }: ConnectionsSectionProps) {
   const { catalogScopeSuffix, catalogBasePath, projectScopeSlug } = useProjectCatalogScope()
   const { showError } = useAppMessage()
   const [connections, setConnections] = useState<Connection[]>([])
   const [connectionsTotal, setConnectionsTotal] = useState(0)
   const [connectionsPage, setConnectionsPage] = useState(1)
-  const [graphConnections, setGraphConnections] = useState<Connection[] | null>(null)
+  const [graphNeighborhood, setGraphNeighborhood] = useState<ConnectionNeighborhood | null>(null)
   const [graphLoading, setGraphLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<"list" | "graph">("list")
   const [loading, setLoading] = useState(true)
@@ -182,39 +188,36 @@ export default function ConnectionsSection({
   const fetchGraphConnections = useCallback(async () => {
     setGraphLoading(true)
     try {
-      const canonicalId = String(entityId)
-      const options = {
-        limit: CONNECTIONS_GRAPH_FETCH_LIMIT,
-        offset: 0,
-        includeClosed: showClosed,
-      }
-      let res: Awaited<ReturnType<typeof listStylebookConnectionsForLocation>>
-      if (entityType === "location") {
-        res = await listStylebookConnectionsForLocation(stylebookSlug, canonicalId, options)
-      } else if (entityType === "person") {
-        res = await listStylebookConnectionsForPerson(stylebookSlug, canonicalId, options)
-      } else if (entityType === "organization") {
-        res = await listStylebookConnectionsForOrganization(
-          stylebookSlug,
-          canonicalId,
-          options,
-        )
-      } else {
-        setGraphConnections([])
-        return
-      }
-      setGraphConnections(res.connections)
+      const neighborhood = await fetchConnectionNeighborhood(
+        stylebookSlug,
+        {
+          entityType,
+          entityId: String(entityId),
+          displayName: entityDisplayName,
+        },
+        {
+          includeClosed: showClosed,
+          expandHops: entityType === "person" ? 2 : 1,
+        },
+      )
+      setGraphNeighborhood(neighborhood)
     } catch (e) {
       showError(e instanceof Error ? e.message : "Failed to load connection graph")
-      setGraphConnections([])
+      setGraphNeighborhood({
+        connections: [],
+        hop1ConnectionCount: 0,
+        hop2ConnectionCount: 0,
+        neighborsExpanded: 0,
+        neighborsSkipped: 0,
+      })
     } finally {
       setGraphLoading(false)
     }
-  }, [entityType, entityId, stylebookSlug, showError, showClosed])
+  }, [entityType, entityId, entityDisplayName, stylebookSlug, showError, showClosed])
 
   useEffect(() => {
     setConnectionsPage(1)
-    setGraphConnections(null)
+    setGraphNeighborhood(null)
   }, [entityType, entityId, stylebookSlug, showClosed])
 
   useEffect(() => {
@@ -222,12 +225,12 @@ export default function ConnectionsSection({
   }, [connectionsPage, fetchConnectionsPage])
 
   useEffect(() => {
-    if (activeTab !== "graph" || graphConnections !== null) return
+    if (activeTab !== "graph" || graphNeighborhood !== null) return
     void fetchGraphConnections()
-  }, [activeTab, graphConnections, fetchGraphConnections])
+  }, [activeTab, graphNeighborhood, fetchGraphConnections])
 
   const refreshConnections = useCallback(() => {
-    setGraphConnections(null)
+    setGraphNeighborhood(null)
     void fetchConnectionsPage(connectionsPage)
     if (activeTab === "graph") {
       void fetchGraphConnections()
@@ -596,7 +599,18 @@ export default function ConnectionsSection({
                   entityType={entityType}
                   entityId={entityId}
                   entityDisplayName={entityDisplayName}
-                  connections={graphConnections ?? []}
+                  stylebookSlug={stylebookSlug}
+                  projectSlug={projectScopeSlug || undefined}
+                  centerProfileLines={entityProfileLines}
+                  neighborhood={
+                    graphNeighborhood ?? {
+                      connections: [],
+                      hop1ConnectionCount: 0,
+                      hop2ConnectionCount: 0,
+                      neighborsExpanded: 0,
+                      neighborsSkipped: 0,
+                    }
+                  }
                 />
                 )}
               </TabsContent>

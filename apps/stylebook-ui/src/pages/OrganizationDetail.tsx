@@ -36,6 +36,7 @@ import { organizationCanonicalDetailConfig } from "@/lib/entityConfigs/organizat
 import { Button } from "@/components/ui/button"
 import { SimilarCanonicalNotice } from "@/components/SimilarCanonicalNotice"
 import { mergeCleanupOrganizationCanonical } from "@/lib/stylebook-api/cleanup"
+import { profileLinesForOrganization } from "@/lib/connectionGraphEntityProfile"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -356,6 +357,11 @@ export default function OrganizationDetail() {
     [catalogBasePath, filterScopeSuffix],
   )
 
+  const entityProfileLines = useMemo(
+    () => (organization ? profileLinesForOrganization(organization) : undefined),
+    [organization],
+  )
+
   const handleMergeIntoSimilar = useCallback(
     async (match: SimilarCanonicalMatch) => {
       if (!stylebookSlug || !organization) return
@@ -408,6 +414,7 @@ export default function OrganizationDetail() {
       stylebookSlug={stylebookSlug}
       entityId={organization?.id}
       entityDisplayName={organization?.label}
+      entityProfileLines={entityProfileLines}
       topNotice={
         <SimilarCanonicalNotice
           entityNounPlural="organizations"
