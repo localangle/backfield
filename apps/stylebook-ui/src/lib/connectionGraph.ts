@@ -1,4 +1,5 @@
 import type { EntityType } from "@/lib/entityTypes"
+import { formatConnectionSummaryLabel } from "@/lib/connectionEvidence"
 import {
   listStylebookConnectionsForLocation,
   listStylebookConnectionsForOrganization,
@@ -280,4 +281,61 @@ export function connectionsTouchingEntity(
   ref: Pick<GraphEntityRef, "entityType" | "entityId">,
 ): Connection[] {
   return connections.filter((conn) => connectionTouchesEntity(conn, ref))
+}
+
+export function directedEdgeBundleKey(conn: Connection): string {
+  return `${conn.from_entity_type}:${conn.from_entity_id}->${conn.to_entity_type}:${conn.to_entity_id}`
+}
+
+export function groupConnectionsByDirectedEdge(
+  connections: Connection[],
+): Map<string, Connection[]> {
+  const groups = new Map<string, Connection[]>()
+  for (const conn of connections) {
+    const key = directedEdgeBundleKey(conn)
+    const bucket = groups.get(key) ?? []
+    bucket.push(conn)
+    groups.set(key, bucket)
+  }
+  for (const [key, bucket] of groups) {
+    bucket.sort((a, b) => a.id - b.id)
+    groups.set(key, bucket)
+  }
+  return groups
+}
+
+export function singleConnectionEdgeLabel(conn: Connection): string {
+  const nature = formatNatureLabel(conn.nature)
+  if (nature) return nature
+  const summary = formatConnectionSummaryLabel(conn)
+  return summary.length > 36 ? `${summary.slice(0, 33)}…` : summary
+}
+
+export function bundleEdgeLabel(connections: Connection[]): string | undefined {
+  if (connections.length === 0) return undefined
+  if (connections.length === 1) return singleConnectionEdgeLabel(connections[0]!)
+
+  const labels: string[] = []
+  const seen = new Set<string>()
+  for (const conn of connections) {
+    const label = singleConnectionEdgeLabel(conn)
+    if (!seen.has(label)) {
+      seen.add(label)
+      labels.push(label)
+    }
+  }
+
+  if (labels.length === 1) {
+    return `${labels[0]} (${connections.length})`
+  }
+  if (labels.length === 2) {
+    const combined = `${labels[0]} · ${labels[1]}`
+    return combined.length > 40 ? `${combined.slice(0, 37)}…` : combined
+  }
+  const head = `${labels[0]} · ${labels[1]}`
+  return head.length > 32 ? `${head.slice(0, 29)}… +${labels.length - 2}` : `${head} +${labels.length - 2}`
+}
+
+export function bundleEdgeTitle(connections: Connection[]): string {
+  return connections.map((conn) => formatConnectionSummaryLabel(conn)).join("\n")
 }

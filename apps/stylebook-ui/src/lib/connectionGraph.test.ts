@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  bundleEdgeLabel,
   classifyConnectionHop,
   connectionsTouchingEntity,
   dedupeConnections,
   formatNatureLabel,
+  groupConnectionsByDirectedEdge,
   neighborFromConnection,
   otherEndFromConnection,
   selectNeighborsForHop2Expansion,
@@ -115,6 +117,43 @@ describe("connectionGraph", () => {
       entityId: "cubs",
       displayName: "Chicago Cubs",
     })
+  })
+
+  it("groups parallel connections into one directed edge bundle", () => {
+    const rows = [
+      conn({
+        id: 10,
+        from_entity_id: "charles",
+        from_display_name: "Charles Hughes",
+        to_entity_id: "chamber",
+        to_display_name: "Gary Chamber of Commerce",
+        nature: "works_for",
+      }),
+      conn({
+        id: 11,
+        from_entity_id: "charles",
+        from_display_name: "Charles Hughes",
+        to_entity_id: "chamber",
+        to_display_name: "Gary Chamber of Commerce",
+        nature: "leads",
+      }),
+      conn({
+        id: 12,
+        from_entity_type: "organization",
+        from_entity_id: "chamber",
+        to_entity_type: "person",
+        to_entity_id: "charles",
+        nature: "employs",
+      }),
+    ]
+    const groups = groupConnectionsByDirectedEdge(rows)
+    expect(groups.size).toBe(2)
+    expect(groups.get("person:charles->organization:chamber")?.map((row) => row.id)).toEqual([
+      10, 11,
+    ])
+    expect(bundleEdgeLabel(groups.get("person:charles->organization:chamber")!)).toBe(
+      "works for · leads",
+    )
   })
 
   it("lists connections touching an entity", () => {

@@ -20,14 +20,16 @@ import ConnectionGraphDetailPanel, {
 } from "@/components/ConnectionGraphDetailPanel"
 import type { GraphEntityProfileLines } from "@/lib/connectionGraphEntityProfile"
 import {
+  bundleEdgeLabel,
+  bundleEdgeTitle,
   classifyConnectionHop,
   entityRefKey,
+  groupConnectionsByDirectedEdge,
   type ConnectionNeighborhood,
   type GraphEntityRef,
   type GraphHop,
 } from "@/lib/connectionGraph"
 import { cn } from "@/lib/utils"
-import { formatConnectionSummaryLabel } from "@/lib/connectionEvidence"
 import type { Connection } from "@/lib/stylebook-api/connections"
 import type { EntityType as ConnectionsEntityType } from "@/lib/entityTypes"
 import { entityDisplayName as catalogEntityLabel } from "@/lib/entityRegistry"
@@ -70,13 +72,6 @@ function parseNodeId(id: string): { entityType: ConnectionsEntityType; entityId:
   const match = id.match(/^(person|location|organization|work)-(.+)$/)
   if (!match) return null
   return { entityType: match[1] as ConnectionsEntityType, entityId: match[2] }
-}
-
-function connectionEdgeLabel(conn: Connection): string {
-  const nature = conn.nature?.trim().replace(/_/g, " ")
-  if (nature) return nature
-  const summary = formatConnectionSummaryLabel(conn)
-  return summary.length > 36 ? `${summary.slice(0, 33)}…` : summary
 }
 
 function entityFromConnectionEnd(
@@ -310,7 +305,8 @@ function buildGraphLayout(
     selection?.kind === "node"
       ? nodeId(selection.entityType, selection.entityId)
       : null
-  const selectedConnectionId = selection?.kind === "edge" ? selection.connectionId : null
+  const selectedConnectionIds =
+    selection?.kind === "edge" ? new Set(selection.connectionIds) : null
 
   const nodes: Node<ConnectionGraphNodeData>[] = Array.from(nodeMeta.entries()).map(
     ([key, meta]) => {
@@ -335,51 +331,57 @@ function buildGraphLayout(
     },
   )
 
-  const edges: Edge[] = connections.map((conn) => {
-    const hop = classifyConnectionHop(conn, center)
-    const summary = formatConnectionSummaryLabel(conn)
-    const showLabel = hop === 1
-    const isSelected = selectedConnectionId === conn.id
-    const strokeColor =
-      hop === 1 ? "hsl(var(--primary))" : "hsl(var(--muted-foreground) / 0.45)"
-    return {
-      id: `e-${conn.id}`,
-      source: nodeId(conn.from_entity_type, conn.from_entity_id),
-      target: nodeId(conn.to_entity_type, conn.to_entity_id),
-      label: showLabel ? connectionEdgeLabel(conn) : undefined,
-      title: summary,
-      type: "smoothstep",
-      pathOptions: { borderRadius: 16, offset: hop === 1 ? 12 : 4 },
-      animated: false,
-      selected: isSelected,
-      style: {
-        stroke: strokeColor,
-        strokeWidth: isSelected ? (hop === 1 ? 3 : 2) : hop === 1 ? 2 : 1,
-        opacity: isSelected ? 1 : hop === 1 ? 1 : 0.7,
-      },
-      labelStyle: showLabel
-        ? {
-            fill: "hsl(var(--foreground))",
-            fontSize: 11,
-            fontWeight: 600,
-          }
-        : undefined,
-      labelBgStyle: showLabel
-        ? {
-            fill: "hsl(var(--background))",
-            fillOpacity: 0.95,
-          }
-        : undefined,
-      labelBgPadding: showLabel ? ([8, 4] as [number, number]) : undefined,
-      labelBgBorderRadius: showLabel ? 6 : undefined,
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: strokeColor,
-        width: hop === 1 ? 16 : 12,
-        height: hop === 1 ? 16 : 12,
-      },
-    }
-  })
+  const edges: Edge[] = Array.from(groupConnectionsByDirectedEdge(connections).entries()).map(
+    ([bundleKey, bundleConnections]) => {
+      const conn = bundleConnections[0]!
+      const hop = Math.min(
+        ...bundleConnections.map((row) => classifyConnectionHop(row, center)),
+      ) as GraphHop
+      const showLabel = hop === 1
+      const connectionIds = bundleConnections.map((row) => row.id)
+      const isSelected = connectionIds.some((id) => selectedConnectionIds?.has(id))
+      const strokeColor =
+        hop === 1 ? "hsl(var(--primary))" : "hsl(var(--muted-foreground) / 0.45)"
+      return {
+        id: `bundle-${bundleKey}`,
+        source: nodeId(conn.from_entity_type, conn.from_entity_id),
+        target: nodeId(conn.to_entity_type, conn.to_entity_id),
+        label: showLabel ? bundleEdgeLabel(bundleConnections) : undefined,
+        title: bundleEdgeTitle(bundleConnections),
+        data: { connectionIds },
+        type: "smoothstep",
+        pathOptions: { borderRadius: 16, offset: hop === 1 ? 12 : 4 },
+        animated: false,
+        selected: isSelected,
+        style: {
+          stroke: strokeColor,
+          strokeWidth: isSelected ? (hop === 1 ? 3 : 2) : hop === 1 ? 2 : 1,
+          opacity: isSelected ? 1 : hop === 1 ? 1 : 0.7,
+        },
+        labelStyle: showLabel
+          ? {
+              fill: "hsl(var(--foreground))",
+              fontSize: 11,
+              fontWeight: 600,
+            }
+          : undefined,
+        labelBgStyle: showLabel
+          ? {
+              fill: "hsl(var(--background))",
+              fillOpacity: 0.95,
+            }
+          : undefined,
+        labelBgPadding: showLabel ? ([8, 4] as [number, number]) : undefined,
+        labelBgBorderRadius: showLabel ? 6 : undefined,
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: strokeColor,
+          width: hop === 1 ? 16 : 12,
+          height: hop === 1 ? 16 : 12,
+        },
+      }
+    },
+  )
 
   return { nodes, edges }
 }
@@ -516,9 +518,9 @@ export default function ConnectionsGraph({
   }, [])
 
   const onEdgeClick = useCallback((_: React.MouseEvent, edge: Edge) => {
-    const match = edge.id.match(/^e-(\d+)$/)
-    if (!match) return
-    setSelection({ kind: "edge", connectionId: Number(match[1]) })
+    const connectionIds = (edge.data as { connectionIds?: number[] } | undefined)?.connectionIds
+    if (!connectionIds?.length) return
+    setSelection({ kind: "edge", connectionIds })
   }, [])
 
   const onPaneClick = useCallback(() => {
@@ -586,8 +588,8 @@ export default function ConnectionsGraph({
             catalogBasePath={catalogBasePath}
             catalogScopeSuffix={catalogScopeSuffix}
             onClear={() => setSelection(null)}
-            onSelectConnection={(connectionId) =>
-              setSelection({ kind: "edge", connectionId })
+            onSelectConnection={(connectionIds) =>
+              setSelection({ kind: "edge", connectionIds })
             }
             onSelectNode={(entityType, entityId) =>
               setSelection({ kind: "node", entityType, entityId })

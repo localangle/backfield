@@ -1,7 +1,6 @@
 import { Building2, ExternalLink, MapPin, User, X } from "lucide-react"
 
 import ConnectionEvidenceBlock from "@/components/ConnectionEvidenceBlock"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   bestEvidenceRecord,
@@ -33,7 +32,7 @@ const ENTITY_ICON: Record<ConnectionsEntityType, typeof User> = {
 
 export type GraphSelection =
   | { kind: "node"; entityType: ConnectionsEntityType; entityId: string }
-  | { kind: "edge"; connectionId: number }
+  | { kind: "edge"; connectionIds: number[] }
 
 interface ConnectionGraphDetailPanelProps {
   selection: GraphSelection
@@ -46,7 +45,7 @@ interface ConnectionGraphDetailPanelProps {
   catalogBasePath: string
   catalogScopeSuffix: string
   onClear: () => void
-  onSelectConnection: (connectionId: number) => void
+  onSelectConnection: (connectionIds: number[]) => void
   onSelectNode: (entityType: ConnectionsEntityType, entityId: string) => void
 }
 
@@ -70,16 +69,9 @@ function getDetailUrl(
   return `${prefix}/locations/canonical/${entityId}${scopeSuffix}`
 }
 
-function hopLabel(hop: GraphHop): string {
-  if (hop === 0) return "This entry"
-  if (hop === 1) return "Direct"
-  return "Extended"
-}
-
 function ConnectionRow({
   conn,
   focusRef,
-  center,
   catalogBasePath,
   catalogScopeSuffix,
   onSelect,
@@ -87,16 +79,14 @@ function ConnectionRow({
 }: {
   conn: Connection
   focusRef: GraphEntityRef
-  center: GraphEntityRef
   catalogBasePath: string
   catalogScopeSuffix: string
   onSelect: (entityType: ConnectionsEntityType, entityId: string) => void
-  onSelectConnection: (connectionId: number) => void
+  onSelectConnection: (connectionIds: number[]) => void
 }) {
   const other = otherEndFromConnection(conn, focusRef)
   if (!other) return null
 
-  const hop = classifyConnectionHop(conn, center)
   const nature = formatNatureLabel(conn.nature)
   const summary = formatConnectionSummaryLabel(conn)
 
@@ -104,16 +94,16 @@ function ConnectionRow({
     <div
       role="button"
       tabIndex={0}
-      onClick={() => onSelectConnection(conn.id)}
+      onClick={() => onSelectConnection([conn.id])}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault()
-          onSelectConnection(conn.id)
+          onSelectConnection([conn.id])
         }
       }}
       className="w-full cursor-pointer rounded-lg border border-transparent px-2.5 py-2 text-left transition-colors hover:border-border hover:bg-muted/40"
     >
-      <div className="flex items-start justify-between gap-2">
+      <div>
         <div className="min-w-0">
           <button
             type="button"
@@ -134,9 +124,6 @@ function ConnectionRow({
             </p>
           ) : null}
         </div>
-        <Badge variant="outline" className="shrink-0 text-[10px] font-normal">
-          {hopLabel(hop)}
-        </Badge>
       </div>
       {conn.closed_at ? (
         <p className="mt-1 text-[11px] text-muted-foreground">Closed</p>
@@ -151,6 +138,34 @@ function ConnectionRow({
         Open in Stylebook
         <ExternalLink className="h-3 w-3" />
       </a>
+    </div>
+  )
+}
+
+function ConnectionDetailCard({
+  conn,
+}: {
+  conn: Connection
+}) {
+  const nature = formatNatureLabel(conn.nature)
+  const summary = formatConnectionSummaryLabel(conn)
+
+  return (
+    <div className="rounded-lg border bg-muted/10 px-3 py-2.5">
+      <div className="mb-2">
+        {nature ? (
+          <p className="text-sm font-medium text-foreground">{nature}</p>
+        ) : (
+          <p className="text-sm font-medium text-foreground">Connection</p>
+        )}
+      </div>
+      {summary && summary !== nature ? (
+        <p className="text-sm leading-relaxed text-muted-foreground">{summary}</p>
+      ) : null}
+      {conn.closed_at ? (
+        <p className="mt-1 text-xs text-muted-foreground">This connection is closed.</p>
+      ) : null}
+      <ConnectionEvidenceBlock evidence={bestEvidenceRecord(conn)} />
     </div>
   )
 }
@@ -218,11 +233,6 @@ function EntityHeader({
           <div className="mt-1">
             <EntityProfileLines lines={lines} loading={loading} />
           </div>
-          {hop !== 0 ? (
-            <Badge variant="secondary" className="mt-1.5 text-[10px] font-normal">
-              {hopLabel(hop)} link
-            </Badge>
-          ) : null}
         </div>
       </div>
       {hop !== 0 ? (
@@ -276,8 +286,11 @@ export default function ConnectionGraphDetailPanel({
   onSelectNode,
 }: ConnectionGraphDetailPanelProps) {
   if (selection.kind === "edge") {
-    const conn = connectionsById.get(selection.connectionId)
-    if (!conn) {
+    const selectedConnections = selection.connectionIds
+      .map((id) => connectionsById.get(id))
+      .filter((conn): conn is Connection => conn !== undefined)
+
+    if (selectedConnections.length === 0) {
       return (
         <aside className="flex h-full w-[min(100%,320px)] shrink-0 flex-col border-l bg-background">
           <PanelChrome title="Connection" onClear={onClear}>
@@ -287,6 +300,7 @@ export default function ConnectionGraphDetailPanel({
       )
     }
 
+    const conn = selectedConnections[0]!
     const from: GraphEntityRef = {
       entityType: conn.from_entity_type as ConnectionsEntityType,
       entityId: String(conn.from_entity_id),
@@ -297,13 +311,14 @@ export default function ConnectionGraphDetailPanel({
       entityId: String(conn.to_entity_id),
       displayName: conn.to_display_name,
     }
-    const nature = formatNatureLabel(conn.nature)
-    const summary = formatConnectionSummaryLabel(conn)
-    const hop = classifyConnectionHop(conn, center)
+    const panelTitle =
+      selectedConnections.length === 1
+        ? "Connection"
+        : `${selectedConnections.length} connections`
 
     return (
       <aside className="flex h-full w-[min(100%,320px)] shrink-0 flex-col border-l bg-background">
-        <PanelChrome title="Connection" onClear={onClear}>
+        <PanelChrome title={panelTitle} onClear={onClear}>
           <div className="space-y-4">
             <div className="space-y-2">
               <button
@@ -315,7 +330,11 @@ export default function ConnectionGraphDetailPanel({
               </button>
               <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
                 <span className="h-px flex-1 bg-border" />
-                <span>{nature ?? "linked to"}</span>
+                <span>
+                  {selectedConnections.length === 1
+                    ? formatNatureLabel(conn.nature) ?? "linked to"
+                    : `${selectedConnections.length} relationships`}
+                </span>
                 <span className="h-px flex-1 bg-border" />
               </div>
               <button
@@ -328,21 +347,10 @@ export default function ConnectionGraphDetailPanel({
             </div>
 
             <div className="space-y-2">
-              <Badge variant="outline" className="text-[10px] font-normal">
-                {hopLabel(hop)}
-              </Badge>
-              {nature ? (
-                <p className="text-sm font-medium text-foreground">{nature}</p>
-              ) : null}
-              {summary ? (
-                <p className="text-sm leading-relaxed text-muted-foreground">{summary}</p>
-              ) : null}
-              {conn.closed_at ? (
-                <p className="text-xs text-muted-foreground">This connection is closed.</p>
-              ) : null}
+              {selectedConnections.map((row) => (
+                <ConnectionDetailCard key={row.id} conn={row} />
+              ))}
             </div>
-
-            <ConnectionEvidenceBlock evidence={bestEvidenceRecord(conn)} />
           </div>
         </PanelChrome>
       </aside>
@@ -416,7 +424,6 @@ export default function ConnectionGraphDetailPanel({
                   key={conn.id}
                   conn={conn}
                   focusRef={entityRef}
-                  center={center}
                   catalogBasePath={catalogBasePath}
                   catalogScopeSuffix={catalogScopeSuffix}
                   onSelect={onSelectNode}
