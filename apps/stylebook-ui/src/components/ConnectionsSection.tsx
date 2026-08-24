@@ -43,7 +43,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import LocationSelector from "@/components/LocationSelector"
 import PersonSelector from "@/components/PersonSelector"
 import OrganizationSelector from "@/components/OrganizationSelector"
-import WorkSelector from "@/components/WorkSelector"
 import ConnectionEvidenceBlock from "@/components/ConnectionEvidenceBlock"
 import ConnectionsGraph from "@/components/ConnectionsGraph"
 import NatureAutocomplete from "@/components/NatureAutocomplete"
@@ -110,7 +109,9 @@ export default function ConnectionsSection({
   const [selectorOpen, setSelectorOpen] = useState(false)
   const [selectedTargetId, setSelectedTargetId] = useState<string | number | null>(null)
   const [selectedTargetName, setSelectedTargetName] = useState<string | null>(null)
-  const [addTargetType, setAddTargetType] = useState<'person' | 'location' | 'organization' | 'work'>('person')
+  const [addTargetType, setAddTargetType] = useState<
+    'person' | 'location' | 'organization'
+  >('person')
   const [nature, setNature] = useState('')
   const [description, setDescription] = useState('')
   const [natureSuggestions, setNatureSuggestions] = useState<string[]>([])
@@ -125,7 +126,6 @@ export default function ConnectionsSection({
 
   const [deleteConnection, setDeleteConnection] = useState<Connection | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const [showClosed, setShowClosed] = useState(false)
   const selectorProjectSlug = projectScopeSlug || projects[0]?.slug || ""
 
   useEffect(() => {
@@ -152,7 +152,7 @@ export default function ConnectionsSection({
         const options = {
           limit: CONNECTIONS_PER_PAGE,
           offset,
-          includeClosed: showClosed,
+          includeClosed: false,
         }
         let res: Awaited<ReturnType<typeof listStylebookConnectionsForLocation>>
         if (entityType === "location") {
@@ -182,7 +182,7 @@ export default function ConnectionsSection({
         setLoading(false)
       }
     },
-    [entityType, entityId, stylebookSlug, showClosed],
+    [entityType, entityId, stylebookSlug],
   )
 
   const fetchGraphConnections = useCallback(async () => {
@@ -196,7 +196,7 @@ export default function ConnectionsSection({
           displayName: entityDisplayName,
         },
         {
-          includeClosed: showClosed,
+          includeClosed: false,
           expandHops: entityType === "person" ? 2 : 1,
         },
       )
@@ -213,12 +213,12 @@ export default function ConnectionsSection({
     } finally {
       setGraphLoading(false)
     }
-  }, [entityType, entityId, entityDisplayName, stylebookSlug, showError, showClosed])
+  }, [entityType, entityId, entityDisplayName, stylebookSlug, showError])
 
   useEffect(() => {
     setConnectionsPage(1)
     setGraphNeighborhood(null)
-  }, [entityType, entityId, stylebookSlug, showClosed])
+  }, [entityType, entityId, stylebookSlug])
 
   useEffect(() => {
     void fetchConnectionsPage(connectionsPage)
@@ -427,15 +427,6 @@ export default function ConnectionsSection({
               </CardDescription>
             </div>
             <div className="flex shrink-0 items-center gap-3">
-              <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={showClosed}
-                  onChange={(e) => setShowClosed(e.target.checked)}
-                  className="rounded border-input"
-                />
-                Show closed
-              </label>
               <Button
                 type="button"
                 className="shrink-0"
@@ -670,18 +661,6 @@ export default function ConnectionsSection({
                   >
                     Organization
                   </Button>
-                  <Button
-                    type="button"
-                    variant={addTargetType === 'work' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => {
-                      setAddTargetType('work')
-                      setSelectedTargetId(null)
-                      setSelectedTargetName(null)
-                    }}
-                  >
-                    Work
-                  </Button>
                 </div>
               </div>
               <Label>
@@ -689,9 +668,7 @@ export default function ConnectionsSection({
                   ? 'Person'
                   : addTargetType === 'location'
                     ? 'Location'
-                    : addTargetType === 'organization'
-                      ? 'Organization'
-                      : 'Work'}
+                    : 'Organization'}
               </Label>
               <div className="flex items-center gap-2 mt-1">
                 <Button
@@ -741,18 +718,6 @@ export default function ConnectionsSection({
                     setSelectedTargetId(id)
                     setSelectorOpen(false)
                     setSelectedTargetName(displayName ?? `Organization #${id}`)
-                  }}
-                />
-              ) : addTargetType === 'work' ? (
-                <WorkSelector
-                  open={selectorOpen}
-                  onOpenChange={setSelectorOpen}
-                  projectSlug={selectorProjectSlug}
-                  excludeIds={entityType === 'work' ? [entityId] : undefined}
-                  onSelect={(id, displayName) => {
-                    setSelectedTargetId(id)
-                    setSelectorOpen(false)
-                    setSelectedTargetName(displayName ?? `Work #${id}`)
                   }}
                 />
               ) : (

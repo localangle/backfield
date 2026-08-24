@@ -537,20 +537,8 @@ export default function ConnectionsGraph({
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+      <div className="text-xs text-muted-foreground">
         <span>{statsLine}</span>
-        <div className="flex items-center gap-3">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-0.5 w-5 rounded bg-primary" />
-            Direct
-          </span>
-          {neighborhood.hop2ConnectionCount > 0 ? (
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-0.5 w-5 rounded bg-muted-foreground/60" />
-              Extended
-            </span>
-          ) : null}
-        </div>
       </div>
       <div className="flex h-[min(560px,68vh)] min-h-[400px] overflow-hidden rounded-xl border bg-gradient-to-b from-muted/15 to-background">
         <div className="connections-graph h-full min-w-0 flex-1 [&_.react-flow__controls-button]:border-border [&_.react-flow__controls-button]:bg-background">
