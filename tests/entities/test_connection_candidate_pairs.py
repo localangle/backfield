@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 
+from backfield_entities.connections.affiliation_links import (
+    infer_affiliation_person_organization_edges,
+)
 from backfield_entities.connections.candidate_pairs import (
     build_deterministic_connection_proposals,
     generate_connection_candidates,
@@ -18,6 +21,7 @@ def _person(
     label: str,
     *,
     affiliation: str | None = None,
+    person_type: str | None = None,
     snippets: tuple[str, ...] = (),
 ) -> LinkedEntitySnapshot:
     return LinkedEntitySnapshot(
@@ -26,6 +30,7 @@ def _person(
         canonical_id=canonical_id,
         label=label,
         affiliation=affiliation,
+        person_type=person_type,
         snippets=snippets,
     )
 
@@ -234,11 +239,38 @@ def test_candidate_limit_reports_truncation() -> None:
     assert result.stats.truncated > 0
 
 
+def test_mount_carmel_affiliation_links_coach_and_players() -> None:
+    people = (
+        _person("lynch", "Jordan Lynch", affiliation="Mount Carmel", person_type="coach"),
+        _person("startz", "Ryder Startz", affiliation="Mount Carmel", person_type="athlete"),
+        _person("samuels", "Nathan Samuels", affiliation="Mount Carmel", person_type="athlete"),
+    )
+    organization = _organization(
+        "mount-carmel",
+        "Mount Carmel High School boys football team",
+    )
+    article = (
+        "Mount Carmel coach Jordan Lynch said the program must improve. "
+        "Mount Carmel starting quarterback Ryder Startz was injured. "
+        "Nathan Samuels had 19 carries for Mount Carmel."
+    )
+    affiliation = infer_affiliation_person_organization_edges(
+        people=people,
+        organizations=(organization,),
+        article_text=article,
+    )
+    assert {(edge.from_entity_id, edge.nature) for edge in affiliation} == {
+        ("lynch", "coaches"),
+        ("startz", "plays_for"),
+        ("samuels", "plays_for"),
+    }
+
+
 def test_mount_carmel_evidence_supports_coach_and_player_natures() -> None:
     people = (
-        _person("lynch", "Jordan Lynch", affiliation="Mount Carmel"),
-        _person("startz", "Ryder Startz", affiliation="Mount Carmel"),
-        _person("samuels", "Nathan Samuels", affiliation="Mount Carmel"),
+        _person("lynch", "Jordan Lynch", affiliation="Mount Carmel", person_type="coach"),
+        _person("startz", "Ryder Startz", affiliation="Mount Carmel", person_type="athlete"),
+        _person("samuels", "Nathan Samuels", affiliation="Mount Carmel", person_type="athlete"),
     )
     organization = _organization(
         "mount-carmel",
@@ -261,14 +293,6 @@ def test_mount_carmel_evidence_supports_coach_and_player_natures() -> None:
         for candidate in generation.candidates
         if candidate.from_entity_type == "person"
         and candidate.to_entity_type == "organization"
-    }
-    deterministic = build_deterministic_connection_proposals(
-        tuple(person_org.values())
-    )
-    assert {(edge.from_entity_id, edge.nature) for edge in deterministic} == {
-        ("lynch", "coaches"),
-        ("startz", "plays_for"),
-        ("samuels", "plays_for"),
     }
 
     def call_llm(_prompt: str, **_kwargs: object) -> str:
@@ -311,6 +335,21 @@ def test_mount_carmel_evidence_supports_coach_and_player_natures() -> None:
         ("startz", "plays_for"),
         ("samuels", "plays_for"),
     }
+
+
+def test_organization_nickname_alias_improves_same_sentence_evidence() -> None:
+    people = (_person("bagent", "Tyson Bagent", affiliation="Chicago Bears"),)
+    organization = _organization("bears", "Chicago Bears")
+    article = "Bears quarterback Tyson Bagent did not travel with the team."
+    generation = generate_connection_candidates(
+        people=people,
+        organizations=(organization,),
+        locations=(),
+        article_text=article,
+        limit=64,
+    )
+    assert len(generation.candidates) == 1
+    assert generation.candidates[0].evidence.source == "same_sentence"
 
 
 def test_party_district_styling_creates_represents_edge() -> None:

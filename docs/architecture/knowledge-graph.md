@@ -354,10 +354,12 @@ rollback requires restore from backup.
 
 Backfield Output generates canonical pairs only when article text or linked mention occurrences put
 the entities in the same or adjacent sentence, or when a high-precision construction identifies
-the pair. High-precision constructions include explicit coach/player team grammar and journalistic
-party+district tags such as ``D-Ottawa`` / ``R-Springfield`` after a legislator's name (deterministic
-``represents``). Extracted affiliation and entity metadata are labeled lower-trust hints: they can help
-interpret text but cannot prove an edge. Every model proposal must identify its candidate and copy
+the pair. High-precision constructions include journalistic party+district tags such as
+``D-Ottawa`` / ``R-Springfield`` after a legislator's name (deterministic ``represents``).
+When a person's extracted **affiliation** names an organization in the article (including team
+nicknames such as Phillies → Philadelphia Phillies), Backfield Output may create a
+``plays_for`` / ``coaches`` / ``works_for`` edge without an LLM call. Other extracted metadata
+remains a lower-trust hint for the model. Every model proposal must identify its candidate and copy
 an exact quote from that pair's evidence packet.
 
 The model returns one explicit `link=true|false` judgment for every submitted pair. Only

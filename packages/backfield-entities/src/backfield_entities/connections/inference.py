@@ -12,13 +12,15 @@ from contextvars import copy_context
 from dataclasses import dataclass, field
 
 from backfield_entities.connections.candidate_pairs import (
-    explicit_person_org_nature_evidence,
     explicit_person_represents_party_district_evidence,
 )
 from backfield_entities.connections.caps import (
     MAX_CANDIDATE_PAIRS_PER_BATCH,
     MAX_CONNECTION_REQUEST_CONCURRENCY,
     MAX_EDGES_RETURNED_PER_FAMILY,
+)
+from backfield_entities.connections.match_tokens import (
+    person_affiliation_matches_organization_label,
 )
 from backfield_entities.connections.postprocess import apply_subsumption_rules
 from backfield_entities.connections.prompts import (
@@ -451,8 +453,16 @@ def _quote_supports_specialized_nature(
     if len(text) < 15:
         return False
     if nature in {"coaches", "plays_for"}:
-        explicit = explicit_person_org_nature_evidence(candidate)
-        return explicit is not None and explicit[0] == nature
+        if (
+            candidate.from_entity_type == "person"
+            and candidate.to_entity_type == "organization"
+            and person_affiliation_matches_organization_label(
+                candidate.from_entity.affiliation,
+                candidate.to_entity.label,
+            )
+        ):
+            return True
+        return False
     if nature == "leads":
         if "coach" in text and not re.search(
             r"\b(president|chief|ceo|director|executive|chair|founder|owner)\b",

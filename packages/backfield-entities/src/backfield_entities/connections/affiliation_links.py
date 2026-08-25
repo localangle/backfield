@@ -17,10 +17,27 @@ def _nature_for_affiliation_link(
 ) -> str:
     if (org.organization_type or "").strip().lower() == "sports_team":
         person_type = (person.person_type or "").strip().lower()
-        if person_type in {"athlete", "coach", "player"}:
-            return "member_of"
+        if person_type == "coach":
+            return "coaches"
+        if person_type in {"athlete", "player"}:
+            return "plays_for"
         return "works_for"
     return "works_for"
+
+
+def _affiliation_edge_description(
+    person: LinkedEntitySnapshot,
+    org: LinkedEntitySnapshot,
+    *,
+    nature: str,
+) -> str:
+    if nature == "plays_for":
+        return f"{person.label} plays for {org.label}."
+    if nature == "coaches":
+        return f"{person.label} coaches {org.label}."
+    if nature == "works_for":
+        return f"{person.label} works for {org.label}."
+    return f"{person.label} is affiliated with {org.label}."
 
 
 def _select_affiliation_quote(
@@ -87,11 +104,12 @@ def infer_affiliation_person_organization_edges(
             proposal = AutoConnectionEdgeProposal(
                 from_entity_id=person.canonical_id,
                 to_entity_id=org.canonical_id,
-                description=f"{person.label} is affiliated with {org.label}.",
+                description=_affiliation_edge_description(person, org, nature=nature),
                 nature=nature,
                 confidence=AUTO_CONNECTION_MIN_CONFIDENCE,
                 quote=quote,
-                reason="Person affiliation matches organization label.",
+                reason="Extracted affiliation matches organization label.",
+                match_basis="affiliation_match",
             )
             validation = validate_auto_connection_candidate(
                 from_entity_type="person",

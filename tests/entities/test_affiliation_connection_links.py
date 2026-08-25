@@ -77,7 +77,7 @@ def test_school_short_name_affiliation_matches_prep_team_label() -> None:
     assert not person_affiliation_matches_organization_label("Chicago", "Chicago Blackhawks")
 
 
-def test_infer_member_of_for_school_short_affiliation_when_team_in_article() -> None:
+def test_infer_plays_for_for_school_short_affiliation_when_team_in_article() -> None:
     article_text = (
         "This preseason has been all about Montini’s Israel Abrams, "
         "Hersey’s Jake Nawrot and Maine South’s Jameson Purcell."
@@ -100,7 +100,7 @@ def test_infer_member_of_for_school_short_affiliation_when_team_in_article() -> 
         article_text=article_text,
     )
     assert len(edges) == 1
-    assert edges[0].nature == "member_of"
+    assert edges[0].nature == "plays_for"
     assert edges[0].from_entity_id == "abrams"
     assert edges[0].to_entity_id == "montini"
     assert "Israel Abrams" in edges[0].quote
@@ -136,7 +136,7 @@ def test_infer_works_for_edge_when_affiliation_matches_but_prose_uses_short_nick
     assert "Kyle Davidson" in edges[0].quote
 
 
-def test_infer_member_of_edge_for_athlete_team_affiliation() -> None:
+def test_infer_plays_for_edge_for_athlete_team_affiliation() -> None:
     article_text = (
         "His 20 home runs trailed only Phillies masher Kyle Schwarber's 22 in the majors."
     )
@@ -152,10 +152,63 @@ def test_infer_member_of_edge_for_athlete_team_affiliation() -> None:
         article_text=article_text,
     )
     assert len(edges) == 1
-    assert edges[0].nature == "member_of"
+    assert edges[0].nature == "plays_for"
     assert edges[0].from_entity_id == "person-1"
     assert edges[0].to_entity_id == "org-1"
     assert "Kyle Schwarber" in edges[0].quote
+
+
+def test_infer_coaches_edge_for_coach_team_affiliation() -> None:
+    article_text = "Mount Carmel coach Jordan Lynch said the program must improve."
+    person = _person(
+        canonical_id="lynch",
+        label="Jordan Lynch",
+        affiliation="Mount Carmel",
+        person_type="coach",
+        snippets=(article_text,),
+    )
+    org = _org(
+        canonical_id="mount-carmel",
+        label="Mount Carmel High School boys football team",
+        organization_type="sports_team",
+    )
+    edges = infer_affiliation_person_organization_edges(
+        people=(person,),
+        organizations=(org,),
+        article_text=article_text,
+    )
+    assert len(edges) == 1
+    assert edges[0].nature == "coaches"
+    assert edges[0].match_basis == "affiliation_match"
+
+
+def test_infer_plays_for_edge_for_nfl_athlete_when_prose_uses_nickname() -> None:
+    article_text = (
+        'CINCINNATI — Bears quarterback Tyson Bagent did not travel with the team '
+        'to their joint practice in Cincinnati and is "week-to-week," coach Ben Johnson said.'
+    )
+    person = _person(
+        canonical_id="bagent",
+        label="Tyson Bagent",
+        affiliation="Chicago Bears",
+        person_type="athlete",
+        snippets=(article_text,),
+    )
+    org = _org(
+        canonical_id="bears",
+        label="Chicago Bears",
+        organization_type="sports_team",
+    )
+    edges = infer_affiliation_person_organization_edges(
+        people=(person,),
+        organizations=(org,),
+        article_text=article_text,
+    )
+    assert len(edges) == 1
+    assert edges[0].nature == "plays_for"
+    assert edges[0].from_entity_id == "bagent"
+    assert edges[0].to_entity_id == "bears"
+    assert "Tyson Bagent" in edges[0].quote
 
 
 def test_collect_pair_snippets_matches_team_nickname_not_full_label() -> None:

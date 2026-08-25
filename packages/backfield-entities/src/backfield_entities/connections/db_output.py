@@ -9,6 +9,9 @@ from typing import Any
 
 from sqlmodel import Session
 
+from backfield_entities.connections.affiliation_links import (
+    infer_affiliation_person_organization_edges,
+)
 from backfield_entities.connections.candidate_pairs import (
     AUTO_CONNECTION_FAMILIES,
     build_deterministic_connection_proposals,
@@ -34,6 +37,7 @@ from backfield_entities.connections.inference import (
 from backfield_entities.connections.postprocess import resolve_auto_connection_proposals
 from backfield_entities.connections.summary import build_auto_connections_summary
 from backfield_entities.connections.types import (
+    AutoConnectionCandidatePair,
     AutoConnectionEdgeProposal,
     LinkedEntitySnapshot,
 )
@@ -112,6 +116,20 @@ def _merge_write_results(
     target.skipped_existing_count += source.skipped_existing_count
 
 
+def _endpoint_family_for_proposal(
+    edge: AutoConnectionEdgeProposal,
+    candidate_by_id: dict[str, AutoConnectionCandidatePair],
+) -> tuple[str, str] | None:
+    candidate = candidate_by_id.get(edge.candidate_id or "")
+    if candidate is not None:
+        return candidate.from_entity_type, candidate.to_entity_type
+    if edge.match_basis == "affiliation_match":
+        return "person", "organization"
+    if edge.match_basis == "explicit_party_district_construction":
+        return "person", "location"
+    return None
+
+
 def run_auto_connections_for_db_output(
     session: Session,
     *,
@@ -186,10 +204,15 @@ def run_auto_connections_for_db_output(
             )
             for candidate in selected_candidates
         }
+        affiliation_edges = infer_affiliation_person_organization_edges(
+            people=context.people,
+            organizations=context.organizations,
+            article_text=context.article_text,
+        )
         deterministic_edges = build_deterministic_connection_proposals(
             selected_candidates
         )
-        all_proposals = (*deterministic_edges, *inference.edges)
+        all_proposals = (*affiliation_edges, *deterministic_edges, *inference.edges)
         resolution = resolve_auto_connection_proposals(
             list(all_proposals),
             candidates=candidate_by_id,
@@ -206,12 +229,10 @@ def run_auto_connections_for_db_output(
             list[AutoConnectionEdgeProposal],
         ] = defaultdict(list)
         for edge in resolved_edges:
-            candidate = candidate_by_id.get(edge.candidate_id or "")
-            if candidate is None:
+            family = _endpoint_family_for_proposal(edge, candidate_by_id)
+            if family is None:
                 continue
-            edges_by_family[
-                (candidate.from_entity_type, candidate.to_entity_type)
-            ].append(edge)
+            edges_by_family[family].append(edge)
 
         for (from_type, to_type), edges in edges_by_family.items():
             if dry_run:
@@ -256,6 +277,7 @@ def run_auto_connections_for_db_output(
             "prompt_characters": inference.counts.prompt_characters,
             "malformed_proposals": inference.counts.malformed_proposals,
             "deterministic_proposals": len(deterministic_edges),
+            "affiliation_proposals": len(affiliation_edges),
             "elapsed_seconds": round(inference.counts.elapsed_seconds, 3),
             "exact_duplicates": resolution.stats.exact_duplicates,
             "subsumed": resolution.stats.subsumed,

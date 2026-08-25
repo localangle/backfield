@@ -70,13 +70,26 @@ def _proposal_rank(
     candidates: dict[str, AutoConnectionCandidatePair],
 ) -> tuple[int, float, int, str]:
     candidate = candidates.get(edge.candidate_id or "")
-    evidence_score = candidate.evidence.score if candidate is not None else 0
+    evidence_score = candidate.evidence.score if candidate is not None else 50
     return (
         evidence_score,
         float(edge.confidence),
         len(edge.quote.strip()),
         edge.candidate_id or "",
     )
+
+
+def _is_standalone_proposal(edge: AutoConnectionEdgeProposal) -> bool:
+    """Affiliation and other non-LLM proposals without a candidate packet."""
+    return not edge.candidate_id and bool(
+        edge.from_entity_id and edge.to_entity_id and edge.nature
+    )
+
+
+def _normalize_standalone_edge(
+    edge: AutoConnectionEdgeProposal,
+) -> AutoConnectionEdgeProposal:
+    return edge.model_copy(update={"nature": normalize_preferred_nature_slug(edge.nature)})
 
 
 def _conflict_winner(
@@ -115,9 +128,12 @@ def resolve_auto_connection_proposals(
     for edge in edges:
         candidate = candidates.get(edge.candidate_id or "")
         if candidate is None:
-            invalid_candidates += 1
-            continue
-        normalized = _normalize_edge(edge, candidate)
+            if not _is_standalone_proposal(edge):
+                invalid_candidates += 1
+                continue
+            normalized = _normalize_standalone_edge(edge)
+        else:
+            normalized = _normalize_edge(edge, candidate)
         if normalized.from_entity_id == normalized.to_entity_id:
             self_loops += 1
             continue

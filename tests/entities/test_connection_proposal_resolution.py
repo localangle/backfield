@@ -62,6 +62,25 @@ def _edge(
     )
 
 
+def test_standalone_affiliation_proposal_resolves_without_candidate_id() -> None:
+    affiliation_edge = AutoConnectionEdgeProposal(
+        from_entity_id="person-1",
+        to_entity_id="org-1",
+        description="From plays for To.",
+        nature="plays_for",
+        confidence=0.9,
+        quote="From plays for To in the article.",
+        match_basis="affiliation_match",
+    )
+    result = resolve_auto_connection_proposals(
+        [affiliation_edge],
+        candidates={},
+    )
+    assert len(result.edges) == 1
+    assert result.edges[0].nature == "plays_for"
+    assert result.edges[0].match_basis == "affiliation_match"
+
+
 def test_exact_duplicates_choose_strongest_evidence() -> None:
     weak = _candidate("weak", score=30)
     strong = _candidate("strong", score=40)

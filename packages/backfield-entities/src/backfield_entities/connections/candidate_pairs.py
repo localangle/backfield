@@ -43,11 +43,7 @@ _TEAM_SUFFIXES = (
     " baseball team",
     " team",
 )
-_SPORT_ROLE = (
-    r"quarterback|running back|wide receiver|receiver|linebacker|defensive back|"
-    r"offensive lineman|defensive lineman|pitcher|catcher|goalkeeper|forward|guard|"
-    r"center|player"
-)
+_GENERIC_ORG_TAIL = frozenset({"team", "inc", "llc", "corp", "ltd", "co"})
 
 
 @dataclass
@@ -86,6 +82,11 @@ def _aliases(entity: LinkedEntitySnapshot) -> tuple[str, ...]:
                 if len(head) >= 4:
                     aliases.append(head)
                 break
+        parts = label.split()
+        if len(parts) > 1:
+            tail = parts[-1]
+            if len(tail) >= 3 and tail.casefold() not in _GENERIC_ORG_TAIL:
+                aliases.append(tail)
     elif entity.entity_type == "location" and "," in label:
         head = label.split(",", 1)[0].strip()
         if len(head) >= 4:
@@ -324,69 +325,13 @@ def explicit_person_represents_party_district_evidence(
     return None
 
 
-def explicit_person_org_nature_evidence(
-    candidate: AutoConnectionCandidatePair,
-) -> tuple[str, str] | None:
-    if (
-        candidate.from_entity_type != "person"
-        or candidate.to_entity_type != "organization"
-    ):
-        return None
-    person = "|".join(
-        re.escape(alias) for alias in _aliases(candidate.from_entity)
-    )
-    organization = "|".join(
-        re.escape(alias) for alias in _aliases(candidate.to_entity)
-    )
-    if not person or not organization:
-        return None
-    coach_patterns = (
-        rf"(?:{organization}).{{0,60}}\bcoach\b.{{0,50}}(?:{person})",
-        rf"(?:{person}).{{0,50}}\bcoach(?:es|ed|ing)?\b.{{0,50}}(?:{organization})",
-    )
-    player_patterns = (
-        rf"(?:{organization}).{{0,80}}\b(?:{_SPORT_ROLE})\b.{{0,50}}(?:{person})",
-        (
-            rf"(?:{person}).{{0,80}}\b(?:carries|passes|touchdowns|goals|points|"
-            rf"rebounds|innings)\b.{{0,40}}\bfor\b.{{0,30}}(?:{organization})"
-        ),
-    )
-    for snippet in candidate.evidence.snippets:
-        if any(re.search(pattern, snippet, flags=re.IGNORECASE) for pattern in coach_patterns):
-            return "coaches", snippet
-        if any(re.search(pattern, snippet, flags=re.IGNORECASE) for pattern in player_patterns):
-            return "plays_for", snippet
-    return None
-
-
-def _deterministic_edge_description(
-    candidate: AutoConnectionCandidatePair,
-    *,
-    nature: str,
-) -> str:
-    person = candidate.from_entity.label
-    target = candidate.to_entity.label
-    if nature == "coaches":
-        return f"{person} coaches {target}."
-    if nature == "plays_for":
-        return f"{person} plays for {target}."
-    if nature == "represents":
-        return f"{person} represents {target}."
-    return f"{person} is connected to {target}."
-
-
 def build_deterministic_connection_proposals(
     candidates: tuple[AutoConnectionCandidatePair, ...],
 ) -> tuple[AutoConnectionEdgeProposal, ...]:
-    """Create only high-precision grammatical and journalistic-style proposals."""
+    """Create only high-precision journalistic-style proposals (e.g. party+district tags)."""
     proposals: list[AutoConnectionEdgeProposal] = []
     for candidate in candidates:
-        matched = explicit_person_org_nature_evidence(candidate)
-        match_basis = None
-        if matched is None:
-            matched = explicit_person_represents_party_district_evidence(candidate)
-            if matched is not None:
-                match_basis = "explicit_party_district_construction"
+        matched = explicit_person_represents_party_district_evidence(candidate)
         if matched is None:
             continue
         nature, quote = matched
@@ -395,16 +340,15 @@ def build_deterministic_connection_proposals(
                 candidate_id=candidate.candidate_id,
                 from_entity_id=candidate.from_entity.canonical_id,
                 to_entity_id=candidate.to_entity.canonical_id,
-                description=_deterministic_edge_description(candidate, nature=nature),
+                description=(
+                    f"{candidate.from_entity.label} represents "
+                    f"{candidate.to_entity.label}."
+                ),
                 nature=nature,
                 confidence=0.99,
                 quote=quote,
-                reason=(
-                    "Journalistic party+district styling in article text."
-                    if match_basis == "explicit_party_district_construction"
-                    else "Explicit grammatical role construction in article text."
-                ),
-                match_basis=match_basis or f"explicit_{nature}_construction",
+                reason="Journalistic party+district styling in article text.",
+                match_basis="explicit_party_district_construction",
             )
         )
     return tuple(proposals)
