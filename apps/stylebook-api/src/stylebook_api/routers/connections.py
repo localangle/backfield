@@ -36,6 +36,7 @@ from backfield_entities.connections.display import (
     evidence_out_list,
     legacy_evidence_json_for_connection,
 )
+from backfield_entities.connections.natures import temporal_kind_for_nature
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import and_, or_
@@ -125,10 +126,12 @@ class ConnectionResponse(BaseModel):
     to_display_name: str
     description: str | None = None
     nature: str | None = None
+    temporal_kind: Literal["static", "dynamic"] | None = None
     evidence_json: dict[str, Any] | None = None
     evidence: list[ConnectionEvidenceOut] = []
     closed_at: datetime | None = None
     created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class ConnectionListResponse(BaseModel):
@@ -213,6 +216,14 @@ def _connection_response_from_row(
     conn: StylebookConnection,
     catalog_stylebook_id: int | None = None,
 ) -> ConnectionResponse:
+    nature = conn.nature
+    temporal: Literal["static", "dynamic"] | None = None
+    if nature and str(nature).strip():
+        temporal = temporal_kind_for_nature(
+            str(nature).strip(),
+            str(conn.from_entity_type),
+            str(conn.to_entity_type),
+        )
     return ConnectionResponse(
         id=int(conn.id),  # type: ignore[arg-type]
         from_entity_type=conn.from_entity_type,
@@ -236,13 +247,15 @@ def _connection_response_from_row(
         description=derived_connection_description(
             session, connection_id=int(conn.id)  # type: ignore[arg-type]
         ),
-        nature=conn.nature,
+        nature=nature,
+        temporal_kind=temporal,
         evidence_json=legacy_evidence_json_for_connection(
             session, connection_id=int(conn.id)  # type: ignore[arg-type]
         ),
         evidence=evidence_out_list(session, connection_id=int(conn.id)),  # type: ignore[arg-type]
         closed_at=conn.closed_at,
         created_at=conn.created_at,
+        updated_at=conn.updated_at,
     )
 
 

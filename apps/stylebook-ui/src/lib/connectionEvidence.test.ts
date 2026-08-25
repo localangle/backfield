@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  formatConnectionDate,
   formatConnectionEvidence,
+  formatConnectionStatusMeta,
   formatConnectionSummaryLabel,
   hasConnectionEvidence,
   isInternalConnectionMetadata,
@@ -60,5 +62,36 @@ describe('connectionEvidence helpers', () => {
   it('detects internal connection metadata', () => {
     expect(isInternalConnectionMetadata('match_basis=head_name_match')).toBe(true)
     expect(sanitizeConnectionDisplayText('match_basis=head_name_match')).toBe('')
+  })
+
+  it('formats open connection status metadata', () => {
+    expect(
+      formatConnectionStatusMeta({
+        created_at: '2026-03-12T15:00:00Z',
+        temporal_kind: 'dynamic',
+        evidence: [{ source: 'dboutput_auto_connections', observed_at: '2026-02-01T00:00:00Z' }],
+      }),
+    ).toEqual([
+      { label: 'Status', value: 'Open' },
+      { label: 'Type', value: 'Ongoing' },
+      { label: 'Source', value: 'Automatic' },
+      { label: 'Added', value: formatConnectionDate('2026-03-12T15:00:00Z') },
+      { label: 'Seen in coverage', value: formatConnectionDate('2026-02-01T00:00:00Z') },
+    ])
+  })
+
+  it('formats closed connection status metadata', () => {
+    expect(
+      formatConnectionStatusMeta({
+        created_at: '2026-01-01T00:00:00Z',
+        closed_at: '2026-08-01T00:00:00Z',
+        temporal_kind: 'static',
+      }),
+    ).toEqual([
+      { label: 'Status', value: 'Closed' },
+      { label: 'Type', value: 'Fixed' },
+      { label: 'Added', value: formatConnectionDate('2026-01-01T00:00:00Z') },
+      { label: 'Closed', value: formatConnectionDate('2026-08-01T00:00:00Z') },
+    ])
   })
 })

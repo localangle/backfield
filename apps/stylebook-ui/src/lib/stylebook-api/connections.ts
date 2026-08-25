@@ -25,10 +25,12 @@ export interface Connection {
   to_display_name: string
   description?: string | null
   nature?: string | null
+  temporal_kind?: "static" | "dynamic" | null
   evidence_json?: Record<string, unknown> | null
   evidence?: ConnectionEvidence[]
   closed_at?: string | null
   created_at?: string | null
+  updated_at?: string | null
 }
 
 export type ConnectionWriteBody = {

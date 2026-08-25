@@ -33,6 +33,7 @@ from backfield_entities.canonical.link import (
 )
 from backfield_entities.canonical.plan_types import CanonicalPersistDecision, CanonicalPersistPlan
 from backfield_entities.canonical.slug import flush_new_canonical_with_slug_retry
+from backfield_entities.connections.lifecycle import close_open_connections_for_canonical
 from backfield_entities.entities.organization.catalog_provenance import (
     is_organization_catalog_editorial_provenance,
 )
@@ -759,6 +760,11 @@ def _delete_pruned_organization_canonical(
         entity_type="organization",
         canonical_id=str(canon.id),
         label=str(canon.label),
+    )
+    close_open_connections_for_canonical(
+        session,
+        entity_type="organization",
+        canonical_id=str(canon.id),
     )
     session.delete(canon)
 

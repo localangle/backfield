@@ -44,6 +44,7 @@ import LocationSelector from "@/components/LocationSelector"
 import PersonSelector from "@/components/PersonSelector"
 import OrganizationSelector from "@/components/OrganizationSelector"
 import ConnectionEvidenceBlock from "@/components/ConnectionEvidenceBlock"
+import ConnectionStatusMeta from "@/components/ConnectionStatusMeta"
 import ConnectionsGraph from "@/components/ConnectionsGraph"
 import NatureAutocomplete from "@/components/NatureAutocomplete"
 import Pagination from "@/components/Pagination"
@@ -521,13 +522,11 @@ export default function ConnectionsSection({
                       </div>
                       <p className="mt-0.5 text-sm text-foreground">
                         {connectionSummaryLabel(conn)}
-                        {conn.closed_at ? (
-                          <span className="ml-2 text-xs text-muted-foreground">(closed)</span>
-                        ) : null}
                       </p>
                       {conn.nature?.trim() ? (
                         <p className="mt-0.5 text-xs text-muted-foreground">{conn.nature.replace(/_/g, " ")}</p>
                       ) : null}
+                      <ConnectionStatusMeta conn={conn} compact />
                       <ConnectionEvidenceBlock evidence={bestEvidenceRecord(conn)} />
                     </TableCell>
                     <TableCell className="align-top">

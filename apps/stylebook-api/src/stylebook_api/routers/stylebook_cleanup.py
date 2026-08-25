@@ -20,6 +20,7 @@ from backfield_entities.activity import (
     EVENT_CLEANUP_MERGE,
     log_stylebook_activity_safe,
 )
+from backfield_entities.connections.lifecycle import close_open_connections_for_canonical
 from backfield_entities.entities.location.merge import (
     canonical_has_linked_evidence as location_has_linked_evidence,
 )
@@ -2226,6 +2227,11 @@ def delete_empty_cleanup_canonical_location(
         canonical_id=deleted_id,
         label=str(canon.label),
     )
+    close_open_connections_for_canonical(
+        session,
+        entity_type="location",
+        canonical_id=deleted_id,
+    )
     session.delete(canon)
     session.commit()
     return DeleteCleanupCanonicalResponse(id=deleted_id, message="deleted")
@@ -2373,6 +2379,11 @@ def delete_empty_cleanup_canonical_person(
         canonical_id=deleted_id,
         label=str(canon.label),
     )
+    close_open_connections_for_canonical(
+        session,
+        entity_type="person",
+        canonical_id=deleted_id,
+    )
     session.delete(canon)
     session.commit()
     return DeleteCleanupCanonicalResponse(id=deleted_id, message="deleted")
@@ -2519,6 +2530,11 @@ def delete_empty_cleanup_canonical_organization(
         entity_type="organization",
         canonical_id=deleted_id,
         label=str(canon.label),
+    )
+    close_open_connections_for_canonical(
+        session,
+        entity_type="organization",
+        canonical_id=deleted_id,
     )
     session.delete(canon)
     session.commit()

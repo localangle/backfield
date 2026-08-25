@@ -120,6 +120,34 @@ def test_repair_s3_article_sources_dry_run_json(monkeypatch, capsys) -> None:
     assert payload["updated"] == 2
 
 
+def test_repair_orphan_connections_dry_run_json(monkeypatch, capsys) -> None:
+    from backfield_entities.connections.lifecycle import RepairOrphanConnectionsResult
+
+    report = RepairOrphanConnectionsResult(
+        closed_count=4,
+        rewired_count=2,
+        inspected_count=6,
+    )
+    monkeypatch.setattr(
+        "backfield_cli.repair_orphan_connections.get_engine",
+        lambda: create_engine("sqlite://"),
+    )
+    monkeypatch.setattr(
+        "backfield_cli.repair_orphan_connections.repair_orphan_open_connections",
+        lambda _session, **_kwargs: report,
+    )
+
+    assert main(["repair-orphan-connections", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {
+        "mode": "dry-run",
+        "stylebook_id": None,
+        "inspected_count": 6,
+        "rewired_count": 2,
+        "closed_count": 4,
+    }
+
+
 def test_migrate_connection_kg_inventory_json(monkeypatch, capsys) -> None:
     from backfield_entities.connections.migrate_kg_phase_a import ConnectionKgMigrateReport
 

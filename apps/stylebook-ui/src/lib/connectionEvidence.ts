@@ -8,6 +8,11 @@ export interface ConnectionCreationEvidenceView {
   sourceLabel: string
 }
 
+export interface ConnectionStatusMetaRow {
+  label: string
+  value: string
+}
+
 const MATCH_BASIS_PATTERN = /match_basis\s*=\s*[\w-]+/gi
 
 /** Strip internal auto-connection metadata from user-facing copy. */
@@ -65,6 +70,79 @@ function sourceLabel(source: string | null | undefined): string {
   if (value.includes("auto") || value === "dboutput_auto_connections") return "Automatic"
   if (value) return "Saved"
   return "Saved"
+}
+
+export function formatConnectionDate(value: string | null | undefined): string | null {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  })
+}
+
+function temporalKindLabel(kind: "static" | "dynamic" | null | undefined): string | null {
+  if (kind === "static") return "Fixed"
+  if (kind === "dynamic") return "Ongoing"
+  return null
+}
+
+function connectionSourceLabel(conn: {
+  evidence?: ReadonlyArray<object | null | undefined> | null
+  evidence_json?: Record<string, unknown> | null
+}): string | null {
+  const evidence = bestEvidenceRecord(conn)
+  if (!evidence) return null
+  const raw = typeof evidence.source === "string" ? evidence.source : null
+  if (!raw?.trim()) return null
+  return sourceLabel(raw)
+}
+
+function evidenceObservedAt(conn: {
+  evidence?: ReadonlyArray<object | null | undefined> | null
+  evidence_json?: Record<string, unknown> | null
+}): string | null {
+  const evidence = bestEvidenceRecord(conn)
+  if (!evidence) return null
+  const raw = evidence.observed_at
+  return typeof raw === "string" ? raw : null
+}
+
+/** Compact status rows for connection detail / list panels. */
+export function formatConnectionStatusMeta(conn: {
+  closed_at?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  temporal_kind?: "static" | "dynamic" | null
+  evidence?: ReadonlyArray<object | null | undefined> | null
+  evidence_json?: Record<string, unknown> | null
+}): ConnectionStatusMetaRow[] {
+  const rows: ConnectionStatusMetaRow[] = [
+    { label: "Status", value: conn.closed_at ? "Closed" : "Open" },
+  ]
+  const kind = temporalKindLabel(conn.temporal_kind)
+  if (kind) {
+    rows.push({ label: "Type", value: kind })
+  }
+  const source = connectionSourceLabel(conn)
+  if (source) {
+    rows.push({ label: "Source", value: source })
+  }
+  const added = formatConnectionDate(conn.created_at)
+  if (added) {
+    rows.push({ label: "Added", value: added })
+  }
+  const closed = formatConnectionDate(conn.closed_at)
+  if (closed) {
+    rows.push({ label: "Closed", value: closed })
+  }
+  const observed = formatConnectionDate(evidenceObservedAt(conn))
+  if (observed && observed !== added) {
+    rows.push({ label: "Seen in coverage", value: observed })
+  }
+  return rows
 }
 
 export function formatConnectionEvidence(

@@ -8,6 +8,7 @@ from backfield_db import (
     BackfieldOrganization,
     BackfieldProject,
     StylebookConnection,
+    StylebookLocationCanonical,
     StylebookOrganizationCanonical,
     StylebookPersonCanonical,
     SubstratePerson,
@@ -15,6 +16,7 @@ from backfield_db import (
 from backfield_entities.canonical.link import CANONICAL_LINK_LINKED
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from backfield_entities.connections.rewire import rewire_connections_for_canonical_merge
+from backfield_entities.entities.organization.merge import merge_organization_canonical_into
 from backfield_entities.entities.person.merge import merge_person_canonical_into
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -289,3 +291,62 @@ def test_merge_person_canonical_into_rewires_connections() -> None:
         assert len(rows) == 1
         assert rows[0].from_entity_id == str(target.id)
         assert rows[0].to_entity_id == str(org.id)
+
+
+def test_merge_organization_canonical_into_rewires_located_at() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        org_id, stylebook_id, project_id = _seed(session)
+        source = StylebookOrganizationCanonical(
+            id=str(uuid4()),
+            stylebook_id=stylebook_id,
+            label="Montini Boys Football",
+            slug="montini-boys-football",
+            organization_type="team",
+        )
+        target = StylebookOrganizationCanonical(
+            id=str(uuid4()),
+            stylebook_id=stylebook_id,
+            label="Montini Football",
+            slug="montini-football",
+            organization_type="team",
+        )
+        loc = StylebookLocationCanonical(
+            id=str(uuid4()),
+            stylebook_id=stylebook_id,
+            label="Lombard",
+            slug="lombard",
+        )
+        session.add(source)
+        session.add(target)
+        session.add(loc)
+        session.add(
+            StylebookConnection(
+                project_id=project_id,
+                stylebook_id=stylebook_id,
+                from_entity_type="organization",
+                from_entity_id=str(source.id),
+                to_entity_type="location",
+                to_entity_id=str(loc.id),
+                nature="located_at",
+            )
+        )
+        session.commit()
+
+        merge_organization_canonical_into(
+            session,
+            stylebook_id=stylebook_id,
+            organization_id=org_id,
+            source_canonical_id=str(source.id),
+            target_canonical_id=str(target.id),
+        )
+        session.commit()
+
+        assert session.get(StylebookOrganizationCanonical, str(source.id)) is None
+        rows = session.exec(select(StylebookConnection)).all()
+        assert len(rows) == 1
+        assert rows[0].from_entity_id == str(target.id)
+        assert rows[0].to_entity_id == str(loc.id)
+        assert rows[0].nature == "located_at"
+        assert rows[0].closed_at is None

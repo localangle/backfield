@@ -483,19 +483,11 @@ export default function ConnectionsGraph({
     [neighborhood.connections],
   )
 
-  const { initialNodes, initialEdges, statsLine } = useMemo(() => {
+  const { initialNodes, initialEdges } = useMemo(() => {
     const layout = buildGraphLayout(center, neighborhood.connections, selection)
-    const statsParts = [`${neighborhood.hop1ConnectionCount} direct`]
-    if (neighborhood.hop2ConnectionCount > 0) {
-      statsParts.push(`${neighborhood.hop2ConnectionCount} extended`)
-    }
-    if (neighborhood.neighborsSkipped > 0) {
-      statsParts.push(`${neighborhood.neighborsSkipped} neighbors not expanded`)
-    }
     return {
       initialNodes: layout.nodes,
       initialEdges: layout.edges,
-      statsLine: statsParts.join(" · "),
     }
   }, [center, neighborhood, selection])
 
@@ -537,9 +529,6 @@ export default function ConnectionsGraph({
 
   return (
     <div className="space-y-2">
-      <div className="text-xs text-muted-foreground">
-        <span>{statsLine}</span>
-      </div>
       <div className="flex h-[min(560px,68vh)] min-h-[400px] overflow-hidden rounded-xl border bg-gradient-to-b from-muted/15 to-background">
         <div className="connections-graph h-full min-w-0 flex-1 [&_.react-flow__controls-button]:border-border [&_.react-flow__controls-button]:bg-background">
           <ReactFlow
@@ -585,10 +574,6 @@ export default function ConnectionsGraph({
           />
         ) : null}
       </div>
-      <p className="text-[11px] text-muted-foreground">
-        Click a node or line for relationship details. Use the panel to browse roles and open
-        catalog entries.
-      </p>
     </div>
   )
 }

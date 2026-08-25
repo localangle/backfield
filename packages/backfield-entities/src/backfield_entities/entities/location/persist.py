@@ -38,6 +38,7 @@ from backfield_entities.canonical.slug import (
     allocate_unique_canonical_slug,
     flush_new_canonical_with_slug_retry,
 )
+from backfield_entities.connections.lifecycle import close_open_connections_for_canonical
 from backfield_entities.entities.location.catalog_provenance import (
     is_location_catalog_editorial_provenance,
 )
@@ -770,5 +771,10 @@ def _delete_pruned_location_canonical(
         entity_type="location",
         canonical_id=str(canon.id),
         label=str(canon.label),
+    )
+    close_open_connections_for_canonical(
+        session,
+        entity_type="location",
+        canonical_id=str(canon.id),
     )
     session.delete(canon)

@@ -1,6 +1,7 @@
 import { Building2, ExternalLink, MapPin, User, X } from "lucide-react"
 
 import ConnectionEvidenceBlock from "@/components/ConnectionEvidenceBlock"
+import ConnectionStatusMeta from "@/components/ConnectionStatusMeta"
 import { Button } from "@/components/ui/button"
 import {
   bestEvidenceRecord,
@@ -111,7 +112,7 @@ function ConnectionRow({
               event.stopPropagation()
               onSelect(other.entityType, other.entityId)
             }}
-            className="text-sm font-medium text-foreground hover:text-primary hover:underline"
+            className="w-full text-left text-sm font-medium text-foreground hover:text-primary hover:underline"
           >
             {other.displayName}
           </button>
@@ -125,9 +126,7 @@ function ConnectionRow({
           ) : null}
         </div>
       </div>
-      {conn.closed_at ? (
-        <p className="mt-1 text-[11px] text-muted-foreground">Closed</p>
-      ) : null}
+      <ConnectionStatusMeta conn={conn} compact />
       <a
         href={getDetailUrl(other.entityType, other.entityId, catalogBasePath, catalogScopeSuffix)}
         target="_blank"
@@ -162,9 +161,7 @@ function ConnectionDetailCard({
       {summary && summary !== nature ? (
         <p className="text-sm leading-relaxed text-muted-foreground">{summary}</p>
       ) : null}
-      {conn.closed_at ? (
-        <p className="mt-1 text-xs text-muted-foreground">This connection is closed.</p>
-      ) : null}
+      <ConnectionStatusMeta conn={conn} />
       <ConnectionEvidenceBlock evidence={bestEvidenceRecord(conn)} />
     </div>
   )

@@ -162,6 +162,26 @@ validity windows in v1. Escape hatch: editorial close/delete (and later optional
 Optional later: `valid_at` / `invalid_at`, `as_of` queries, and close/reopen or interval history
 without changing the one-edge-many-evidence grain.
 
+#### Canonical merge / delete (connection lifecycle)
+
+| Editor action | Connection behavior |
+|---------------|---------------------|
+| Merge canonical A → B | Rewire open edges that touch A onto B (`rewire_connections_for_canonical_merge`); drop self-loops; dedupe when B already has the same open edge |
+| Delete canonical A (no merge) | Soft-close every open edge that references A (`close_open_connections_for_canonical`) before the row is removed |
+
+Paths covered: Stylebook API delete, cleanup delete, ingest prune of unused canonicals, and
+the shared merge helpers. Historical orphans (deleted before this lifecycle landed) can be
+inspected/fixed with:
+
+```text
+backfield repair-orphan-connections                 # dry-run
+backfield repair-orphan-connections --apply         # commit
+backfield repair-orphan-connections --stylebook-id N --apply
+```
+
+Repair rewires a missing endpoint when evidence `from_display_name` / `to_display_name`
+uniquely matches one living canonical of that type in the Stylebook; otherwise it soft-closes.
+
 ### D6 — Implementation sequencing
 
 1. **This ADR** (done as living target doc).
@@ -186,9 +206,11 @@ Namespaced `stylebook_*` / `substrate_*` tables in `packages/backfield-db`. Pref
 | Add uniqueness | Open-edge identity: `(scope, from_entity_type, from_entity_id, to_entity_type, to_entity_id, nature)` among non-closed rows. Nature may be null: **one open null-nature edge per endpoint pair**, with multiple evidence children (same reinforce grain as preferred natures) |
 | Drop or deprecate | `evidence_json` after backfill into child rows; **`description` moves off the connection** — narrative lives on evidence only (Phase A decision C) |
 | Keep | Endpoints, nature (nullable), open/closed; list APIs derive a display label from best/latest evidence at read time (or a thin computed field in the response, not an identity column) |
-| Add | `closed_at timestamptz NULL` — **soft-close only** in Phase A (editors/Stylebook). Public API
-  hides closed by default (`include_closed` optional). Auto inference does not close. Prefer
-  close over hard delete so evidence/activity stay coherent |
+| Add | `closed_at timestamptz NULL` — **soft-close** in Phase A (editors/Stylebook). Public API
+  hides closed by default (`include_closed` optional). Auto inference does not close edges on
+  its own. Prefer close over hard delete so evidence/activity stay coherent. **Canonical delete**
+  soft-closes open edges that reference the deleted id; **canonical merge** rewires those edges
+  to the survivor (see lifecycle below) |
 | Add (optional v1) | `updated_at`; `preferred_nature` stays in `nature` column with code-registry validation |
 | Scope | **`stylebook_id`** is the identity scope (like canonicals). Migrate existing
   `project_id`-keyed rows to the project’s Stylebook. Do not dual-key uniqueness.
@@ -478,7 +500,10 @@ stylebook_connection_nature_custom  (org-only; preferred natures in code)
   display label from highest-confidence / latest evidence.
 - Evidence uniqueness: partial unique on `(connection_id, article_id)` when article set; null-article
   rows unconstrained in DB, app-level quote/source dedupe.
-- **Soft-close only** (`closed_at`); public hides closed by default; no auto-close in Phase A.
+- **Soft-close** (`closed_at`); public hides closed by default; inference does not auto-close.
+  Canonical **delete** soft-closes open edges that reference the deleted id; canonical **merge**
+  rewires open edges to the survivor (via `connections/rewire.py` / `connections/lifecycle.py`).
+  One-shot repair: `backfield repair-orphan-connections` (dry-run by default; `--apply` to commit).
 - **Org custom natures in Phase A** — table + Stylebook API/picker; preferred catalog stays in code.
 
 ## References
