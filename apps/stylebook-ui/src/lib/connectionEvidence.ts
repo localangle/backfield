@@ -124,7 +124,7 @@ export function formatConnectionStatusMeta(conn: {
   ]
   const kind = temporalKindLabel(conn.temporal_kind)
   if (kind) {
-    rows.push({ label: "Type", value: kind })
+    rows.push({ label: "Timing", value: kind })
   }
   const source = connectionSourceLabel(conn)
   if (source) {

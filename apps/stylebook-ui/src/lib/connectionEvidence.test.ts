@@ -73,7 +73,7 @@ describe('connectionEvidence helpers', () => {
       }),
     ).toEqual([
       { label: 'Status', value: 'Open' },
-      { label: 'Type', value: 'Ongoing' },
+      { label: 'Timing', value: 'Ongoing' },
       { label: 'Source', value: 'Automatic' },
       { label: 'Added', value: formatConnectionDate('2026-03-12T15:00:00Z') },
       { label: 'Seen in coverage', value: formatConnectionDate('2026-02-01T00:00:00Z') },
@@ -89,7 +89,7 @@ describe('connectionEvidence helpers', () => {
       }),
     ).toEqual([
       { label: 'Status', value: 'Closed' },
-      { label: 'Type', value: 'Fixed' },
+      { label: 'Timing', value: 'Fixed' },
       { label: 'Added', value: formatConnectionDate('2026-01-01T00:00:00Z') },
       { label: 'Closed', value: formatConnectionDate('2026-08-01T00:00:00Z') },
     ])

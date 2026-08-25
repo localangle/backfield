@@ -1,7 +1,5 @@
-import {
-  formatConnectionStatusMeta,
-  type ConnectionStatusMetaRow,
-} from "@/lib/connectionEvidence"
+import { Badge } from "@/components/ui/badge"
+import { formatConnectionStatusMeta } from "@/lib/connectionEvidence"
 import type { Connection } from "@/lib/stylebook-api/connections"
 import { cn } from "@/lib/utils"
 
@@ -9,38 +7,6 @@ interface ConnectionStatusMetaProps {
   conn: Connection
   className?: string
   compact?: boolean
-}
-
-function StatusMetaList({
-  rows,
-  compact,
-}: {
-  rows: ConnectionStatusMetaRow[]
-  compact?: boolean
-}) {
-  if (rows.length === 0) return null
-  return (
-    <dl
-      className={cn(
-        "grid gap-x-3 gap-y-1",
-        compact ? "grid-cols-[auto_1fr] text-[11px]" : "grid-cols-[auto_1fr] text-xs",
-      )}
-    >
-      {rows.map((row) => (
-        <div key={row.label} className="contents">
-          <dt className="text-muted-foreground">{row.label}</dt>
-          <dd
-            className={cn(
-              "font-medium text-foreground",
-              row.label === "Status" && row.value === "Closed" && "text-muted-foreground",
-            )}
-          >
-            {row.value}
-          </dd>
-        </div>
-      ))}
-    </dl>
-  )
 }
 
 export default function ConnectionStatusMeta({
@@ -51,8 +17,27 @@ export default function ConnectionStatusMeta({
   const rows = formatConnectionStatusMeta(conn)
   if (rows.length === 0) return null
   return (
-    <div className={cn(compact ? "mt-1.5" : "mt-2", className)}>
-      <StatusMetaList rows={rows} compact={compact} />
+    <div
+      className={cn(
+        "flex flex-wrap items-center gap-1.5",
+        compact ? "mt-1.5" : "mt-2",
+        className,
+      )}
+    >
+      {rows.map((row) => (
+        <Badge
+          key={row.label}
+          variant="secondary"
+          className={cn(
+            "h-5 gap-1 border-transparent px-1.5 font-normal",
+            compact ? "text-[11px]" : "text-xs",
+            row.label === "Status" && row.value === "Closed" && "text-muted-foreground",
+          )}
+        >
+          <span className="text-muted-foreground">{row.label}</span>
+          <span className="font-medium text-foreground">{row.value}</span>
+        </Badge>
+      ))}
     </div>
   )
 }
