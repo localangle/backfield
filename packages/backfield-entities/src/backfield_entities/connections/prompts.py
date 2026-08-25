@@ -179,6 +179,8 @@ def build_candidate_batch_prompt(
         "- For link=false, use null nature and empty endpoint, description, and quote fields.\n"
         "- Prefer leads over works_for when leadership is explicit.\n"
         "- Athletes on a sports team use plays_for; coaches use coaches.\n"
+        "- Journalistic party+district tags after a legislator's name, such as D-Ottawa or "
+        "R-Springfield, indicate they represent that place; use represents.\n"
         "- For link=true, confidence must be at least 0.9; prefer link=false when uncertain.\n\n"
         f"Candidates:\n{candidate_section}\n\n"
         'Return JSON only: {"decisions": [{"candidate_id": "candidate-...", '

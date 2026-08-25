@@ -282,6 +282,48 @@ def _candidate_id(left: LinkedEntitySnapshot, right: LinkedEntitySnapshot) -> st
     return f"candidate-{digest}"
 
 
+def _party_district_place_pattern(location: LinkedEntitySnapshot) -> str | None:
+    """Regex alternation for place names used after journalistic D-/R- tags."""
+    heads = [
+        alias
+        for alias in _aliases(location)
+        if "," not in alias and len(alias) >= 3
+    ]
+    if not heads:
+        label = _clean(location.label)
+        if len(label) >= 3:
+            heads = [label]
+    heads = sorted(set(heads), key=len, reverse=True)
+    if not heads:
+        return None
+    return "|".join(re.escape(head) for head in heads)
+
+
+def explicit_person_represents_party_district_evidence(
+    candidate: AutoConnectionCandidatePair,
+) -> tuple[str, str] | None:
+    """Match legislator party+district styling such as ``Amy Briel, D-Ottawa``."""
+    if (
+        candidate.from_entity_type != "person"
+        or candidate.to_entity_type != "location"
+    ):
+        return None
+    place_pattern = _party_district_place_pattern(candidate.to_entity)
+    if place_pattern is None:
+        return None
+    person_aliases = _aliases(candidate.from_entity)
+    if not person_aliases:
+        return None
+    district_pattern = re.compile(rf"\b[DR]-(?:{place_pattern})\b", re.IGNORECASE)
+    for snippet in candidate.evidence.snippets:
+        if not district_pattern.search(snippet):
+            continue
+        if not _contains_alias(snippet, person_aliases):
+            continue
+        return "represents", snippet
+    return None
+
+
 def explicit_person_org_nature_evidence(
     candidate: AutoConnectionCandidatePair,
 ) -> tuple[str, str] | None:
@@ -317,13 +359,34 @@ def explicit_person_org_nature_evidence(
     return None
 
 
+def _deterministic_edge_description(
+    candidate: AutoConnectionCandidatePair,
+    *,
+    nature: str,
+) -> str:
+    person = candidate.from_entity.label
+    target = candidate.to_entity.label
+    if nature == "coaches":
+        return f"{person} coaches {target}."
+    if nature == "plays_for":
+        return f"{person} plays for {target}."
+    if nature == "represents":
+        return f"{person} represents {target}."
+    return f"{person} is connected to {target}."
+
+
 def build_deterministic_connection_proposals(
     candidates: tuple[AutoConnectionCandidatePair, ...],
 ) -> tuple[AutoConnectionEdgeProposal, ...]:
-    """Create only high-precision grammatical person-team proposals."""
+    """Create only high-precision grammatical and journalistic-style proposals."""
     proposals: list[AutoConnectionEdgeProposal] = []
     for candidate in candidates:
         matched = explicit_person_org_nature_evidence(candidate)
+        match_basis = None
+        if matched is None:
+            matched = explicit_person_represents_party_district_evidence(candidate)
+            if matched is not None:
+                match_basis = "explicit_party_district_construction"
         if matched is None:
             continue
         nature, quote = matched
@@ -332,16 +395,16 @@ def build_deterministic_connection_proposals(
                 candidate_id=candidate.candidate_id,
                 from_entity_id=candidate.from_entity.canonical_id,
                 to_entity_id=candidate.to_entity.canonical_id,
-                description=(
-                    f"{candidate.from_entity.label} "
-                    f"{'coaches' if nature == 'coaches' else 'plays for'} "
-                    f"{candidate.to_entity.label}."
-                ),
+                description=_deterministic_edge_description(candidate, nature=nature),
                 nature=nature,
                 confidence=0.99,
                 quote=quote,
-                reason="Explicit grammatical role construction in article text.",
-                match_basis=f"explicit_{nature}_construction",
+                reason=(
+                    "Journalistic party+district styling in article text."
+                    if match_basis == "explicit_party_district_construction"
+                    else "Explicit grammatical role construction in article text."
+                ),
+                match_basis=match_basis or f"explicit_{nature}_construction",
             )
         )
     return tuple(proposals)

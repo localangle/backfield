@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 
 from backfield_entities.connections.candidate_pairs import (
     explicit_person_org_nature_evidence,
+    explicit_person_represents_party_district_evidence,
 )
 from backfield_entities.connections.caps import (
     MAX_CANDIDATE_PAIRS_PER_BATCH,
@@ -473,6 +474,10 @@ def _quote_supports_specialized_nature(
                 text,
             )
         )
+    if nature == "represents":
+        party_district = explicit_person_represents_party_district_evidence(candidate)
+        if party_district is not None:
+            return True
     if nature == "holds_office_in":
         return bool(
             re.search(

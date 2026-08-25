@@ -46,6 +46,23 @@ def _organization(
     )
 
 
+def _location(
+    canonical_id: str,
+    label: str,
+    *,
+    location_type: str = "city",
+    snippets: tuple[str, ...] = (),
+) -> LinkedEntitySnapshot:
+    return LinkedEntitySnapshot(
+        entity_type="location",
+        substrate_id=3,
+        canonical_id=canonical_id,
+        label=label,
+        location_type=location_type,
+        snippets=snippets,
+    )
+
+
 def test_generates_mount_carmel_pairs_from_article_sentences() -> None:
     people = (
         _person("lynch", "Jordan Lynch", affiliation="Mount Carmel"),
@@ -294,6 +311,61 @@ def test_mount_carmel_evidence_supports_coach_and_player_natures() -> None:
         ("startz", "plays_for"),
         ("samuels", "plays_for"),
     }
+
+
+def test_party_district_styling_creates_represents_edge() -> None:
+    people = (
+        _person(
+            "briel",
+            "Amy Murri Briel",
+            affiliation="Illinois General Assembly",
+        ),
+    )
+    locations = (_location("ottawa", "Ottawa, IL"),)
+    article = (
+        "Republicans filed complaints against state Rep. Amy \"Murri\" Briel, "
+        "D-Ottawa, but Democrats dismissed the charges."
+    )
+    generation = generate_connection_candidates(
+        people=people,
+        organizations=(),
+        locations=locations,
+        article_text=article,
+        limit=64,
+    )
+    person_location = tuple(
+        candidate
+        for candidate in generation.candidates
+        if candidate.from_entity_type == "person" and candidate.to_entity_type == "location"
+    )
+    deterministic = build_deterministic_connection_proposals(person_location)
+    assert len(deterministic) == 1
+    edge = deterministic[0]
+    assert edge.from_entity_id == "briel"
+    assert edge.to_entity_id == "ottawa"
+    assert edge.nature == "represents"
+    assert edge.match_basis == "explicit_party_district_construction"
+    assert "D-Ottawa" in edge.quote
+
+
+def test_party_district_styling_does_not_match_unrelated_location() -> None:
+    people = (_person("briel", "Amy Murri Briel"),)
+    locations = (_location("chicago", "Chicago, IL"),)
+    article = 'state Rep. Amy "Murri" Briel, D-Ottawa, spoke Thursday.'
+    generation = generate_connection_candidates(
+        people=people,
+        organizations=(),
+        locations=locations,
+        article_text=article,
+        limit=64,
+    )
+    person_location = tuple(
+        candidate
+        for candidate in generation.candidates
+        if candidate.from_entity_type == "person" and candidate.to_entity_type == "location"
+    )
+    deterministic = build_deterministic_connection_proposals(person_location)
+    assert deterministic == ()
 
 
 def test_pair_priority_selection_keeps_low_rank_org_with_textual_evidence() -> None:
