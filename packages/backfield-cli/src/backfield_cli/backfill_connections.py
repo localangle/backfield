@@ -37,7 +37,7 @@ def register_subcommand(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--end-article-id", type=int)
     parser.add_argument("--after-article-id", type=int, default=0)
     parser.add_argument("--limit", type=int, default=100)
-    parser.add_argument("--max-requests-per-article", type=int, default=4)
+    parser.add_argument("--max-requests-per-article", type=int, default=16)
     parser.add_argument("--model", default="gpt-5-nano")
     parser.add_argument("--model-config-id")
     parser.add_argument("--apply", action="store_true")

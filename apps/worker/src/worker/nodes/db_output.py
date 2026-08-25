@@ -121,47 +121,6 @@ def _kick_webhook_dispatch_after_commit(session: Session) -> None:
         )
 
 
-def _kick_deferred_connection_inference_after_commit(
-    result: dict[str, Any],
-    *,
-    project_id: int,
-    settings: DbOutputCanonicalSettings,
-    run_id: str,
-    processed_item_id: int | None,
-) -> None:
-    connections = result.get("connections")
-    if not isinstance(connections, dict):
-        return
-    candidate_ids = connections.get("deferred_candidate_ids")
-    if not isinstance(candidate_ids, list) or not candidate_ids:
-        return
-    article_id = result.get("article_id")
-    if not isinstance(article_id, int):
-        return
-    try:
-        celery_current_app.send_task(
-            "worker.tasks.infer_deferred_article_connections",
-            args=[
-                int(project_id),
-                int(article_id),
-                [str(candidate_id) for candidate_id in candidate_ids],
-                settings.model_dump(mode="json"),
-                run_id,
-                processed_item_id,
-            ],
-            queue=os.environ.get("CELERY_QUEUE", "agate"),
-        )
-        connections["deferred_status"] = "queued"
-    except Exception:
-        connections["deferred_status"] = "enqueue_failed"
-        logger.warning(
-            "Deferred connection inference enqueue failed project_id=%s article_id=%s",
-            project_id,
-            article_id,
-            exc_info=True,
-        )
-
-
 def _record_run_output_association(
     session: Session,
     *,
@@ -462,11 +421,4 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
             "edges": [],
         }
 
-    _kick_deferred_connection_inference_after_commit(
-        result,
-        project_id=project_id,
-        settings=settings,
-        run_id=run_id,
-        processed_item_id=processed_item_id,
-    )
     return result

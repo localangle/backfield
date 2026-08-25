@@ -404,11 +404,14 @@ Linked entities are capped per type for inference, but entities that participate
 adjacent-sentence pair evidence are reserved before occurrence-ranked truncation so high-signal
 teams and people are not dropped from crowded articles.
 
-Classification batches at most eight pairs per request. The inline path permits four requests with
-concurrency two; the article-wide ceiling is eight requests. Candidate pairs are ranked by direct
-grammar, same-sentence evidence, adjacent-sentence evidence, then metadata-assisted evidence.
-Overflow candidate keys are queued only after the article transaction commits and are processed by
-an idempotent Celery task.
+Classification batches at most eight pairs per request. Backfield Output uses up to sixteen
+requests per article with concurrency two (128 ranked candidate pairs). Candidate pairs are ranked
+by direct grammar, same-sentence evidence, adjacent-sentence evidence, then metadata-assisted
+evidence. Overflow pairs that exceed the request budget are reported as `unprocessed` in
+diagnostics rather than queued for a second pass.
+
+An idempotent Celery task (`infer_deferred_article_connections`) remains available for scoped
+backfills that pass explicit candidate ids.
 
 All deterministic and model proposals are resolved together before writing:
 

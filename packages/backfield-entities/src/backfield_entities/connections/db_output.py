@@ -18,7 +18,7 @@ from backfield_entities.connections.caps import (
     MAX_CANDIDATE_PAIRS_PER_ARTICLE,
     MAX_CANDIDATE_PAIRS_PER_BATCH,
     MAX_CREATED_EDGES_PER_ITEM,
-    MAX_INLINE_CONNECTION_REQUESTS,
+    MAX_TOTAL_CONNECTION_REQUESTS,
 )
 from backfield_entities.connections.context import (
     AutoConnectionArticleContext,
@@ -123,8 +123,8 @@ def run_auto_connections_for_db_output(
     processed_item_id: int | None = None,
     call_llm: Callable[..., str],
     candidate_ids: tuple[str, ...] | None = None,
-    max_requests: int = MAX_INLINE_CONNECTION_REQUESTS,
-    defer_overflow: bool = True,
+    max_requests: int = MAX_TOTAL_CONNECTION_REQUESTS,
+    defer_overflow: bool = False,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Infer and persist high-confidence connections after substrate persistence."""

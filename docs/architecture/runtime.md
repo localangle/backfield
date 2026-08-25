@@ -97,10 +97,9 @@ causes catalog-backed canonicalization to be skipped without discarding substrat
 
 The Redis persistence slot covers substrate and auxiliary writes only. After that transaction
 commits and the slot is released, automatic connection model calls run in bounded, session-free
-batches; connection reinforcement commits in a separate short transaction. Inference failure or
-deferred-task enqueue failure does not roll back the persisted article. Connection calls disable
-completion-budget retries so the per-article request ceiling is also a physical provider-request
-ceiling.
+batches; connection reinforcement commits in a separate short transaction. Inference failure does
+not roll back the persisted article. Connection calls disable completion-budget retries so the
+per-article request ceiling is also a physical provider-request ceiling.
 
 ## Geocode cache path
 

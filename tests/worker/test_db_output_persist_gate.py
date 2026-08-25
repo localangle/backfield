@@ -115,11 +115,6 @@ def test_run_db_output_releases_persist_slot_before_connection_inference(
     monkeypatch.setattr(db_output, "call_llm", fake_call_llm)
     monkeypatch.setattr(db_output, "Session", FakeSession)
     monkeypatch.setattr(db_output, "_kick_webhook_dispatch_after_commit", lambda _session: None)
-    monkeypatch.setattr(
-        db_output,
-        "_kick_deferred_connection_inference_after_commit",
-        lambda *_args, **_kwargs: None,
-    )
     monkeypatch.setattr("backfield_db.session.get_engine", lambda: object())
 
     result = db_output.run_db_output({}, {"data": {"text": "Article text"}})

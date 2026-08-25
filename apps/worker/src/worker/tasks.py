@@ -2007,7 +2007,7 @@ def infer_deferred_article_connections(
     run_id: str | None = None,
     processed_item_id: int | None = None,
 ) -> dict[str, Any]:
-    """Process connection candidates left over from the inline DB Output budget."""
+    """Process explicit connection candidate ids (backfill / manual replay)."""
     if not candidate_ids:
         return {"status": "succeeded", "deferred": 0}
     engine = get_engine()

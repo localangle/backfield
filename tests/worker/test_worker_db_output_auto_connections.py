@@ -29,10 +29,7 @@ from backfield_entities.connections.db_output import run_auto_connections_for_db
 from backfield_entities.connections.taxonomy import AUTO_CONNECTION_MIN_CONFIDENCE
 from backfield_entities.ingest.db_output_settings import DbOutputCanonicalSettings
 from sqlmodel import Session, SQLModel, create_engine, select
-from worker.nodes.db_output import (
-    _kick_deferred_connection_inference_after_commit,
-    run_db_output,
-)
+from worker.nodes.db_output import run_db_output
 
 from tests.worker.test_person_substrate_persistence import _sample_person_entry
 from tests.worker.test_substrate_persistence import _bootstrap_project, _empty_places
@@ -507,6 +504,7 @@ def test_deferred_candidate_processing_is_idempotent() -> None:
             settings=_eligible_settings(),
             call_llm=MagicMock(),
             max_requests=0,
+            defer_overflow=True,
         )
         candidate_ids = tuple(inline["deferred_candidate_ids"])
         assert candidate_ids
@@ -544,57 +542,6 @@ def test_deferred_candidate_processing_is_idempotent() -> None:
         assert second["skipped_existing"] == 1
         assert len(session.exec(select(StylebookConnection)).all()) == 1
         assert len(session.exec(select(StylebookConnectionEvidence)).all()) == 1
-
-
-@patch("worker.nodes.db_output.celery_current_app.send_task")
-def test_deferred_dispatch_includes_compact_candidate_keys(send_task: MagicMock) -> None:
-    result = {
-        "article_id": 42,
-        "connections": {
-            "deferred_candidate_ids": ["candidate-a", "candidate-b"],
-        },
-    }
-    settings = _eligible_settings()
-
-    _kick_deferred_connection_inference_after_commit(
-        result,
-        project_id=7,
-        settings=settings,
-        run_id="run-1",
-        processed_item_id=9,
-    )
-
-    send_task.assert_called_once()
-    assert send_task.call_args.args[0] == "worker.tasks.infer_deferred_article_connections"
-    assert send_task.call_args.kwargs["args"][0:3] == [
-        7,
-        42,
-        ["candidate-a", "candidate-b"],
-    ]
-    assert result["connections"]["deferred_status"] == "queued"
-
-
-@patch(
-    "worker.nodes.db_output.celery_current_app.send_task",
-    side_effect=RuntimeError("broker unavailable"),
-)
-def test_deferred_dispatch_failure_is_reported_without_raising(
-    _send_task: MagicMock,
-) -> None:
-    result = {
-        "article_id": 42,
-        "connections": {"deferred_candidate_ids": ["candidate-a"]},
-    }
-
-    _kick_deferred_connection_inference_after_commit(
-        result,
-        project_id=7,
-        settings=_eligible_settings(),
-        run_id="run-1",
-        processed_item_id=9,
-    )
-
-    assert result["connections"]["deferred_status"] == "enqueue_failed"
 
 
 @patch("backfield_entities.connections.db_output.collect_auto_connection_article_context")

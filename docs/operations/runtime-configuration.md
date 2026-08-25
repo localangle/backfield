@@ -124,10 +124,10 @@ emit a structured `public_rate_limit_redis_error` warning.
 - `DBOUTPUT_PERSIST_LOCK_TTL_S`: persistence-gate lock lifetime; defaults to 1800 seconds.
 
 Automatic connection inference runs after the persistence slot is released. Its code-level
-guardrails are eight evidence pairs per request, four inline requests, eight total requests per
-article, and two concurrent model calls per article. Provider output-budget retries are disabled
-for these calls so hidden completion retries cannot exceed the request budget; excess candidates
-are deferred after commit.
+guardrails are eight evidence pairs per request, sixteen requests per article (128 ranked
+candidate pairs), forty created edges per pass, and two concurrent model calls per article.
+Provider output-budget retries are disabled for these calls so hidden completion retries cannot
+exceed the request budget; pairs beyond the request budget are reported as unprocessed.
 
 Tune database-write concurrency before reducing extraction concurrency when worker writes affect API
 latency. Do not lower the processed-item soft limit below a node's configured LLM timeout plus its

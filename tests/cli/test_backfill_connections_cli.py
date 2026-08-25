@@ -24,7 +24,7 @@ def test_backfill_defaults_to_dry_run() -> None:
     assert args.project_id == 7
     assert args.stylebook_id is None
     assert args.apply is False
-    assert args.max_requests_per_article == 4
+    assert args.max_requests_per_article == 16
 
 
 def test_backfill_rejects_request_budget_above_total_cap() -> None:
@@ -35,7 +35,7 @@ def test_backfill_rejects_request_budget_above_total_cap() -> None:
                 "--project-id",
                 "7",
                 "--max-requests-per-article",
-                "9",
+                "17",
             ]
         )
         == 2
