@@ -78,5 +78,35 @@ class AutoConnectionEdgeProposal(BaseModel):
         return stripped or None
 
 
+class AutoConnectionCandidateDecision(BaseModel):
+    """Model judgment for one candidate pair before edge validation."""
+
+    candidate_id: str = Field(min_length=1)
+    link: bool
+    from_entity_id: str | None = None
+    to_entity_id: str | None = None
+    description: str = ""
+    nature: str | None = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    quote: str = ""
+    reason: str = Field(min_length=1)
+
+    @field_validator("candidate_id", "reason")
+    @classmethod
+    def _strip_required_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("value must be non-empty after stripping")
+        return stripped
+
+    @field_validator("nature")
+    @classmethod
+    def _normalize_decision_nature(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip().lower()
+        return stripped or None
+
+
 class AutoConnectionFamilyResponse(BaseModel):
     edges: list[AutoConnectionEdgeProposal] = Field(default_factory=list)

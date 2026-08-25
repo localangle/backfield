@@ -26,7 +26,7 @@ AUTO_CONNECTION_PROMPT_VERSION = "auto_connections_v1"
 AUTO_CONNECTION_PROMPT_VERSION_WITH_HINTS = "auto_connections_v2"
 AUTO_CONNECTION_PROMPT_VERSION_DESCRIPTION_FIRST = "auto_connections_v3"
 AUTO_CONNECTION_PROMPT_VERSION_NATURE_CATALOG = "auto_connections_v4"
-AUTO_CONNECTION_PROMPT_VERSION_EVIDENCE_PAIRS = "auto_connections_v5"
+AUTO_CONNECTION_PROMPT_VERSION_EVIDENCE_PAIRS = "auto_connections_v6"
 
 # Back-compat aliases used by tests / older imports.
 PERSON_ORGANIZATION_NATURES = auto_link_natures_for_pair("person", "organization")

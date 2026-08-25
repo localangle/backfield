@@ -257,9 +257,10 @@ def test_mount_carmel_evidence_supports_coach_and_player_natures() -> None:
     def call_llm(_prompt: str, **_kwargs: object) -> str:
         return json.dumps(
             {
-                "edges": [
+                "decisions": [
                     {
                         "candidate_id": candidate.candidate_id,
+                        "link": True,
                         "from_entity_id": person_id,
                         "to_entity_id": "mount-carmel",
                         "description": (
@@ -270,6 +271,7 @@ def test_mount_carmel_evidence_supports_coach_and_player_natures() -> None:
                         "nature": "coaches" if person_id == "lynch" else "plays_for",
                         "confidence": 0.98,
                         "quote": candidate.evidence.snippets[0],
+                        "reason": "The article explicitly establishes this relationship.",
                     }
                     for person_id, candidate in person_org.items()
                 ]

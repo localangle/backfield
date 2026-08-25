@@ -32,6 +32,7 @@ from backfield_entities.connections.taxonomy import (
     AUTO_CONNECTION_PROMPT_VERSION_WITH_HINTS,
 )
 from backfield_entities.connections.types import (
+    AutoConnectionCandidateDecision,
     AutoConnectionCandidatePair,
     AutoConnectionEdgeProposal,
     AutoConnectionFamilyResponse,
@@ -424,6 +425,22 @@ def _quote_in_candidate_evidence(
     return bool(text) and any(text in snippet for snippet in candidate.evidence.snippets)
 
 
+_DECLINING_JUDGMENT_PATTERNS = (
+    r"\bdoes not (?:explicitly |directly )?"
+    r"(?:establish|show|indicate|support|demonstrate|confirm|prove)\b",
+    r"\b(?:cannot|can't) (?:establish|infer|confirm|conclude|support)\b",
+    r"\b(?:no|insufficient|not enough) (?:direct |clear |explicit )?evidence\b",
+    r"\b(?:no|not a) (?:direct )?(?:relationship|connection|link)\b",
+    r"\b(?:relationship|connection|link) (?:is|was) not established\b",
+    r"\b(?:only|merely) (?:a )?co[- ]?mention\b",
+)
+
+
+def _reason_declines_link(reason: str) -> bool:
+    text = reason.strip().casefold()
+    return any(re.search(pattern, text) for pattern in _DECLINING_JUDGMENT_PATTERNS)
+
+
 def _quote_supports_specialized_nature(
     quote: str,
     nature: str | None,
@@ -486,24 +503,48 @@ def _validate_candidate_batch_response(
     except json.JSONDecodeError:
         _record_candidate_skip(counts, "invalid_llm_json")
         return []
-    rows = payload.get("edges") if isinstance(payload, dict) else None
+    rows = payload.get("decisions") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         _record_candidate_skip(counts, "invalid_llm_json")
         return []
 
     accepted: list[AutoConnectionEdgeProposal] = []
+    candidate_by_id = {candidate.candidate_id: candidate for candidate in batch}
+    seen_candidate_ids: set[str] = set()
+    decided_candidate_ids: set[str] = set()
     for row in rows:
         try:
-            proposal = AutoConnectionEdgeProposal.model_validate(row)
+            decision = AutoConnectionCandidateDecision.model_validate(row)
         except Exception:
             counts.malformed_proposals += 1
-            _record_candidate_skip(counts, "malformed_proposal")
+            _record_candidate_skip(counts, "malformed_decision")
             continue
         counts.proposed += 1
-        candidate = _candidate_for_proposal(proposal, batch)
+        if decision.candidate_id in seen_candidate_ids:
+            _record_candidate_skip(counts, "duplicate_model_decision")
+            continue
+        seen_candidate_ids.add(decision.candidate_id)
+        candidate = candidate_by_id.get(decision.candidate_id)
         if candidate is None:
             _record_candidate_skip(counts, "invalid_candidate_id")
             continue
+        decided_candidate_ids.add(decision.candidate_id)
+        if not decision.link:
+            _record_candidate_skip(counts, "model_declined")
+            continue
+        if _reason_declines_link(decision.reason):
+            _record_candidate_skip(counts, "judgment_declines")
+            continue
+        try:
+            proposal = AutoConnectionEdgeProposal.model_validate(
+                decision.model_dump(exclude={"link"})
+            )
+        except Exception:
+            counts.malformed_proposals += 1
+            _record_candidate_skip(counts, "malformed_link_decision")
+            continue
+        candidate = _candidate_for_proposal(proposal, batch)
+        assert candidate is not None
         if not _proposal_matches_candidate(proposal, candidate):
             _record_candidate_skip(counts, "candidate_endpoint_mismatch")
             continue
@@ -558,6 +599,9 @@ def _validate_candidate_batch_response(
             )
         )
         counts.accepted += 1
+    missing_decisions = len(candidate_by_id.keys() - decided_candidate_ids)
+    for _ in range(missing_decisions):
+        _record_candidate_skip(counts, "missing_model_decision")
     return accepted
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from dataclasses import dataclass
@@ -183,10 +184,17 @@ def _llm_edges_response(
     description: str | None = None,
 ) -> str:
     edge_description = description or quote
+    candidate_raw = f"person:{from_id}->organization:{to_id}"
+    candidate_digest = hashlib.sha1(
+        candidate_raw.encode("utf-8"),
+        usedforsecurity=False,
+    ).hexdigest()[:12]
     return json.dumps(
         {
-            "edges": [
+            "decisions": [
                 {
+                    "candidate_id": f"candidate-{candidate_digest}",
+                    "link": True,
                     "from_entity_id": from_id,
                     "to_entity_id": to_id,
                     "description": edge_description,
@@ -263,7 +271,7 @@ def test_auto_connections_creates_high_confidence_edge() -> None:
                     to_id=fixture.organization_canonical_id,
                     quote=quote,
                 )
-            return json.dumps({"edges": []})
+            return json.dumps({"decisions": []})
 
         mock_llm = MagicMock(side_effect=_mock_llm)
         summary = run_auto_connections_for_db_output(
@@ -387,7 +395,7 @@ def test_auto_connections_reinforces_existing_edge() -> None:
                     to_id=fixture.organization_canonical_id,
                     quote=quote,
                 )
-            return json.dumps({"edges": []})
+            return json.dumps({"decisions": []})
 
         mock_llm = MagicMock(side_effect=_mock_llm)
         summary = run_auto_connections_for_db_output(
@@ -450,7 +458,7 @@ def test_auto_connections_skips_when_article_already_cited() -> None:
                     to_id=fixture.organization_canonical_id,
                     quote=quote,
                 )
-            return json.dumps({"edges": []})
+            return json.dumps({"decisions": []})
 
         summary = run_auto_connections_for_db_output(
             session,

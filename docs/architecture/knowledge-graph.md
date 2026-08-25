@@ -394,6 +394,12 @@ the pair. Extracted affiliation and entity metadata are labeled lower-trust hint
 interpret text but cannot prove an edge. Every model proposal must identify its candidate and copy
 an exact quote from that pair's evidence packet.
 
+The model returns one explicit `link=true|false` judgment for every submitted pair. Only
+`link=true` decisions continue through quote, nature, confidence, and endpoint validation;
+`link=false` is authoritative and records a `model_declined` skip. An affirmative decision is also
+rejected when its rationale says the evidence does not establish a relationship. This consistency
+gate is nature-independent and does not add another model call.
+
 Linked entities are capped per type for inference, but entities that participate in same- or
 adjacent-sentence pair evidence are reserved before occurrence-ranked truncation so high-signal
 teams and people are not dropped from crowded articles.

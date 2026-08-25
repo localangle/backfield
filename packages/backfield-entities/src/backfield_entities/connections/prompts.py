@@ -163,22 +163,26 @@ def build_candidate_batch_prompt(
     candidate_section = "\n\n".join(blocks)
     return (
         f"prompt_version: {AUTO_CONNECTION_PROMPT_VERSION_EVIDENCE_PAIRS}\n"
-        "Identify explicit relationships only for the candidate pairs below.\n\n"
+        "Judge whether an explicit relationship exists for every candidate pair below.\n\n"
         "Rules:\n"
-        "- Evaluate each candidate independently and return its candidate_id.\n"
+        "- Return exactly one decision for every candidate_id.\n"
+        "- Set link=true only when you would publish the relationship as a fact.\n"
+        "- Set link=false when the evidence does not establish a direct relationship, "
+        "including uncertainty, co-mention, proximity, shared events, or metadata alone.\n"
+        "- The reason must explain and agree with the link judgment.\n"
         "- Article evidence must state or strongly entail a direct relationship.\n"
         "- Lower-trust hints may help interpret article evidence but never prove a relationship.\n"
         "- Do not infer a relationship from co-mention, proximity, shared event, "
         "or metadata alone.\n"
-        "- Copy the supporting quote exactly from that candidate's article_evidence.\n"
-        "- Use only the submitted endpoints and one allowed nature; use null only when the "
-        "relationship is explicit but no nature fits.\n"
+        "- For link=true, copy the supporting quote exactly from that candidate's "
+        "article_evidence and use only the submitted endpoints and one allowed nature.\n"
+        "- For link=false, use null nature and empty endpoint, description, and quote fields.\n"
         "- Prefer leads over works_for when leadership is explicit.\n"
         "- Athletes on a sports team use plays_for; coaches use coaches.\n"
-        "- Return every independently supported relationship, but no duplicate pair+nature.\n"
-        "- confidence must be at least 0.9; prefer no edge when uncertain.\n\n"
+        "- For link=true, confidence must be at least 0.9; prefer link=false when uncertain.\n\n"
         f"Candidates:\n{candidate_section}\n\n"
-        'Return JSON only: {"edges": [{"candidate_id": "candidate-...", '
-        '"from_entity_id": "...", "to_entity_id": "...", "description": "...", '
-        '"nature": "...", "confidence": 0.95, "quote": "...", "reason": "..."}]}'
+        'Return JSON only: {"decisions": [{"candidate_id": "candidate-...", '
+        '"link": true, "from_entity_id": "...", "to_entity_id": "...", '
+        '"description": "...", "nature": "...", "confidence": 0.95, '
+        '"quote": "...", "reason": "..."}]}'
     )

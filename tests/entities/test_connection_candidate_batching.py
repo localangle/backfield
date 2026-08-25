@@ -39,6 +39,27 @@ def _candidate(index: int) -> AutoConnectionCandidatePair:
     )
 
 
+def _link_decision(
+    candidate: AutoConnectionCandidatePair,
+    *,
+    nature: str = "works_for",
+    description: str | None = None,
+    quote: str | None = None,
+    reason: str = "The article explicitly establishes this relationship.",
+) -> dict[str, object]:
+    return {
+        "candidate_id": candidate.candidate_id,
+        "link": True,
+        "from_entity_id": candidate.from_entity.canonical_id,
+        "to_entity_id": candidate.to_entity.canonical_id,
+        "description": description or candidate.evidence.snippets[0],
+        "nature": nature,
+        "confidence": 0.99,
+        "quote": quote or candidate.evidence.snippets[0],
+        "reason": reason,
+    }
+
+
 def test_batching_obeys_request_batch_and_concurrency_caps() -> None:
     candidates = tuple(_candidate(index) for index in range(17))
     lock = threading.Lock()
@@ -53,7 +74,23 @@ def test_batching_obeys_request_batch_and_concurrency_caps() -> None:
         time.sleep(0.03)
         with lock:
             active -= 1
-        return json.dumps({"edges": []})
+        candidate_ids = [
+            line.split("=", 1)[1]
+            for line in _prompt.splitlines()
+            if line.startswith("- candidate_id=")
+        ]
+        return json.dumps(
+            {
+                "decisions": [
+                    {
+                        "candidate_id": candidate_id,
+                        "link": False,
+                        "reason": "The evidence does not establish a direct relationship.",
+                    }
+                    for candidate_id in candidate_ids
+                ]
+            }
+        )
 
     result = classify_candidate_batches(
         candidates=candidates,
@@ -77,16 +114,8 @@ def test_response_must_use_quote_from_its_pair_packet() -> None:
     def call_llm(_prompt: str, **_kwargs: object) -> str:
         return json.dumps(
             {
-                "edges": [
-                    {
-                        "candidate_id": candidate.candidate_id,
-                        "from_entity_id": "person-1",
-                        "to_entity_id": "org-1",
-                        "description": "Person 1 works for Organization 1.",
-                        "nature": "works_for",
-                        "confidence": 0.99,
-                        "quote": "A quote from some other candidate.",
-                    }
+                "decisions": [
+                    _link_decision(candidate, quote="A quote from some other candidate.")
                 ]
             }
         )
@@ -109,7 +138,17 @@ def test_one_failed_batch_does_not_discard_other_batches() -> None:
     def call_llm(prompt: str, **_kwargs: object) -> str:
         if "candidate-0" in prompt:
             raise TimeoutError("model timeout")
-        return json.dumps({"edges": []})
+        return json.dumps(
+            {
+                "decisions": [
+                    {
+                        "candidate_id": "candidate-8",
+                        "link": False,
+                        "reason": "The evidence does not establish a direct relationship.",
+                    }
+                ]
+            }
+        )
 
     result = classify_candidate_batches(
         candidates=candidates,
@@ -134,16 +173,12 @@ def test_specialized_nature_requires_quote_level_support() -> None:
     def call_llm(_prompt: str, **_kwargs: object) -> str:
         return json.dumps(
             {
-                "edges": [
-                    {
-                        "candidate_id": candidate.candidate_id,
-                        "from_entity_id": "person-1",
-                        "to_entity_id": "org-1",
-                        "description": "Person 1 leads Organization 1.",
-                        "nature": "leads",
-                        "confidence": 0.99,
-                        "quote": candidate.evidence.snippets[0],
-                    }
+                "decisions": [
+                    _link_decision(
+                        candidate,
+                        nature="leads",
+                        description="Person 1 leads Organization 1.",
+                    )
                 ]
             }
         )
@@ -167,7 +202,17 @@ def test_model_threads_receive_tracking_context() -> None:
 
     def call_llm(_prompt: str, **_kwargs: object) -> str:
         observed.append(tracking_value.get())
-        return json.dumps({"edges": []})
+        return json.dumps(
+            {
+                "decisions": [
+                    {
+                        "candidate_id": "candidate-1",
+                        "link": False,
+                        "reason": "The evidence does not establish a direct relationship.",
+                    }
+                ]
+            }
+        )
 
     try:
         classify_candidate_batches(
@@ -181,3 +226,70 @@ def test_model_threads_receive_tracking_context() -> None:
         tracking_value.reset(token)
 
     assert observed == ["project-7"]
+
+
+def test_model_decline_is_authoritative() -> None:
+    candidate = _candidate(1)
+
+    def call_llm(_prompt: str, **_kwargs: object) -> str:
+        return json.dumps(
+            {
+                "decisions": [
+                    {
+                        "candidate_id": candidate.candidate_id,
+                        "link": False,
+                        "from_entity_id": "person-1",
+                        "to_entity_id": "org-1",
+                        "description": "Explicit organizational leadership link",
+                        "nature": "board_member_of",
+                        "confidence": 0.92,
+                        "quote": candidate.evidence.snippets[0],
+                        "reason": (
+                            "The article references the organization but does not establish "
+                            "a direct board membership or leadership role."
+                        ),
+                    }
+                ]
+            }
+        )
+
+    result = classify_candidate_batches(
+        candidates=(candidate,),
+        model="test",
+        model_config_id=None,
+        call_llm=call_llm,
+        max_requests=1,
+    )
+
+    assert result.edges == ()
+    assert result.counts.skip_reasons["model_declined"] == 1
+
+
+def test_affirmative_decision_with_declining_reason_is_rejected() -> None:
+    candidate = _candidate(1)
+
+    def call_llm(_prompt: str, **_kwargs: object) -> str:
+        return json.dumps(
+            {
+                "decisions": [
+                    _link_decision(
+                        candidate,
+                        reason=(
+                            "The article mentions both entities but does not establish "
+                            "a direct relationship."
+                        ),
+                    )
+                ]
+            }
+        )
+
+    result = classify_candidate_batches(
+        candidates=(candidate,),
+        model="test",
+        model_config_id=None,
+        call_llm=call_llm,
+        max_requests=1,
+    )
+
+    assert result.edges == ()
+    assert result.counts.skip_reasons["judgment_declines"] == 1
