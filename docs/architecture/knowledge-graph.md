@@ -1,16 +1,15 @@
-# Knowledge graph target architecture
+# Knowledge graph architecture (connections)
 
-**Status:** Phase A connections complete on `explore/knowledge-graph-architecture`.
-Additive schema: `077_conn_kg_phase_a`. Data remap: `backfield migrate-connection-kg`.
-Schema cutover: `078_conn_kg_cutover` (open-edge unique index; drop connection
-`description` / `evidence_json`; evidence FK cascades). Soft-close / reopen, custom
-natures, Stylebook + public `evidence[]`, and Stylebook UI polish ship. Storylines remain
-Phase B.
+**Status:** Phase A connections **shipped**. Additive schema: `077_conn_kg_phase_a`. Data remap:
+`backfield migrate-connection-kg`. Schema cutover: `078_conn_kg_cutover` (open-edge unique index;
+drop connection `description` / `evidence_json`; evidence FK cascades). Soft-close / reopen,
+custom natures, Stylebook + public `evidence[]`, and automatic inference with reinforce writer
+are live. **Storylines** (coverage packaging) are deferred — see
+[`../plan/storylines.md`](../plan/storylines.md).
 
-This document is the decision record for evolving Stylebook relationships and coverage packaging
-into a news-archive knowledge graph. It is **not** current runtime behavior. When slices ship,
-update [`database.md`](database.md), [`../development/entities/overview.md`](../development/entities/overview.md),
-and the relevant API docs, then retire or narrow the “proposed” sections here.
+This document is the decision record and operational guide for Stylebook **connections** in the
+news-archive knowledge graph. For entity ingest and canonicals, see
+[`database.md`](database.md) and [`../development/entities/overview.md`](../development/entities/overview.md).
 
 ## Goals and non-goals
 
@@ -35,7 +34,7 @@ Keep Postgres + Stylebook as source of truth. Align concepts where they help new
 | Episode | Article (ingest/provenance unit) |
 | Entity nodes | Stylebook canonicals (person, location, organization; later works as documents) |
 | Facts / edges | Connections with preferred natures + evidence rows (+ optional validity later) |
-| Communities / packages | **Storylines** (multi-article coverage threads) |
+| Communities / packages | **Storylines** (deferred — [`../plan/storylines.md`](../plan/storylines.md)) |
 | Invalidation | Deferred; v1 reinforce + editorial close escape hatch |
 
 ## Target graph shape
@@ -47,14 +46,11 @@ Canonical person / org / location
 
 Article
   ◄── mention / occurrence ──► substrate ──► Canonical
-  ◄── membership (optional primary) ──► Storyline (accepted)
 ```
 
-**First-class traversable nodes:** canonicals and articles.  
-**Storylines:** first-class Stylebook catalog objects (coverage packages), not Event entities.  
-**Claims / stances:** prefer article∩storyline∩entity evidence packs; structured facts only when the
-object is crisp (preferred nature to a canonical, or later topic/work). Do **not** make events
-Stylebook citizens in this plan.
+**First-class traversable nodes (Phase A):** canonicals and articles via connections and mentions.
+**Storylines** (article ↔ coverage package) are deferred — see
+[`../plan/storylines.md`](../plan/storylines.md).
 
 ## Decision log
 
@@ -65,42 +61,11 @@ Public news APIs and archive agents first; not agent-context memory.
 ### D2 — No Event/Claim Stylebook canonicals
 
 Events and propositional claims are hard to identity-manage and fight Stylebook’s substrate →
-candidate → canonical muscle. Articles hold journalism; mentions ground entities; storylines group
-coverage. Derived temporal facts (edges) are optional structure, not catalog entities.
+candidate → canonical muscle. Articles hold journalism; mentions ground entities. Derived
+temporal facts (connections) are optional structure, not catalog entities. Multi-article
+coverage packaging (**storylines**) is deferred — see [`../plan/storylines.md`](../plan/storylines.md).
 
-### D3 — Storylines as the coverage object
-
-A **storyline** is a subject covered across multiple stories or cycles (e.g. “2026 city budget”,
-“dispute between X and Y”). Clients have asked for this. It fills the ontology gap for
-issue-shaped navigation better than Event canonicals.
-
-| Decision | Choice |
-|----------|--------|
-| Lifecycle | Candidate → accepted; only accepted are public first-class |
-| Membership | Many-to-many article ↔ storyline |
-| Ranking | Optional **primary** storyline per article; others secondary |
-| Failure mode | Optimize against **false merge / wrong assign** (precision over recall) |
-| Entity overlap in matching | **Soft prior** (boost / tighten bar); never a hard gate |
-| Tenancy | Org-scoped storyline identity; project-aware membership (Stylebook-like) |
-| Persistence | **Own tables and APIs** (not forced through entity substrate abstractions) |
-| Presentation | Stylebook-class UX: catalog surfaces, article-review tab peer to people/places/orgs |
-| Agate role | Post–Backfield Output side effect (propose only); not a required canvas node |
-| Agate review | Read-only hint + link to Stylebook (recommended; confirm at implement time) |
-
-### D4 — Storyline identification (compute)
-
-Incremental, not full-corpus reclustering per ingest:
-
-1. Use existing article embeddings (pgvector).
-2. ANN against storyline search docs (summary embedding + optional member centroid) and a capped
-   orphan neighborhood for rare “birth new storyline” proposals.
-3. Cheap filters (time window, project/org scope); shared canonicals as soft signal.
-4. LLM yes/no only on top-K neighbors; high threshold; prefer **link-to-existing** over create.
-5. Occasional batch jobs for drift / merge suggestions — not on the hot path.
-
-Cost should grow with **#storylines**, not **#articles**.
-
-### D5 — Connection redesign (taxonomy + evidence + reinforce)
+### D3 — Connection redesign (taxonomy + evidence + reinforce)
 
 Coupled with temporality ideas; implement as the foundation under public relationship APIs.
 
@@ -117,7 +82,7 @@ Coupled with temporality ideas; implement as the foundation under public relatio
 
 #### Temporal kind on natures (not per-edge LLM typing)
 
-**D5b — Assign `temporal_kind` on each nature definition** (`atemporal` | `static` | `dynamic`),
+**D3b — Assign `temporal_kind` on each nature definition** (`atemporal` | `static` | `dynamic`),
 inspired by the OpenAI temporal-agents cookbook, but as **catalog metadata**, not a classifier
 pass on every edge.
 
@@ -152,7 +117,7 @@ list/detail APIs pick a display label from evidence (prefer highest confidence, 
 
 #### Reinforce policy (v1)
 
-**D5a — Reinforce, don’t version by default.** Same endpoints + preferred nature → append evidence;
+**D3a — Reinforce, don’t version by default.** Same endpoints + preferred nature → append evidence;
 do not mint parallel edges for repeated mentions.
 
 **Accepted tradeoff:** discontinuous terms (left office, then returned) are not modeled as separate
@@ -182,12 +147,11 @@ backfield repair-orphan-connections --stylebook-id N --apply
 Repair rewires a missing endpoint when evidence `from_display_name` / `to_display_name`
 uniquely matches one living canonical of that type in the Stylebook; otherwise it soft-closes.
 
-### D6 — Implementation sequencing
+### D4 — Implementation sequencing
 
-1. **This ADR** (done as living target doc).
-2. **Connection redesign** — natures registry, evidence table, reinforce writer, API/UX updates.
-3. **Storylines** — tables/APIs, propose/accept, Stylebook + article-review presentation, then
-   public navigation.
+1. **Connection redesign** — natures registry, evidence table, reinforce writer, API/UX updates
+   (shipped).
+2. **Storylines** — deferred; see [`../plan/storylines.md`](../plan/storylines.md).
 
 Temporal `as_of` on connections is a follow-on once reinforce + evidence exist.
 
@@ -390,7 +354,9 @@ rollback requires restore from backup.
 
 Backfield Output generates canonical pairs only when article text or linked mention occurrences put
 the entities in the same or adjacent sentence, or when a high-precision construction identifies
-the pair. Extracted affiliation and entity metadata are labeled lower-trust hints: they can help
+the pair. High-precision constructions include explicit coach/player team grammar and journalistic
+party+district tags such as ``D-Ottawa`` / ``R-Springfield`` after a legislator's name (deterministic
+``represents``). Extracted affiliation and entity metadata are labeled lower-trust hints: they can help
 interpret text but cannot prove an edge. Every model proposal must identify its candidate and copy
 an exact quote from that pair's evidence packet.
 
@@ -427,81 +393,35 @@ or historical edges. Inference summaries report candidate sources/rejections, en
 truncation, request and batch sizes, prompt characters, elapsed time, duplicate/subsumption/conflict
 counts, and create/reinforce outcomes.
 
-### Phase B — Storylines
-
-#### New `stylebook_storyline`
-
-| Column | Notes |
-|--------|--------|
-| `id` | UUID PK (canonical-like) |
-| `stylebook_id` | FK → `stylebook` |
-| `label`, `slug` | unique `(stylebook_id, slug)` |
-| `summary` | editorial / LLM package summary |
-| `status` | `candidate` \| `accepted` \| `rejected` \| `merged` (or equivalent) |
-| `merged_into_id` | nullable FK self |
-| `created_at` / `updated_at` | |
-| Optional | `primary_article_id`, closed/archived flags |
-
-#### New `stylebook_storyline_membership`
-
-| Column | Notes |
-|--------|--------|
-| `id` | PK |
-| `storyline_id` | FK |
-| `article_id` | FK → `substrate_article` |
-| `project_id` | denormalized from article for scoping (or join-only) |
-| `status` | `proposed` \| `accepted` \| `rejected` |
-| `is_primary` | bool; at most one accepted primary per article (partial unique) |
-| `confidence` | nullable |
-| `source` | `auto` \| `editor` |
-| `created_at` / `updated_at` | |
-
-Uniqueness: `(storyline_id, article_id)`. Partial unique: one `is_primary` accepted membership per `article_id`.
-
-#### New `stylebook_storyline_embedding` (or columns on storyline)
-
-Search doc for ANN: summary embedding (+ optional centroid metadata). Reuse pgvector patterns from `substrate_article_embedding`. Index for ANN query by `stylebook_id`.
-
-#### Activity / bundles
-
-- Extend `stylebook_activity` event kinds: storyline created/accepted/merged; membership proposed/accepted; connection evidence added / connection closed.
-- Bundle schema bump later: export/import accepted storylines + memberships whose articles resolve.
-
 ### Unchanged
 
 - `substrate_article`, mention/occurrence tables (still the article↔entity layer)
 - Canonical person/location/organization tables
 - No `stylebook_event_canonical` / claim tables in this plan
 
-### Diagram (target)
+### Diagram (connections)
 
 ```text
 stylebook_connections          stylebook_connection_evidence
   (1 open row / nature+ends) ──< (N citations / articles)
 
-stylebook_storyline            stylebook_storyline_membership
-  (org catalog package) ─────< (N articles, optional primary)
-
 stylebook_connection_nature_custom  (org-only; preferred natures in code)
 ```
 
+Storylines (deferred): [`../plan/storylines.md`](../plan/storylines.md).
+
 ## Relation to current system
 
-| Area | Today | Target |
-|------|--------|--------|
+| Area | Before Phase A | Now (Phase A) |
+|------|----------------|---------------|
 | Connections | `stylebook_connections` + `evidence_json`; uniqueness includes description | Connection row + `evidence` children; identity = endpoints + preferred nature |
 | Natures | Small fixed auto set in `connections/taxonomy.py` | Code registry of preferred natures + aliases; org customs in DB |
 | Articles in graph | Mentions only; not connection endpoints | First-class for traversal; episodes for provenance |
-| Coverage packages | None in-repo | Storylines (candidate → accepted) |
-| Agate | Auto-connections after `db_output` | Same hook family for storyline **proposals** |
-| Query | 1-hop connection lists | Still 1-hop first; multi-hop / as-of later |
+| Coverage packages | None in-repo | Deferred — [`../plan/storylines.md`](../plan/storylines.md) |
+| Agate | Auto-connections after `db_output` | Same hook; reinforce writer + explicit `link` judgment |
+| Query | 1-hop connection lists | Still 1-hop first; multi-hop / as_of later |
 
-## Open points (resolve at implement time)
-
-- Storyline candidate UX: queue density caps given precision-first thresholds (Phase B).
-- Public API shapes for storyline list/detail and `include=` expansion (Phase B).
-
-### Locked for Phase A
+## Locked decisions (Phase A)
 
 - Connection identity scope: **`stylebook_id`** (not project-keyed uniqueness).
 - One open edge per `(stylebook_id, ends, coalesce(nature,''))` including null natures; many evidence.
@@ -521,3 +441,4 @@ stylebook_connection_nature_custom  (org-only; preferred natures in code)
 - [Temporal agents with knowledge graphs (OpenAI cookbook)](https://developers.openai.com/cookbook/examples/partners/temporal_agents_with_knowledge_graphs/temporal_agents)
 - Current connections: `packages/backfield-entities/src/backfield_entities/connections/`
 - Entity model: [`../development/entities/overview.md`](../development/entities/overview.md)
+- [`../plan/storylines.md`](../plan/storylines.md) — deferred coverage packaging (storylines)

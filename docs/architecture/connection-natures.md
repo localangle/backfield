@@ -1,9 +1,9 @@
-# Connection nature catalog (proposed)
+# Connection nature catalog
 
-**Status:** Proposed (not implemented). Companion to
-[`knowledge-graph.md`](knowledge-graph.md) (D5). This is the curated **global preferred nature
-catalog** that will live in code (a `natures.py` registry replacing the fixed sets in
-`backfield_entities/connections/taxonomy.py`). Org custom natures remain a DB escape hatch.
+**Status:** Shipped (Phase A). Companion to
+[`knowledge-graph.md`](knowledge-graph.md) (D3). This is the curated **global preferred nature
+catalog** in code (`backfield_entities/connections/natures.py`). Org custom natures remain a
+DB escape hatch (`stylebook_connection_nature_custom`).
 
 ## Sources
 
@@ -35,7 +35,7 @@ indicative; verify before publishing them in API docs.
 - **Symmetric natures** (`spouse_of`, `works_with`, `partnered_with`, `competes_with`,
   `merged_with`, `sibling_of`, `family_of`): one edge per pair; normalize endpoint order at write
   time.
-- **`temporal_kind`** (`static` | `dynamic`; see ADR D5b): static facts rarely close; dynamic
+- **`temporal_kind`** (`static` | `dynamic`; see ADR D3b): static facts rarely close; dynamic
   facts are candidates for close / `as_of`. We do not use a separate `atemporal` kind — the few
   candidates (family) are treated as static.
 - **`auto`**: whether machine inference may propose this nature. Manual-only natures appear in
@@ -183,7 +183,7 @@ See the full **Existing-data migration plan** in
 - Do **not** auto-remap null-nature descriptions to new slugs (`holds_office_in`, `owns`, …)
   in the first cut — forward inference + optional offline suggest queue later.
 
-## Registry entry shape (target)
+## Registry entry shape
 
 Each catalog entry in code carries:
 

@@ -48,6 +48,7 @@ canonical agent/engineering checklist.
 - [`docs/development/frontend/conventions.md`](docs/development/frontend/conventions.md): shared frontend and user-facing copy rules.
 - [`docs/development/testing.md`](docs/development/testing.md): validation ladder and smoke-test guidance.
 - [`docs/development/local-setup.md`](docs/development/local-setup.md): prerequisites, first run, stack commands, and local data lifecycle.
+- [`docs/plan/`](docs/plan/): deferred product plans (intent, not runtime contracts).
 
 ## Engineering posture
 
