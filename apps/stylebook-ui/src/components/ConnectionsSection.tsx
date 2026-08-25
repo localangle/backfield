@@ -101,7 +101,7 @@ export default function ConnectionsSection({
   const [connectionsPage, setConnectionsPage] = useState(1)
   const [graphNeighborhood, setGraphNeighborhood] = useState<ConnectionNeighborhood | null>(null)
   const [graphLoading, setGraphLoading] = useState(false)
-  const [activeTab, setActiveTab] = useState<"list" | "graph">("list")
+  const [activeTab, setActiveTab] = useState<"list" | "graph">("graph")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
@@ -454,13 +454,13 @@ export default function ConnectionsSection({
               className="w-full"
             >
               <TabsList>
-                <TabsTrigger value="list">
-                  <List className="h-4 w-4 mr-2" />
-                  List
-                </TabsTrigger>
                 <TabsTrigger value="graph">
                   <Network className="h-4 w-4 mr-2" />
                   Graph
+                </TabsTrigger>
+                <TabsTrigger value="list">
+                  <List className="h-4 w-4 mr-2" />
+                  List
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="list" className="mt-4">
@@ -601,6 +601,7 @@ export default function ConnectionsSection({
                       neighborsSkipped: 0,
                     }
                   }
+                  onConnectionsChanged={refreshConnections}
                 />
                 )}
               </TabsContent>

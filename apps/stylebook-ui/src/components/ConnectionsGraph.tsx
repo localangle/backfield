@@ -456,6 +456,7 @@ interface ConnectionsGraphProps {
   projectSlug?: string
   centerProfileLines?: GraphEntityProfileLines
   neighborhood: ConnectionNeighborhood
+  onConnectionsChanged?: () => void
 }
 
 export default function ConnectionsGraph({
@@ -466,6 +467,7 @@ export default function ConnectionsGraph({
   projectSlug,
   centerProfileLines,
   neighborhood,
+  onConnectionsChanged,
 }: ConnectionsGraphProps) {
   const { catalogScopeSuffix, catalogBasePath } = useProjectCatalogScope()
   const [selection, setSelection] = useState<GraphSelection | null>(null)
@@ -571,6 +573,7 @@ export default function ConnectionsGraph({
             onSelectNode={(entityType, entityId) =>
               setSelection({ kind: "node", entityType, entityId })
             }
+            onConnectionsChanged={onConnectionsChanged}
           />
         ) : null}
       </div>

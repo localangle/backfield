@@ -317,6 +317,52 @@ export async function reopenStylebookConnectionForOrganization(
   )
 }
 
+/** Soft-close a connection using either endpoint as the API path. */
+export async function closeStylebookConnection(
+  stylebookSlug: string,
+  conn: Connection,
+): Promise<{ ok: boolean; closed?: boolean }> {
+  const ends: Array<{ entityType: string; entityId: string }> = [
+    { entityType: conn.from_entity_type, entityId: String(conn.from_entity_id) },
+    { entityType: conn.to_entity_type, entityId: String(conn.to_entity_id) },
+  ]
+  for (const end of ends) {
+    if (end.entityType === "person") {
+      return closeStylebookConnectionForPerson(stylebookSlug, end.entityId, conn.id)
+    }
+    if (end.entityType === "organization") {
+      return closeStylebookConnectionForOrganization(stylebookSlug, end.entityId, conn.id)
+    }
+    if (end.entityType === "location") {
+      return closeStylebookConnectionForLocation(stylebookSlug, end.entityId, conn.id)
+    }
+  }
+  throw new Error("This connection cannot be closed from Stylebook yet.")
+}
+
+/** Reopen a soft-closed connection using either endpoint as the API path. */
+export async function reopenStylebookConnection(
+  stylebookSlug: string,
+  conn: Connection,
+): Promise<Connection> {
+  const ends: Array<{ entityType: string; entityId: string }> = [
+    { entityType: conn.from_entity_type, entityId: String(conn.from_entity_id) },
+    { entityType: conn.to_entity_type, entityId: String(conn.to_entity_id) },
+  ]
+  for (const end of ends) {
+    if (end.entityType === "person") {
+      return reopenStylebookConnectionForPerson(stylebookSlug, end.entityId, conn.id)
+    }
+    if (end.entityType === "organization") {
+      return reopenStylebookConnectionForOrganization(stylebookSlug, end.entityId, conn.id)
+    }
+    if (end.entityType === "location") {
+      return reopenStylebookConnectionForLocation(stylebookSlug, end.entityId, conn.id)
+    }
+  }
+  throw new Error("This connection cannot be reopened from Stylebook yet.")
+}
+
 /** @deprecated Prefer closeStylebookConnectionForLocation */
 export const deleteStylebookConnectionForLocation = closeStylebookConnectionForLocation
 /** @deprecated Prefer closeStylebookConnectionForPerson */

@@ -1,5 +1,7 @@
-import { Building2, ExternalLink, MapPin, User, X } from "lucide-react"
+import { Ban, Building2, ExternalLink, MapPin, RotateCcw, User, X } from "lucide-react"
+import { useState } from "react"
 
+import { useAppMessage } from "@/components/AppMessageProvider"
 import ConnectionEvidenceBlock from "@/components/ConnectionEvidenceBlock"
 import ConnectionStatusMeta from "@/components/ConnectionStatusMeta"
 import { Button } from "@/components/ui/button"
@@ -19,7 +21,11 @@ import {
   useGraphEntityProfile,
   type GraphEntityProfileLines,
 } from "@/lib/connectionGraphEntityProfile"
-import type { Connection } from "@/lib/stylebook-api/connections"
+import {
+  closeStylebookConnection,
+  reopenStylebookConnection,
+  type Connection,
+} from "@/lib/stylebook-api/connections"
 import type { EntityType as ConnectionsEntityType } from "@/lib/entityTypes"
 import { entityDisplayName as catalogEntityLabel } from "@/lib/entityRegistry"
 import { cn } from "@/lib/utils"
@@ -48,6 +54,7 @@ interface ConnectionGraphDetailPanelProps {
   onClear: () => void
   onSelectConnection: (connectionIds: number[]) => void
   onSelectNode: (entityType: ConnectionsEntityType, entityId: string) => void
+  onConnectionsChanged?: () => void
 }
 
 function getDetailUrl(
@@ -70,20 +77,128 @@ function getDetailUrl(
   return `${prefix}/locations/canonical/${entityId}${scopeSuffix}`
 }
 
+function useConnectionLifecycle(
+  stylebookSlug: string,
+  onConnectionsChanged?: () => void,
+) {
+  const { showConfirm, showError } = useAppMessage()
+  const [busyId, setBusyId] = useState<number | null>(null)
+
+  const closeConnection = async (conn: Connection) => {
+    const summary = formatConnectionSummaryLabel(conn)
+    const ok = await showConfirm(
+      `Close the connection between "${conn.from_display_name}" and "${conn.to_display_name}"${
+        summary ? ` (${summary})` : ""
+      }? You can show closed connections later and reopen them if needed.`,
+      {
+        title: "Close connection",
+        confirmLabel: "Close connection",
+        cancelLabel: "Cancel",
+        destructive: true,
+      },
+    )
+    if (!ok) return
+    setBusyId(conn.id)
+    try {
+      await closeStylebookConnection(stylebookSlug, conn)
+      onConnectionsChanged?.()
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Failed to close connection")
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const reopenConnection = async (conn: Connection) => {
+    setBusyId(conn.id)
+    try {
+      await reopenStylebookConnection(stylebookSlug, conn)
+      onConnectionsChanged?.()
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Failed to reopen connection")
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return { busyId, closeConnection, reopenConnection }
+}
+
+function ConnectionLifecycleButtons({
+  conn,
+  busyId,
+  onClose,
+  onReopen,
+  className,
+}: {
+  conn: Connection
+  busyId: number | null
+  onClose: (conn: Connection) => void
+  onReopen: (conn: Connection) => void
+  className?: string
+}) {
+  const busy = busyId === conn.id
+  if (conn.closed_at) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className={cn("h-7 px-2", className)}
+        disabled={busy}
+        onClick={(event) => {
+          event.stopPropagation()
+          void onReopen(conn)
+        }}
+        title="Reopen connection"
+      >
+        <RotateCcw className="h-3.5 w-3.5" />
+        <span className="ml-1.5 text-xs">Reopen</span>
+      </Button>
+    )
+  }
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className={cn(
+        "h-7 px-2 text-destructive hover:bg-destructive/10 hover:text-destructive",
+        className,
+      )}
+      disabled={busy}
+      onClick={(event) => {
+        event.stopPropagation()
+        void onClose(conn)
+      }}
+      title="Close connection"
+    >
+      <Ban className="h-3.5 w-3.5" />
+      <span className="ml-1.5 text-xs">{busy ? "Closing…" : "Close"}</span>
+    </Button>
+  )
+}
+
 function ConnectionRow({
   conn,
   focusRef,
   catalogBasePath,
   catalogScopeSuffix,
+  busyId,
   onSelect,
   onSelectConnection,
+  onClose,
+  onReopen,
 }: {
   conn: Connection
   focusRef: GraphEntityRef
   catalogBasePath: string
   catalogScopeSuffix: string
+  busyId: number | null
   onSelect: (entityType: ConnectionsEntityType, entityId: string) => void
   onSelectConnection: (connectionIds: number[]) => void
+  onClose: (conn: Connection) => void
+  onReopen: (conn: Connection) => void
 }) {
   const other = otherEndFromConnection(conn, focusRef)
   if (!other) return null
@@ -127,36 +242,58 @@ function ConnectionRow({
         </div>
       </div>
       <ConnectionStatusMeta conn={conn} compact />
-      <a
-        href={getDetailUrl(other.entityType, other.entityId, catalogBasePath, catalogScopeSuffix)}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={(event) => event.stopPropagation()}
-        className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary"
-      >
-        Open in Stylebook
-        <ExternalLink className="h-3 w-3" />
-      </a>
+      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+        <a
+          href={getDetailUrl(other.entityType, other.entityId, catalogBasePath, catalogScopeSuffix)}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(event) => event.stopPropagation()}
+          className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary"
+        >
+          Open in Stylebook
+          <ExternalLink className="h-3 w-3" />
+        </a>
+        <ConnectionLifecycleButtons
+          conn={conn}
+          busyId={busyId}
+          onClose={onClose}
+          onReopen={onReopen}
+        />
+      </div>
     </div>
   )
 }
 
 function ConnectionDetailCard({
   conn,
+  busyId,
+  onClose,
+  onReopen,
 }: {
   conn: Connection
+  busyId: number | null
+  onClose: (conn: Connection) => void
+  onReopen: (conn: Connection) => void
 }) {
   const nature = formatNatureLabel(conn.nature)
   const summary = formatConnectionSummaryLabel(conn)
 
   return (
     <div className="rounded-lg border bg-muted/10 px-3 py-2.5">
-      <div className="mb-2">
-        {nature ? (
-          <p className="text-sm font-medium text-foreground">{nature}</p>
-        ) : (
-          <p className="text-sm font-medium text-foreground">Connection</p>
-        )}
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          {nature ? (
+            <p className="text-sm font-medium text-foreground">{nature}</p>
+          ) : (
+            <p className="text-sm font-medium text-foreground">Connection</p>
+          )}
+        </div>
+        <ConnectionLifecycleButtons
+          conn={conn}
+          busyId={busyId}
+          onClose={onClose}
+          onReopen={onReopen}
+        />
       </div>
       {summary && summary !== nature ? (
         <p className="text-sm leading-relaxed text-muted-foreground">{summary}</p>
@@ -281,7 +418,13 @@ export default function ConnectionGraphDetailPanel({
   onClear,
   onSelectConnection,
   onSelectNode,
+  onConnectionsChanged,
 }: ConnectionGraphDetailPanelProps) {
+  const { busyId, closeConnection, reopenConnection } = useConnectionLifecycle(
+    stylebookSlug,
+    onConnectionsChanged,
+  )
+
   if (selection.kind === "edge") {
     const selectedConnections = selection.connectionIds
       .map((id) => connectionsById.get(id))
@@ -345,7 +488,13 @@ export default function ConnectionGraphDetailPanel({
 
             <div className="space-y-2">
               {selectedConnections.map((row) => (
-                <ConnectionDetailCard key={row.id} conn={row} />
+                <ConnectionDetailCard
+                  key={row.id}
+                  conn={row}
+                  busyId={busyId}
+                  onClose={closeConnection}
+                  onReopen={reopenConnection}
+                />
               ))}
             </div>
           </div>
@@ -423,8 +572,11 @@ export default function ConnectionGraphDetailPanel({
                   focusRef={entityRef}
                   catalogBasePath={catalogBasePath}
                   catalogScopeSuffix={catalogScopeSuffix}
+                  busyId={busyId}
                   onSelect={onSelectNode}
                   onSelectConnection={onSelectConnection}
+                  onClose={closeConnection}
+                  onReopen={reopenConnection}
                 />
               ))}
             </div>
