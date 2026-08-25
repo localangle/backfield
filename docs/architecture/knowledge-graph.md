@@ -368,7 +368,7 @@ The model returns one explicit `link=true|false` judgment for every submitted pa
 rejected when its rationale says the evidence does not establish a relationship. This consistency
 gate is nature-independent and does not add another model call.
 
-Linked entities are capped per type for inference, but entities that participate in same- or
+Linked entities are capped at **32 per type** for inference, but entities that participate in same- or
 adjacent-sentence pair evidence are reserved before occurrence-ranked truncation so high-signal
 teams and people are not dropped from crowded articles.
 
