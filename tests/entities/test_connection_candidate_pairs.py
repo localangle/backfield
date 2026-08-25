@@ -7,6 +7,7 @@ import json
 from backfield_entities.connections.candidate_pairs import (
     build_deterministic_connection_proposals,
     generate_connection_candidates,
+    select_linked_entities_with_pair_priority,
 )
 from backfield_entities.connections.inference import classify_candidate_batches
 from backfield_entities.connections.types import LinkedEntitySnapshot
@@ -291,3 +292,68 @@ def test_mount_carmel_evidence_supports_coach_and_player_natures() -> None:
         ("startz", "plays_for"),
         ("samuels", "plays_for"),
     }
+
+
+def test_pair_priority_selection_keeps_low_rank_org_with_textual_evidence() -> None:
+    filler_people = tuple(
+        _person(f"person-{index}", f"Player {index}")
+        for index in range(20)
+    )
+    coach = _person("coach-1", "Alex Coach")
+    people = filler_people + (coach,)
+
+    filler_orgs = tuple(
+        _organization(f"org-{index}", f"Organization {index}")
+        for index in range(26)
+    )
+    barrington = _organization(
+        "barrington",
+        "Barrington High School boys football team",
+    )
+    organizations = filler_orgs + (barrington,)
+
+    article = (
+        "Organization 0 opened the season with a win. "
+        "Barrington coach Alex Coach said the team must improve execution. "
+        "Organization 1 also played on Friday."
+    )
+
+    selected_people, selected_orgs, _selected_locations = (
+        select_linked_entities_with_pair_priority(
+            people=people,
+            organizations=organizations,
+            locations=(),
+            article_text=article,
+            limit_per_type=16,
+        )
+    )
+
+    assert coach in selected_people
+    assert barrington in selected_orgs
+    assert len(selected_people) == 16
+    assert len(selected_orgs) == 16
+
+
+def test_pair_priority_selection_preserves_occurrence_order_without_evidence() -> None:
+    people = tuple(_person(f"person-{index}", f"Person {index}") for index in range(20))
+    organizations = tuple(
+        _organization(f"org-{index}", f"Organization {index}") for index in range(20)
+    )
+    article = "Person 0 and Organization 0 were mentioned in separate paragraphs."
+
+    selected_people, selected_orgs, _selected_locations = (
+        select_linked_entities_with_pair_priority(
+            people=people,
+            organizations=organizations,
+            locations=(),
+            article_text=article,
+            limit_per_type=16,
+        )
+    )
+
+    assert [person.canonical_id for person in selected_people] == [
+        f"person-{index}" for index in range(16)
+    ]
+    assert [org.canonical_id for org in selected_orgs] == [
+        f"org-{index}" for index in range(16)
+    ]

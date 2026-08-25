@@ -55,6 +55,57 @@ def test_team_nickname_affiliation_matches_full_organization_label() -> None:
     assert not person_affiliation_matches_organization_label("Chicago", "Chicago Cubs")
 
 
+def test_school_short_name_affiliation_matches_prep_team_label() -> None:
+    assert person_affiliation_matches_organization_label(
+        "Montini",
+        "Montini Catholic High School boys football team",
+    )
+    assert person_affiliation_matches_organization_label(
+        "Batavia",
+        "Batavia High School football team",
+    )
+    assert person_affiliation_matches_organization_label(
+        "Maine South",
+        "Maine South High School football team",
+    )
+    assert person_affiliation_matches_organization_label(
+        "Hersey",
+        "Hersey High School boys football team",
+    )
+    # Bare city must not match a pro club that merely starts with the city name.
+    assert not person_affiliation_matches_organization_label("Chicago", "Chicago Cubs")
+    assert not person_affiliation_matches_organization_label("Chicago", "Chicago Blackhawks")
+
+
+def test_infer_member_of_for_school_short_affiliation_when_team_in_article() -> None:
+    article_text = (
+        "This preseason has been all about Montini’s Israel Abrams, "
+        "Hersey’s Jake Nawrot and Maine South’s Jameson Purcell."
+    )
+    person = _person(
+        canonical_id="abrams",
+        label="Israel Abrams",
+        affiliation="Montini",
+        person_type="athlete",
+        snippets=(article_text,),
+    )
+    org = _org(
+        canonical_id="montini",
+        label="Montini Catholic High School boys football team",
+        organization_type="sports_team",
+    )
+    edges = infer_affiliation_person_organization_edges(
+        people=(person,),
+        organizations=(org,),
+        article_text=article_text,
+    )
+    assert len(edges) == 1
+    assert edges[0].nature == "member_of"
+    assert edges[0].from_entity_id == "abrams"
+    assert edges[0].to_entity_id == "montini"
+    assert "Israel Abrams" in edges[0].quote
+
+
 def test_infer_works_for_edge_when_affiliation_matches_but_prose_uses_short_nickname() -> None:
     """Affiliation names the org; quote cites the person without re-matching team nicknames."""
     article_text = (

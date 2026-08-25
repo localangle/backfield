@@ -372,6 +372,10 @@ the pair. Extracted affiliation and entity metadata are labeled lower-trust hint
 interpret text but cannot prove an edge. Every model proposal must identify its candidate and copy
 an exact quote from that pair's evidence packet.
 
+Linked entities are capped per type for inference, but entities that participate in same- or
+adjacent-sentence pair evidence are reserved before occurrence-ranked truncation so high-signal
+teams and people are not dropped from crowded articles.
+
 Classification batches at most eight pairs per request. The inline path permits four requests with
 concurrency two; the article-wide ceiling is eight requests. Candidate pairs are ranked by direct
 grammar, same-sentence evidence, adjacent-sentence evidence, then metadata-assisted evidence.

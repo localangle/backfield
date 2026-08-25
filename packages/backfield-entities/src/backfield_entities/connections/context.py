@@ -22,6 +22,9 @@ from backfield_db import (
 from sqlmodel import Session, col, select
 
 from backfield_entities.canonical.link import CANONICAL_LINK_LINKED
+from backfield_entities.connections.candidate_pairs import (
+    select_linked_entities_with_pair_priority,
+)
 from backfield_entities.connections.caps import (
     MAX_LINKED_ENTITIES_PER_TYPE,
     MAX_SNIPPET_CHARS,
@@ -147,7 +150,7 @@ def _collect_people(
             occurrence
         )
     out: list[LinkedEntitySnapshot] = []
-    for person in people[:MAX_LINKED_ENTITIES_PER_TYPE]:
+    for person in people:
         if person.id is None or person.stylebook_person_canonical_id is None:
             continue
         canon = session.get(StylebookPersonCanonical, str(person.stylebook_person_canonical_id))
@@ -231,7 +234,7 @@ def _collect_organizations(
             int(occurrence.organization_mention_id), []
         ).append(occurrence)
     out: list[LinkedEntitySnapshot] = []
-    for organization in organizations[:MAX_LINKED_ENTITIES_PER_TYPE]:
+    for organization in organizations:
         if organization.id is None or organization.stylebook_organization_canonical_id is None:
             continue
         canon = session.get(
@@ -312,7 +315,7 @@ def _collect_locations(
             int(occurrence.location_mention_id), []
         ).append(occurrence)
     out: list[LinkedEntitySnapshot] = []
-    for location in locations[:MAX_LINKED_ENTITIES_PER_TYPE]:
+    for location in locations:
         if location.id is None or location.stylebook_location_canonical_id is None:
             continue
         canon = session.get(
@@ -354,20 +357,27 @@ def collect_auto_connection_article_context(
     article_id: int,
     article_text: str,
 ) -> AutoConnectionArticleContext:
-    people, people_count = _collect_people(
+    people_all, people_count = _collect_people(
         session,
         project_id=project_id,
         article_id=article_id,
     )
-    organizations, organization_count = _collect_organizations(
+    organizations_all, organization_count = _collect_organizations(
         session,
         project_id=project_id,
         article_id=article_id,
     )
-    locations, location_count = _collect_locations(
+    locations_all, location_count = _collect_locations(
         session,
         project_id=project_id,
         article_id=article_id,
+    )
+    people, organizations, locations = select_linked_entities_with_pair_priority(
+        people=people_all,
+        organizations=organizations_all,
+        locations=locations_all,
+        article_text=str(article_text or ""),
+        limit_per_type=MAX_LINKED_ENTITIES_PER_TYPE,
     )
     return AutoConnectionArticleContext(
         people=people,

@@ -6,6 +6,9 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 
+from backfield_entities.connections.caps import (
+    MIN_PAIR_EVIDENCE_SCORE_FOR_ENTITY_RESERVATION,
+)
 from backfield_entities.connections.match_tokens import (
     person_affiliation_matches_organization_label,
 )
@@ -342,6 +345,89 @@ def build_deterministic_connection_proposals(
             )
         )
     return tuple(proposals)
+
+
+def _best_pair_evidence_scores(
+    *,
+    people: tuple[LinkedEntitySnapshot, ...],
+    organizations: tuple[LinkedEntitySnapshot, ...],
+    locations: tuple[LinkedEntitySnapshot, ...],
+    article_text: str,
+) -> dict[str, int]:
+    """Return the strongest textual pair-evidence score per canonical entity id."""
+    by_type = {
+        "person": people,
+        "organization": organizations,
+        "location": locations,
+    }
+    article_sentences = _sentences(article_text)
+    best_scores: dict[str, int] = {}
+    for from_type, to_type in AUTO_CONNECTION_FAMILIES:
+        pairs = _family_pairs(
+            by_type[from_type],
+            by_type[to_type],
+            same_type=from_type == to_type,
+        )
+        for left, right in pairs:
+            snippets, _source, score = _pair_text_evidence(left, right, article_sentences)
+            if not snippets or score < MIN_PAIR_EVIDENCE_SCORE_FOR_ENTITY_RESERVATION:
+                continue
+            for entity in (left, right):
+                current = best_scores.get(entity.canonical_id, 0)
+                if score > current:
+                    best_scores[entity.canonical_id] = score
+    return best_scores
+
+
+def select_linked_entities_with_pair_priority(
+    *,
+    people: tuple[LinkedEntitySnapshot, ...],
+    organizations: tuple[LinkedEntitySnapshot, ...],
+    locations: tuple[LinkedEntitySnapshot, ...],
+    article_text: str,
+    limit_per_type: int,
+) -> tuple[
+    tuple[LinkedEntitySnapshot, ...],
+    tuple[LinkedEntitySnapshot, ...],
+    tuple[LinkedEntitySnapshot, ...],
+]:
+    """Keep occurrence-ranked entities while reserving slots for pair-evidence entities."""
+    best_scores = _best_pair_evidence_scores(
+        people=people,
+        organizations=organizations,
+        locations=locations,
+        article_text=article_text,
+    )
+
+    def _select(
+        entities: tuple[LinkedEntitySnapshot, ...],
+    ) -> tuple[LinkedEntitySnapshot, ...]:
+        if len(entities) <= limit_per_type:
+            return entities
+        order = {entity.canonical_id: index for index, entity in enumerate(entities)}
+        reserved = [
+            entity
+            for entity in entities
+            if best_scores.get(entity.canonical_id, 0)
+            >= MIN_PAIR_EVIDENCE_SCORE_FOR_ENTITY_RESERVATION
+        ]
+        reserved.sort(
+            key=lambda entity: (
+                -best_scores.get(entity.canonical_id, 0),
+                order[entity.canonical_id],
+            )
+        )
+        reserved_ids = {entity.canonical_id for entity in reserved}
+        remainder = [
+            entity for entity in entities if entity.canonical_id not in reserved_ids
+        ]
+        return tuple((reserved + remainder)[:limit_per_type])
+
+    return (
+        _select(people),
+        _select(organizations),
+        _select(locations),
+    )
 
 
 def _family_pairs(

@@ -62,7 +62,7 @@ The role or position **only** — official (Mayor, Police Chief) or informal (sh
 
 The organization tied to the title, written AP-style with the fullest clear name (`ACLU` → `American Civil Liberties Union`; `Sox` → `Boston Red Sox`). Empty string when none is stated or implied.
 
-**Sports teams (critical):** assign a team only when the text clearly ties it to the person — `"Cubs ace Shota Imanaga"`, `"Kyle Tucker of the Cubs"`, `"former Yankees slugger Aaron Judge"`. Never assign a team from game context alone: in `"The Cubs beat the Pirates 5-3. Kyle Tucker homered."`, do not give Tucker either team unless his team was established elsewhere. When unsure, leave `affiliation` empty — a wrong team (especially the opponent) causes serious catalog errors.
+**Sports teams (critical):** assign a team only when the text clearly ties it to the person — `"Cubs ace Shota Imanaga"`, `"Kyle Tucker of the Cubs"`, `"former Yankees slugger Aaron Judge"`, `"Montini’s Israel Abrams"`. Never assign a team from game context alone: in `"The Cubs beat the Pirates 5-3. Kyle Tucker homered."`, do not give Tucker either team unless his team was established elsewhere. When unsure, leave `affiliation` empty — a wrong team (especially the opponent) causes serious catalog errors.
 
 ### public_figure
 

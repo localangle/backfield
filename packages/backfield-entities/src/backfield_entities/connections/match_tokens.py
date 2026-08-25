@@ -25,6 +25,28 @@ def organization_match_tokens(label: str | None) -> tuple[str, ...]:
     return tuple(out)
 
 
+# Markers that distinguish school/prep team labels from pro clubs headed by a city
+# ("Chicago Cubs") so short affiliations like "Montini" can prefix-match safely.
+_SCHOOL_OR_PREP_TEAM_MARKERS = (
+    "high school",
+    "academy",
+    "preparatory",
+    "football team",
+    "basketball team",
+    "baseball team",
+    "softball team",
+    "soccer team",
+    "volleyball team",
+    "lacrosse team",
+    "hockey team",
+    "wrestling team",
+)
+
+
+def _looks_like_school_or_prep_team(org_label: str) -> bool:
+    return any(marker in org_label for marker in _SCHOOL_OR_PREP_TEAM_MARKERS)
+
+
 def person_affiliation_matches_organization_label(
     affiliation: str | None,
     organization_label: str | None,
@@ -39,6 +61,14 @@ def person_affiliation_matches_organization_label(
     org_parts = org_label.split()
     if len(org_parts) > 1 and aff == org_parts[-1]:
         # Team nickname before player name (e.g. Phillies → Philadelphia Phillies).
+        return True
+    # School short name: Montini → Montini Catholic High School boys football team.
+    # Require school/prep markers so bare cities do not match pro clubs (Chicago ↛ Cubs).
+    if (
+        len(aff) >= 4
+        and org_label.startswith(f"{aff} ")
+        and _looks_like_school_or_prep_team(org_label)
+    ):
         return True
     return False
 
