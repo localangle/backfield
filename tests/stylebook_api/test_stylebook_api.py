@@ -3997,6 +3997,7 @@ def test_stylebook_manual_dynamic_connection_currentness(
     assert body["currentness"] == "current"
     assert body["currentness_as_of"] is not None
     assert body["evidence"][0]["asserted_currentness"] == "current"
+    assert body["evidence"][0]["currentness_review_source"] == "manual"
 
     updated = editor_client.patch(
         (

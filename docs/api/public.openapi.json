@@ -30,6 +30,11 @@
             ],
             "title": "Confidence"
           },
+          "currentness_review_source": {
+            "default": "unreviewed",
+            "title": "Currentness Review Source",
+            "type": "string"
+          },
           "description": {
             "anyOf": [
               {

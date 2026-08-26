@@ -292,6 +292,7 @@ def write_auto_connections(
             prompt_version=edge.prompt_version or AUTO_CONNECTION_PROMPT_VERSION,
             match_basis=edge.match_basis,
             asserted_currentness=edge.asserted_currentness,
+            currentness_review_source=edge.currentness_review_source,
         )
 
         existing = _find_open_edge(

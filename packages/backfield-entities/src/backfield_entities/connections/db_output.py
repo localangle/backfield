@@ -27,6 +27,10 @@ from backfield_entities.connections.context import (
     AutoConnectionArticleContext,
     collect_auto_connection_article_context,
 )
+from backfield_entities.connections.currentness_review import (
+    ResolvedEdgeCurrentnessReviewItem,
+    review_resolved_edge_currentness,
+)
 from backfield_entities.connections.eligibility import evaluate_auto_connections_eligibility
 from backfield_entities.connections.inference import (
     CandidateBatchInferenceResult,
@@ -34,6 +38,7 @@ from backfield_entities.connections.inference import (
     FamilyInferenceResult,
     classify_candidate_batches,
 )
+from backfield_entities.connections.natures import nature_def
 from backfield_entities.connections.postprocess import resolve_auto_connection_proposals
 from backfield_entities.connections.same_site_links import (
     infer_same_site_org_location_edges,
@@ -241,6 +246,46 @@ def run_auto_connections_for_db_output(
             created_cap_skipped = len(resolved_edges) - MAX_CREATED_EDGES_PER_ITEM
             resolved_edges = resolved_edges[:MAX_CREATED_EDGES_PER_ITEM]
 
+        inherited_currentness_reviews = sum(
+            edge.currentness_review_source == "llm" for edge in resolved_edges
+        )
+        currentness_review_items: list[ResolvedEdgeCurrentnessReviewItem] = []
+        review_id_by_edge_index: dict[int, str] = {}
+        for edge_index, edge in enumerate(resolved_edges):
+            family = _endpoint_family_for_proposal(edge, candidate_by_id)
+            if family is None:
+                continue
+            definition = (
+                nature_def(edge.nature, family[0], family[1]) if edge.nature else None
+            )
+            is_dynamic = definition is None or definition.temporal_kind == "dynamic"
+            if not is_dynamic or edge.currentness_review_source != "unreviewed":
+                continue
+            review_id = f"resolved-edge-{edge_index}"
+            review_id_by_edge_index[edge_index] = review_id
+            currentness_review_items.append(
+                ResolvedEdgeCurrentnessReviewItem(
+                    review_id=review_id,
+                    edge=edge,
+                    from_entity_type=family[0],
+                    to_entity_type=family[1],
+                )
+            )
+        currentness_review = review_resolved_edge_currentness(
+            items=tuple(currentness_review_items),
+            reference_at=context.reference_at,
+            model=model,
+            model_config_id=model_config_id,
+            call_llm=call_llm,
+        )
+        resolved_edges = [
+            currentness_review.edges_by_review_id.get(
+                review_id_by_edge_index.get(edge_index, ""),
+                edge,
+            )
+            for edge_index, edge in enumerate(resolved_edges)
+        ]
+
         write_result = AutoConnectionWriteResult()
         edges_by_family: dict[
             tuple[str, str],
@@ -320,6 +365,22 @@ def run_auto_connections_for_db_output(
             ],
             "request_phase": "deferred" if candidate_ids is not None else "inline",
             "resolved_edges": len(resolved_edges),
+            "currentness_review": {
+                "inherited_llm": inherited_currentness_reviews,
+                "attempted": currentness_review.counts.attempted,
+                "reviewed": currentness_review.counts.reviewed,
+                "current": currentness_review.counts.current,
+                "former": currentness_review.counts.former,
+                "unspecified": currentness_review.counts.unspecified,
+                "requests": currentness_review.counts.requests,
+                "failed_requests": currentness_review.counts.failed_requests,
+                "malformed_decisions": currentness_review.counts.malformed_decisions,
+                "missing_decisions": currentness_review.counts.missing_decisions,
+                "unreviewed_after": (
+                    currentness_review.counts.attempted
+                    - currentness_review.counts.reviewed
+                ),
+            },
         }
         if dry_run:
             diagnostics["preview_edges"] = [
@@ -331,6 +392,7 @@ def run_auto_connections_for_db_output(
                     "confidence": edge.confidence,
                     "quote": edge.quote,
                     "asserted_currentness": edge.asserted_currentness,
+                    "currentness_review_source": edge.currentness_review_source,
                 }
                 for edge in resolved_edges
             ]

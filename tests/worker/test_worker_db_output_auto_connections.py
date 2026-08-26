@@ -314,6 +314,47 @@ def test_auto_connections_creates_high_confidence_edge() -> None:
         assert (evidence[0].confidence or 0) >= AUTO_CONNECTION_MIN_CONFIDENCE
 
 
+def test_deterministic_edge_receives_post_resolution_currentness_review() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        fixture = _seed_linked_person_org(session)
+
+        def _mock_llm(prompt: str, **_kwargs: object) -> str:
+            if "Classify the reported currentness" in prompt:
+                return json.dumps(
+                    {
+                        "decisions": [
+                            {
+                                "review_id": "resolved-edge-0",
+                                "asserted_currentness": "current",
+                                "reason": "The affiliation is reported as ongoing.",
+                            }
+                        ]
+                    }
+                )
+            return json.dumps({"decisions": []})
+
+        summary = run_auto_connections_for_db_output(
+            session,
+            project_id=fixture.project_id,
+            article_id=fixture.article_id,
+            article_text=fixture.article_text,
+            settings=_eligible_settings(),
+            call_llm=MagicMock(side_effect=_mock_llm),
+        )
+        session.commit()
+
+        connection = session.exec(select(StylebookConnection)).one()
+        evidence = session.exec(select(StylebookConnectionEvidence)).one()
+
+    assert summary["created"] == 1
+    assert summary["diagnostics"]["currentness_review"]["attempted"] == 1
+    assert summary["diagnostics"]["currentness_review"]["reviewed"] == 1
+    assert connection.currentness == "current"
+    assert evidence.asserted_currentness == "current"
+    assert evidence.currentness_review_source == "llm"
+
+
 def test_auto_connections_dry_run_previews_without_writing() -> None:
     engine = _engine()
     with Session(engine) as session:

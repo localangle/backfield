@@ -77,6 +77,10 @@ The migration is additive and can run through the normal `make migrate` release 
 deployment, new dynamic connection evidence can update the edge's reported current/former summary;
 static connections and editorial `closed_at` lifecycle remain independent.
 
+Revision `080_conn_currentness_review` adds `currentness_review_source` to distinguish
+model-reviewed, manual, deterministic, and unreviewed evidence. Existing rows remain `unreviewed`;
+this revision does not reclassify or backfill historical currentness.
+
 ## Historical connection inference
 
 `backfield backfill-connections` reuses the forward evidence, budget, resolution, and reinforce

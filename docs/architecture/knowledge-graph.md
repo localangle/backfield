@@ -134,8 +134,15 @@ Dynamic edges carry a materialized `currentness` summary (`current` | `former` |
 what its source explicitly establishes (`current` | `former` | `unspecified`).
 
 - Article publication time is the reference time; `created_at` remains storage time.
+- Rule-based proposals remain authoritative for relationship existence, but every resolved dynamic
+  edge receives a currentness review attempt before persistence. Existing candidate-review
+  currentness is preserved when it duplicates a deterministic proposal; only still-unreviewed
+  edges require the currentness-only model pass.
 - The newest explicit current/former evidence updates the edge summary.
 - Unspecified evidence reinforces the relationship without changing currentness.
+- Evidence records `currentness_review_source` so reviewed-but-ambiguous evidence can be
+  distinguished from an unreviewed fallback. Model failures do not discard an otherwise valid
+  deterministic relationship.
 - Older evidence never overrides newer evidence, and age alone never means a relationship ended.
 - Static edges ignore currentness. Public and Stylebook responses project it as not applicable.
 - `closed_at` remains editorial record lifecycle and never means the real-world relationship ended.

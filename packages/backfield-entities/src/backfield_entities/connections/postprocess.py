@@ -86,6 +86,26 @@ def _is_standalone_proposal(edge: AutoConnectionEdgeProposal) -> bool:
     )
 
 
+def _preserve_duplicate_currentness(
+    winner: AutoConnectionEdgeProposal,
+    other: AutoConnectionEdgeProposal,
+) -> AutoConnectionEdgeProposal:
+    """Keep review metadata when ranking selects the deterministic duplicate."""
+    updates: dict[str, str] = {}
+    if (
+        winner.asserted_currentness == "unspecified"
+        and other.asserted_currentness in {"current", "former"}
+    ):
+        updates["asserted_currentness"] = other.asserted_currentness
+        updates["currentness_review_source"] = other.currentness_review_source
+    elif (
+        winner.currentness_review_source == "unreviewed"
+        and other.currentness_review_source != "unreviewed"
+    ):
+        updates["currentness_review_source"] = other.currentness_review_source
+    return winner.model_copy(update=updates) if updates else winner
+
+
 def _normalize_standalone_edge(
     edge: AutoConnectionEdgeProposal,
 ) -> AutoConnectionEdgeProposal:
@@ -147,10 +167,12 @@ def resolve_auto_connection_proposals(
             deduped[key] = normalized
             continue
         exact_duplicates += 1
-        deduped[key] = max(
+        winner = max(
             (existing, normalized),
             key=lambda proposal: _proposal_rank(proposal, candidates),
         )
+        other = normalized if winner is existing else existing
+        deduped[key] = _preserve_duplicate_currentness(winner, other)
 
     grouped: dict[tuple[str, str], list[AutoConnectionEdgeProposal]] = defaultdict(list)
     for edge in deduped.values():

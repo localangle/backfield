@@ -97,6 +97,34 @@ def test_exact_duplicates_choose_strongest_evidence() -> None:
     assert result.stats.exact_duplicates == 1
 
 
+def test_deterministic_duplicate_preserves_llm_currentness_review() -> None:
+    candidate = _candidate(score=40)
+    deterministic = AutoConnectionEdgeProposal(
+        from_entity_id="person-1",
+        to_entity_id="org-1",
+        description="From works for To.",
+        nature="works_for",
+        confidence=0.99,
+        quote="From works for To.",
+    )
+    llm = _edge("works_for").model_copy(
+        update={
+            "asserted_currentness": "current",
+            "currentness_review_source": "llm",
+        }
+    )
+
+    result = resolve_auto_connection_proposals(
+        [deterministic, llm],
+        candidates={candidate.candidate_id: candidate},
+    )
+
+    assert len(result.edges) == 1
+    assert result.edges[0].candidate_id is None
+    assert result.edges[0].asserted_currentness == "current"
+    assert result.edges[0].currentness_review_source == "llm"
+
+
 def test_specific_nature_subsumes_broader_natures() -> None:
     candidate = _candidate()
     result = resolve_auto_connection_proposals(

@@ -335,6 +335,7 @@ def _validate_candidate_batch_response(
                     "prompt_version": proposal.prompt_version
                     or AUTO_CONNECTION_PROMPT_VERSION_EVIDENCE_PAIRS,
                     "asserted_currentness": asserted_currentness,
+                    "currentness_review_source": "llm",
                 }
             )
         )

@@ -12,7 +12,10 @@ from backfield_entities.connections.taxonomy import (
     AUTO_CONNECTION_EVIDENCE_SOURCE,
     AUTO_CONNECTION_PROMPT_VERSION,
 )
-from backfield_entities.connections.types import AssertedConnectionCurrentness
+from backfield_entities.connections.types import (
+    AssertedConnectionCurrentness,
+    CurrentnessReviewSource,
+)
 
 _FORBIDDEN_EVIDENCE_KEYS = frozenset(
     {
@@ -66,6 +69,7 @@ class ConnectionCreationEvidence(BaseModel):
     adjudication_ai_model_config_id: int | None = None
     match_basis: str | None = None
     asserted_currentness: AssertedConnectionCurrentness = "unspecified"
+    currentness_review_source: CurrentnessReviewSource = "unreviewed"
 
     @field_validator("quote", "reason", "from_display_name", "to_display_name")
     @classmethod
@@ -102,6 +106,7 @@ def build_connection_creation_evidence(
     prompt_version: str = AUTO_CONNECTION_PROMPT_VERSION,
     match_basis: str | None = None,
     asserted_currentness: AssertedConnectionCurrentness = "unspecified",
+    currentness_review_source: CurrentnessReviewSource = "unreviewed",
 ) -> ConnectionCreationEvidence:
     return ConnectionCreationEvidence(
         prompt_version=prompt_version,
@@ -121,6 +126,7 @@ def build_connection_creation_evidence(
         adjudication_ai_model_config_id=adjudication_ai_model_config_id,
         match_basis=match_basis,
         asserted_currentness=asserted_currentness,
+        currentness_review_source=currentness_review_source,
     )
 
 
@@ -159,6 +165,7 @@ def evidence_row_from_creation(
         processed_item_id=evidence.processed_item_id,
         match_basis=evidence.match_basis,
         asserted_currentness=evidence.asserted_currentness,
+        currentness_review_source=evidence.currentness_review_source,
         observed_at=observed_at,
         payload_json=payload or None,
     )

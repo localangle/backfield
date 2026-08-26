@@ -23,6 +23,7 @@ class ConnectionEvidenceOut(BaseModel):
     processed_item_id: int | None = None
     match_basis: str | None = None
     asserted_currentness: str = "unspecified"
+    currentness_review_source: str = "unreviewed"
     observed_at: datetime | None = None
 
 
@@ -69,6 +70,7 @@ def evidence_out_list(
             ),
             match_basis=row.match_basis,
             asserted_currentness=row.asserted_currentness,
+            currentness_review_source=row.currentness_review_source,
             observed_at=row.observed_at,
         )
         for row in list_connection_evidence(session, connection_id=connection_id)
@@ -129,6 +131,7 @@ def legacy_evidence_json_for_connection(
     if evidence.match_basis:
         payload["match_basis"] = evidence.match_basis
     payload["asserted_currentness"] = evidence.asserted_currentness
+    payload["currentness_review_source"] = evidence.currentness_review_source
     if isinstance(evidence.payload_json, dict):
         for key, value in evidence.payload_json.items():
             payload.setdefault(key, value)

@@ -1177,6 +1177,11 @@ class StylebookConnectionEvidence(SQLModel, table=True):
             "asserted_currentness IN ('current', 'former', 'unspecified')",
             name="ck_stylebook_conn_evidence_currentness",
         ),
+        CheckConstraint(
+            "currentness_review_source IN "
+            "('unreviewed', 'llm', 'manual', 'deterministic')",
+            name="ck_stylebook_conn_evidence_review_source",
+        ),
         Index("ix_stylebook_conn_evidence_connection", "connection_id", "created_at"),
         Index("ix_stylebook_conn_evidence_article", "article_id"),
     )
@@ -1207,6 +1212,10 @@ class StylebookConnectionEvidence(SQLModel, table=True):
     asserted_currentness: str = Field(
         default="unspecified",
         sa_column=Column(Text, nullable=False, server_default="unspecified"),
+    )
+    currentness_review_source: str = Field(
+        default="unreviewed",
+        sa_column=Column(Text, nullable=False, server_default="unreviewed"),
     )
     observed_at: datetime | None = Field(
         default=None,

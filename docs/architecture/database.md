@@ -108,7 +108,9 @@ shared entity rows are not trusted because sibling batch items may reuse the sam
   `closed_at`. Dynamic connections also materialize the newest explicit reported
   `current` / `former` evidence as `currentness`, `currentness_as_of`, and
   `currentness_evidence_id`; evidence stores `asserted_currentness`, while
-  `observed_at` is the source/reference time (article publication time when available).
+  `currentness_review_source` identifies whether that assertion was reviewed by a model,
+  entered manually, determined by a rule, or left unreviewed. `observed_at` is the
+  source/reference time (article publication time when available).
   These fields are a currentness summary, not validity intervals or `as_of` history.
 - Transfer and review workflows: `stylebook_bundle_job`, `stylebook_cleanup_dismissal`,
   `stylebook_cleanup_ai_review`, `stylebook_cleanup_ai_proposal`,

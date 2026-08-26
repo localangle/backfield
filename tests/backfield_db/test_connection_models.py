@@ -54,6 +54,7 @@ def test_stylebook_connection_evidence_defaults() -> None:
     assert row.article_id is None
     assert row.description is not None
     assert row.asserted_currentness == "unspecified"
+    assert row.currentness_review_source == "unreviewed"
 
 
 def test_stylebook_connection_nature_custom_defaults() -> None:

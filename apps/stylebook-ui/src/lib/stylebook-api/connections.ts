@@ -13,6 +13,7 @@ export interface ConnectionEvidence {
   processed_item_id?: number | null
   match_basis?: string | null
   asserted_currentness?: "current" | "former" | "unspecified"
+  currentness_review_source?: "unreviewed" | "llm" | "manual" | "deterministic"
   observed_at?: string | null
 }
 

@@ -343,6 +343,7 @@ def _add_manual_evidence(
         reason=text or None,
         source="manual",
         asserted_currentness=asserted_currentness,
+        currentness_review_source="manual",
         observed_at=now,
     )
     session.add(evidence)

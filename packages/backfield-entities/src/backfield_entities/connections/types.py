@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 AssertedConnectionCurrentness = Literal["current", "former", "unspecified"]
+CurrentnessReviewSource = Literal["unreviewed", "llm", "manual", "deterministic"]
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,7 @@ class AutoConnectionEdgeProposal(BaseModel):
     quote: str = Field(min_length=1)
     reason: str = ""
     asserted_currentness: AssertedConnectionCurrentness = "unspecified"
+    currentness_review_source: CurrentnessReviewSource = "unreviewed"
     match_basis: str | None = None
     prompt_version: str | None = None
 
@@ -111,4 +113,20 @@ class AutoConnectionCandidateDecision(BaseModel):
             return None
         stripped = value.strip().lower()
         return stripped or None
+
+
+class ResolvedEdgeCurrentnessDecision(BaseModel):
+    """Currentness-only judgment for one resolved dynamic edge."""
+
+    review_id: str = Field(min_length=1)
+    asserted_currentness: AssertedConnectionCurrentness
+    reason: str = Field(min_length=1)
+
+    @field_validator("review_id", "reason")
+    @classmethod
+    def _strip_currentness_review_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("value must be non-empty after stripping")
+        return stripped
 
