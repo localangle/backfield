@@ -48,7 +48,10 @@ from backfield_entities.connections.writer import (
     AutoConnectionWriteResult,
     write_auto_connections,
 )
-from backfield_entities.ingest.db_output_settings import DbOutputCanonicalSettings
+from backfield_entities.ingest.db_output_settings import (
+    DbOutputCanonicalSettings,
+    resolved_connections_llm,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -165,8 +168,7 @@ def run_auto_connections_for_db_output(
             reason=eligibility.reason,
         )
 
-    model = settings.adjudication_model.strip() or "gpt-5-nano"
-    model_config_id = settings.adjudication_ai_model_config_id
+    model, model_config_id = resolved_connections_llm(settings)
 
     try:
         context = collect_auto_connection_article_context(

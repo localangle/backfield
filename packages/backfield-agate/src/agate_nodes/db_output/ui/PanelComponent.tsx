@@ -48,12 +48,19 @@ const DEFAULTS = {
   adjudication_model: '',
   adjudication_ai_model_config_id: null as string | null,
   semantic_indexing_enabled: false,
-  auto_connections_enabled: true,
+  auto_connections_enabled: false,
+  connections_model: '',
+  connections_ai_model_config_id: null as string | null,
 }
 
 const ADJUDICATION_MODEL_KEYS = {
   configIdKey: 'adjudication_ai_model_config_id',
   modelKey: 'adjudication_model',
+} as const
+
+const CONNECTIONS_MODEL_KEYS = {
+  configIdKey: 'connections_ai_model_config_id',
+  modelKey: 'connections_model',
 } as const
 
 function resolvedAdjudicationSelectValue(
@@ -65,6 +72,17 @@ function resolvedAdjudicationSelectValue(
 
 function hasExplicitAdjudicationChoice(data: Record<string, unknown>): boolean {
   return hasExplicitAiModelChoice(data, ADJUDICATION_MODEL_KEYS)
+}
+
+function resolvedConnectionsSelectValue(
+  params: Record<string, unknown>,
+  catalog: ProjectAiModelOption[],
+): string {
+  return resolvedAiModelSelectValue(params, catalog, CONNECTIONS_MODEL_KEYS)
+}
+
+function hasExplicitConnectionsChoice(data: Record<string, unknown>): boolean {
+  return hasExplicitAiModelChoice(data, CONNECTIONS_MODEL_KEYS)
 }
 
 function yesNoSelectValue(flag: boolean): 'yes' | 'no' {
@@ -184,6 +202,10 @@ export default function DBOutputPanel({
   const adjSelectionValid =
     resolvedAdj !== '' && modelSelectOptions.some((o) => o.selectValue === resolvedAdj)
 
+  const resolvedConn = resolvedConnectionsSelectValue(paramsRecord, catalogRows)
+  const connSelectionValid =
+    resolvedConn !== '' && modelSelectOptions.some((o) => o.selectValue === resolvedConn)
+
   const nodeDataFlat = (node.data || {}) as Record<string, unknown>
 
   const showInvalidAdjPersisted =
@@ -191,9 +213,20 @@ export default function DBOutputPanel({
     hasExplicitAdjudicationChoice(nodeDataFlat) &&
     !adjSelectionValid
 
+  const showInvalidConnPersisted =
+    Boolean(editMode && setNodes && projectId != null && catalogRows.length > 0 && !catalogLoading) &&
+    hasExplicitConnectionsChoice(nodeDataFlat) &&
+    !connSelectionValid
+
   const adjRadixValue = adjSelectionValid
     ? resolvedAdj
     : showInvalidAdjPersisted
+      ? INVALID_SELECTION_VALUE
+      : undefined
+
+  const connRadixValue = connSelectionValid
+    ? resolvedConn
+    : showInvalidConnPersisted
       ? INVALID_SELECTION_VALUE
       : undefined
 
@@ -219,6 +252,28 @@ export default function DBOutputPanel({
     )
   }, [editMode, setNodes, catalogLoading, catalogRows, modelSelectOptions, node.id, node.data])
 
+  useEffect(() => {
+    if (!editMode || !setNodes || catalogLoading || catalogRows.length === 0) return
+    const data = nodeDataFlat
+    if (hasExplicitConnectionsChoice(data)) return
+    const first = modelSelectOptions[0]
+    if (!first) return
+    setNodes((nodes: any[]) =>
+      nodes.map((n) =>
+        n.id === node.id
+          ? {
+              ...n,
+              data: mergeData({
+                ...(n.data || {}),
+                connections_model: first.providerModelId,
+                connections_ai_model_config_id: first.configId ?? null,
+              }),
+            }
+          : n,
+      ),
+    )
+  }, [editMode, setNodes, catalogLoading, catalogRows, modelSelectOptions, node.id, node.data])
+
   const handleAdjudicationModel = (selectValue: string) => {
     if (!setNodes || selectValue === INVALID_SELECTION_VALUE) return
     const row = modelSelectOptions.find((o) => o.selectValue === selectValue)
@@ -227,6 +282,17 @@ export default function DBOutputPanel({
     patch({
       adjudication_model: providerModelId,
       adjudication_ai_model_config_id: configId ?? null,
+    })
+  }
+
+  const handleConnectionsModel = (selectValue: string) => {
+    if (!setNodes || selectValue === INVALID_SELECTION_VALUE) return
+    const row = modelSelectOptions.find((o) => o.selectValue === selectValue)
+    const providerModelId = row?.providerModelId ?? selectValue
+    const configId = row?.configId
+    patch({
+      connections_model: providerModelId,
+      connections_ai_model_config_id: configId ?? null,
     })
   }
 
@@ -461,7 +527,21 @@ export default function DBOutputPanel({
                 When set to No, items go to the Stylebook queue for human review.
               </p>
             </div>
+          </div>
+        )}
+      </NodePanelTabGate>
 
+      <NodePanelTabGate tab="connections">
+        {!stylebookMatchingEnabled ? (
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Turn on Stylebook matching in Settings to configure connections.
+          </p>
+        ) : !autoConnectionsGate.eligible ? (
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            {autoConnectionsIneligibleCopy(autoConnectionsGate.reason)}
+          </p>
+        ) : (
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="dbout-auto-connections">Automatic connections</Label>
               <Select
@@ -484,16 +564,50 @@ export default function DBOutputPanel({
                   <SelectItem value="no">No</SelectItem>
                 </SelectContent>
               </Select>
-              {autoConnectionsGate.eligible ? (
-                <p className="text-xs text-muted-foreground">
-                  When on, Backfield adds high-confidence connections between people,
-                  organizations, and locations found in each story.
-                </p>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  {autoConnectionsIneligibleCopy(autoConnectionsGate.reason)}
-                </p>
+              <p className="text-xs text-muted-foreground">
+                When on, Backfield adds high-confidence connections between people,
+                organizations, and locations found in each story.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="dbout-connections-model">Connections model</Label>
+              {catalogHint}
+              {projectId != null && catalogLoading && (
+                <p className="text-xs text-muted-foreground">Loading models…</p>
               )}
+              {catalogError ? <p className="text-xs text-destructive">{catalogError}</p> : null}
+              {catalogEmptyHint}
+              {showInvalidConnPersisted ? (
+                <p className="text-xs text-muted-foreground">
+                  The saved connections model is no longer available. Choose another model below.
+                </p>
+              ) : null}
+              <Select
+                value={connRadixValue}
+                onValueChange={handleConnectionsModel}
+                disabled={disabled || modelSelectOptions.length === 0}
+              >
+                <SelectTrigger id="dbout-connections-model" className="text-xs">
+                  <SelectValue placeholder="Choose a model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {showInvalidConnPersisted ? (
+                    <SelectItem disabled value={INVALID_SELECTION_VALUE}>
+                      Saved model unavailable
+                    </SelectItem>
+                  ) : null}
+                  {modelSelectOptions.map((m) => (
+                    <SelectItem key={`conn-${m.selectValue}`} value={m.selectValue}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Used to infer relationships between entities. Options come from this
+                project&apos;s enabled models.
+              </p>
             </div>
           </div>
         )}

@@ -41,7 +41,7 @@ describe('getNodePanelTabs', () => {
   })
 
   it('shows settings and stylebook for backfield output', () => {
-    expect(getNodePanelTabs('DBOutput')).toEqual(['settings', 'stylebook'])
+    expect(getNodePanelTabs('DBOutput')).toEqual(['settings', 'stylebook', 'connections'])
   })
 
   it('shows settings and info for embed text', () => {

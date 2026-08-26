@@ -39,8 +39,10 @@ const nodeMetadata = {
     "auto_apply_canonicalization": true,
     "adjudication_model": "",
     "adjudication_ai_model_config_id": null,
+    "connections_model": "",
+    "connections_ai_model_config_id": null,
     "semantic_indexing_enabled": false,
-    "auto_connections_enabled": true
+    "auto_connections_enabled": false
   }
 };
 

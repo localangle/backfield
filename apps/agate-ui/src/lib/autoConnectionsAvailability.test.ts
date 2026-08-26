@@ -14,9 +14,10 @@ describe('autoConnectionsAvailability helpers', () => {
     auto_apply_canonicalization: true,
   }
 
-  it('treats unset auto_connections_enabled as on by default', () => {
-    expect(resolvedAutoConnectionsEnabled(undefined)).toBe(true)
-    expect(resolvedAutoConnectionsEnabled(null)).toBe(true)
+  it('treats unset auto_connections_enabled as off by default', () => {
+    expect(resolvedAutoConnectionsEnabled(undefined)).toBe(false)
+    expect(resolvedAutoConnectionsEnabled(null)).toBe(false)
+    expect(resolvedAutoConnectionsEnabled(true)).toBe(true)
     expect(resolvedAutoConnectionsEnabled(false)).toBe(false)
   })
 

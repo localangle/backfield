@@ -54,9 +54,9 @@ export function autoConnectionsUiShowsYes(eligible: boolean, enabled: boolean): 
   return eligible && enabled
 }
 
-/** Default-on for new eligible nodes when the param is unset. */
+/** Default-off for new nodes when the param is unset. */
 export function resolvedAutoConnectionsEnabled(
   raw: boolean | undefined | null,
 ): boolean {
-  return raw !== false
+  return raw === true
 }

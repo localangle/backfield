@@ -44,8 +44,17 @@ class DbOutputCanonicalSettings(BaseModel):
         description="When true, Backfield Output synchronizes semantic search documents "
         "after substrate persistence.",
     )
+    connections_model: str = Field(
+        default="",
+        description="Provider model id for automatic connection inference; "
+        "falls back to the decision model when unset.",
+    )
+    connections_ai_model_config_id: str | None = Field(
+        default=None,
+        description="Optional Backfield AI catalog row id for connection inference routing.",
+    )
     auto_connections_enabled: bool = Field(
-        default=True,
+        default=False,
         description="When true and canonicalization is AI-assisted with auto-apply, "
         "Backfield Output infers high-confidence Stylebook connections after persistence.",
     )
@@ -64,6 +73,9 @@ class DbOutputCanonicalSettings(BaseModel):
         am = out.get("adjudication_model")
         if isinstance(am, str) and am.strip() == "":
             out.pop("adjudication_model", None)
+        cm = out.get("connections_model")
+        if isinstance(cm, str) and cm.strip() == "":
+            out.pop("connections_model", None)
         return out
 
     @classmethod
@@ -71,6 +83,17 @@ class DbOutputCanonicalSettings(BaseModel):
         if not raw:
             return cls()
         return cls.model_validate(raw)
+
+
+def resolved_connections_llm(
+    settings: DbOutputCanonicalSettings,
+) -> tuple[str, str | None]:
+    """Return the model and config id used for connection inference."""
+    connections_model = settings.connections_model.strip()
+    if connections_model:
+        return connections_model, settings.connections_ai_model_config_id
+    adjudication_model = settings.adjudication_model.strip() or "gpt-5-nano"
+    return adjudication_model, settings.adjudication_ai_model_config_id
 
 
 def resolve_effective_stylebook_id(
