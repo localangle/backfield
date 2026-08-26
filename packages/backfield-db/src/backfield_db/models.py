@@ -1093,6 +1093,10 @@ class StylebookConnection(SQLModel, table=True):
 
     __tablename__ = "stylebook_connections"
     __table_args__ = (
+        CheckConstraint(
+            "currentness IN ('current', 'former', 'unknown')",
+            name="ck_stylebook_connection_currentness",
+        ),
         Index(
             "ix_stylebook_connection_from",
             "project_id",
@@ -1106,6 +1110,10 @@ class StylebookConnection(SQLModel, table=True):
             "to_entity_id",
         ),
         Index("ix_stylebook_connection_nature", "project_id", "nature"),
+        Index(
+            "ix_stylebook_connection_currentness_evidence",
+            "currentness_evidence_id",
+        ),
         Index(
             "ix_stylebook_connection_sb_from",
             "stylebook_id",
@@ -1132,6 +1140,22 @@ class StylebookConnection(SQLModel, table=True):
     to_entity_type: str = Field(sa_column=Column(Text, nullable=False, index=True))
     to_entity_id: str = Field(sa_column=Column(Text, nullable=False, index=True))
     nature: str | None = Field(default=None, sa_column=Column(Text, nullable=True, index=True))
+    currentness: str = Field(
+        default="unknown",
+        sa_column=Column(Text, nullable=False, server_default="unknown", index=True),
+    )
+    currentness_as_of: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    currentness_evidence_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            Integer,
+            ForeignKey("stylebook_connection_evidence.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
     closed_at: datetime | None = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
@@ -1149,6 +1173,10 @@ class StylebookConnectionEvidence(SQLModel, table=True):
 
     __tablename__ = "stylebook_connection_evidence"
     __table_args__ = (
+        CheckConstraint(
+            "asserted_currentness IN ('current', 'former', 'unspecified')",
+            name="ck_stylebook_conn_evidence_currentness",
+        ),
         Index("ix_stylebook_conn_evidence_connection", "connection_id", "created_at"),
         Index("ix_stylebook_conn_evidence_article", "article_id"),
     )
@@ -1176,6 +1204,10 @@ class StylebookConnectionEvidence(SQLModel, table=True):
     run_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     processed_item_id: int | None = Field(default=None)
     match_basis: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    asserted_currentness: str = Field(
+        default="unspecified",
+        sa_column=Column(Text, nullable=False, server_default="unspecified"),
+    )
     observed_at: datetime | None = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),

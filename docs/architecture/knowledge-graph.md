@@ -82,7 +82,7 @@ Coupled with temporality ideas; implement as the foundation under public relatio
 
 #### Temporal kind on natures (not per-edge LLM typing)
 
-**D3b — Assign `temporal_kind` on each nature definition** (`atemporal` | `static` | `dynamic`),
+**D3b — Assign `temporal_kind` on each nature definition** (`static` | `dynamic`),
 inspired by the OpenAI temporal-agents cookbook, but as **catalog metadata**, not a classifier
 pass on every edge.
 
@@ -90,13 +90,13 @@ pass on every edge.
 |------|---------|----------|----------------|
 | `static` | True from a point; does not flip back and forth | `born_in`, `founded`, `founded_in` | Reinforce freely; rarely auto-close |
 | `dynamic` | Can change / end | `leads`, `works_for`, `represents`, `located_at` | Weight “current” carefully; prefer close / `as_of` later |
-| `atemporal` | Independent of calendar time | Rare for local-news ties | Treat like static unless needed |
 
 - Preferred natures: field on the **code** registry entry.
 - Custom natures: column on `stylebook_connection_nature_custom`; default `dynamic` (conservative),
   or inherit from `equivalent_to` when set.
-- Do **not** store a separate LLM `temporal_type` on each connection row in v1 — resolve via nature
-  join/lookup. Edges without a nature (description-only) default to `dynamic`.
+- Do **not** store a separate LLM `temporal_type` on each connection row — resolve via nature
+  join/lookup. Edges without a nature (description-only) default to `dynamic`. Atemporal ties are
+  treated as static until the product has a concrete need to distinguish them.
 - Skip cookbook `FACT` / `OPINION` / `PREDICTION` on connections; those belong on quote/claim
   layers if ever.
 
@@ -126,6 +126,22 @@ validity windows in v1. Escape hatch: editorial close/delete (and later optional
 
 Optional later: `valid_at` / `invalid_at`, `as_of` queries, and close/reopen or interval history
 without changing the one-edge-many-evidence grain.
+
+#### Reported currentness (lightweight temporal layer)
+
+Dynamic edges carry a materialized `currentness` summary (`current` | `former` | `unknown`) plus
+`currentness_as_of` and the evidence row responsible for that summary. Each evidence row records
+what its source explicitly establishes (`current` | `former` | `unspecified`).
+
+- Article publication time is the reference time; `created_at` remains storage time.
+- The newest explicit current/former evidence updates the edge summary.
+- Unspecified evidence reinforces the relationship without changing currentness.
+- Older evidence never overrides newer evidence, and age alone never means a relationship ended.
+- Static edges ignore currentness. Public and Stylebook responses project it as not applicable.
+- `closed_at` remains editorial record lifecycle and never means the real-world relationship ended.
+
+This deliberately answers “what was most recently reported?” rather than “what was true at time
+T?” Full validity intervals, automatic aging, and historical `as_of` reconstruction remain deferred.
 
 #### Canonical merge / delete (connection lifecycle)
 

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+AssertedConnectionCurrentness = Literal["current", "former", "unspecified"]
 
 
 @dataclass(frozen=True)
@@ -58,6 +61,7 @@ class AutoConnectionEdgeProposal(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     quote: str = Field(min_length=1)
     reason: str = ""
+    asserted_currentness: AssertedConnectionCurrentness = "unspecified"
     match_basis: str | None = None
     prompt_version: str | None = None
 
@@ -90,6 +94,7 @@ class AutoConnectionCandidateDecision(BaseModel):
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     quote: str = ""
     reason: str = Field(min_length=1)
+    asserted_currentness: AssertedConnectionCurrentness
 
     @field_validator("candidate_id", "reason")
     @classmethod

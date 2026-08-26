@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 from backfield_db import (
@@ -102,6 +103,7 @@ def _seed_linked_person_org(
         url="https://example.com/conn",
         headline="Connection test article",
         text=article_text,
+        pub_date=date(2025, 3, 4),
     )
     session.add(article)
     session.commit()
@@ -179,6 +181,7 @@ def _llm_edges_response(
     confidence: float = 0.95,
     quote: str,
     description: str | None = None,
+    asserted_currentness: str = "current",
 ) -> str:
     edge_description = description or quote
     candidate_raw = f"person:{from_id}->organization:{to_id}"
@@ -199,6 +202,7 @@ def _llm_edges_response(
                     "confidence": confidence,
                     "quote": quote,
                     "reason": "Explicit relationship in text.",
+                    "asserted_currentness": asserted_currentness,
                 }
             ]
         }
@@ -296,9 +300,15 @@ def test_auto_connections_creates_high_confidence_edge() -> None:
         assert row.to_entity_type == "organization"
         assert row.to_entity_id == fixture.organization_canonical_id
         assert row.nature == "works_for"
+        assert row.currentness == "current"
+        assert row.currentness_as_of is not None
+        assert row.currentness_as_of.date() == date(2025, 3, 4)
         evidence = session.exec(select(StylebookConnectionEvidence)).all()
         assert len(evidence) == 1
         assert evidence[0].article_id == fixture.article_id
+        assert evidence[0].asserted_currentness == "current"
+        assert evidence[0].observed_at is not None
+        assert evidence[0].observed_at.date() == date(2025, 3, 4)
         assert evidence[0].quote is not None
         assert "Chicago City Hall" in evidence[0].quote
         assert (evidence[0].confidence or 0) >= AUTO_CONNECTION_MIN_CONFIDENCE

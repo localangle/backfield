@@ -200,6 +200,7 @@ def run_auto_connections_for_db_output(
             model_config_id=model_config_id,
             call_llm=call_llm,
             max_requests=max_requests,
+            reference_at=context.reference_at,
         )
         candidate_by_id = {
             candidate.candidate_id: candidate for candidate in selected_candidates
@@ -272,6 +273,7 @@ def run_auto_connections_for_db_output(
                 processed_item_id=processed_item_id,
                 adjudication_model=model,
                 adjudication_ai_model_config_id=model_config_id,
+                reference_at=context.reference_at,
             )
             _merge_write_results(write_result, batch)
 
@@ -328,6 +330,7 @@ def run_auto_connections_for_db_output(
                     "nature": edge.nature,
                     "confidence": edge.confidence,
                     "quote": edge.quote,
+                    "asserted_currentness": edge.asserted_currentness,
                 }
                 for edge in resolved_edges
             ]

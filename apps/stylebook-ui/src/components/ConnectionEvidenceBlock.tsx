@@ -15,6 +15,11 @@ export default function ConnectionEvidenceBlock({ evidence }: ConnectionEvidence
 
   return (
     <div className="mt-1.5 max-w-xl space-y-1">
+      {view.currentnessLabel ? (
+        <p className="text-[11px] font-medium text-muted-foreground">
+          {view.currentnessLabel}
+        </p>
+      ) : null}
       {view.quote ? (
         <p className="text-xs leading-snug text-muted-foreground border-l-2 border-muted-foreground/25 pl-2">
           {view.quote}

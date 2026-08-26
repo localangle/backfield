@@ -18,6 +18,9 @@ def test_stylebook_connection_open_edge_fields() -> None:
     assert row.nature == "works_for"
     assert row.closed_at is None
     assert row.stylebook_id == 1
+    assert row.currentness == "unknown"
+    assert row.currentness_as_of is None
+    assert row.currentness_evidence_id is None
     assert not hasattr(row, "description") or "description" not in StylebookConnection.model_fields
     assert (
         not hasattr(row, "evidence_json")
@@ -50,6 +53,7 @@ def test_stylebook_connection_evidence_defaults() -> None:
     )
     assert row.article_id is None
     assert row.description is not None
+    assert row.asserted_currentness == "unspecified"
 
 
 def test_stylebook_connection_nature_custom_defaults() -> None:

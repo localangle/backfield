@@ -1998,6 +1998,9 @@ def test_public_connections_filter_sort_and_paginate(public_client: TestClient) 
     assert page.status_code == 200
     assert page.json()["pagination"] == {"limit": 1, "offset": 0, "total": 2}
     assert page.json()["items"][0]["from_label"] == "City Council"
+    assert page.json()["items"][0]["temporal_kind"] in {"static", "dynamic"}
+    if page.json()["items"][0]["temporal_kind"] == "dynamic":
+        assert page.json()["items"][0]["currentness"] == "unknown"
 
     filtered = public_client.get(
         path,

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
+from backfield_entities.connections.natures import nature_def
 from backfield_entities.connections.taxonomy import (
     AUTO_CONNECTION_PROMPT_VERSION_EVIDENCE_PAIRS,
     auto_link_natures_for_pair,
@@ -11,6 +14,8 @@ from backfield_entities.connections.types import AutoConnectionCandidatePair
 
 def build_candidate_batch_prompt(
     candidates: tuple[AutoConnectionCandidatePair, ...],
+    *,
+    reference_at: datetime | None = None,
 ) -> str:
     """Build a prompt whose evidence is explicitly scoped to candidate pairs."""
     blocks: list[str] = []
@@ -21,6 +26,19 @@ def build_candidate_batch_prompt(
                 candidate.to_entity_type,
             )
         )
+        dynamic = [
+            nature
+            for nature in allowed
+            if (
+                definition := nature_def(
+                    nature,
+                    candidate.from_entity_type,
+                    candidate.to_entity_type,
+                )
+            )
+            is not None
+            and definition.temporal_kind == "dynamic"
+        ]
         evidence = "\n".join(f'    - "{snippet}"' for snippet in candidate.evidence.snippets)
         hints = "\n".join(f"    - {hint}" for hint in candidate.evidence.hints)
         blocks.append(
@@ -42,6 +60,7 @@ def build_candidate_batch_prompt(
                         f"label={candidate.to_entity.label!r}"
                     ),
                     f"  allowed_natures: {', '.join(allowed) if allowed else '(none)'}",
+                    f"  dynamic_natures: {', '.join(dynamic) if dynamic else '(none)'}",
                     f"  evidence_source: {candidate.evidence.source}",
                     "  article_evidence:",
                     evidence or "    - (none)",
@@ -51,8 +70,14 @@ def build_candidate_batch_prompt(
             )
         )
     candidate_section = "\n\n".join(blocks)
+    reference_line = (
+        f"Article reference time: {reference_at.isoformat()}\n"
+        if reference_at is not None
+        else ""
+    )
     return (
         f"prompt_version: {AUTO_CONNECTION_PROMPT_VERSION_EVIDENCE_PAIRS}\n"
+        f"{reference_line}"
         "Judge whether an explicit relationship exists for every candidate pair below.\n\n"
         "Rules:\n"
         "- Return exactly one decision for every candidate_id.\n"
@@ -67,6 +92,12 @@ def build_candidate_batch_prompt(
         "- For link=true, copy the supporting quote exactly from that candidate's "
         "article_evidence and use only the submitted endpoints and one allowed nature.\n"
         "- For link=false, use null nature and empty endpoint, description, and quote fields.\n"
+        "- Return asserted_currentness for every decision.\n"
+        "- For a dynamic nature, use current only when the quoted wording presents the "
+        "relationship as ongoing at the article reference time; use former when it explicitly "
+        "presents the relationship as ended or historical; otherwise use unspecified.\n"
+        "- For a static nature or link=false, use unspecified.\n"
+        "- Do not treat an old publication date alone as evidence that a relationship ended.\n"
         "- Prefer leads over works_for when leadership is explicit.\n"
         "- Athletes on a sports team use plays_for; coaches use coaches.\n"
         "- When a person's affiliation names an organization in the candidate pair, "
@@ -81,5 +112,5 @@ def build_candidate_batch_prompt(
         'Return JSON only: {"decisions": [{"candidate_id": "candidate-...", '
         '"link": true, "from_entity_id": "...", "to_entity_id": "...", '
         '"description": "...", "nature": "...", "confidence": 0.95, '
-        '"quote": "...", "reason": "..."}]}'
+        '"quote": "...", "reason": "...", "asserted_currentness": "current"}]}'
     )

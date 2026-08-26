@@ -65,6 +65,18 @@ After cutover, Stylebook Remove soft-closes edges (`closed_at`); reopen clears i
 Public entity connection lists hide closed rows unless `include_closed=true`.
 Hard-delete remains for internal/migrate paths only.
 
+## Connection currentness
+
+Revision `079_connection_currentness` adds reported currentness without introducing validity
+intervals. Existing connections backfill to `unknown`, and existing evidence backfills to
+`unspecified`; the migration does not guess whether retained relationships are current or former.
+For article-linked evidence, `observed_at` is corrected to the article publication date when one is
+available. Otherwise its existing value is retained.
+
+The migration is additive and can run through the normal `make migrate` release task. After
+deployment, new dynamic connection evidence can update the edge's reported current/former summary;
+static connections and editorial `closed_at` lifecycle remain independent.
+
 ## Historical connection inference
 
 `backfield backfill-connections` reuses the forward evidence, budget, resolution, and reinforce

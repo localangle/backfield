@@ -10,6 +10,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextvars import copy_context
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from backfield_entities.connections.candidate_pairs import (
     explicit_person_represents_party_district_evidence,
@@ -22,6 +23,7 @@ from backfield_entities.connections.match_tokens import (
     org_location_site_names_match,
     person_affiliation_matches_organization_label,
 )
+from backfield_entities.connections.natures import nature_def
 from backfield_entities.connections.prompts import build_candidate_batch_prompt
 from backfield_entities.connections.taxonomy import AUTO_CONNECTION_PROMPT_VERSION_EVIDENCE_PAIRS
 from backfield_entities.connections.types import (
@@ -316,6 +318,14 @@ def _validate_candidate_batch_response(
                 validation.skip_reason or "validation_failed",
             )
             continue
+        definition = nature_def(
+            proposal.nature,
+            from_entity.entity_type,
+            to_entity.entity_type,
+        )
+        asserted_currentness = proposal.asserted_currentness
+        if definition is not None and definition.temporal_kind == "static":
+            asserted_currentness = "unspecified"
         accepted.append(
             proposal.model_copy(
                 update={
@@ -324,6 +334,7 @@ def _validate_candidate_batch_response(
                     or candidate.evidence.match_basis,
                     "prompt_version": proposal.prompt_version
                     or AUTO_CONNECTION_PROMPT_VERSION_EVIDENCE_PAIRS,
+                    "asserted_currentness": asserted_currentness,
                 }
             )
         )
@@ -341,6 +352,7 @@ def classify_candidate_batches(
     model_config_id: str | None,
     call_llm: Callable[..., str],
     max_requests: int,
+    reference_at: datetime | None = None,
     batch_size: int = MAX_CANDIDATE_PAIRS_PER_BATCH,
     concurrency: int = MAX_CONNECTION_REQUEST_CONCURRENCY,
 ) -> CandidateBatchInferenceResult:
@@ -361,7 +373,13 @@ def classify_candidate_batches(
         for chunk in all_chunks[max_requests:]
         for candidate in chunk
     )
-    prompts = [(chunk, build_candidate_batch_prompt(chunk)) for chunk in selected_chunks]
+    prompts = [
+        (
+            chunk,
+            build_candidate_batch_prompt(chunk, reference_at=reference_at),
+        )
+        for chunk in selected_chunks
+    ]
     counts.requests = len(prompts)
     counts.prompt_characters = sum(len(prompt) for _, prompt in prompts)
     started = time.monotonic()

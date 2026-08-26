@@ -10,11 +10,13 @@ from pydantic import BaseModel
 from sqlalchemy import and_, or_
 from sqlmodel import Session, col, select
 
+from backfield_entities.connections.custom_natures import merged_nature_catalog
 from backfield_entities.connections.display import (
     ConnectionEvidenceOut,
     derived_connection_description,
     evidence_out_list,
 )
+from backfield_entities.connections.natures import temporal_kind_for_nature
 from backfield_entities.public.canonical_display import public_canonical_label
 from backfield_entities.public.nature_filters import normalize_natures
 
@@ -31,6 +33,9 @@ class PublicConnectionOut(BaseModel):
     to_label: str
     description: str | None = None
     nature: str | None = None
+    temporal_kind: Literal["static", "dynamic"] | None = None
+    currentness: Literal["current", "former", "unknown"] | None = None
+    currentness_as_of: datetime | None = None
     closed_at: datetime | None = None
     evidence: list[ConnectionEvidenceOut] = []
 
@@ -51,6 +56,29 @@ def _connection_label(
     if label:
         return label
     return f"{entity_type} {entity_id}"
+
+
+def _connection_temporal_kind(
+    session: Session,
+    *,
+    stylebook_id: int,
+    connection: StylebookConnection,
+) -> Literal["static", "dynamic"]:
+    nature = (connection.nature or "").strip()
+    if nature:
+        for entry in merged_nature_catalog(
+            session,
+            stylebook_id=stylebook_id,
+            q=nature,
+        ):
+            if entry.slug == nature and entry.temporal_kind == "static":
+                return "static"
+        return temporal_kind_for_nature(
+            nature,
+            connection.from_entity_type,
+            connection.to_entity_type,
+        )
+    return "dynamic"
 
 
 def list_public_entity_connections(
@@ -107,6 +135,11 @@ def list_public_entity_connections(
     for conn in rows:
         if conn.id is None:
             continue
+        temporal_kind = _connection_temporal_kind(
+            session,
+            stylebook_id=stylebook_id,
+            connection=conn,
+        )
         out.append(
             PublicConnectionOut(
                 id=int(conn.id),
@@ -130,6 +163,11 @@ def list_public_entity_connections(
                     session, connection_id=int(conn.id)
                 ),
                 nature=conn.nature,
+                temporal_kind=temporal_kind,
+                currentness=conn.currentness if temporal_kind == "dynamic" else None,
+                currentness_as_of=(
+                    conn.currentness_as_of if temporal_kind == "dynamic" else None
+                ),
                 closed_at=conn.closed_at,
                 evidence=evidence_out_list(session, connection_id=int(conn.id)),
             )

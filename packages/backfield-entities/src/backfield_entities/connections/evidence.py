@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from backfield_db import StylebookConnectionEvidence
@@ -12,6 +12,7 @@ from backfield_entities.connections.taxonomy import (
     AUTO_CONNECTION_EVIDENCE_SOURCE,
     AUTO_CONNECTION_PROMPT_VERSION,
 )
+from backfield_entities.connections.types import AssertedConnectionCurrentness
 
 _FORBIDDEN_EVIDENCE_KEYS = frozenset(
     {
@@ -24,6 +25,24 @@ _FORBIDDEN_EVIDENCE_KEYS = frozenset(
         "model_response",
     }
 )
+
+
+def reference_time_is_newer(
+    candidate: datetime,
+    current: datetime | None,
+) -> bool:
+    """Compare DB timestamps consistently across timezone-aware and SQLite values."""
+    if current is None:
+        return True
+    candidate_utc = (
+        candidate.replace(tzinfo=UTC)
+        if candidate.tzinfo is None
+        else candidate.astimezone(UTC)
+    )
+    current_utc = (
+        current.replace(tzinfo=UTC) if current.tzinfo is None else current.astimezone(UTC)
+    )
+    return candidate_utc > current_utc
 
 
 class ConnectionCreationEvidence(BaseModel):
@@ -46,6 +65,7 @@ class ConnectionCreationEvidence(BaseModel):
     adjudication_model: str | None = None
     adjudication_ai_model_config_id: int | None = None
     match_basis: str | None = None
+    asserted_currentness: AssertedConnectionCurrentness = "unspecified"
 
     @field_validator("quote", "reason", "from_display_name", "to_display_name")
     @classmethod
@@ -81,6 +101,7 @@ def build_connection_creation_evidence(
     adjudication_ai_model_config_id: int | None = None,
     prompt_version: str = AUTO_CONNECTION_PROMPT_VERSION,
     match_basis: str | None = None,
+    asserted_currentness: AssertedConnectionCurrentness = "unspecified",
 ) -> ConnectionCreationEvidence:
     return ConnectionCreationEvidence(
         prompt_version=prompt_version,
@@ -99,6 +120,7 @@ def build_connection_creation_evidence(
         adjudication_model=adjudication_model,
         adjudication_ai_model_config_id=adjudication_ai_model_config_id,
         match_basis=match_basis,
+        asserted_currentness=asserted_currentness,
     )
 
 
@@ -136,6 +158,7 @@ def evidence_row_from_creation(
         run_id=evidence.run_id,
         processed_item_id=evidence.processed_item_id,
         match_basis=evidence.match_basis,
+        asserted_currentness=evidence.asserted_currentness,
         observed_at=observed_at,
         payload_json=payload or None,
     )

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react"
 import { useAppMessage } from "@/components/AppMessageProvider"
-import type { Connection } from "@/lib/stylebook-api/connections"
+import type { Connection, NatureEntry } from "@/lib/stylebook-api/connections"
 import {
   CONNECTIONS_PER_PAGE,
   listStylebookConnectionsForLocation,
@@ -29,6 +29,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Dialog,
   DialogContent,
@@ -116,13 +123,21 @@ export default function ConnectionsSection({
   const [nature, setNature] = useState('')
   const [description, setDescription] = useState('')
   const [natureSuggestions, setNatureSuggestions] = useState<string[]>([])
+  const [natureEntries, setNatureEntries] = useState<NatureEntry[]>([])
   const [natureSearch, setNatureSearch] = useState('')
+  const [assertedCurrentness, setAssertedCurrentness] = useState<
+    "current" | "former" | "unspecified"
+  >("unspecified")
   const [submitting, setSubmitting] = useState(false)
 
   const [editConnection, setEditConnection] = useState<Connection | null>(null)
   const [editNature, setEditNature] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [editNatureSuggestions, setEditNatureSuggestions] = useState<string[]>([])
+  const [editNatureEntries, setEditNatureEntries] = useState<NatureEntry[]>([])
+  const [editAssertedCurrentness, setEditAssertedCurrentness] = useState<
+    "current" | "former" | "unspecified"
+  >("unspecified")
   const [editSubmitting, setEditSubmitting] = useState(false)
 
   const [deleteConnection, setDeleteConnection] = useState<Connection | null>(null)
@@ -242,17 +257,19 @@ export default function ConnectionsSection({
   useEffect(() => {
     if (!addOpen) return
     const q = natureSearch.trim() || nature
-    listStylebookConnectionNatures(stylebookSlug, q || undefined).then((r) =>
+    listStylebookConnectionNatures(stylebookSlug, q || undefined).then((r) => {
       setNatureSuggestions(r.natures)
-    )
+      setNatureEntries(r.entries)
+    })
   }, [addOpen, stylebookSlug, natureSearch, nature])
 
   // Nature typeahead for edit form
   useEffect(() => {
     if (!editConnection) return
-    listStylebookConnectionNatures(stylebookSlug, editNature.trim() || undefined).then((r) =>
+    listStylebookConnectionNatures(stylebookSlug, editNature.trim() || undefined).then((r) => {
       setEditNatureSuggestions(r.natures)
-    )
+      setEditNatureEntries(r.entries)
+    })
   }, [editConnection, stylebookSlug, editNature])
 
   const handleAddOpen = () => {
@@ -265,6 +282,7 @@ export default function ConnectionsSection({
     setNature('')
     setDescription('')
     setNatureSearch('')
+    setAssertedCurrentness("unspecified")
   }
 
   const handleAddSubmit = async () => {
@@ -278,6 +296,7 @@ export default function ConnectionsSection({
       to_entity_id: selectedTargetId,
       ...(trimmedNature ? { nature: trimmedNature } : {}),
       ...(trimmedDescription ? { description: trimmedDescription } : {}),
+      asserted_currentness: addNatureIsDynamic ? assertedCurrentness : "unspecified",
     }
     const canonicalId = String(entityId)
     setSubmitting(true)
@@ -304,6 +323,7 @@ export default function ConnectionsSection({
     setEditConnection(conn)
     setEditNature(conn.nature ?? '')
     setEditDescription(conn.description ?? '')
+    setEditAssertedCurrentness("unspecified")
   }
 
   const handleEditSubmit = async () => {
@@ -315,6 +335,9 @@ export default function ConnectionsSection({
     const body = {
       nature: trimmedNature || null,
       description: trimmedDescription || null,
+      ...(editNatureIsDynamic && editAssertedCurrentness !== "unspecified"
+        ? { asserted_currentness: editAssertedCurrentness }
+        : {}),
     }
     setEditSubmitting(true)
     try {
@@ -415,6 +438,10 @@ export default function ConnectionsSection({
     1,
     Math.ceil(connectionsTotal / CONNECTIONS_PER_PAGE),
   )
+  const addNatureIsDynamic =
+    natureEntries.find((entry) => entry.slug === nature.trim())?.temporal_kind !== "static"
+  const editNatureIsDynamic =
+    editNatureEntries.find((entry) => entry.slug === editNature.trim())?.temporal_kind !== "static"
 
   return (
     <>
@@ -754,6 +781,31 @@ export default function ConnectionsSection({
               suggestions={natureSuggestions}
               placeholder="e.g. works for, located at"
             />
+            {addNatureIsDynamic ? (
+              <div className="space-y-1">
+                <Label htmlFor="connection-currentness">Currentness</Label>
+                <Select
+                  value={assertedCurrentness}
+                  onValueChange={(value) =>
+                    setAssertedCurrentness(
+                      value as "current" | "former" | "unspecified",
+                    )
+                  }
+                >
+                  <SelectTrigger id="connection-currentness">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unspecified">Current status unknown</SelectItem>
+                    <SelectItem value="current">Reported current</SelectItem>
+                    <SelectItem value="former">Reported former</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Record only what the available information establishes.
+                </p>
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddOpen(false)}>
@@ -801,6 +853,28 @@ export default function ConnectionsSection({
               suggestions={editNatureSuggestions}
               placeholder="e.g. works for, located at"
             />
+            {editNatureIsDynamic ? (
+              <div className="space-y-1">
+                <Label htmlFor="edit-connection-currentness">Currentness update</Label>
+                <Select
+                  value={editAssertedCurrentness}
+                  onValueChange={(value) =>
+                    setEditAssertedCurrentness(
+                      value as "current" | "former" | "unspecified",
+                    )
+                  }
+                >
+                  <SelectTrigger id="edit-connection-currentness">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unspecified">Do not change currentness</SelectItem>
+                    <SelectItem value="current">Report as current</SelectItem>
+                    <SelectItem value="former">Report as former</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditConnection(null)}>

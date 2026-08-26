@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -3921,6 +3922,8 @@ def test_stylebook_connection_lists_auto_connection_evidence(
             to_entity_type="location",
             to_entity_id=bid,
             nature="near",
+            currentness="former",
+            currentness_as_of=datetime(2025, 6, 1, tzinfo=UTC),
         )
         s.add(conn)
         s.commit()
@@ -3934,6 +3937,7 @@ def test_stylebook_connection_lists_auto_connection_evidence(
                 confidence=evidence.get("confidence"),
                 quote=evidence.get("quote"),
                 reason=evidence.get("reason"),
+                asserted_currentness="former",
             )
         )
         s.commit()
@@ -3944,6 +3948,77 @@ def test_stylebook_connection_lists_auto_connection_evidence(
     assert len(rows) == 1
     assert rows[0]["evidence_json"]["quote"] == "Acme operates in Chicago."
     assert rows[0]["evidence_json"]["confidence"] == 0.94
+    assert rows[0]["temporal_kind"] == "dynamic"
+    assert rows[0]["currentness"] == "former"
+    assert rows[0]["currentness_as_of"].startswith("2025-06-01")
+    assert rows[0]["evidence"][0]["asserted_currentness"] == "former"
+
+
+def test_stylebook_manual_dynamic_connection_currentness(
+    editor_client: TestClient,
+    stylebook_test_engine: Engine,
+) -> None:
+    with Session(stylebook_test_engine) as session:
+        stylebook = session.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        person = StylebookPersonCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Currentness Person",
+            slug="currentness-person",
+            status="active",
+        )
+        organization = StylebookOrganizationCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Currentness Organization",
+            slug="currentness-organization",
+            status="active",
+        )
+        session.add(person)
+        session.add(organization)
+        session.commit()
+        session.refresh(person)
+        session.refresh(organization)
+        person_id = str(person.id)
+        organization_id = str(organization.id)
+
+    created = editor_client.post(
+        f"/v1/stylebooks/default/canonical-people/{person_id}/connections",
+        json={
+            "to_entity_type": "organization",
+            "to_entity_id": organization_id,
+            "nature": "works_for",
+            "description": "Works for Currentness Organization.",
+            "asserted_currentness": "current",
+        },
+    )
+    assert created.status_code == 200
+    body = created.json()
+    connection_id = int(body["id"])
+    assert body["temporal_kind"] == "dynamic"
+    assert body["currentness"] == "current"
+    assert body["currentness_as_of"] is not None
+    assert body["evidence"][0]["asserted_currentness"] == "current"
+
+    updated = editor_client.patch(
+        (
+            f"/v1/stylebooks/default/canonical-people/{person_id}/connections/"
+            f"{connection_id}"
+        ),
+        json={"asserted_currentness": "former"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["currentness"] == "former"
+    assert updated.json()["currentness_as_of"] is not None
+
+    rejected_static = editor_client.post(
+        f"/v1/stylebooks/default/canonical-people/{person_id}/connections",
+        json={
+            "to_entity_type": "organization",
+            "to_entity_id": organization_id,
+            "nature": "founded",
+            "asserted_currentness": "current",
+        },
+    )
+    assert rejected_static.status_code == 422
 
 
 def test_stylebook_connection_create_returns_existing_duplicate(

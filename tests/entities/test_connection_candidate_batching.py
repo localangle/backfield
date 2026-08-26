@@ -57,6 +57,7 @@ def _link_decision(
         "confidence": 0.99,
         "quote": quote or candidate.evidence.snippets[0],
         "reason": reason,
+        "asserted_currentness": "current",
     }
 
 
@@ -86,6 +87,7 @@ def test_batching_obeys_request_batch_and_concurrency_caps() -> None:
                         "candidate_id": candidate_id,
                         "link": False,
                         "reason": "The evidence does not establish a direct relationship.",
+                        "asserted_currentness": "unspecified",
                     }
                     for candidate_id in candidate_ids
                 ]
@@ -145,6 +147,7 @@ def test_one_failed_batch_does_not_discard_other_batches() -> None:
                         "candidate_id": "candidate-8",
                         "link": False,
                         "reason": "The evidence does not establish a direct relationship.",
+                        "asserted_currentness": "unspecified",
                     }
                 ]
             }
@@ -193,6 +196,23 @@ def test_specialized_nature_requires_quote_level_support() -> None:
 
     assert result.edges == ()
     assert result.counts.skip_reasons["nature_not_supported_by_quote"] == 1
+
+
+def test_link_decision_requires_asserted_currentness() -> None:
+    candidate = _candidate(1)
+    decision = _link_decision(candidate)
+    decision.pop("asserted_currentness")
+
+    result = classify_candidate_batches(
+        candidates=(candidate,),
+        model="test",
+        model_config_id=None,
+        call_llm=lambda *_args, **_kwargs: json.dumps({"decisions": [decision]}),
+        max_requests=1,
+    )
+
+    assert result.edges == ()
+    assert result.counts.skip_reasons["malformed_decision"] == 1
 
 
 def test_model_threads_receive_tracking_context() -> None:
@@ -248,6 +268,7 @@ def test_model_decline_is_authoritative() -> None:
                             "The article references the organization but does not establish "
                             "a direct board membership or leadership role."
                         ),
+                        "asserted_currentness": "unspecified",
                     }
                 ]
             }

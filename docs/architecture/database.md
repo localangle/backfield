@@ -105,7 +105,11 @@ shared entity rows are not trusted because sibling batch items may reuse the sam
   Connection narrative lives on evidence only (no connection-level `description` /
   `evidence_json`). Stylebook Remove soft-closes (`closed_at`); public and Stylebook
   lists hide closed by default (`include_closed=true` to show). Reopen clears
-  `closed_at`.
+  `closed_at`. Dynamic connections also materialize the newest explicit reported
+  `current` / `former` evidence as `currentness`, `currentness_as_of`, and
+  `currentness_evidence_id`; evidence stores `asserted_currentness`, while
+  `observed_at` is the source/reference time (article publication time when available).
+  These fields are a currentness summary, not validity intervals or `as_of` history.
 - Transfer and review workflows: `stylebook_bundle_job`, `stylebook_cleanup_dismissal`,
   `stylebook_cleanup_ai_review`, `stylebook_cleanup_ai_proposal`,
   `stylebook_cleanup_check_run`, `stylebook_cleanup_check_result`,

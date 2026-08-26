@@ -313,6 +313,7 @@ def test_mount_carmel_evidence_supports_coach_and_player_natures() -> None:
                         "confidence": 0.98,
                         "quote": candidate.evidence.snippets[0],
                         "reason": "The article explicitly establishes this relationship.",
+                        "asserted_currentness": "current",
                     }
                     for person_id, candidate in person_org.items()
                 ]

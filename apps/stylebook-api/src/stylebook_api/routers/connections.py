@@ -36,6 +36,7 @@ from backfield_entities.connections.display import (
     evidence_out_list,
     legacy_evidence_json_for_connection,
 )
+from backfield_entities.connections.evidence import reference_time_is_newer
 from backfield_entities.connections.natures import temporal_kind_for_nature
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
@@ -127,6 +128,8 @@ class ConnectionResponse(BaseModel):
     description: str | None = None
     nature: str | None = None
     temporal_kind: Literal["static", "dynamic"] | None = None
+    currentness: Literal["current", "former", "unknown"] | None = None
+    currentness_as_of: datetime | None = None
     evidence_json: dict[str, Any] | None = None
     evidence: list[ConnectionEvidenceOut] = []
     closed_at: datetime | None = None
@@ -149,6 +152,7 @@ class CreateConnectionRequest(BaseModel):
     )
     nature: str | None = Field(default=None, min_length=1)
     description: str | None = Field(default=None, min_length=1)
+    asserted_currentness: Literal["current", "former", "unspecified"] = "unspecified"
 
     @model_validator(mode="after")
     def _require_nature_or_description(self) -> CreateConnectionRequest:
@@ -162,10 +166,15 @@ class CreateConnectionRequest(BaseModel):
 class UpdateConnectionRequest(BaseModel):
     nature: str | None = None
     description: str | None = None
+    asserted_currentness: Literal["current", "former", "unspecified"] | None = None
 
     @model_validator(mode="after")
     def _require_at_least_one_field(self) -> UpdateConnectionRequest:
-        if self.nature is None and self.description is None:
+        if (
+            self.nature is None
+            and self.description is None
+            and self.asserted_currentness is None
+        ):
             raise ValueError("Provide at least one of nature or description")
         if self.nature is not None and not self.nature.strip():
             raise ValueError("nature cannot be empty")
@@ -209,6 +218,31 @@ def _display_name(
     return f"{entity_type} #{sid}"
 
 
+def _connection_temporal_kind(
+    session: Session,
+    conn: StylebookConnection,
+    *,
+    stylebook_id: int | None = None,
+) -> Literal["static", "dynamic"]:
+    nature = (conn.nature or "").strip()
+    catalog_id = stylebook_id or conn.stylebook_id
+    if nature and catalog_id is not None:
+        for entry in merged_nature_catalog(
+            session,
+            stylebook_id=int(catalog_id),
+            q=nature,
+        ):
+            if entry.slug == nature and entry.temporal_kind == "static":
+                return "static"
+    if nature:
+        return temporal_kind_for_nature(
+            nature,
+            conn.from_entity_type,
+            conn.to_entity_type,
+        )
+    return "dynamic"
+
+
 def _connection_response_from_row(
     session: Session,
     *,
@@ -217,13 +251,11 @@ def _connection_response_from_row(
     catalog_stylebook_id: int | None = None,
 ) -> ConnectionResponse:
     nature = conn.nature
-    temporal: Literal["static", "dynamic"] | None = None
-    if nature and str(nature).strip():
-        temporal = temporal_kind_for_nature(
-            str(nature).strip(),
-            str(conn.from_entity_type),
-            str(conn.to_entity_type),
-        )
+    temporal = _connection_temporal_kind(
+        session,
+        conn,
+        stylebook_id=catalog_stylebook_id,
+    )
     return ConnectionResponse(
         id=int(conn.id),  # type: ignore[arg-type]
         from_entity_type=conn.from_entity_type,
@@ -249,6 +281,8 @@ def _connection_response_from_row(
         ),
         nature=nature,
         temporal_kind=temporal,
+        currentness=conn.currentness if temporal == "dynamic" else None,
+        currentness_as_of=conn.currentness_as_of if temporal == "dynamic" else None,
         evidence_json=legacy_evidence_json_for_connection(
             session, connection_id=int(conn.id)  # type: ignore[arg-type]
         ),
@@ -266,10 +300,24 @@ def _add_manual_evidence(
     description: str | None,
     stylebook_id: int | None = None,
     auth: dict[str, Any] | None = None,
+    asserted_currentness: Literal["current", "former", "unspecified"] = "unspecified",
 ) -> None:
     text = (description or "").strip()
-    if not text:
+    if not text and asserted_currentness == "unspecified":
         return
+    conn = session.get(StylebookConnection, int(connection_id))
+    if conn is None:
+        return
+    temporal_kind = _connection_temporal_kind(
+        session,
+        conn,
+        stylebook_id=stylebook_id,
+    )
+    if temporal_kind == "static" and asserted_currentness != "unspecified":
+        raise HTTPException(
+            status_code=422,
+            detail="Currentness applies only to relationships that can change.",
+        )
     # App-level dedupe for null-article manual evidence by quote.
     existing = session.exec(
         select(StylebookConnectionEvidence).where(
@@ -278,30 +326,44 @@ def _add_manual_evidence(
         )
     ).all()
     needle = text.casefold()
-    for row in existing:
-        for value in (row.quote, row.description, row.reason):
-            if (value or "").strip().casefold() == needle:
-                return
-    session.add(
-        StylebookConnectionEvidence(
-            connection_id=int(connection_id),
-            article_id=None,
-            description=text,
-            quote=text,
-            reason=text,
-            source="manual",
-        )
+    if needle:
+        for row in existing:
+            for value in (row.quote, row.description, row.reason):
+                if (
+                    (value or "").strip().casefold() == needle
+                    and row.asserted_currentness == asserted_currentness
+                ):
+                    return
+    now = datetime.now(UTC)
+    evidence = StylebookConnectionEvidence(
+        connection_id=int(connection_id),
+        article_id=None,
+        description=text or None,
+        quote=text or None,
+        reason=text or None,
+        source="manual",
+        asserted_currentness=asserted_currentness,
+        observed_at=now,
     )
+    session.add(evidence)
+    session.flush()
+    if (
+        asserted_currentness in {"current", "former"}
+        and temporal_kind == "dynamic"
+        and reference_time_is_newer(now, conn.currentness_as_of)
+    ):
+        conn.currentness = asserted_currentness
+        conn.currentness_as_of = now
+        conn.currentness_evidence_id = int(evidence.id) if evidence.id is not None else None
+        session.add(conn)
     if stylebook_id is not None and auth is not None:
-        conn = session.get(StylebookConnection, int(connection_id))
-        if conn is not None:
-            _log_stylebook_connection_event(
-                session,
-                stylebook_id=int(stylebook_id),
-                auth=auth,
-                event_type=EVENT_CONNECTION_EVIDENCE_ADDED,
-                conn=conn,
-            )
+        _log_stylebook_connection_event(
+            session,
+            stylebook_id=int(stylebook_id),
+            auth=auth,
+            event_type=EVENT_CONNECTION_EVIDENCE_ADDED,
+            conn=conn,
+        )
 
 
 def _list_connections_for_entity(
@@ -446,13 +508,23 @@ def _apply_connection_update(
             description=payload.description,
         )
     conn.nature = new_nature
-    if payload.description is not None and new_description:
+    temporal_kind = _connection_temporal_kind(
+        session,
+        conn,
+        stylebook_id=stylebook_id,
+    )
+    if temporal_kind == "static":
+        conn.currentness = "unknown"
+        conn.currentness_as_of = None
+        conn.currentness_evidence_id = None
+    if payload.description is not None or payload.asserted_currentness is not None:
         _add_manual_evidence(
             session,
             connection_id=int(conn.id),  # type: ignore[arg-type]
             description=new_description,
             stylebook_id=stylebook_id,
             auth=auth,
+            asserted_currentness=payload.asserted_currentness or "unspecified",
         )
     return conn
 
@@ -726,6 +798,7 @@ def create_location_connection(
         description=description,
         stylebook_id=int(sb_id),
         auth=auth,
+        asserted_currentness=payload.asserted_currentness,
     )
     session.commit()
     session.refresh(conn)
@@ -1100,6 +1173,7 @@ def create_stylebook_location_connection(
             description=description,
             stylebook_id=int(sb.id),
             auth=auth,
+            asserted_currentness=payload.asserted_currentness,
         )
         session.commit()
         session.refresh(existing)
@@ -1118,6 +1192,7 @@ def create_stylebook_location_connection(
             description=description,
             stylebook_id=int(sb.id),
             auth=auth,
+            asserted_currentness=payload.asserted_currentness,
         )
         session.commit()
         session.refresh(existing)
@@ -1373,6 +1448,7 @@ def _create_stylebook_entity_connection(
             description=description,
             stylebook_id=int(catalog_stylebook_id),
             auth=auth,
+            asserted_currentness=payload.asserted_currentness,
         )
         session.commit()
         session.refresh(existing)
@@ -1391,6 +1467,7 @@ def _create_stylebook_entity_connection(
             description=description,
             stylebook_id=int(catalog_stylebook_id),
             auth=auth,
+            asserted_currentness=payload.asserted_currentness,
         )
         session.commit()
         session.refresh(existing)

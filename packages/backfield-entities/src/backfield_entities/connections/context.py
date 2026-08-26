@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime, time
 from typing import Any
 
 from backfield_db import (
     StylebookLocationCanonical,
     StylebookOrganizationCanonical,
     StylebookPersonCanonical,
+    SubstrateArticle,
     SubstrateLocation,
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
@@ -39,6 +41,7 @@ class AutoConnectionArticleContext:
     organizations: tuple[LinkedEntitySnapshot, ...]
     locations: tuple[LinkedEntitySnapshot, ...]
     article_text: str
+    reference_at: datetime
     entity_counts: dict[str, int]
     entity_truncated: dict[str, int]
 
@@ -357,6 +360,14 @@ def collect_auto_connection_article_context(
     article_id: int,
     article_text: str,
 ) -> AutoConnectionArticleContext:
+    article = session.get(SubstrateArticle, int(article_id))
+    if article is not None and article.pub_date is not None:
+        reference_at = datetime.combine(article.pub_date, time.min, tzinfo=UTC)
+    elif article is not None and article.created_at is not None:
+        reference_at = article.created_at
+    else:
+        reference_at = datetime.now(UTC)
+
     people_all, people_count = _collect_people(
         session,
         project_id=project_id,
@@ -384,6 +395,7 @@ def collect_auto_connection_article_context(
         organizations=organizations,
         locations=locations,
         article_text=str(article_text or ""),
+        reference_at=reference_at,
         entity_counts={
             "person": people_count,
             "organization": organization_count,

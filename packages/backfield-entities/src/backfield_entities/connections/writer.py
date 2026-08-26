@@ -20,6 +20,7 @@ from backfield_entities.connections.evidence import (
     ConnectionCreationEvidence,
     build_connection_creation_evidence,
     evidence_row_from_creation,
+    reference_time_is_newer,
 )
 from backfield_entities.connections.natures import (
     nature_def,
@@ -162,29 +163,55 @@ def _append_evidence(
     connection: StylebookConnection,
     creation: ConnectionCreationEvidence,
     description: str,
-) -> bool:
-    """Insert evidence child. Returns False if article already cited on this edge."""
+    observed_at: datetime,
+) -> StylebookConnectionEvidence | None:
+    """Insert evidence child, or return None when the citation already exists."""
     connection_id = int(connection.id)  # type: ignore[arg-type]
     if creation.article_id is not None and _evidence_exists_for_article(
         session, connection_id=connection_id, article_id=int(creation.article_id)
     ):
-        return False
+        return None
 
     row = evidence_row_from_creation(
         connection_id=connection_id,
         evidence=creation,
         description=description,
-        observed_at=datetime.now(UTC),
+        observed_at=observed_at,
     )
     try:
         with session.begin_nested():
             session.add(row)
             session.flush()
     except IntegrityError:
-        return False
+        return None
 
     connection.updated_at = datetime.now(UTC)
-    return True
+    return row
+
+
+def _apply_currentness_summary(
+    connection: StylebookConnection,
+    evidence: StylebookConnectionEvidence,
+    *,
+    is_dynamic: bool,
+) -> None:
+    if not is_dynamic:
+        connection.currentness = "unknown"
+        connection.currentness_as_of = None
+        connection.currentness_evidence_id = None
+        return
+    if evidence.asserted_currentness not in {"current", "former"}:
+        return
+    if evidence.observed_at is None:
+        return
+    if not reference_time_is_newer(
+        evidence.observed_at,
+        connection.currentness_as_of,
+    ):
+        return
+    connection.currentness = evidence.asserted_currentness
+    connection.currentness_as_of = evidence.observed_at
+    connection.currentness_evidence_id = int(evidence.id) if evidence.id is not None else None
 
 
 def write_auto_connections(
@@ -201,6 +228,7 @@ def write_auto_connections(
     processed_item_id: int | None,
     adjudication_model: str | None,
     adjudication_ai_model_config_id: str | None,
+    reference_at: datetime | None = None,
 ) -> AutoConnectionWriteResult:
     """Create or reinforce open edges; narrative lives on evidence children."""
     from_by_id, to_by_id = _entity_maps(
@@ -208,6 +236,7 @@ def write_auto_connections(
         to_entities=to_entities,
     )
     result = AutoConnectionWriteResult()
+    evidence_observed_at = reference_at or datetime.now(UTC)
 
     try:
         stylebook_id = resolve_stylebook_id_for_project_id(session, int(project_id))
@@ -262,6 +291,7 @@ def write_auto_connections(
             ),
             prompt_version=edge.prompt_version or AUTO_CONNECTION_PROMPT_VERSION,
             match_basis=edge.match_basis,
+            asserted_currentness=edge.asserted_currentness,
         )
 
         existing = _find_open_edge(
@@ -280,10 +310,16 @@ def write_auto_connections(
                 connection=existing,
                 creation=creation,
                 description=description,
+                observed_at=evidence_observed_at,
             )
-            if not appended:
+            if appended is None:
                 result.skipped_existing_count += 1
                 continue
+            _apply_currentness_summary(
+                existing,
+                appended,
+                is_dynamic=definition is None or definition.temporal_kind == "dynamic",
+            )
             result.reinforced.append(
                 _written(
                     from_entity_type=from_entity_type,
@@ -340,10 +376,16 @@ def write_auto_connections(
                 connection=existing,
                 creation=creation,
                 description=description,
+                observed_at=evidence_observed_at,
             )
-            if not appended:
+            if appended is None:
                 result.skipped_existing_count += 1
                 continue
+            _apply_currentness_summary(
+                existing,
+                appended,
+                is_dynamic=definition is None or definition.temporal_kind == "dynamic",
+            )
             result.reinforced.append(
                 _written(
                     from_entity_type=from_entity_type,
@@ -358,14 +400,13 @@ def write_auto_connections(
             )
             continue
 
-        session.add(
-            evidence_row_from_creation(
-                connection_id=int(row.id),  # type: ignore[arg-type]
-                evidence=creation,
-                description=description,
-                observed_at=datetime.now(UTC),
-            )
+        evidence_row = evidence_row_from_creation(
+            connection_id=int(row.id),  # type: ignore[arg-type]
+            evidence=creation,
+            description=description,
+            observed_at=evidence_observed_at,
         )
+        session.add(evidence_row)
         try:
             with session.begin_nested():
                 session.flush()
@@ -373,6 +414,11 @@ def write_auto_connections(
             session.delete(row)
             result.skipped_existing_count += 1
             continue
+        _apply_currentness_summary(
+            row,
+            evidence_row,
+            is_dynamic=definition is None or definition.temporal_kind == "dynamic",
+        )
 
         result.created.append(
             _written(

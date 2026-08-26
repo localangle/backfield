@@ -22,6 +22,7 @@ class ConnectionEvidenceOut(BaseModel):
     run_id: str | None = None
     processed_item_id: int | None = None
     match_basis: str | None = None
+    asserted_currentness: str = "unspecified"
     observed_at: datetime | None = None
 
 
@@ -67,6 +68,7 @@ def evidence_out_list(
                 int(row.processed_item_id) if row.processed_item_id is not None else None
             ),
             match_basis=row.match_basis,
+            asserted_currentness=row.asserted_currentness,
             observed_at=row.observed_at,
         )
         for row in list_connection_evidence(session, connection_id=connection_id)
@@ -126,6 +128,7 @@ def legacy_evidence_json_for_connection(
         payload["processed_item_id"] = int(evidence.processed_item_id)
     if evidence.match_basis:
         payload["match_basis"] = evidence.match_basis
+    payload["asserted_currentness"] = evidence.asserted_currentness
     if isinstance(evidence.payload_json, dict):
         for key, value in evidence.payload_json.items():
             payload.setdefault(key, value)

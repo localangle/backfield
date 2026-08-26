@@ -6,6 +6,7 @@ export interface ConnectionCreationEvidenceView {
   showReason: boolean
   reason: string
   sourceLabel: string
+  currentnessLabel: string | null
 }
 
 export interface ConnectionStatusMetaRow {
@@ -83,12 +84,6 @@ export function formatConnectionDate(value: string | null | undefined): string |
   })
 }
 
-function temporalKindLabel(kind: "static" | "dynamic" | null | undefined): string | null {
-  if (kind === "static") return "Fixed"
-  if (kind === "dynamic") return "Ongoing"
-  return null
-}
-
 function connectionSourceLabel(conn: {
   evidence?: ReadonlyArray<object | null | undefined> | null
   evidence_json?: Record<string, unknown> | null
@@ -116,15 +111,31 @@ export function formatConnectionStatusMeta(conn: {
   created_at?: string | null
   updated_at?: string | null
   temporal_kind?: "static" | "dynamic" | null
+  currentness?: "current" | "former" | "unknown" | null
+  currentness_as_of?: string | null
   evidence?: ReadonlyArray<object | null | undefined> | null
   evidence_json?: Record<string, unknown> | null
 }): ConnectionStatusMetaRow[] {
   const rows: ConnectionStatusMetaRow[] = [
     { label: "Status", value: conn.closed_at ? "Closed" : "Open" },
   ]
-  const kind = temporalKindLabel(conn.temporal_kind)
-  if (kind) {
-    rows.push({ label: "Timing", value: kind })
+  if (conn.temporal_kind === "static") {
+    rows.push({ label: "Timing", value: "Enduring relationship" })
+  } else if (conn.temporal_kind === "dynamic") {
+    const asOf = formatConnectionDate(conn.currentness_as_of)
+    if (conn.currentness === "current") {
+      rows.push({
+        label: "Currentness",
+        value: asOf ? `Reported current as of ${asOf}` : "Reported current",
+      })
+    } else if (conn.currentness === "former") {
+      rows.push({
+        label: "Currentness",
+        value: asOf ? `Reported former as of ${asOf}` : "Reported former",
+      })
+    } else {
+      rows.push({ label: "Currentness", value: "Current status unknown" })
+    }
   }
   const source = connectionSourceLabel(conn)
   if (source) {
@@ -158,8 +169,16 @@ export function formatConnectionEvidence(
   const reason = sanitizeConnectionDisplayText(
     typeof row.reason === "string" ? row.reason.trim() : "",
   )
+  const assertedCurrentness =
+    typeof row.asserted_currentness === "string" ? row.asserted_currentness : "unspecified"
+  const currentnessLabel =
+    assertedCurrentness === "current"
+      ? "Reported current"
+      : assertedCurrentness === "former"
+        ? "Reported former"
+        : null
   const displayQuote = quote || description
-  if (!displayQuote && !reason) {
+  if (!displayQuote && !reason && !currentnessLabel) {
     return null
   }
   const confidenceRaw = row.confidence
@@ -174,6 +193,7 @@ export function formatConnectionEvidence(
     showReason: shouldShowEvidenceReason(displayQuote, resolvedReason),
     reason: resolvedReason,
     sourceLabel: sourceLabel(typeof row.source === "string" ? row.source : null),
+    currentnessLabel,
   }
 }
 

@@ -12,6 +12,7 @@ export interface ConnectionEvidence {
   run_id?: string | null
   processed_item_id?: number | null
   match_basis?: string | null
+  asserted_currentness?: "current" | "former" | "unspecified"
   observed_at?: string | null
 }
 
@@ -26,6 +27,8 @@ export interface Connection {
   description?: string | null
   nature?: string | null
   temporal_kind?: "static" | "dynamic" | null
+  currentness?: "current" | "former" | "unknown" | null
+  currentness_as_of?: string | null
   evidence_json?: Record<string, unknown> | null
   evidence?: ConnectionEvidence[]
   closed_at?: string | null
@@ -38,11 +41,13 @@ export type ConnectionWriteBody = {
   to_entity_id?: number | string
   nature?: string | null
   description?: string | null
+  asserted_currentness?: "current" | "former" | "unspecified"
 }
 
 export type ConnectionUpdateBody = {
   nature?: string | null
   description?: string | null
+  asserted_currentness?: "current" | "former" | "unspecified" | null
 }
 
 export interface ConnectionListResponse {
