@@ -23,6 +23,7 @@ def public_entity_connections_response(
     natures: tuple[str, ...],
     limit: int,
     offset: int,
+    include_closed: bool = False,
 ) -> PaginatedResponse[PublicConnectionOut]:
     """List, filter, and page one canonical entity's connections."""
     items, total = list_public_entity_connections(
@@ -33,6 +34,7 @@ def public_entity_connections_response(
         entity_id=entity_id,
         to_entity_type=to_entity_type,
         natures=natures,
+        include_closed=include_closed,
         limit=limit,
         offset=offset,
     )

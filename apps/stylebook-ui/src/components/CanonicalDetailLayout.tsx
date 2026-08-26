@@ -9,6 +9,7 @@ import CanonicalMentionsSection, {
   type CanonicalMentionsSectionProps,
 } from "@/components/CanonicalMentionsSection"
 import ConnectionsSection from "@/components/ConnectionsSection"
+import type { GraphEntityProfileLines } from "@/lib/connectionGraphEntityProfile"
 import { Breadcrumbs, type BreadcrumbItem } from "@/components/Breadcrumbs"
 import { Button } from "@/components/ui/button"
 import {
@@ -85,6 +86,7 @@ export interface CanonicalDetailLayoutProps<
   stylebookSlug?: string
   entityId?: string
   entityDisplayName?: string
+  entityProfileLines?: GraphEntityProfileLines
   topNotice?: ReactNode
   children?: ReactNode
 }
@@ -126,6 +128,7 @@ function renderSection<
           entityId={props.entityId}
           stylebookSlug={props.stylebookSlug}
           entityDisplayName={props.entityDisplayName ?? props.title}
+          entityProfileLines={props.entityProfileLines}
         />
       )
     default:

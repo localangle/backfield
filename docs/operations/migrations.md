@@ -44,6 +44,72 @@ The strict project runtime migration validates retained projects before making `
 cross-organization assignment. Repair those rows and rerun the migration; it does not guess a
 replacement catalog.
 
+## Connection knowledge-graph cutover
+
+Phase A connection redesign ships in two schema steps plus an offline data command:
+
+1. `077_conn_kg_phase_a` — additive `stylebook_id` / `closed_at` / evidence + custom nature tables.
+2. `backfield migrate-connection-kg --apply` — remap natures, merge duplicates, and reattach
+   surviving evidence rows during merges (`078` materializes remaining `evidence_json`).
+3. `078_conn_kg_cutover` — open-edge unique index on Stylebook scope, drop connection
+   `description` / `evidence_json`, cascade-delete evidence with parent.
+
+Run the data command before applying `078` on retained databases. Dry-run first:
+
+```bash
+backfield migrate-connection-kg --json
+backfield migrate-connection-kg --apply
+make migrate
+```
+
+After cutover, Stylebook Remove soft-closes edges (`closed_at`); reopen clears it.
+Public entity connection lists hide closed rows unless `include_closed=true`.
+Hard-delete remains for internal/migrate paths only.
+
+Downgrading `078` is unsupported on retained data: the dropped `description` / `evidence_json`
+values are not restored, and recreating the legacy exact-edge unique index can fail once
+soft-closed duplicates of an open edge exist. Prefer forward repair.
+
+## Connection currentness
+
+Revision `079_connection_currentness` adds reported currentness without introducing validity
+intervals. Existing connections backfill to `unknown`, and existing evidence backfills to
+`unspecified`; the migration does not guess whether retained relationships are current or former.
+For article-linked evidence, `observed_at` is corrected to the article publication date when one is
+available. Otherwise its existing value is retained.
+
+The migration is additive and can run through the normal `make migrate` release task. After
+deployment, new dynamic connection evidence can update the edge's reported current/former summary;
+static connections and editorial `closed_at` lifecycle remain independent.
+
+Revision `080_conn_currentness_review` adds `currentness_review_source` to distinguish
+model-reviewed, manual, deterministic, and unreviewed evidence. Existing rows remain `unreviewed`;
+this revision does not reclassify or backfill historical currentness.
+
+Revision `081_conn_evidence_fk` sets `stylebook_connection_evidence.article_id` to
+`ON DELETE SET NULL` so project teardown can remove articles without FK violations, and drops
+redundant indexes superseded by composite keys (`stylebook_id` + endpoints, `connection_id` +
+`created_at`, and the unused `currentness` btree).
+
+## Historical connection inference
+
+`backfield backfill-connections` reuses the forward evidence, budget, resolution, and reinforce
+paths. It requires an explicit project or Stylebook scope and defaults to dry-run:
+
+```bash
+backfield backfill-connections --project-id 42 --limit 100
+backfield backfill-connections --stylebook-id 7 --after-article-id 12000 --limit 100 \
+  --report connection-backfill.json
+backfield backfill-connections --project-id 42 --after-article-id 12000 --apply
+```
+
+The JSON report includes per-article diagnostics, budget-limited `unprocessed` candidate counts,
+and `resume_cursor`; pass that value back through `--after-article-id` after an interruption.
+`--start-article-id`, `--end-article-id`,
+`--max-requests-per-article` (default and maximum 16), `--model`, and `--model-config-id` provide bounded
+control. Apply mode is idempotent: it reinforces existing endpoint+nature edges, skips article
+evidence already attached, and never closes existing edges.
+
 ## Local workflow
 
 With the Compose stack configuration:

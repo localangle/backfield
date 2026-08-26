@@ -41,3 +41,12 @@ def test_organization_extract_prompt_excludes_brands_and_bands() -> None:
     assert "Pearl Jam" in prompt
     assert "Bands and musical acts" in prompt
     assert "bands belong in **people** extraction" in prompt
+
+
+def test_organization_extract_prompt_includes_school_possessive_team_rule() -> None:
+    prompt = _PROMPT_PATH.read_text(encoding="utf-8")
+    assert "School or team possessives / attributives before a person" in prompt
+    assert "Montini’s Israel Abrams" in prompt
+    assert "Hersey’s Jake Nawrot" in prompt
+    assert "Chicago’s mayor" in prompt
+    assert "Phillies masher Kyle Schwarber" in prompt

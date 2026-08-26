@@ -1,10 +1,17 @@
-/** User-facing helpers for automatic connection evidence on Stylebook edges. */
+/** User-facing helpers for connection evidence on Stylebook edges. */
 
 export interface ConnectionCreationEvidenceView {
   confidencePercent: number | null
   quote: string
   showReason: boolean
   reason: string
+  sourceLabel: string
+  currentnessLabel: string | null
+}
+
+export interface ConnectionStatusMetaRow {
+  label: string
+  value: string
 }
 
 const MATCH_BASIS_PATTERN = /match_basis\s*=\s*[\w-]+/gi
@@ -40,7 +47,7 @@ export function formatConnectionSummaryLabel(conn: {
 export function hasConnectionEvidence(
   evidence: Record<string, unknown> | null | undefined,
 ): boolean {
-  return Boolean(evidence && typeof evidence === 'object' && Object.keys(evidence).length > 0)
+  return Boolean(evidence && typeof evidence === "object" && Object.keys(evidence).length > 0)
 }
 
 export function shouldShowEvidenceReason(quote: string, reason: string): boolean {
@@ -58,6 +65,98 @@ export function shouldShowEvidenceReason(quote: string, reason: string): boolean
   return reason.trim().length <= 160
 }
 
+function sourceLabel(source: string | null | undefined): string {
+  const value = (source || "").trim().toLowerCase()
+  if (value === "manual" || value === "legacy_manual") return "Manual"
+  if (value.includes("auto") || value === "dboutput_auto_connections") return "Automatic"
+  if (value) return "Saved"
+  return "Saved"
+}
+
+export function formatConnectionDate(
+  value: string | null | undefined,
+  options?: { compactYear?: boolean },
+): string | null {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toLocaleDateString(undefined, {
+    year: options?.compactYear ? "2-digit" : "numeric",
+    month: "short",
+    day: "numeric",
+  })
+}
+
+function formatTemporalKindLabel(
+  temporalKind: "static" | "dynamic" | null | undefined,
+): "Static" | "Dynamic" {
+  return temporalKind === "static" ? "Static" : "Dynamic"
+}
+
+function formatDynamicCurrentnessStatus(
+  currentness: "current" | "former" | "unknown",
+  asOfRaw: string | null | undefined,
+): string {
+  if (currentness === "unknown") {
+    return "Unknown"
+  }
+  const status = currentness === "current" ? "Current" : "Former"
+  const asOf = formatConnectionDate(asOfRaw, { compactYear: true })
+  return asOf ? `${status} · ${asOf}` : status
+}
+
+function connectionSourceLabel(conn: {
+  evidence?: ReadonlyArray<object | null | undefined> | null
+  evidence_json?: Record<string, unknown> | null
+}): string | null {
+  const evidence = bestEvidenceRecord(conn)
+  if (!evidence) return null
+  const raw = typeof evidence.source === "string" ? evidence.source : null
+  if (!raw?.trim()) return null
+  return sourceLabel(raw)
+}
+
+/** Compact status rows for connection detail / list panels. */
+export function formatConnectionStatusMeta(conn: {
+  closed_at?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  temporal_kind?: "static" | "dynamic" | null
+  currentness?: "current" | "former" | "unknown" | null
+  currentness_as_of?: string | null
+  evidence?: ReadonlyArray<object | null | undefined> | null
+  evidence_json?: Record<string, unknown> | null
+}): ConnectionStatusMetaRow[] {
+  const rows: ConnectionStatusMetaRow[] = [
+    {
+      label: "Timing",
+      value: formatTemporalKindLabel(conn.temporal_kind),
+    },
+  ]
+  if (conn.temporal_kind !== "static") {
+    rows.push({
+      label: "Currentness",
+      value: formatDynamicCurrentnessStatus(
+        conn.currentness ?? "unknown",
+        conn.currentness_as_of,
+      ),
+    })
+  }
+  const source = connectionSourceLabel(conn)
+  if (source) {
+    rows.push({ label: "Source", value: source })
+  }
+  const added = formatConnectionDate(conn.created_at)
+  if (added) {
+    rows.push({ label: "Added", value: added })
+  }
+  const closed = formatConnectionDate(conn.closed_at)
+  if (closed) {
+    rows.push({ label: "Closed", value: closed })
+  }
+  return rows
+}
+
 export function formatConnectionEvidence(
   evidence: Record<string, unknown> | null | undefined,
 ): ConnectionCreationEvidenceView | null {
@@ -65,23 +164,52 @@ export function formatConnectionEvidence(
     return null
   }
   const row = evidence as Record<string, unknown>
-  const quote = typeof row.quote === 'string' ? row.quote.trim() : ''
+  const quote = typeof row.quote === "string" ? row.quote.trim() : ""
+  const description =
+    typeof row.description === "string" ? row.description.trim() : ""
   const reason = sanitizeConnectionDisplayText(
-    typeof row.reason === 'string' ? row.reason.trim() : '',
+    typeof row.reason === "string" ? row.reason.trim() : "",
   )
-  if (!quote && !reason) {
+  const assertedCurrentness =
+    typeof row.asserted_currentness === "string" ? row.asserted_currentness : "unspecified"
+  const currentnessLabel =
+    assertedCurrentness === "current"
+      ? "Current"
+      : assertedCurrentness === "former"
+        ? "Former"
+        : null
+  const displayQuote = quote || description
+  if (!displayQuote && !reason && !currentnessLabel) {
     return null
   }
   const confidenceRaw = row.confidence
   let confidencePercent: number | null = null
-  if (typeof confidenceRaw === 'number' && !Number.isNaN(confidenceRaw)) {
+  if (typeof confidenceRaw === "number" && !Number.isNaN(confidenceRaw)) {
     confidencePercent = Math.round(confidenceRaw * 100)
   }
-  const resolvedReason = reason || quote
+  const resolvedReason = reason || displayQuote
   return {
     confidencePercent,
-    quote,
-    showReason: shouldShowEvidenceReason(quote, resolvedReason),
+    quote: displayQuote,
+    showReason: shouldShowEvidenceReason(displayQuote, resolvedReason),
     reason: resolvedReason,
+    sourceLabel: sourceLabel(typeof row.source === "string" ? row.source : null),
+    currentnessLabel,
   }
+}
+
+export function bestEvidenceRecord(conn: {
+  evidence?: ReadonlyArray<object | null | undefined> | null
+  evidence_json?: Record<string, unknown> | null
+}): Record<string, unknown> | null {
+  const rows = Array.isArray(conn.evidence) ? conn.evidence : []
+  for (const row of rows) {
+    if (row && typeof row === "object") {
+      return row as Record<string, unknown>
+    }
+  }
+  if (conn.evidence_json && typeof conn.evidence_json === "object") {
+    return conn.evidence_json
+  }
+  return null
 }

@@ -119,3 +119,55 @@ def test_repair_s3_article_sources_dry_run_json(monkeypatch, capsys) -> None:
     assert payload["scanned"] == 3
     assert payload["updated"] == 2
     assert payload["unchanged"] == 1
+
+
+def test_repair_orphan_connections_dry_run_json(monkeypatch, capsys) -> None:
+    from backfield_entities.connections.lifecycle import RepairOrphanConnectionsResult
+
+    report = RepairOrphanConnectionsResult(
+        closed_count=4,
+        rewired_count=2,
+        inspected_count=6,
+    )
+    monkeypatch.setattr(
+        "backfield_cli.repair_orphan_connections.get_engine",
+        lambda: create_engine("sqlite://"),
+    )
+    monkeypatch.setattr(
+        "backfield_cli.repair_orphan_connections.repair_orphan_open_connections",
+        lambda _session, **_kwargs: report,
+    )
+
+    assert main(["repair-orphan-connections", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {
+        "mode": "dry-run",
+        "stylebook_id": None,
+        "inspected_count": 6,
+        "rewired_count": 2,
+        "closed_count": 4,
+    }
+
+
+def test_migrate_connection_kg_inventory_json(monkeypatch, capsys) -> None:
+    from backfield_entities.connections.migrate_kg_phase_a import ConnectionKgMigrateReport
+
+    report = ConnectionKgMigrateReport(
+        apply=False,
+        inventory_only=True,
+        connection_total=12,
+        null_nature_count=2,
+    )
+    monkeypatch.setattr(
+        "backfield_cli.migrate_connection_kg.get_engine",
+        lambda: create_engine("sqlite://"),
+    )
+    monkeypatch.setattr(
+        "backfield_cli.migrate_connection_kg.migrate_connections_kg_phase_a",
+        lambda _session, **_kwargs: report,
+    )
+
+    assert main(["migrate-connection-kg", "--inventory-only", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["connection_total"] == 12
+    assert payload["inventory_only"] is True

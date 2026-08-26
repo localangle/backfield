@@ -1078,23 +1078,25 @@ class StylebookOrganizationMeta(SQLModel, table=True):
 
 
 class StylebookConnection(SQLModel, table=True):
-    """Directed edge between two canonical entities within a project (polymorphic entity ids).
+    """Directed edge between two Stylebook canonicals (polymorphic entity ids).
+
+    Identity scope is ``stylebook_id``: one open edge per
+    ``(stylebook_id, ends, coalesce(nature, ''))`` (see ``uq_stylebook_connection_open_edge``).
+    Narrative and citations live on ``stylebook_connection_evidence`` children.
+    ``project_id`` remains for write provenance / project-scoped lists.
 
     ``from_entity_id`` / ``to_entity_id`` are TEXT UUID strings for ``location``, ``person``,
-    and ``organization`` entities; decimal strings for stub work ids until that catalog uses UUIDs.
+    and ``organization``; decimal strings for stub work ids until that catalog uses UUIDs.
 
-    ``description`` is the human-readable relationship sentence shown in Stylebook UI.
-    ``nature`` is an optional normalized slug when one clearly fits the relationship.
-
-    ``evidence_json`` is optional creation evidence for auto-linked edges (see
-    ``backfield_entities.connections.evidence``). Manual connections leave it null.
-
-    Exact-edge uniqueness is enforced in Postgres via migration
-    ``061_sb_conn_description`` (expression index with ``coalesce`` on nullable fields).
+    ``closed_at`` null means open; soft-close hides the edge from default public/Stylebook lists.
     """
 
     __tablename__ = "stylebook_connections"
     __table_args__ = (
+        CheckConstraint(
+            "currentness IN ('current', 'former', 'unknown')",
+            name="ck_stylebook_connection_currentness",
+        ),
         Index(
             "ix_stylebook_connection_from",
             "project_id",
@@ -1108,21 +1110,153 @@ class StylebookConnection(SQLModel, table=True):
             "to_entity_id",
         ),
         Index("ix_stylebook_connection_nature", "project_id", "nature"),
+        Index(
+            "ix_stylebook_connection_currentness_evidence",
+            "currentness_evidence_id",
+        ),
+        Index(
+            "ix_stylebook_connection_sb_from",
+            "stylebook_id",
+            "from_entity_type",
+            "from_entity_id",
+        ),
+        Index(
+            "ix_stylebook_connection_sb_to",
+            "stylebook_id",
+            "to_entity_type",
+            "to_entity_id",
+        ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="backfield_project.id", index=True)
+    stylebook_id: int | None = Field(
+        default=None,
+        foreign_key="stylebook.id",
+    )
     from_entity_type: str = Field(sa_column=Column(Text, nullable=False, index=True))
     from_entity_id: str = Field(sa_column=Column(Text, nullable=False, index=True))
     to_entity_type: str = Field(sa_column=Column(Text, nullable=False, index=True))
     to_entity_id: str = Field(sa_column=Column(Text, nullable=False, index=True))
     nature: str | None = Field(default=None, sa_column=Column(Text, nullable=True, index=True))
+    currentness: str = Field(
+        default="unknown",
+        sa_column=Column(Text, nullable=False, server_default="unknown"),
+    )
+    currentness_as_of: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    currentness_evidence_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            Integer,
+            ForeignKey("stylebook_connection_evidence.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    closed_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class StylebookConnectionEvidence(SQLModel, table=True):
+    """Citation / provenance row for a Stylebook connection (one edge, many evidence)."""
+
+    __tablename__ = "stylebook_connection_evidence"
+    __table_args__ = (
+        CheckConstraint(
+            "asserted_currentness IN ('current', 'former', 'unspecified')",
+            name="ck_stylebook_conn_evidence_currentness",
+        ),
+        CheckConstraint(
+            "currentness_review_source IN "
+            "('unreviewed', 'llm', 'manual', 'deterministic')",
+            name="ck_stylebook_conn_evidence_review_source",
+        ),
+        Index("ix_stylebook_conn_evidence_connection", "connection_id", "created_at"),
+        Index("ix_stylebook_conn_evidence_article", "article_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    connection_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("stylebook_connections.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    article_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            Integer,
+            ForeignKey("substrate_article.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
+        ),
+    )
     description: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
-    evidence_json: dict[str, Any] | None = Field(
+    quote: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    reason: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    confidence: float | None = Field(default=None)
+    source: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    prompt_version: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    run_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    processed_item_id: int | None = Field(default=None)
+    match_basis: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    asserted_currentness: str = Field(
+        default="unspecified",
+        sa_column=Column(Text, nullable=False, server_default="unspecified"),
+    )
+    currentness_review_source: str = Field(
+        default="unreviewed",
+        sa_column=Column(Text, nullable=False, server_default="unreviewed"),
+    )
+    observed_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    payload_json: dict[str, Any] | None = Field(
         default=None,
         sa_column=Column(JSON, nullable=True),
     )
     created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class StylebookConnectionNatureCustom(SQLModel, table=True):
+    """Org/Stylebook custom connection nature (escape hatch beside the code catalog)."""
+
+    __tablename__ = "stylebook_connection_nature_custom"
+    __table_args__ = (
+        UniqueConstraint(
+            "stylebook_id",
+            "slug",
+            name="uq_stylebook_connection_nature_custom_slug",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    slug: str = Field(sa_column=Column(Text, nullable=False))
+    label: str = Field(sa_column=Column(Text, nullable=False))
+    equivalent_to: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    temporal_kind: str = Field(
+        default="dynamic",
+        sa_column=Column(Text, nullable=False, server_default="dynamic"),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
 

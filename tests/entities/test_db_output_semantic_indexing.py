@@ -20,9 +20,31 @@ def test_db_output_settings_semantic_indexing_defaults_off() -> None:
     assert settings.semantic_indexing_enabled is False
 
 
-def test_db_output_settings_auto_connections_defaults_on() -> None:
+def test_db_output_settings_auto_connections_defaults_off() -> None:
     settings = DbOutputCanonicalSettings.from_node_params({})
-    assert settings.auto_connections_enabled is True
+    assert settings.auto_connections_enabled is False
+
+
+def test_db_output_settings_connections_model_falls_back_to_adjudication() -> None:
+    from backfield_entities.ingest.db_output_settings import resolved_connections_llm
+
+    settings = DbOutputCanonicalSettings.from_node_params(
+        {"adjudication_model": "gpt-test", "adjudication_ai_model_config_id": "cfg-1"}
+    )
+    model, config_id = resolved_connections_llm(settings)
+    assert model == "gpt-test"
+    assert config_id == "cfg-1"
+
+    dedicated = DbOutputCanonicalSettings.from_node_params(
+        {
+            "connections_model": "gpt-conn",
+            "connections_ai_model_config_id": "cfg-2",
+            "adjudication_model": "gpt-test",
+        }
+    )
+    model, config_id = resolved_connections_llm(dedicated)
+    assert model == "gpt-conn"
+    assert config_id == "cfg-2"
 
 
 def test_db_output_settings_auto_connections_can_be_disabled() -> None:

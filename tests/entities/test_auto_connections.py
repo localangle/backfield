@@ -163,12 +163,10 @@ def test_build_connection_creation_evidence_includes_match_basis() -> None:
         to_entity_type="location",
         to_entity_id="loc-b",
         to_display_name="Byrne Elementary, Garfield Ridge, Chicago, IL",
-        match_basis="head_name_match",
-        prompt_version="auto_connections_same_site_pair_v1",
+        match_basis="site_name_exact",
     )
     payload = evidence.to_storage_dict()
-    assert payload["match_basis"] == "head_name_match"
-    assert payload["prompt_version"] == "auto_connections_same_site_pair_v1"
+    assert payload["match_basis"] == "site_name_exact"
 
 
 def test_build_connection_creation_evidence_rejects_empty_quote() -> None:

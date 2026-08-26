@@ -1,11 +1,33 @@
 /** Stylebook UI segments catalogs under `/stylebook/<slug>/…`. */
 
 import { STYLEBOOK_URL_QUERY_KEY } from "@/lib/stylebook-api/client"
+import type { EntityType } from "@/lib/entityTypes"
 
 export function stylebookCatalogBasePath(stylebookSlug: string): string {
   const s = stylebookSlug.trim()
   if (!s) return "/stylebook/default"
   return `/stylebook/${encodeURIComponent(s)}`
+}
+
+/** Absolute URL for an entity's catalog detail page, scoped to the current catalog. */
+export function entityDetailUrl(
+  entityType: EntityType,
+  entityId: string | number,
+  catalogBasePath: string,
+  scopeSuffix: string,
+): string {
+  const base = window.location.origin
+  const prefix = `${base}${catalogBasePath}`
+  if (entityType === "person") {
+    return `${prefix}/people/canonical/${entityId}${scopeSuffix}`
+  }
+  if (entityType === "organization") {
+    return `${prefix}/organizations/canonical/${entityId}${scopeSuffix}`
+  }
+  if (entityType === "work") {
+    return `${prefix}/works/canonical/${entityId}${scopeSuffix}`
+  }
+  return `${prefix}/locations/canonical/${entityId}${scopeSuffix}`
 }
 
 /** Strip `/stylebook/<slug>` from pathname if present. */

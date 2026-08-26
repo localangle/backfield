@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from collections.abc import Callable
 from typing import Any
 
@@ -11,23 +12,40 @@ from sqlmodel import Session
 from backfield_entities.connections.affiliation_links import (
     infer_affiliation_person_organization_edges,
 )
-from backfield_entities.connections.caps import MAX_CREATED_EDGES_PER_ITEM
+from backfield_entities.connections.candidate_pairs import (
+    AUTO_CONNECTION_FAMILIES,
+    build_deterministic_connection_proposals,
+    generate_connection_candidates,
+)
+from backfield_entities.connections.caps import (
+    MAX_CANDIDATE_PAIRS_PER_ARTICLE,
+    MAX_CANDIDATE_PAIRS_PER_BATCH,
+    MAX_CREATED_EDGES_PER_ITEM,
+    MAX_TOTAL_CONNECTION_REQUESTS,
+)
 from backfield_entities.connections.context import (
     AutoConnectionArticleContext,
     collect_auto_connection_article_context,
 )
-from backfield_entities.connections.dedupe import (
-    connection_edge_key,
+from backfield_entities.connections.currentness_review import (
+    ResolvedEdgeCurrentnessReviewItem,
+    review_resolved_edge_currentness,
 )
 from backfield_entities.connections.eligibility import evaluate_auto_connections_eligibility
 from backfield_entities.connections.inference import (
-    AUTO_CONNECTION_FAMILIES,
+    CandidateBatchInferenceResult,
+    FamilyInferenceCounts,
     FamilyInferenceResult,
-    classify_connection_family,
+    classify_candidate_batches,
 )
-from backfield_entities.connections.same_site_hints import discover_same_site_org_location_hints
+from backfield_entities.connections.natures import nature_def
+from backfield_entities.connections.postprocess import resolve_auto_connection_proposals
+from backfield_entities.connections.same_site_links import (
+    infer_same_site_org_location_edges,
+)
 from backfield_entities.connections.summary import build_auto_connections_summary
 from backfield_entities.connections.types import (
+    AutoConnectionCandidatePair,
     AutoConnectionEdgeProposal,
     LinkedEntitySnapshot,
 )
@@ -35,7 +53,10 @@ from backfield_entities.connections.writer import (
     AutoConnectionWriteResult,
     write_auto_connections,
 )
-from backfield_entities.ingest.db_output_settings import DbOutputCanonicalSettings
+from backfield_entities.ingest.db_output_settings import (
+    DbOutputCanonicalSettings,
+    resolved_connections_llm,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +75,74 @@ def _family_entities(
     return by_type[from_entity_type], by_type[to_entity_type]
 
 
+def _family_results_from_candidates(
+    context: AutoConnectionArticleContext,
+    inference: CandidateBatchInferenceResult,
+    candidate_family_by_id: dict[str, tuple[str, str]],
+    accepted_edges: tuple[AutoConnectionEdgeProposal, ...],
+) -> list[FamilyInferenceResult]:
+    edges_by_family: dict[tuple[str, str], list[AutoConnectionEdgeProposal]] = defaultdict(list)
+    for edge in accepted_edges:
+        family = candidate_family_by_id.get(edge.candidate_id or "")
+        if family is not None:
+            edges_by_family[family].append(edge)
+
+    results: list[FamilyInferenceResult] = []
+    first = True
+    for from_type, to_type in AUTO_CONNECTION_FAMILIES:
+        from_entities, to_entities = _family_entities(
+            context,
+            from_entity_type=from_type,
+            to_entity_type=to_type,
+        )
+        if not from_entities or not to_entities:
+            continue
+        edges = edges_by_family.get((from_type, to_type), [])
+        counts = FamilyInferenceCounts(
+            proposed=len(edges),
+            accepted=len(edges),
+        )
+        if first:
+            counts.proposed += inference.counts.skipped
+            counts.skipped = inference.counts.skipped
+            counts.skip_reasons = dict(inference.counts.skip_reasons)
+            first = False
+        results.append(
+            FamilyInferenceResult(
+                from_entity_type=from_type,
+                to_entity_type=to_type,
+                edges=tuple(edges),
+                counts=counts,
+            )
+        )
+    return results
+
+
+def _merge_write_results(
+    target: AutoConnectionWriteResult,
+    source: AutoConnectionWriteResult,
+) -> None:
+    target.created.extend(source.created)
+    target.reinforced.extend(source.reinforced)
+    target.skipped_existing_count += source.skipped_existing_count
+
+
+def _endpoint_family_for_proposal(
+    edge: AutoConnectionEdgeProposal,
+    candidate_by_id: dict[str, AutoConnectionCandidatePair],
+) -> tuple[str, str] | None:
+    candidate = candidate_by_id.get(edge.candidate_id or "")
+    if candidate is not None:
+        return candidate.from_entity_type, candidate.to_entity_type
+    if edge.match_basis == "affiliation_match":
+        return "person", "organization"
+    if edge.match_basis in {"site_name_exact", "org_at_named_place"}:
+        return "organization", "location"
+    if edge.match_basis == "explicit_party_district_construction":
+        return "person", "location"
+    return None
+
+
 def run_auto_connections_for_db_output(
     session: Session,
     *,
@@ -64,6 +153,10 @@ def run_auto_connections_for_db_output(
     run_id: str | None = None,
     processed_item_id: int | None = None,
     call_llm: Callable[..., str],
+    candidate_ids: tuple[str, ...] | None = None,
+    max_requests: int = MAX_TOTAL_CONNECTION_REQUESTS,
+    defer_overflow: bool = False,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Infer and persist high-confidence connections after substrate persistence."""
     eligibility = evaluate_auto_connections_eligibility(settings)
@@ -80,8 +173,7 @@ def run_auto_connections_for_db_output(
             reason=eligibility.reason,
         )
 
-    model = settings.adjudication_model.strip() or "gpt-5-nano"
-    model_config_id = settings.adjudication_ai_model_config_id
+    model, model_config_id = resolved_connections_llm(settings)
 
     try:
         context = collect_auto_connection_article_context(
@@ -92,88 +184,135 @@ def run_auto_connections_for_db_output(
         )
         # Release the persist transaction before LLM classification (can take tens of seconds).
         session.commit()
-        family_results: list[FamilyInferenceResult] = []
-        pending_edges: list[
-            tuple[
-                str,
-                str,
-                tuple[LinkedEntitySnapshot, ...],
-                tuple[LinkedEntitySnapshot, ...],
-                AutoConnectionEdgeProposal,
-            ]
-        ] = []
-        pending_edge_keys: set[tuple[int, str, str, str, str, str, str]] = set()
+        generation = generate_connection_candidates(
+            people=context.people,
+            organizations=context.organizations,
+            locations=context.locations,
+            article_text=context.article_text,
+            limit=MAX_CANDIDATE_PAIRS_PER_ARTICLE,
+        )
+        selected_candidates = generation.candidates
+        if candidate_ids is not None:
+            selected = set(candidate_ids)
+            selected_candidates = tuple(
+                candidate
+                for candidate in generation.candidates
+                if candidate.candidate_id in selected
+            )
+        inference = classify_candidate_batches(
+            candidates=selected_candidates,
+            model=model,
+            model_config_id=model_config_id,
+            call_llm=call_llm,
+            max_requests=max_requests,
+            reference_at=context.reference_at,
+        )
+        candidate_by_id = {
+            candidate.candidate_id: candidate for candidate in selected_candidates
+        }
+        candidate_family_by_id = {
+            candidate.candidate_id: (
+                candidate.from_entity_type,
+                candidate.to_entity_type,
+            )
+            for candidate in selected_candidates
+        }
+        affiliation_edges = infer_affiliation_person_organization_edges(
+            people=context.people,
+            organizations=context.organizations,
+            article_text=context.article_text,
+        )
+        same_site_edges = infer_same_site_org_location_edges(
+            organizations=context.organizations,
+            locations=context.locations,
+            article_text=context.article_text,
+        )
+        deterministic_edges = build_deterministic_connection_proposals(
+            selected_candidates
+        )
+        all_proposals = (
+            *affiliation_edges,
+            *same_site_edges,
+            *deterministic_edges,
+            *inference.edges,
+        )
+        resolution = resolve_auto_connection_proposals(
+            list(all_proposals),
+            candidates=candidate_by_id,
+        )
+        resolved_edges = list(resolution.edges)
+        created_cap_skipped = 0
+        if len(resolved_edges) > MAX_CREATED_EDGES_PER_ITEM:
+            created_cap_skipped = len(resolved_edges) - MAX_CREATED_EDGES_PER_ITEM
+            resolved_edges = resolved_edges[:MAX_CREATED_EDGES_PER_ITEM]
 
-        for from_type, to_type in AUTO_CONNECTION_FAMILIES:
+        inherited_currentness_reviews = sum(
+            edge.currentness_review_source == "llm" for edge in resolved_edges
+        )
+        currentness_review_items: list[ResolvedEdgeCurrentnessReviewItem] = []
+        review_id_by_edge_index: dict[int, str] = {}
+        for edge_index, edge in enumerate(resolved_edges):
+            family = _endpoint_family_for_proposal(edge, candidate_by_id)
+            if family is None:
+                continue
+            definition = (
+                nature_def(edge.nature, family[0], family[1]) if edge.nature else None
+            )
+            is_dynamic = definition is None or definition.temporal_kind == "dynamic"
+            if not is_dynamic or edge.currentness_review_source != "unreviewed":
+                continue
+            review_id = f"resolved-edge-{edge_index}"
+            review_id_by_edge_index[edge_index] = review_id
+            currentness_review_items.append(
+                ResolvedEdgeCurrentnessReviewItem(
+                    review_id=review_id,
+                    edge=edge,
+                    from_entity_type=family[0],
+                    to_entity_type=family[1],
+                )
+            )
+        currentness_review = review_resolved_edge_currentness(
+            items=tuple(currentness_review_items),
+            reference_at=context.reference_at,
+            model=model,
+            model_config_id=model_config_id,
+            call_llm=call_llm,
+        )
+        resolved_edges = [
+            currentness_review.edges_by_review_id.get(
+                review_id_by_edge_index.get(edge_index, ""),
+                edge,
+            )
+            for edge_index, edge in enumerate(resolved_edges)
+        ]
+
+        write_result = AutoConnectionWriteResult()
+        family_unresolved = 0
+        edges_by_family: dict[
+            tuple[str, str],
+            list[AutoConnectionEdgeProposal],
+        ] = defaultdict(list)
+        for edge in resolved_edges:
+            family = _endpoint_family_for_proposal(edge, candidate_by_id)
+            if family is None:
+                family_unresolved += 1
+                logger.warning(
+                    "Dropping resolved auto-connection edge with unresolved endpoint "
+                    "family: match_basis=%s nature=%s",
+                    edge.match_basis,
+                    edge.nature,
+                )
+                continue
+            edges_by_family[family].append(edge)
+
+        for (from_type, to_type), edges in edges_by_family.items():
+            if dry_run:
+                continue
             from_entities, to_entities = _family_entities(
                 context,
                 from_entity_type=from_type,
                 to_entity_type=to_type,
             )
-            if not from_entities or not to_entities:
-                continue
-            if from_type == "person" and to_type == "organization":
-                for edge in infer_affiliation_person_organization_edges(
-                    people=from_entities,
-                    organizations=to_entities,
-                    article_text=context.article_text,
-                ):
-                    edge_key = connection_edge_key(
-                        project_id=project_id,
-                        from_entity_type=from_type,
-                        from_entity_id=edge.from_entity_id,
-                        to_entity_type=to_type,
-                        to_entity_id=edge.to_entity_id,
-                        nature=edge.nature,
-                        description=edge.description,
-                    )
-                    if edge_key in pending_edge_keys:
-                        continue
-                    pending_edge_keys.add(edge_key)
-                    pending_edges.append(
-                        (from_type, to_type, from_entities, to_entities, edge)
-                    )
-            same_site_hints = ()
-            if from_type == "organization" and to_type == "location":
-                same_site_hints = discover_same_site_org_location_hints(
-                    organizations=from_entities,
-                    locations=to_entities,
-                    article_text=context.article_text,
-                )
-            result = classify_connection_family(
-                from_entity_type=from_type,
-                to_entity_type=to_type,
-                from_entities=from_entities,
-                to_entities=to_entities,
-                article_text=context.article_text,
-                model=model,
-                model_config_id=model_config_id,
-                call_llm=call_llm,
-                same_site_hints=same_site_hints,
-            )
-            family_results.append(result)
-            for edge in result.edges:
-                edge_key = connection_edge_key(
-                    project_id=project_id,
-                    from_entity_type=from_type,
-                    from_entity_id=edge.from_entity_id,
-                    to_entity_type=to_type,
-                    to_entity_id=edge.to_entity_id,
-                    nature=edge.nature,
-                    description=edge.description,
-                )
-                if edge_key in pending_edge_keys:
-                    continue
-                pending_edge_keys.add(edge_key)
-                pending_edges.append((from_type, to_type, from_entities, to_entities, edge))
-
-        created_cap_skipped = 0
-        if len(pending_edges) > MAX_CREATED_EDGES_PER_ITEM:
-            created_cap_skipped = len(pending_edges) - MAX_CREATED_EDGES_PER_ITEM
-            pending_edges = pending_edges[:MAX_CREATED_EDGES_PER_ITEM]
-
-        write_result = AutoConnectionWriteResult(created=[], skipped_existing_count=0)
-        for from_type, to_type, from_entities, to_entities, edge in pending_edges:
             batch = write_auto_connections(
                 session,
                 project_id=project_id,
@@ -181,24 +320,113 @@ def run_auto_connections_for_db_output(
                 to_entity_type=to_type,
                 from_entities=from_entities,
                 to_entities=to_entities,
-                edges=[edge],
+                edges=edges,
                 article_id=article_id,
                 run_id=run_id,
                 processed_item_id=processed_item_id,
                 adjudication_model=model,
                 adjudication_ai_model_config_id=model_config_id,
+                reference_at=context.reference_at,
             )
-            write_result.created.extend(batch.created)
-            write_result.skipped_existing_count += batch.skipped_existing_count
+            _merge_write_results(write_result, batch)
 
-        return build_auto_connections_summary(
+        family_results = _family_results_from_candidates(
+            context,
+            inference,
+            candidate_family_by_id,
+            all_proposals,
+        )
+        diagnostics = {
+            "candidate_pairs_considered": generation.stats.considered,
+            "candidate_pairs_generated": generation.stats.generated,
+            "candidate_pairs_rejected_no_evidence": generation.stats.rejected_no_evidence,
+            "candidate_pairs_truncated": generation.stats.truncated,
+            "candidate_sources": dict(generation.stats.by_source),
+            "linked_entities": dict(context.entity_counts),
+            "linked_entities_truncated": dict(context.entity_truncated),
+            "requests": inference.counts.requests,
+            "failed_requests": inference.counts.failed_requests,
+            "prompt_characters": inference.counts.prompt_characters,
+            "malformed_proposals": inference.counts.malformed_proposals,
+            "deterministic_proposals": len(deterministic_edges),
+            "affiliation_proposals": len(affiliation_edges),
+            "same_site_proposals": len(same_site_edges),
+            "elapsed_seconds": round(inference.counts.elapsed_seconds, 3),
+            "exact_duplicates": resolution.stats.exact_duplicates,
+            "subsumed": resolution.stats.subsumed,
+            "conflicts_resolved": resolution.stats.conflicts_resolved,
+            "ambiguous_conflicts": resolution.stats.ambiguous_conflicts,
+            "self_loops": resolution.stats.self_loops,
+            "selected_candidate_pairs": len(inference.processed_candidate_ids),
+            "deferred_candidate_pairs": len(inference.overflow_candidate_ids),
+            "batch_sizes": [
+                len(
+                    inference.processed_candidate_ids[
+                        index : index + MAX_CANDIDATE_PAIRS_PER_BATCH
+                    ]
+                )
+                for index in range(
+                    0,
+                    len(inference.processed_candidate_ids),
+                    MAX_CANDIDATE_PAIRS_PER_BATCH,
+                )
+            ],
+            "request_phase": "deferred" if candidate_ids is not None else "inline",
+            "resolved_edges": len(resolved_edges),
+            "family_unresolved": family_unresolved,
+            "currentness_review": {
+                "inherited_llm": inherited_currentness_reviews,
+                "attempted": currentness_review.counts.attempted,
+                "reviewed": currentness_review.counts.reviewed,
+                "current": currentness_review.counts.current,
+                "former": currentness_review.counts.former,
+                "unspecified": currentness_review.counts.unspecified,
+                "requests": currentness_review.counts.requests,
+                "failed_requests": currentness_review.counts.failed_requests,
+                "malformed_decisions": currentness_review.counts.malformed_decisions,
+                "missing_decisions": currentness_review.counts.missing_decisions,
+                "unreviewed_after": (
+                    currentness_review.counts.attempted
+                    - currentness_review.counts.reviewed
+                ),
+            },
+        }
+        if dry_run:
+            diagnostics["preview_edges"] = [
+                {
+                    "candidate_id": edge.candidate_id,
+                    "from_entity_id": edge.from_entity_id,
+                    "to_entity_id": edge.to_entity_id,
+                    "nature": edge.nature,
+                    "confidence": edge.confidence,
+                    "quote": edge.quote,
+                    "asserted_currentness": edge.asserted_currentness,
+                    "currentness_review_source": edge.currentness_review_source,
+                }
+                for edge in resolved_edges
+            ]
+
+        summary = build_auto_connections_summary(
             enabled=True,
             eligible=True,
             reason=eligibility.reason,
             families=family_results,
             write_result=write_result,
             created_cap_skipped=created_cap_skipped,
+            diagnostics=diagnostics,
+            deferred_candidate_ids=(
+                inference.overflow_candidate_ids if defer_overflow else ()
+            ),
         )
+        if not defer_overflow and inference.overflow_candidate_ids:
+            summary["unprocessed_candidate_ids"] = list(
+                inference.overflow_candidate_ids
+            )
+            summary["unprocessed"] = len(inference.overflow_candidate_ids)
+        else:
+            summary["unprocessed"] = 0
+        summary["dry_run"] = dry_run
+        return summary
     except Exception as exc:
         logger.warning(
             "Auto-connection inference failed for project_id=%s article_id=%s: %s",

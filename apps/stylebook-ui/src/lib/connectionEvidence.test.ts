@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  formatConnectionDate,
   formatConnectionEvidence,
+  formatConnectionStatusMeta,
   formatConnectionSummaryLabel,
   hasConnectionEvidence,
   isInternalConnectionMetadata,
@@ -20,11 +22,13 @@ describe('connectionEvidence helpers', () => {
       confidence: 0.94,
       quote: 'Mayor Jane Smith works for Chicago City Hall.',
       reason: 'The story states an employment relationship.',
+      asserted_currentness: 'current',
     })
     expect(view).not.toBeNull()
     expect(view?.confidencePercent).toBe(94)
     expect(view?.quote).toContain('Jane Smith')
     expect(view?.showReason).toBe(true)
+    expect(view?.currentnessLabel).toBe('Current')
   })
 
   it('hides boilerplate reasons that repeat the relationship nature', () => {
@@ -60,5 +64,58 @@ describe('connectionEvidence helpers', () => {
   it('detects internal connection metadata', () => {
     expect(isInternalConnectionMetadata('match_basis=head_name_match')).toBe(true)
     expect(sanitizeConnectionDisplayText('match_basis=head_name_match')).toBe('')
+  })
+
+  it('formats open connection status metadata', () => {
+    expect(
+      formatConnectionStatusMeta({
+        created_at: '2026-03-12T15:00:00Z',
+        temporal_kind: 'dynamic',
+        currentness: 'current',
+        currentness_as_of: '2026-02-01T00:00:00Z',
+        evidence: [{ source: 'dboutput_auto_connections', observed_at: '2026-02-01T00:00:00Z' }],
+      }),
+    ).toEqual([
+      { label: 'Timing', value: 'Dynamic' },
+      {
+        label: 'Currentness',
+        value: `Current · ${formatConnectionDate('2026-02-01T00:00:00Z', { compactYear: true })}`,
+      },
+      { label: 'Source', value: 'Automatic' },
+      { label: 'Added', value: formatConnectionDate('2026-03-12T15:00:00Z') },
+    ])
+  })
+
+  it('formats closed connection status metadata', () => {
+    expect(
+      formatConnectionStatusMeta({
+        created_at: '2026-01-01T00:00:00Z',
+        closed_at: '2026-08-01T00:00:00Z',
+        temporal_kind: 'static',
+      }),
+    ).toEqual([
+      { label: 'Timing', value: 'Static' },
+      { label: 'Added', value: formatConnectionDate('2026-01-01T00:00:00Z') },
+      { label: 'Closed', value: formatConnectionDate('2026-08-01T00:00:00Z') },
+    ])
+  })
+
+  it('formats former and unknown dynamic currentness honestly', () => {
+    expect(
+      formatConnectionStatusMeta({
+        temporal_kind: 'dynamic',
+        currentness: 'former',
+        currentness_as_of: '2020-01-01T00:00:00Z',
+      })[1],
+    ).toEqual({
+      label: 'Currentness',
+      value: `Former · ${formatConnectionDate('2020-01-01T00:00:00Z', { compactYear: true })}`,
+    })
+    expect(
+      formatConnectionStatusMeta({
+        temporal_kind: 'dynamic',
+        currentness: 'unknown',
+      })[1],
+    ).toEqual({ label: 'Currentness', value: 'Unknown' })
   })
 })

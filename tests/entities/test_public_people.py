@@ -319,6 +319,43 @@ def test_list_public_entity_connections_for_person() -> None:
         assert len(connections) == 1
         assert connections[0].nature == "works_at"
         assert connections[0].to_entity_id == location_id
+        assert connections[0].evidence == []
+
+        from datetime import UTC, datetime
+
+        closed = StylebookConnection(
+            project_id=project_id,
+            stylebook_id=stylebook_id,
+            from_entity_type="person",
+            from_entity_id=mayor_id,
+            to_entity_type="location",
+            to_entity_id=str(uuid4()),
+            nature="lives_in",
+            closed_at=datetime.now(UTC),
+        )
+        session.add(closed)
+        session.commit()
+
+        open_only, open_total = list_public_entity_connections(
+            session,
+            project_id=project_id,
+            stylebook_id=stylebook_id,
+            entity_type="person",
+            entity_id=mayor_id,
+        )
+        assert open_total == 1
+        assert open_only[0].nature == "works_at"
+
+        with_closed, with_closed_total = list_public_entity_connections(
+            session,
+            project_id=project_id,
+            stylebook_id=stylebook_id,
+            entity_type="person",
+            entity_id=mayor_id,
+            include_closed=True,
+        )
+        assert with_closed_total == 2
+        assert {c.nature for c in with_closed} == {"works_at", "lives_in"}
 
 
 def test_get_public_person_story_count_distinct_from_mention_count() -> None:

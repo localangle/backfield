@@ -152,6 +152,7 @@ def _persist_db_output_in_session(
     replace_geography: bool,
     processed_item_id: int | None,
     settings: DbOutputCanonicalSettings,
+    infer_connections: bool = True,
 ) -> dict[str, Any]:
     persist_result = persist_from_consolidated(
         session,
@@ -252,22 +253,25 @@ def _persist_db_output_in_session(
     )
 
     article_text = str(body.get("text") or "")
-    connections = run_auto_connections_for_db_output(
-        session,
-        project_id=project_id,
-        article_id=article_id,
-        article_text=article_text,
-        settings=settings,
-        run_id=run_id,
-        processed_item_id=processed_item_id,
-        call_llm=lambda prompt, **kwargs: call_llm(
-            prompt,
-            openai_api_key=os.getenv("OPENAI_API_KEY"),
-            max_retries=ADJUDICATION_LLM_MAX_RETRIES,
-            timeout=ADJUDICATION_LLM_TIMEOUT_S,
-            **kwargs,
-        ),
-    )
+    connections = None
+    if infer_connections:
+        connections = run_auto_connections_for_db_output(
+            session,
+            project_id=project_id,
+            article_id=article_id,
+            article_text=article_text,
+            settings=settings,
+            run_id=run_id,
+            processed_item_id=processed_item_id,
+            call_llm=lambda prompt, **kwargs: call_llm(
+                prompt,
+                openai_api_key=os.getenv("OPENAI_API_KEY"),
+                max_retries=ADJUDICATION_LLM_MAX_RETRIES,
+                timeout=ADJUDICATION_LLM_TIMEOUT_S,
+                allow_max_tokens_bump=False,
+                **kwargs,
+            ),
+        )
 
     clear_replace_article_geography_flags(
         session,
@@ -336,11 +340,13 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
 
     from backfield_db.session import get_engine
 
+    engine = get_engine()
     last_exc: SQLAlchemyError | None = None
+    result: dict[str, Any] | None = None
     with _dboutput_persist_slot():
         for attempt in range(_DBOUTPUT_DEADLOCK_MAX_ATTEMPTS):
             try:
-                with Session(get_engine()) as session:
+                with Session(engine) as session:
                     result = _persist_db_output_in_session(
                         session,
                         body=body,
@@ -351,10 +357,11 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
                         replace_geography=replace_geography,
                         processed_item_id=processed_item_id,
                         settings=settings,
+                        infer_connections=False,
                     )
                     session.commit()
                     _kick_webhook_dispatch_after_commit(session)
-                return result
+                break
             except SQLAlchemyError as exc:
                 last_exc = exc
                 if not is_postgres_deadlock(exc) or attempt >= _DBOUTPUT_DEADLOCK_MAX_ATTEMPTS - 1:
@@ -369,6 +376,49 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
                 )
                 time.sleep(delay_s)
 
-    if last_exc is not None:
+    if result is None and last_exc is not None:
         raise last_exc
-    raise RuntimeError("DBOutput persist failed without an exception")
+    if result is None:
+        raise RuntimeError("DBOutput persist failed without an exception")
+
+    try:
+        with Session(engine) as session:
+            result["connections"] = run_auto_connections_for_db_output(
+                session,
+                project_id=project_id,
+                article_id=int(result["article_id"]),
+                article_text=str(result.get("text") or ""),
+                settings=settings,
+                run_id=run_id,
+                processed_item_id=processed_item_id,
+                call_llm=lambda prompt, **kwargs: call_llm(
+                    prompt,
+                    openai_api_key=os.getenv("OPENAI_API_KEY"),
+                    max_retries=ADJUDICATION_LLM_MAX_RETRIES,
+                    timeout=ADJUDICATION_LLM_TIMEOUT_S,
+                    allow_max_tokens_bump=False,
+                    **kwargs,
+                ),
+            )
+            session.commit()
+    except Exception as exc:
+        logger.warning(
+            "Post-persist automatic connection inference failed project_id=%s article_id=%s",
+            project_id,
+            result["article_id"],
+            exc_info=True,
+        )
+        result["connections"] = {
+            "enabled": bool(settings.auto_connections_enabled),
+            "eligible": True,
+            "status": "failed",
+            "reason": "post_persist_inference_failed",
+            "error": str(exc),
+            "created": 0,
+            "reinforced": 0,
+            "skipped_existing": 0,
+            "families": [],
+            "edges": [],
+        }
+
+    return result

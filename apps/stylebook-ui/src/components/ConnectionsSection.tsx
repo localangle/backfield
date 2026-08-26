@@ -1,8 +1,7 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useAppMessage } from "@/components/AppMessageProvider"
-import type { Connection } from "@/lib/stylebook-api/connections"
+import type { Connection, NatureEntry } from "@/lib/stylebook-api/connections"
 import {
-  CONNECTIONS_GRAPH_FETCH_LIMIT,
   CONNECTIONS_PER_PAGE,
   listStylebookConnectionsForLocation,
   listStylebookConnectionsForOrganization,
@@ -14,14 +13,31 @@ import {
   updateStylebookConnectionForLocation,
   updateStylebookConnectionForOrganization,
   updateStylebookConnectionForPerson,
-  deleteStylebookConnectionForLocation,
-  deleteStylebookConnectionForOrganization,
-  deleteStylebookConnectionForPerson,
+  closeStylebookConnectionForLocation,
+  closeStylebookConnectionForOrganization,
+  closeStylebookConnectionForPerson,
+  reopenStylebookConnectionForLocation,
+  reopenStylebookConnectionForOrganization,
+  reopenStylebookConnectionForPerson,
 } from "@/lib/stylebook-api/connections"
+import {
+  EMPTY_CONNECTION_NEIGHBORHOOD,
+  fetchConnectionNeighborhood,
+  type ConnectionNeighborhood,
+} from "@/lib/connectionGraph"
+import { entityDetailUrl } from "@/lib/stylebookPaths"
+import type { GraphEntityProfileLines } from "@/lib/connectionGraphEntityProfile"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Dialog,
   DialogContent,
@@ -31,17 +47,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, Pencil, Trash2, ExternalLink, List, Network } from "lucide-react"
+import { Plus, Pencil, Ban, RotateCcw, ExternalLink, List, Network } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import LocationSelector from "@/components/LocationSelector"
 import PersonSelector from "@/components/PersonSelector"
 import OrganizationSelector from "@/components/OrganizationSelector"
-import WorkSelector from "@/components/WorkSelector"
 import ConnectionEvidenceBlock from "@/components/ConnectionEvidenceBlock"
+import ConnectionStatusMeta from "@/components/ConnectionStatusMeta"
 import ConnectionsGraph from "@/components/ConnectionsGraph"
 import NatureAutocomplete from "@/components/NatureAutocomplete"
 import Pagination from "@/components/Pagination"
-import { formatConnectionSummaryLabel } from "@/lib/connectionEvidence"
+import { bestEvidenceRecord, formatConnectionSummaryLabel } from "@/lib/connectionEvidence"
 import type { EntityType as ConnectionsEntityType } from "@/lib/entityTypes"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { fetchProjects, type Project } from "@/lib/stylebook-api/projects"
@@ -53,30 +69,7 @@ interface ConnectionsSectionProps {
   entityId: string | number
   stylebookSlug: string
   entityDisplayName: string
-}
-
-function getDetailUrl(
-  entityType: EntityType,
-  entityId: string | number,
-  catalogBasePath: string,
-  scopeSuffix: string,
-): string {
-  const base = window.location.origin
-  const prefix = `${base}${catalogBasePath}`
-  if (entityType === "person") {
-    return `${prefix}/people/canonical/${entityId}${scopeSuffix}`
-  }
-  if (entityType === "organization") {
-    return `${prefix}/organizations/canonical/${entityId}${scopeSuffix}`
-  }
-  if (entityType === "work") {
-    return `${prefix}/works/canonical/${entityId}${scopeSuffix}`
-  }
-  return `${prefix}/locations/canonical/${entityId}${scopeSuffix}`
-}
-
-function connectionSummaryLabel(conn: Connection): string {
-  return formatConnectionSummaryLabel(conn)
+  entityProfileLines?: GraphEntityProfileLines
 }
 
 export default function ConnectionsSection({
@@ -84,15 +77,16 @@ export default function ConnectionsSection({
   entityId,
   stylebookSlug,
   entityDisplayName,
+  entityProfileLines,
 }: ConnectionsSectionProps) {
   const { catalogScopeSuffix, catalogBasePath, projectScopeSlug } = useProjectCatalogScope()
   const { showError } = useAppMessage()
   const [connections, setConnections] = useState<Connection[]>([])
   const [connectionsTotal, setConnectionsTotal] = useState(0)
   const [connectionsPage, setConnectionsPage] = useState(1)
-  const [graphConnections, setGraphConnections] = useState<Connection[] | null>(null)
+  const [graphNeighborhood, setGraphNeighborhood] = useState<ConnectionNeighborhood | null>(null)
   const [graphLoading, setGraphLoading] = useState(false)
-  const [activeTab, setActiveTab] = useState<"list" | "graph">("list")
+  const [activeTab, setActiveTab] = useState<"list" | "graph">("graph")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
@@ -101,17 +95,27 @@ export default function ConnectionsSection({
   const [selectorOpen, setSelectorOpen] = useState(false)
   const [selectedTargetId, setSelectedTargetId] = useState<string | number | null>(null)
   const [selectedTargetName, setSelectedTargetName] = useState<string | null>(null)
-  const [addTargetType, setAddTargetType] = useState<'person' | 'location' | 'organization' | 'work'>('person')
+  const [addTargetType, setAddTargetType] = useState<
+    'person' | 'location' | 'organization'
+  >('person')
   const [nature, setNature] = useState('')
   const [description, setDescription] = useState('')
   const [natureSuggestions, setNatureSuggestions] = useState<string[]>([])
+  const [natureEntries, setNatureEntries] = useState<NatureEntry[]>([])
   const [natureSearch, setNatureSearch] = useState('')
+  const [assertedCurrentness, setAssertedCurrentness] = useState<
+    "current" | "former" | "unspecified"
+  >("unspecified")
   const [submitting, setSubmitting] = useState(false)
 
   const [editConnection, setEditConnection] = useState<Connection | null>(null)
   const [editNature, setEditNature] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [editNatureSuggestions, setEditNatureSuggestions] = useState<string[]>([])
+  const [editNatureEntries, setEditNatureEntries] = useState<NatureEntry[]>([])
+  const [editAssertedCurrentness, setEditAssertedCurrentness] = useState<
+    "current" | "former" | "unspecified"
+  >("unspecified")
   const [editSubmitting, setEditSubmitting] = useState(false)
 
   const [deleteConnection, setDeleteConnection] = useState<Connection | null>(null)
@@ -132,14 +136,25 @@ export default function ConnectionsSection({
     }
   }, [])
 
+  // Request-sequence counters so a slow response for a previous entity or page
+  // never overwrites state for the current one (the component stays mounted when
+  // navigating between entries of the same type).
+  const connectionsRequestSeq = useRef(0)
+  const graphRequestSeq = useRef(0)
+
   const fetchConnectionsPage = useCallback(
     async (pageNum: number) => {
+      const requestId = ++connectionsRequestSeq.current
       setLoading(true)
       setError(null)
       try {
         const canonicalId = String(entityId)
         const offset = (pageNum - 1) * CONNECTIONS_PER_PAGE
-        const options = { limit: CONNECTIONS_PER_PAGE, offset }
+        const options = {
+          limit: CONNECTIONS_PER_PAGE,
+          offset,
+          includeClosed: false,
+        }
         let res: Awaited<ReturnType<typeof listStylebookConnectionsForLocation>>
         if (entityType === "location") {
           res = await listStylebookConnectionsForLocation(stylebookSlug, canonicalId, options)
@@ -156,6 +171,7 @@ export default function ConnectionsSection({
           setConnectionsTotal(0)
           return
         }
+        if (requestId !== connectionsRequestSeq.current) return
         setConnections(res.connections)
         setConnectionsTotal(res.total)
         const totalPages = Math.max(1, Math.ceil(res.total / CONNECTIONS_PER_PAGE))
@@ -163,46 +179,49 @@ export default function ConnectionsSection({
           setConnectionsPage(totalPages)
         }
       } catch (e) {
+        if (requestId !== connectionsRequestSeq.current) return
         setError(e instanceof Error ? e.message : 'Failed to load connections')
       } finally {
-        setLoading(false)
+        if (requestId === connectionsRequestSeq.current) {
+          setLoading(false)
+        }
       }
     },
     [entityType, entityId, stylebookSlug],
   )
 
   const fetchGraphConnections = useCallback(async () => {
+    const requestId = ++graphRequestSeq.current
     setGraphLoading(true)
     try {
-      const canonicalId = String(entityId)
-      const options = { limit: CONNECTIONS_GRAPH_FETCH_LIMIT, offset: 0 }
-      let res: Awaited<ReturnType<typeof listStylebookConnectionsForLocation>>
-      if (entityType === "location") {
-        res = await listStylebookConnectionsForLocation(stylebookSlug, canonicalId, options)
-      } else if (entityType === "person") {
-        res = await listStylebookConnectionsForPerson(stylebookSlug, canonicalId, options)
-      } else if (entityType === "organization") {
-        res = await listStylebookConnectionsForOrganization(
-          stylebookSlug,
-          canonicalId,
-          options,
-        )
-      } else {
-        setGraphConnections([])
-        return
-      }
-      setGraphConnections(res.connections)
+      const neighborhood = await fetchConnectionNeighborhood(
+        stylebookSlug,
+        {
+          entityType,
+          entityId: String(entityId),
+          displayName: entityDisplayName,
+        },
+        {
+          includeClosed: false,
+          expandHops: entityType === "person" ? 2 : 1,
+        },
+      )
+      if (requestId !== graphRequestSeq.current) return
+      setGraphNeighborhood(neighborhood)
     } catch (e) {
+      if (requestId !== graphRequestSeq.current) return
       showError(e instanceof Error ? e.message : "Failed to load connection graph")
-      setGraphConnections([])
+      setGraphNeighborhood(EMPTY_CONNECTION_NEIGHBORHOOD)
     } finally {
-      setGraphLoading(false)
+      if (requestId === graphRequestSeq.current) {
+        setGraphLoading(false)
+      }
     }
-  }, [entityType, entityId, stylebookSlug, showError])
+  }, [entityType, entityId, entityDisplayName, stylebookSlug, showError])
 
   useEffect(() => {
     setConnectionsPage(1)
-    setGraphConnections(null)
+    setGraphNeighborhood(null)
   }, [entityType, entityId, stylebookSlug])
 
   useEffect(() => {
@@ -210,33 +229,40 @@ export default function ConnectionsSection({
   }, [connectionsPage, fetchConnectionsPage])
 
   useEffect(() => {
-    if (activeTab !== "graph" || graphConnections !== null) return
+    if (activeTab !== "graph" || graphNeighborhood !== null) return
     void fetchGraphConnections()
-  }, [activeTab, graphConnections, fetchGraphConnections])
+  }, [activeTab, graphNeighborhood, fetchGraphConnections])
 
   const refreshConnections = useCallback(() => {
-    setGraphConnections(null)
+    // Clearing the neighborhood makes the effect above refetch the graph
+    // whenever the graph tab is (or becomes) active.
+    setGraphNeighborhood(null)
     void fetchConnectionsPage(connectionsPage)
-    if (activeTab === "graph") {
-      void fetchGraphConnections()
-    }
-  }, [activeTab, connectionsPage, fetchConnectionsPage, fetchGraphConnections])
+  }, [connectionsPage, fetchConnectionsPage])
 
   // Nature typeahead for add form
   useEffect(() => {
     if (!addOpen) return
     const q = natureSearch.trim() || nature
-    listStylebookConnectionNatures(stylebookSlug, q || undefined).then((r) =>
-      setNatureSuggestions(r.natures)
-    )
+    listStylebookConnectionNatures(stylebookSlug, q || undefined)
+      .then((r) => {
+        setNatureSuggestions(r.natures)
+        setNatureEntries(r.entries)
+      })
+      // Stale suggestions are an acceptable fallback if the lookup fails.
+      .catch(() => {})
   }, [addOpen, stylebookSlug, natureSearch, nature])
 
   // Nature typeahead for edit form
   useEffect(() => {
     if (!editConnection) return
-    listStylebookConnectionNatures(stylebookSlug, editNature.trim() || undefined).then((r) =>
-      setEditNatureSuggestions(r.natures)
-    )
+    listStylebookConnectionNatures(stylebookSlug, editNature.trim() || undefined)
+      .then((r) => {
+        setEditNatureSuggestions(r.natures)
+        setEditNatureEntries(r.entries)
+      })
+      // Stale suggestions are an acceptable fallback if the lookup fails.
+      .catch(() => {})
   }, [editConnection, stylebookSlug, editNature])
 
   const handleAddOpen = () => {
@@ -249,6 +275,7 @@ export default function ConnectionsSection({
     setNature('')
     setDescription('')
     setNatureSearch('')
+    setAssertedCurrentness("unspecified")
   }
 
   const handleAddSubmit = async () => {
@@ -262,6 +289,7 @@ export default function ConnectionsSection({
       to_entity_id: selectedTargetId,
       ...(trimmedNature ? { nature: trimmedNature } : {}),
       ...(trimmedDescription ? { description: trimmedDescription } : {}),
+      asserted_currentness: addNatureIsDynamic ? assertedCurrentness : "unspecified",
     }
     const canonicalId = String(entityId)
     setSubmitting(true)
@@ -288,6 +316,7 @@ export default function ConnectionsSection({
     setEditConnection(conn)
     setEditNature(conn.nature ?? '')
     setEditDescription(conn.description ?? '')
+    setEditAssertedCurrentness("unspecified")
   }
 
   const handleEditSubmit = async () => {
@@ -299,6 +328,9 @@ export default function ConnectionsSection({
     const body = {
       nature: trimmedNature || null,
       description: trimmedDescription || null,
+      ...(editNatureIsDynamic && editAssertedCurrentness !== "unspecified"
+        ? { asserted_currentness: editAssertedCurrentness }
+        : {}),
     }
     setEditSubmitting(true)
     try {
@@ -341,32 +373,50 @@ export default function ConnectionsSection({
     setDeleting(true)
     try {
       if (entityType === "location") {
-        await deleteStylebookConnectionForLocation(
+        await closeStylebookConnectionForLocation(
           stylebookSlug,
           canonicalId,
           deleteConnection.id,
         )
       } else if (entityType === "person") {
-        await deleteStylebookConnectionForPerson(
+        await closeStylebookConnectionForPerson(
           stylebookSlug,
           canonicalId,
           deleteConnection.id,
         )
       } else if (entityType === "organization") {
-        await deleteStylebookConnectionForOrganization(
+        await closeStylebookConnectionForOrganization(
           stylebookSlug,
           canonicalId,
           deleteConnection.id,
         )
       } else {
-        throw new Error("Connections cannot be deleted from this entity type yet.")
+        throw new Error("Connections cannot be closed from this entity type yet.")
       }
       setDeleteConnection(null)
       refreshConnections()
     } catch (e) {
-      showError(e instanceof Error ? e.message : "Failed to delete connection")
+      showError(e instanceof Error ? e.message : "Failed to close connection")
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const handleReopen = async (conn: Connection) => {
+    const canonicalId = String(entityId)
+    try {
+      if (entityType === "location") {
+        await reopenStylebookConnectionForLocation(stylebookSlug, canonicalId, conn.id)
+      } else if (entityType === "person") {
+        await reopenStylebookConnectionForPerson(stylebookSlug, canonicalId, conn.id)
+      } else if (entityType === "organization") {
+        await reopenStylebookConnectionForOrganization(stylebookSlug, canonicalId, conn.id)
+      } else {
+        throw new Error("Connections cannot be reopened from this entity type yet.")
+      }
+      refreshConnections()
+    } catch (e) {
+      showError(e instanceof Error ? e.message : "Failed to reopen connection")
     }
   }
 
@@ -381,6 +431,10 @@ export default function ConnectionsSection({
     1,
     Math.ceil(connectionsTotal / CONNECTIONS_PER_PAGE),
   )
+  const addNatureIsDynamic =
+    natureEntries.find((entry) => entry.slug === nature.trim())?.temporal_kind !== "static"
+  const editNatureIsDynamic =
+    editNatureEntries.find((entry) => entry.slug === editNature.trim())?.temporal_kind !== "static"
 
   return (
     <>
@@ -390,18 +444,20 @@ export default function ConnectionsSection({
             <div className="space-y-1.5 min-w-0">
               <CardTitle>Connections</CardTitle>
               <CardDescription>
-                Directed links between this {entityType} and other canonicals.
+                Links between this {entityType} and other catalog entries.
               </CardDescription>
             </div>
-            <Button
-              type="button"
-              className="shrink-0"
-              onClick={handleAddOpen}
-              disabled={loading || entityType === "work"}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add connection
-            </Button>
+            <div className="flex shrink-0 items-center gap-3">
+              <Button
+                type="button"
+                className="shrink-0"
+                onClick={handleAddOpen}
+                disabled={loading || entityType === "work"}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add connection
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -418,13 +474,13 @@ export default function ConnectionsSection({
               className="w-full"
             >
               <TabsList>
-                <TabsTrigger value="list">
-                  <List className="h-4 w-4 mr-2" />
-                  List
-                </TabsTrigger>
                 <TabsTrigger value="graph">
                   <Network className="h-4 w-4 mr-2" />
                   Graph
+                </TabsTrigger>
+                <TabsTrigger value="list">
+                  <List className="h-4 w-4 mr-2" />
+                  List
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="list" className="mt-4">
@@ -449,7 +505,7 @@ export default function ConnectionsSection({
                             <span className="font-medium">{entityDisplayName}</span>
                             <span className="mx-1 text-muted-foreground">→</span>
                             <a
-                              href={getDetailUrl(
+                              href={entityDetailUrl(
                                 otherType(conn),
                                 otherId(conn),
                                 catalogBasePath,
@@ -466,7 +522,7 @@ export default function ConnectionsSection({
                         ) : (
                           <>
                             <a
-                              href={getDetailUrl(
+                              href={entityDetailUrl(
                                 otherType(conn),
                                 otherId(conn),
                                 catalogBasePath,
@@ -484,11 +540,14 @@ export default function ConnectionsSection({
                           </>
                         )}
                       </div>
-                      <p className="mt-0.5 text-sm text-foreground">{connectionSummaryLabel(conn)}</p>
+                      <p className="mt-0.5 text-sm text-foreground">
+                        {formatConnectionSummaryLabel(conn)}
+                      </p>
                       {conn.nature?.trim() ? (
                         <p className="mt-0.5 text-xs text-muted-foreground">{conn.nature.replace(/_/g, " ")}</p>
                       ) : null}
-                      <ConnectionEvidenceBlock evidence={conn.evidence_json} />
+                      <ConnectionStatusMeta conn={conn} compact />
+                      <ConnectionEvidenceBlock evidence={bestEvidenceRecord(conn)} />
                     </TableCell>
                     <TableCell className="align-top">
                       <div className="flex gap-2">
@@ -497,17 +556,29 @@ export default function ConnectionsSection({
                           size="sm"
                           onClick={() => handleEditOpen(conn)}
                           title="Edit connection"
+                          disabled={Boolean(conn.closed_at)}
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => setDeleteConnection(conn)}
-                          title="Delete connection"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {conn.closed_at ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void handleReopen(conn)}
+                            title="Reopen connection"
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => setDeleteConnection(conn)}
+                            title="Close connection"
+                          >
+                            <Ban className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -538,7 +609,11 @@ export default function ConnectionsSection({
                   entityType={entityType}
                   entityId={entityId}
                   entityDisplayName={entityDisplayName}
-                  connections={graphConnections ?? []}
+                  stylebookSlug={stylebookSlug}
+                  projectSlug={projectScopeSlug || undefined}
+                  centerProfileLines={entityProfileLines}
+                  neighborhood={graphNeighborhood ?? EMPTY_CONNECTION_NEIGHBORHOOD}
+                  onConnectionsChanged={refreshConnections}
                 />
                 )}
               </TabsContent>
@@ -553,7 +628,7 @@ export default function ConnectionsSection({
           <DialogHeader>
             <DialogTitle>Add connection</DialogTitle>
             <DialogDescription>
-              Connect this {entityType} to another canonical. Select the other entity and describe the
+              Connect this {entityType} to another catalog entry. Select the other entry and describe the
               relationship (e.g. mayor, born in).
             </DialogDescription>
           </DialogHeader>
@@ -598,18 +673,6 @@ export default function ConnectionsSection({
                   >
                     Organization
                   </Button>
-                  <Button
-                    type="button"
-                    variant={addTargetType === 'work' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => {
-                      setAddTargetType('work')
-                      setSelectedTargetId(null)
-                      setSelectedTargetName(null)
-                    }}
-                  >
-                    Work
-                  </Button>
                 </div>
               </div>
               <Label>
@@ -617,9 +680,7 @@ export default function ConnectionsSection({
                   ? 'Person'
                   : addTargetType === 'location'
                     ? 'Location'
-                    : addTargetType === 'organization'
-                      ? 'Organization'
-                      : 'Work'}
+                    : 'Organization'}
               </Label>
               <div className="flex items-center gap-2 mt-1">
                 <Button
@@ -628,7 +689,7 @@ export default function ConnectionsSection({
                   onClick={() => setSelectorOpen(true)}
                 >
                   {selectedTargetId != null
-                    ? (selectedTargetName || `Selected #${selectedTargetId}`)
+                    ? (selectedTargetName || "Selected entry")
                     : `Select ${addTargetType}`}
                 </Button>
                 {selectedTargetId != null && (
@@ -671,18 +732,6 @@ export default function ConnectionsSection({
                     setSelectedTargetName(displayName ?? `Organization #${id}`)
                   }}
                 />
-              ) : addTargetType === 'work' ? (
-                <WorkSelector
-                  open={selectorOpen}
-                  onOpenChange={setSelectorOpen}
-                  projectSlug={selectorProjectSlug}
-                  excludeIds={entityType === 'work' ? [entityId] : undefined}
-                  onSelect={(id, displayName) => {
-                    setSelectedTargetId(id)
-                    setSelectorOpen(false)
-                    setSelectedTargetName(displayName ?? `Work #${id}`)
-                  }}
-                />
               ) : (
                 <LocationSelector
                   open={selectorOpen}
@@ -717,6 +766,31 @@ export default function ConnectionsSection({
               suggestions={natureSuggestions}
               placeholder="e.g. works for, located at"
             />
+            {addNatureIsDynamic ? (
+              <div className="space-y-1">
+                <Label htmlFor="connection-currentness">Currentness</Label>
+                <Select
+                  value={assertedCurrentness}
+                  onValueChange={(value) =>
+                    setAssertedCurrentness(
+                      value as "current" | "former" | "unspecified",
+                    )
+                  }
+                >
+                  <SelectTrigger id="connection-currentness">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unspecified">Unknown</SelectItem>
+                    <SelectItem value="current">Current</SelectItem>
+                    <SelectItem value="former">Former</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Record only what the available information establishes.
+                </p>
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddOpen(false)}>
@@ -764,6 +838,28 @@ export default function ConnectionsSection({
               suggestions={editNatureSuggestions}
               placeholder="e.g. works for, located at"
             />
+            {editNatureIsDynamic ? (
+              <div className="space-y-1">
+                <Label htmlFor="edit-connection-currentness">Currentness update</Label>
+                <Select
+                  value={editAssertedCurrentness}
+                  onValueChange={(value) =>
+                    setEditAssertedCurrentness(
+                      value as "current" | "former" | "unspecified",
+                    )
+                  }
+                >
+                  <SelectTrigger id="edit-connection-currentness">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unspecified">Do not change currentness</SelectItem>
+                    <SelectItem value="current">Report as current</SelectItem>
+                    <SelectItem value="former">Report as former</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditConnection(null)}>
@@ -783,11 +879,12 @@ export default function ConnectionsSection({
       <Dialog open={!!deleteConnection} onOpenChange={(open) => !open && setDeleteConnection(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete connection</DialogTitle>
+            <DialogTitle>Close connection</DialogTitle>
             <DialogDescription>
-              Remove the connection between &quot;{entityDisplayName}&quot; and &quot;
+              Close the connection between &quot;{entityDisplayName}&quot; and &quot;
               {deleteConnection && otherDisplayName(deleteConnection)}&quot;
-              {deleteConnection ? ` (${connectionSummaryLabel(deleteConnection)})` : ""}? This cannot be undone.
+              {deleteConnection ? ` (${formatConnectionSummaryLabel(deleteConnection)})` : ""}?
+              You can show closed connections later and reopen them if needed.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -795,7 +892,7 @@ export default function ConnectionsSection({
               Cancel
             </Button>
             <Button variant="destructive" onClick={handleDeleteConfirm} disabled={deleting}>
-              {deleting ? 'Deleting...' : 'Delete'}
+              {deleting ? 'Closing...' : 'Close connection'}
             </Button>
           </DialogFooter>
         </DialogContent>

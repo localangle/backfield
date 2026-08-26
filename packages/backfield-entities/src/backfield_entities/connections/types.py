@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+AssertedConnectionCurrentness = Literal["current", "former", "unspecified"]
+# "deterministic" is reserved for future deterministic review tooling; no code path
+# produces it yet, but it is part of the DB check constraint (migration 080, models.py).
+CurrentnessReviewSource = Literal["unreviewed", "llm", "manual", "deterministic"]
 
 
 @dataclass(frozen=True)
@@ -20,7 +26,37 @@ class LinkedEntitySnapshot:
     snippets: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class PairEvidencePacket:
+    """Evidence and lower-trust hints for one candidate canonical pair."""
+
+    snippets: tuple[str, ...]
+    source: str
+    score: int
+    match_basis: str | None = None
+    hints: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class AutoConnectionCandidatePair:
+    """One endpoint pair submitted to connection classification."""
+
+    candidate_id: str
+    from_entity: LinkedEntitySnapshot
+    to_entity: LinkedEntitySnapshot
+    evidence: PairEvidencePacket
+
+    @property
+    def from_entity_type(self) -> str:
+        return self.from_entity.entity_type
+
+    @property
+    def to_entity_type(self) -> str:
+        return self.to_entity.entity_type
+
+
 class AutoConnectionEdgeProposal(BaseModel):
+    candidate_id: str | None = None
     from_entity_id: str
     to_entity_id: str
     description: str = Field(min_length=1)
@@ -28,6 +64,8 @@ class AutoConnectionEdgeProposal(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     quote: str = Field(min_length=1)
     reason: str = ""
+    asserted_currentness: AssertedConnectionCurrentness = "unspecified"
+    currentness_review_source: CurrentnessReviewSource = "unreviewed"
     match_basis: str | None = None
     prompt_version: str | None = None
 
@@ -48,5 +86,49 @@ class AutoConnectionEdgeProposal(BaseModel):
         return stripped or None
 
 
-class AutoConnectionFamilyResponse(BaseModel):
-    edges: list[AutoConnectionEdgeProposal] = Field(default_factory=list)
+class AutoConnectionCandidateDecision(BaseModel):
+    """Model judgment for one candidate pair before edge validation."""
+
+    candidate_id: str = Field(min_length=1)
+    link: bool
+    from_entity_id: str | None = None
+    to_entity_id: str | None = None
+    description: str = ""
+    nature: str | None = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    quote: str = ""
+    reason: str = Field(min_length=1)
+    asserted_currentness: AssertedConnectionCurrentness
+
+    @field_validator("candidate_id", "reason")
+    @classmethod
+    def _strip_required_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("value must be non-empty after stripping")
+        return stripped
+
+    @field_validator("nature")
+    @classmethod
+    def _normalize_decision_nature(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip().lower()
+        return stripped or None
+
+
+class ResolvedEdgeCurrentnessDecision(BaseModel):
+    """Currentness-only judgment for one resolved dynamic edge."""
+
+    review_id: str = Field(min_length=1)
+    asserted_currentness: AssertedConnectionCurrentness
+    reason: str = Field(min_length=1)
+
+    @field_validator("review_id", "reason")
+    @classmethod
+    def _strip_currentness_review_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("value must be non-empty after stripping")
+        return stripped
+

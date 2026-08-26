@@ -564,9 +564,11 @@ def test_location_person_connection_roundtrip(
     )
     assert r4.status_code == 200
 
+    # Stylebook remove soft-closes the edge; the row is retained with closed_at set.
     with Session(stylebook_test_engine) as s:
         row = s.get(StylebookConnection, conn_id)
-        assert row is None
+        assert row is not None
+        assert row.closed_at is not None
 
 
 def test_canonical_person_mentions_and_stylebook_meta(

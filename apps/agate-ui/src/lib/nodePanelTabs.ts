@@ -1,8 +1,16 @@
-export type NodePanelTabId = 'settings' | 'stylebook' | 'info' | 'models' | 'prompts' | 'outputs'
+export type NodePanelTabId =
+  | 'settings'
+  | 'stylebook'
+  | 'connections'
+  | 'info'
+  | 'models'
+  | 'prompts'
+  | 'outputs'
 
 export const NODE_PANEL_TAB_LABELS: Record<NodePanelTabId, string> = {
   settings: 'Settings',
   stylebook: 'Stylebook',
+  connections: 'Connections',
   info: 'Info',
   models: 'Models',
   prompts: 'Prompt',
@@ -42,7 +50,7 @@ export function getNodePanelTabs(
     case 'Output':
       return hasRunOutput ? ['outputs'] : []
     case 'DBOutput':
-      return ['settings', 'stylebook']
+      return ['settings', 'stylebook', 'connections']
     case 'S3Output':
       return hasRunOutput ? ['settings', 'outputs'] : ['settings']
     default:

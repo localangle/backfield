@@ -102,6 +102,12 @@ An explicit Stylebook id must belong to the project's organization. Without an o
 Backfield Output resolves the organization's default Stylebook. A missing organization catalog
 causes catalog-backed canonicalization to be skipped without discarding substrate persistence.
 
+The Redis persistence slot covers substrate and auxiliary writes only. After that transaction
+commits and the slot is released, automatic connection model calls run in bounded, session-free
+batches; connection reinforcement commits in a separate short transaction. Inference failure does
+not roll back the persisted article. Connection calls disable completion-budget retries so the
+per-article request ceiling is also a physical provider-request ceiling.
+
 ## Geocode cache path
 
 When a worker supplies project context and a GeocodeAgent node enables cache,

@@ -19,6 +19,7 @@ from backfield_db import (
     BackfieldProject,
     Stylebook,
     StylebookConnection,
+    StylebookConnectionEvidence,
     StylebookLocationAlias,
     StylebookLocationCanonical,
     StylebookLocationMeta,
@@ -41,6 +42,11 @@ from backfield_entities.catalog.canonical_meta import (
 from backfield_entities.catalog.stylebook_library import (
     StylebookLibraryError,
     create_stylebook_for_import,
+)
+from backfield_entities.connections.display import (
+    derived_connection_description,
+    legacy_evidence_json_for_connection,
+    list_connection_evidence,
 )
 from backfield_entities.entities.location.persist import seed_aliases_for_canonical_label
 from backfield_entities.entities.organization.persist import (
@@ -550,8 +556,29 @@ def _iter_stylebook_connections(
             "to_entity_type": conn.to_entity_type,
             "to_entity_id": str(conn.to_entity_id),
             "nature": conn.nature,
-            "description": conn.description,
-            "evidence_json": conn.evidence_json,
+            "description": derived_connection_description(
+                session, connection_id=int(conn.id)  # type: ignore[arg-type]
+            ),
+            "evidence_json": legacy_evidence_json_for_connection(
+                session, connection_id=int(conn.id)  # type: ignore[arg-type]
+            ),
+            "evidence": [
+                {
+                    "article_id": e.article_id,
+                    "description": e.description,
+                    "quote": e.quote,
+                    "reason": e.reason,
+                    "confidence": e.confidence,
+                    "source": e.source,
+                    "prompt_version": e.prompt_version,
+                    "run_id": e.run_id,
+                    "processed_item_id": e.processed_item_id,
+                    "match_basis": e.match_basis,
+                }
+                for e in list_connection_evidence(
+                    session, connection_id=int(conn.id)  # type: ignore[arg-type]
+                )
+            ],
         }
 
 
@@ -1175,18 +1202,89 @@ def _import_connection_row(
     if project_id is None or from_id is None or to_id is None:
         stats["skipped_connections"] += 1
         return
-    session.add(
-        StylebookConnection(
-            project_id=project_id,
-            from_entity_type=str(row["from_entity_type"]),
-            from_entity_id=from_id,
-            to_entity_type=str(row["to_entity_type"]),
-            to_entity_id=to_id,
-            nature=row.get("nature"),
-            description=row.get("description"),
-            evidence_json=row.get("evidence_json"),
-        )
+    project = session.get(BackfieldProject, project_id)
+    stylebook_id = int(project.stylebook_id) if project and project.stylebook_id else None
+    conn = StylebookConnection(
+        project_id=project_id,
+        stylebook_id=stylebook_id,
+        from_entity_type=str(row["from_entity_type"]),
+        from_entity_id=from_id,
+        to_entity_type=str(row["to_entity_type"]),
+        to_entity_id=to_id,
+        nature=row.get("nature"),
     )
+    session.add(conn)
+    session.flush()
+    evidence_rows = row.get("evidence")
+    if isinstance(evidence_rows, list) and evidence_rows:
+        for item in evidence_rows:
+            if not isinstance(item, dict):
+                continue
+            session.add(
+                StylebookConnectionEvidence(
+                    connection_id=int(conn.id),  # type: ignore[arg-type]
+                    article_id=item.get("article_id"),
+                    description=item.get("description"),
+                    quote=item.get("quote"),
+                    reason=item.get("reason"),
+                    confidence=item.get("confidence"),
+                    source=item.get("source") or "bundle_import",
+                    prompt_version=item.get("prompt_version"),
+                    run_id=item.get("run_id"),
+                    processed_item_id=item.get("processed_item_id"),
+                    match_basis=item.get("match_basis"),
+                )
+            )
+    else:
+        description = str(row.get("description") or "").strip() or None
+        raw_evidence = row.get("evidence_json")
+        evidence_json = raw_evidence if isinstance(raw_evidence, dict) else None
+        if evidence_json or description:
+            quote = None
+            if evidence_json:
+                quote = str(evidence_json.get("quote") or "").strip() or None
+            session.add(
+                StylebookConnectionEvidence(
+                    connection_id=int(conn.id),  # type: ignore[arg-type]
+                    article_id=(
+                        int(evidence_json["article_id"])
+                        if evidence_json and evidence_json.get("article_id") is not None
+                        else None
+                    ),
+                    description=description,
+                    quote=quote or description,
+                    reason=(
+                        str(evidence_json.get("reason") or "").strip() or description
+                        if evidence_json
+                        else description
+                    ),
+                    confidence=(
+                        float(evidence_json["confidence"])
+                        if evidence_json and evidence_json.get("confidence") is not None
+                        else None
+                    ),
+                    source=(
+                        str(evidence_json.get("source") or "bundle_import")
+                        if evidence_json
+                        else "bundle_import"
+                    ),
+                    prompt_version=(
+                        str(evidence_json["prompt_version"])
+                        if evidence_json and evidence_json.get("prompt_version") is not None
+                        else None
+                    ),
+                    run_id=(
+                        str(evidence_json["run_id"])
+                        if evidence_json and evidence_json.get("run_id") is not None
+                        else None
+                    ),
+                    match_basis=(
+                        str(evidence_json["match_basis"])
+                        if evidence_json and evidence_json.get("match_basis") is not None
+                        else None
+                    ),
+                )
+            )
     stats["connections"] += 1
 
 

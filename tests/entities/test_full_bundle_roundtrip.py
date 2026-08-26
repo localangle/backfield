@@ -458,12 +458,24 @@ def test_export_import_roundtrip_includes_aliases_meta_connections(tmp_path: Pat
         session.add(
             StylebookConnection(
                 project_id=project_id,
+                stylebook_id=sb_id,
                 from_entity_type="person",
                 from_entity_id=person_id,
                 to_entity_type="location",
                 to_entity_id=loc_id,
                 nature="works_at",
+            )
+        )
+        session.commit()
+        conn = session.exec(select(StylebookConnection)).one()
+        from backfield_db import StylebookConnectionEvidence
+
+        session.add(
+            StylebookConnectionEvidence(
+                connection_id=int(conn.id),  # type: ignore[arg-type]
                 description="Jane Doe works at City Hall.",
+                quote="Jane Doe works at City Hall.",
+                source="manual",
             )
         )
         session.commit()

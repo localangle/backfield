@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from backfield_entities.connections.natures import normalize_preferred_nature_slug
 from backfield_entities.connections.taxonomy import (
     AUTO_CONNECTION_MIN_CONFIDENCE,
     allowed_location_types_for_auto_nature,
@@ -36,7 +37,7 @@ def validate_auto_connection_candidate(
     """Validate a high-confidence auto-connection candidate before persistence."""
     from_type = from_entity_type.strip().lower()
     to_type = to_entity_type.strip().lower()
-    nature_key = nature.strip().lower() if nature is not None else None
+    nature_key = normalize_preferred_nature_slug(nature)
     quote_text = quote.strip()
     description_text = description.strip()
 

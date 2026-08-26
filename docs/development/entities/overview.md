@@ -155,8 +155,12 @@ description-first, includes quote-backed evidence, and only writes sufficiently
 confident relationships.
 
 Supported inferred families include person–organization, organization–location,
-person–location, person–person, and organization–organization. Exact edge
-uniqueness is project-scoped and includes endpoints, nature, and description.
+person–location, person–person, and organization–organization. Open-edge identity
+is Stylebook-scoped (endpoints + nature). Merging a canonical rewires open
+connections to the survivor; deleting a canonical soft-closes open connections
+that reference it. Existing orphans can be repaired with
+`backfield repair-orphan-connections` (see
+[`knowledge-graph.md`](../../architecture/knowledge-graph.md)).
 
 ## Creating and transferring canonicals
 

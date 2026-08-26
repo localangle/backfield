@@ -35,6 +35,7 @@ import { personCanonicalDetailConfig } from "@/lib/entityConfigs/person/canonica
 import { Button } from "@/components/ui/button"
 import { SimilarCanonicalNotice } from "@/components/SimilarCanonicalNotice"
 import { mergeCleanupPersonCanonical } from "@/lib/stylebook-api/cleanup"
+import { profileLinesForPerson } from "@/lib/connectionGraphEntityProfile"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -353,6 +354,11 @@ export default function PersonDetail() {
     [catalogBasePath, filterScopeSuffix],
   )
 
+  const entityProfileLines = useMemo(
+    () => (person ? profileLinesForPerson(person) : undefined),
+    [person],
+  )
+
   const handleMergeIntoSimilar = useCallback(
     async (match: SimilarCanonicalMatch) => {
       if (!stylebookSlug || !person) return
@@ -405,6 +411,7 @@ export default function PersonDetail() {
       stylebookSlug={stylebookSlug}
       entityId={person?.id}
       entityDisplayName={person?.label}
+      entityProfileLines={entityProfileLines}
       topNotice={
         <SimilarCanonicalNotice
           entityNounPlural="people"

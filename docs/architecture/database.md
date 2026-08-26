@@ -97,7 +97,21 @@ shared entity rows are not trusted because sibling batch items may reuse the sam
 - People: `stylebook_person_canonical`, `stylebook_person_alias`, `stylebook_person_meta`.
 - Organizations: `stylebook_organization_canonical`, `stylebook_organization_alias`,
   `stylebook_organization_meta`.
-- Relationships and history: `stylebook_connections`, `stylebook_activity`.
+- Relationships and history: `stylebook_connections` (identity scope `stylebook_id`; open-edge
+  unique on ends + nature among non-closed rows; soft-close via `closed_at`),
+  `stylebook_connection_evidence` (citations; cascade delete with parent),
+  `stylebook_connection_nature_custom`, `stylebook_activity`. Preferred natures live in code
+  (`backfield_entities.connections.natures`); see [`knowledge-graph.md`](knowledge-graph.md).
+  Connection narrative lives on evidence only (no connection-level `description` /
+  `evidence_json`). Stylebook Remove soft-closes (`closed_at`); public and Stylebook
+  lists hide closed by default (`include_closed=true` to show). Reopen clears
+  `closed_at`. Dynamic connections also materialize the newest explicit reported
+  `current` / `former` evidence as `currentness`, `currentness_as_of`, and
+  `currentness_evidence_id`; evidence stores `asserted_currentness`, while
+  `currentness_review_source` identifies whether that assertion was reviewed by a model,
+  entered manually, determined by a rule, or left unreviewed. `observed_at` is the
+  source/reference time (article publication time when available).
+  These fields are a currentness summary, not validity intervals or `as_of` history.
 - Transfer and review workflows: `stylebook_bundle_job`, `stylebook_cleanup_dismissal`,
   `stylebook_cleanup_ai_review`, `stylebook_cleanup_ai_proposal`,
   `stylebook_cleanup_check_run`, `stylebook_cleanup_check_result`,

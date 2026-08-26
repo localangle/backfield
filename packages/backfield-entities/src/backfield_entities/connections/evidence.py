@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any, Literal
 
+from backfield_db import StylebookConnectionEvidence
 from pydantic import BaseModel, Field, field_validator
 
 from backfield_entities.connections.taxonomy import (
     AUTO_CONNECTION_EVIDENCE_SOURCE,
     AUTO_CONNECTION_PROMPT_VERSION,
+)
+from backfield_entities.connections.types import (
+    AssertedConnectionCurrentness,
+    CurrentnessReviewSource,
 )
 
 _FORBIDDEN_EVIDENCE_KEYS = frozenset(
@@ -22,6 +28,24 @@ _FORBIDDEN_EVIDENCE_KEYS = frozenset(
         "model_response",
     }
 )
+
+
+def reference_time_is_newer(
+    candidate: datetime,
+    current: datetime | None,
+) -> bool:
+    """Compare DB timestamps consistently across timezone-aware and SQLite values."""
+    if current is None:
+        return True
+    candidate_utc = (
+        candidate.replace(tzinfo=UTC)
+        if candidate.tzinfo is None
+        else candidate.astimezone(UTC)
+    )
+    current_utc = (
+        current.replace(tzinfo=UTC) if current.tzinfo is None else current.astimezone(UTC)
+    )
+    return candidate_utc > current_utc
 
 
 class ConnectionCreationEvidence(BaseModel):
@@ -44,6 +68,8 @@ class ConnectionCreationEvidence(BaseModel):
     adjudication_model: str | None = None
     adjudication_ai_model_config_id: int | None = None
     match_basis: str | None = None
+    asserted_currentness: AssertedConnectionCurrentness = "unspecified"
+    currentness_review_source: CurrentnessReviewSource = "unreviewed"
 
     @field_validator("quote", "reason", "from_display_name", "to_display_name")
     @classmethod
@@ -79,6 +105,8 @@ def build_connection_creation_evidence(
     adjudication_ai_model_config_id: int | None = None,
     prompt_version: str = AUTO_CONNECTION_PROMPT_VERSION,
     match_basis: str | None = None,
+    asserted_currentness: AssertedConnectionCurrentness = "unspecified",
+    currentness_review_source: CurrentnessReviewSource = "unreviewed",
 ) -> ConnectionCreationEvidence:
     return ConnectionCreationEvidence(
         prompt_version=prompt_version,
@@ -97,4 +125,47 @@ def build_connection_creation_evidence(
         adjudication_model=adjudication_model,
         adjudication_ai_model_config_id=adjudication_ai_model_config_id,
         match_basis=match_basis,
+        asserted_currentness=asserted_currentness,
+        currentness_review_source=currentness_review_source,
+    )
+
+
+def evidence_row_from_creation(
+    *,
+    connection_id: int,
+    evidence: ConnectionCreationEvidence,
+    description: str | None,
+    observed_at: datetime | None = None,
+) -> StylebookConnectionEvidence:
+    """Map typed creation evidence into a ``stylebook_connection_evidence`` row."""
+    payload: dict[str, Any] = {}
+    for key, value in (
+        ("from_entity_type", evidence.from_entity_type),
+        ("from_entity_id", evidence.from_entity_id),
+        ("from_display_name", evidence.from_display_name),
+        ("to_entity_type", evidence.to_entity_type),
+        ("to_entity_id", evidence.to_entity_id),
+        ("to_display_name", evidence.to_display_name),
+        ("adjudication_model", evidence.adjudication_model),
+        ("adjudication_ai_model_config_id", evidence.adjudication_ai_model_config_id),
+    ):
+        if value is not None:
+            payload[key] = value
+
+    return StylebookConnectionEvidence(
+        connection_id=int(connection_id),
+        article_id=evidence.article_id,
+        description=(description or "").strip() or None,
+        quote=evidence.quote,
+        reason=evidence.reason,
+        confidence=float(evidence.confidence),
+        source=evidence.source,
+        prompt_version=evidence.prompt_version,
+        run_id=evidence.run_id,
+        processed_item_id=evidence.processed_item_id,
+        match_basis=evidence.match_basis,
+        asserted_currentness=evidence.asserted_currentness,
+        currentness_review_source=evidence.currentness_review_source,
+        observed_at=observed_at,
+        payload_json=payload or None,
     )

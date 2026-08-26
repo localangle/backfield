@@ -56,6 +56,7 @@ import { SimilarCanonicalNotice } from "@/components/SimilarCanonicalNotice"
 import { LeafletMap } from "@backfield/ui/LeafletMap"
 import { updateCanonicalLocationGeometry } from "@/lib/stylebook-api/locations"
 import { mergeCleanupLocationCanonical } from "@/lib/stylebook-api/cleanup"
+import { profileLinesForLocation } from "@/lib/connectionGraphEntityProfile"
 import { useOrgMapDefaultViewport } from "@/lib/useOrgMapDefaultViewport"
 import { Loader2 } from "lucide-react"
 
@@ -400,6 +401,11 @@ export default function LocationDetail() {
     [catalogBasePath, filterScopeSuffix],
   )
 
+  const entityProfileLines = useMemo(
+    () => (canonical ? profileLinesForLocation(canonical) : undefined),
+    [canonical],
+  )
+
   const handleMergeIntoSimilar = useCallback(
     async (match: SimilarCanonicalMatch) => {
       if (!stylebookSlug || !canonical) return
@@ -451,6 +457,7 @@ export default function LocationDetail() {
       stylebookSlug={stylebookSlug}
       entityId={canonical?.id}
       entityDisplayName={canonical?.label}
+      entityProfileLines={entityProfileLines}
       topNotice={
         <SimilarCanonicalNotice
           entityNounPlural="locations"

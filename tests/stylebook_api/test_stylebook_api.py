@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from backfield_db import (
@@ -3708,7 +3710,7 @@ def test_stylebook_canonical_location_connections_roundtrip(
 
     r2b = editor_client.get("/v1/connections/stylebooks/default/natures")
     assert r2b.status_code == 200
-    assert "near" in r2b.json()["natures"]
+    assert "near" in [entry["slug"] for entry in r2b.json()["natures"]]
 
     r3 = editor_client.patch(
         f"/v1/stylebooks/default/canonical-locations/{aid}/connections/{conn_id}",
@@ -3722,9 +3724,11 @@ def test_stylebook_canonical_location_connections_roundtrip(
     )
     assert r4.status_code == 200
 
+    # Stylebook remove soft-closes the edge; the row is retained with closed_at set.
     with Session(engine) as s:
         row = s.get(StylebookConnection, conn_id)
-        assert row is None
+        assert row is not None
+        assert row.closed_at is not None
 
 
 def test_stylebook_person_and_organization_connections_list(
@@ -3757,20 +3761,27 @@ def test_stylebook_person_and_organization_connections_list(
         person_id = str(person.id)
         org_id = str(organization.id)
         proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        conn = StylebookConnection(
+            project_id=int(proj.id),
+            stylebook_id=int(proj.stylebook_id) if proj.stylebook_id else None,
+            from_entity_type="person",
+            from_entity_id=person_id,
+            to_entity_type="organization",
+            to_entity_id=org_id,
+            nature="works_for",
+        )
+        s.add(conn)
+        s.commit()
+        s.refresh(conn)
+        from backfield_db import StylebookConnectionEvidence
+
         s.add(
-            StylebookConnection(
-                project_id=int(proj.id),
-                from_entity_type="person",
-                from_entity_id=person_id,
-                to_entity_type="organization",
-                to_entity_id=org_id,
-                nature="works_for",
-                evidence_json={
-                    "source": "dboutput_auto_connections",
-                    "confidence": 0.95,
-                    "quote": "Jane works for Conn Org.",
-                    "reason": "Explicit employment in text.",
-                },
+            StylebookConnectionEvidence(
+                connection_id=int(conn.id),
+                source="dboutput_auto_connections",
+                confidence=0.95,
+                quote="Jane works for Conn Org.",
+                reason="Explicit employment in text.",
             )
         )
         s.commit()
@@ -3836,7 +3847,8 @@ def test_stylebook_person_connection_crud(
     assert create_res.status_code == 200
     body = create_res.json()
     conn_id = int(body["id"])
-    assert body["nature"] == "born in"
+    # Manual natures normalize to catalog slugs.
+    assert body["nature"] == "born_in"
     assert body["to_display_name"] == "Manual Conn Place"
     assert body.get("evidence_json") is None
 
@@ -3849,16 +3861,18 @@ def test_stylebook_person_connection_crud(
         json={"nature": "lives in"},
     )
     assert update_res.status_code == 200
-    assert update_res.json()["nature"] == "lives in"
+    assert update_res.json()["nature"] == "lives_in"
 
     delete_res = editor_client.delete(
         f"/v1/stylebooks/default/canonical-people/{person_id}/connections/{conn_id}"
     )
     assert delete_res.status_code == 200
 
+    # Stylebook remove soft-closes the edge; the row is retained with closed_at set.
     with Session(engine) as s:
         row = s.get(StylebookConnection, conn_id)
-        assert row is None
+        assert row is not None
+        assert row.closed_at is not None
 
 
 def test_stylebook_connection_lists_auto_connection_evidence(
@@ -3906,15 +3920,30 @@ def test_stylebook_connection_lists_auto_connection_evidence(
     }
     with Session(engine) as s:
         proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        conn = StylebookConnection(
+            project_id=int(proj.id),
+            stylebook_id=int(proj.stylebook_id) if proj.stylebook_id else None,
+            from_entity_type="location",
+            from_entity_id=aid,
+            to_entity_type="location",
+            to_entity_id=bid,
+            nature="near",
+            currentness="former",
+            currentness_as_of=datetime(2025, 6, 1, tzinfo=UTC),
+        )
+        s.add(conn)
+        s.commit()
+        s.refresh(conn)
+        from backfield_db import StylebookConnectionEvidence
+
         s.add(
-            StylebookConnection(
-                project_id=int(proj.id),
-                from_entity_type="location",
-                from_entity_id=aid,
-                to_entity_type="location",
-                to_entity_id=bid,
-                nature="near",
-                evidence_json=evidence,
+            StylebookConnectionEvidence(
+                connection_id=int(conn.id),
+                source=str(evidence.get("source") or "dboutput_auto_connections"),
+                confidence=evidence.get("confidence"),
+                quote=evidence.get("quote"),
+                reason=evidence.get("reason"),
+                asserted_currentness="former",
             )
         )
         s.commit()
@@ -3925,6 +3954,78 @@ def test_stylebook_connection_lists_auto_connection_evidence(
     assert len(rows) == 1
     assert rows[0]["evidence_json"]["quote"] == "Acme operates in Chicago."
     assert rows[0]["evidence_json"]["confidence"] == 0.94
+    assert rows[0]["temporal_kind"] == "dynamic"
+    assert rows[0]["currentness"] == "former"
+    assert rows[0]["currentness_as_of"].startswith("2025-06-01")
+    assert rows[0]["evidence"][0]["asserted_currentness"] == "former"
+
+
+def test_stylebook_manual_dynamic_connection_currentness(
+    editor_client: TestClient,
+    stylebook_test_engine: Engine,
+) -> None:
+    with Session(stylebook_test_engine) as session:
+        stylebook = session.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        person = StylebookPersonCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Currentness Person",
+            slug="currentness-person",
+            status="active",
+        )
+        organization = StylebookOrganizationCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Currentness Organization",
+            slug="currentness-organization",
+            status="active",
+        )
+        session.add(person)
+        session.add(organization)
+        session.commit()
+        session.refresh(person)
+        session.refresh(organization)
+        person_id = str(person.id)
+        organization_id = str(organization.id)
+
+    created = editor_client.post(
+        f"/v1/stylebooks/default/canonical-people/{person_id}/connections",
+        json={
+            "to_entity_type": "organization",
+            "to_entity_id": organization_id,
+            "nature": "works_for",
+            "description": "Works for Currentness Organization.",
+            "asserted_currentness": "current",
+        },
+    )
+    assert created.status_code == 200
+    body = created.json()
+    connection_id = int(body["id"])
+    assert body["temporal_kind"] == "dynamic"
+    assert body["currentness"] == "current"
+    assert body["currentness_as_of"] is not None
+    assert body["evidence"][0]["asserted_currentness"] == "current"
+    assert body["evidence"][0]["currentness_review_source"] == "manual"
+
+    updated = editor_client.patch(
+        (
+            f"/v1/stylebooks/default/canonical-people/{person_id}/connections/"
+            f"{connection_id}"
+        ),
+        json={"asserted_currentness": "former"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["currentness"] == "former"
+    assert updated.json()["currentness_as_of"] is not None
+
+    rejected_static = editor_client.post(
+        f"/v1/stylebooks/default/canonical-people/{person_id}/connections",
+        json={
+            "to_entity_type": "organization",
+            "to_entity_id": organization_id,
+            "nature": "founded",
+            "asserted_currentness": "current",
+        },
+    )
+    assert rejected_static.status_code == 422
 
 
 def test_stylebook_connection_create_returns_existing_duplicate(
@@ -3991,3 +4092,89 @@ def test_stylebook_connection_create_returns_existing_duplicate(
             )
         ).all()
         assert len(rows) == 1
+
+
+def test_stylebook_connection_writes_require_editor(member_client: TestClient) -> None:
+    """Members without stylebook edit access cannot create, update, or delete connections."""
+    location_id = str(uuid4())
+    other_location_id = str(uuid4())
+    connection_id = 12345
+
+    create = member_client.post(
+        f"/v1/stylebooks/default/canonical-locations/{location_id}/connections",
+        json={
+            "to_entity_type": "location",
+            "to_entity_id": other_location_id,
+            "nature": "near",
+        },
+    )
+    assert create.status_code == 403
+
+    update = member_client.patch(
+        f"/v1/stylebooks/default/canonical-locations/{location_id}/connections/{connection_id}",
+        json={"nature": "near"},
+    )
+    assert update.status_code == 403
+
+    delete = member_client.delete(
+        f"/v1/stylebooks/default/canonical-locations/{location_id}/connections/{connection_id}"
+    )
+    assert delete.status_code == 403
+
+
+def test_stylebook_connection_update_keeps_newer_currentness_assertion(
+    editor_client: TestClient,
+    stylebook_test_engine: Engine,
+) -> None:
+    """An older currentness assertion must not regress a newer ``currentness_as_of``."""
+    with Session(stylebook_test_engine) as session:
+        stylebook = session.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        person = StylebookPersonCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Stale Assertion Person",
+            slug="stale-assertion-person",
+            status="active",
+        )
+        organization = StylebookOrganizationCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Stale Assertion Organization",
+            slug="stale-assertion-organization",
+            status="active",
+        )
+        session.add(person)
+        session.add(organization)
+        session.commit()
+        session.refresh(person)
+        session.refresh(organization)
+        person_id = str(person.id)
+        organization_id = str(organization.id)
+
+    created = editor_client.post(
+        f"/v1/stylebooks/default/canonical-people/{person_id}/connections",
+        json={
+            "to_entity_type": "organization",
+            "to_entity_id": organization_id,
+            "nature": "works_for",
+            "description": "Works for Stale Assertion Organization.",
+            "asserted_currentness": "current",
+        },
+    )
+    assert created.status_code == 200
+    connection_id = int(created.json()["id"])
+    assert created.json()["currentness"] == "current"
+
+    # Simulate a review that already recorded a newer currentness reference time.
+    with Session(stylebook_test_engine) as session:
+        connection = session.get(StylebookConnection, connection_id)
+        assert connection is not None
+        connection.currentness_as_of = datetime(2031, 1, 1, tzinfo=UTC)
+        session.add(connection)
+        session.commit()
+
+    updated = editor_client.patch(
+        f"/v1/stylebooks/default/canonical-people/{person_id}/connections/{connection_id}",
+        json={"asserted_currentness": "former"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["currentness"] == "current"
+    assert updated.json()["currentness_as_of"].startswith("2031-01-01")

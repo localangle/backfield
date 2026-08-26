@@ -8,6 +8,8 @@ from backfield_db import (
     BackfieldOrganization,
     BackfieldProject,
     StylebookConnection,
+    StylebookConnectionEvidence,
+    StylebookLocationCanonical,
     StylebookOrganizationCanonical,
     StylebookPersonCanonical,
     SubstratePerson,
@@ -15,6 +17,7 @@ from backfield_db import (
 from backfield_entities.canonical.link import CANONICAL_LINK_LINKED
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from backfield_entities.connections.rewire import rewire_connections_for_canonical_merge
+from backfield_entities.entities.organization.merge import merge_organization_canonical_into
 from backfield_entities.entities.person.merge import merge_person_canonical_into
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -180,6 +183,79 @@ def test_rewire_connections_dedupes_when_target_edge_exists() -> None:
         assert rows[0].from_entity_id == str(target.id)
 
 
+def test_rewire_dedupe_moves_evidence_to_surviving_edge() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        _org_id, stylebook_id, project_id = _seed(session)
+        source = StylebookPersonCanonical(
+            id=str(uuid4()),
+            stylebook_id=stylebook_id,
+            label="Jane Source",
+            slug="jane-source",
+        )
+        target = StylebookPersonCanonical(
+            id=str(uuid4()),
+            stylebook_id=stylebook_id,
+            label="Jane Target",
+            slug="jane-target",
+        )
+        org = StylebookOrganizationCanonical(
+            id=str(uuid4()),
+            stylebook_id=stylebook_id,
+            label="City Council",
+            slug="city-council",
+            organization_type="government",
+        )
+        session.add(source)
+        session.add(target)
+        session.add(org)
+        session.commit()
+
+        duplicate = StylebookConnection(
+            project_id=project_id,
+            from_entity_type="person",
+            from_entity_id=str(source.id),
+            to_entity_type="organization",
+            to_entity_id=str(org.id),
+            nature="works_for",
+        )
+        survivor = StylebookConnection(
+            project_id=project_id,
+            from_entity_type="person",
+            from_entity_id=str(target.id),
+            to_entity_type="organization",
+            to_entity_id=str(org.id),
+            nature="works_for",
+        )
+        session.add(duplicate)
+        session.add(survivor)
+        session.commit()
+        session.add(
+            StylebookConnectionEvidence(
+                connection_id=int(duplicate.id),  # type: ignore[arg-type]
+                quote="Jane works for the council.",
+                source="dboutput_auto_connections",
+            )
+        )
+        session.commit()
+
+        result = rewire_connections_for_canonical_merge(
+            session,
+            entity_type="person",
+            source_canonical_id=str(source.id),
+            target_canonical_id=str(target.id),
+            project_ids=[project_id],
+        )
+        session.commit()
+
+        assert result.deduped_count == 1
+        evidence_rows = session.exec(select(StylebookConnectionEvidence)).all()
+        assert len(evidence_rows) == 1
+        assert evidence_rows[0].connection_id == int(survivor.id)  # type: ignore[arg-type]
+        assert evidence_rows[0].quote == "Jane works for the council."
+
+
 def test_rewire_connections_drops_self_loop_created_by_merge() -> None:
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
@@ -289,3 +365,62 @@ def test_merge_person_canonical_into_rewires_connections() -> None:
         assert len(rows) == 1
         assert rows[0].from_entity_id == str(target.id)
         assert rows[0].to_entity_id == str(org.id)
+
+
+def test_merge_organization_canonical_into_rewires_located_at() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        org_id, stylebook_id, project_id = _seed(session)
+        source = StylebookOrganizationCanonical(
+            id=str(uuid4()),
+            stylebook_id=stylebook_id,
+            label="Montini Boys Football",
+            slug="montini-boys-football",
+            organization_type="team",
+        )
+        target = StylebookOrganizationCanonical(
+            id=str(uuid4()),
+            stylebook_id=stylebook_id,
+            label="Montini Football",
+            slug="montini-football",
+            organization_type="team",
+        )
+        loc = StylebookLocationCanonical(
+            id=str(uuid4()),
+            stylebook_id=stylebook_id,
+            label="Lombard",
+            slug="lombard",
+        )
+        session.add(source)
+        session.add(target)
+        session.add(loc)
+        session.add(
+            StylebookConnection(
+                project_id=project_id,
+                stylebook_id=stylebook_id,
+                from_entity_type="organization",
+                from_entity_id=str(source.id),
+                to_entity_type="location",
+                to_entity_id=str(loc.id),
+                nature="located_at",
+            )
+        )
+        session.commit()
+
+        merge_organization_canonical_into(
+            session,
+            stylebook_id=stylebook_id,
+            organization_id=org_id,
+            source_canonical_id=str(source.id),
+            target_canonical_id=str(target.id),
+        )
+        session.commit()
+
+        assert session.get(StylebookOrganizationCanonical, str(source.id)) is None
+        rows = session.exec(select(StylebookConnection)).all()
+        assert len(rows) == 1
+        assert rows[0].from_entity_id == str(target.id)
+        assert rows[0].to_entity_id == str(loc.id)
+        assert rows[0].nature == "located_at"
+        assert rows[0].closed_at is None

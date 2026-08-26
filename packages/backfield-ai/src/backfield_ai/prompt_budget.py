@@ -8,8 +8,9 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# When LiteLLM has no context metadata for a model, stay conservative.
-UNKNOWN_MODEL_CONTEXT_TOKENS = 8000
+# When LiteLLM has no context metadata for a model, assume a large modern window
+# so uncataloged OpenRouter / vendor slugs are not rejected as ~8k models.
+UNKNOWN_MODEL_CONTEXT_TOKENS = 200_000
 DEFAULT_OUTPUT_RESERVE_TOKENS = 1500
 DEFAULT_SAFETY_MARGIN_TOKENS = 256
 
@@ -75,7 +76,7 @@ def resolve_model_context_limits(litellm_model: str) -> ModelContextLimits:
         litellm_model=model,
         max_input_tokens=UNKNOWN_MODEL_CONTEXT_TOKENS,
         max_output_tokens=None,
-        source="fallback_8000",
+        source="fallback_unknown",
     )
 
 

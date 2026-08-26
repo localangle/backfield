@@ -16,6 +16,8 @@ def build_auto_connections_summary(
     families: list[FamilyInferenceResult] | None = None,
     write_result: AutoConnectionWriteResult | None = None,
     created_cap_skipped: int = 0,
+    diagnostics: dict[str, Any] | None = None,
+    deferred_candidate_ids: tuple[str, ...] = (),
     error: str | None = None,
 ) -> dict[str, Any]:
     """Build the DBOutput ``connections`` summary payload."""
@@ -29,6 +31,7 @@ def build_auto_connections_summary(
             "reason": reason,
             "error": error,
             "created": 0,
+            "reinforced": 0,
             "skipped_existing": 0,
             "families": [],
         }
@@ -39,6 +42,7 @@ def build_auto_connections_summary(
             "status": "ineligible",
             "reason": reason,
             "created": 0,
+            "reinforced": 0,
             "skipped_existing": 0,
             "families": [],
         }
@@ -64,12 +68,14 @@ def build_auto_connections_summary(
         )
 
     created_rows = write_result.created if write_result is not None else []
-    return {
+    reinforced_rows = write_result.reinforced if write_result is not None else []
+    summary = {
         "enabled": True,
         "eligible": True,
         "status": "succeeded",
         "reason": reason,
         "created": len(created_rows),
+        "reinforced": len(reinforced_rows),
         "skipped_existing": (
             write_result.skipped_existing_count if write_result is not None else 0
         ),
@@ -78,8 +84,16 @@ def build_auto_connections_summary(
         "accepted": total_accepted,
         "skipped": total_skipped,
         "families": family_summaries,
-        "edges": [_written_edge_dict(edge) for edge in created_rows],
+        "edges": [_written_edge_dict(edge) for edge in created_rows + reinforced_rows],
     }
+    if diagnostics:
+        summary["diagnostics"] = diagnostics
+    if deferred_candidate_ids:
+        summary["deferred_candidate_ids"] = list(deferred_candidate_ids)
+        summary["deferred"] = len(deferred_candidate_ids)
+    else:
+        summary["deferred"] = 0
+    return summary
 
 
 def _written_edge_dict(edge: WrittenAutoConnection) -> dict[str, Any]:
@@ -93,4 +107,5 @@ def _written_edge_dict(edge: WrittenAutoConnection) -> dict[str, Any]:
         "description": edge.description,
         "nature": edge.nature,
         "confidence": edge.confidence,
+        "reinforced": edge.reinforced,
     }

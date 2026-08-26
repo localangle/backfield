@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from backfield_entities.connections.candidate_pairs import (
+    pair_text_evidence,
+    split_article_sentences,
+)
 from backfield_entities.connections.caps import MAX_SNIPPET_CHARS
 from backfield_entities.connections.match_tokens import entity_comention_tokens
 from backfield_entities.connections.types import LinkedEntitySnapshot
@@ -33,6 +37,26 @@ def _comention_tokens_for_entity(entity: LinkedEntitySnapshot) -> tuple[str, ...
         label=entity.label,
         affiliation=entity.affiliation,
         entity_type=entity.entity_type,
+    )
+
+
+def collect_entity_pair_text_evidence(
+    left: LinkedEntitySnapshot,
+    right: LinkedEntitySnapshot,
+    article_text: str,
+) -> tuple[str, ...]:
+    """Article quotes for a pair (alias co-mention, linked occurrences, label windows)."""
+    snippets, _source, _score = pair_text_evidence(
+        left,
+        right,
+        split_article_sentences(article_text),
+    )
+    if snippets:
+        return snippets
+    return collect_pair_snippets_for_entities(
+        left=left,
+        right=right,
+        article_text=article_text,
     )
 
 

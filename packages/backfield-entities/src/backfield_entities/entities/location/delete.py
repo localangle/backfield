@@ -17,6 +17,7 @@ from backfield_entities.activity import (
     log_stylebook_activity_safe,
 )
 from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
+from backfield_entities.connections.lifecycle import close_open_connections_for_canonical
 
 
 @dataclass(frozen=True)
@@ -102,6 +103,11 @@ def delete_location_canonical_and_requeue(
         entity_type="location",
         canonical_id=deleted_id,
         label=label,
+    )
+    close_open_connections_for_canonical(
+        session,
+        entity_type="location",
+        canonical_id=deleted_id,
     )
     session.delete(canon)
     return DeleteCanonicalAndRequeueResult(

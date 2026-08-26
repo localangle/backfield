@@ -23,6 +23,7 @@ from backfield_entities.activity import (
 )
 from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
 from backfield_entities.catalog.search import catalog_label_alias_ilike_filter
+from backfield_entities.connections.lifecycle import close_open_connections_for_canonical
 from backfield_entities.entities.organization.persist import create_standalone_canonical
 from backfield_entities.entities.organization.types import (
     ORGANIZATION_TYPE_VALUES,
@@ -670,6 +671,11 @@ def delete_canonical_organization(
         entity_type="organization",
         canonical_id=str(canon.id),
         label=str(canon.label),
+    )
+    close_open_connections_for_canonical(
+        session,
+        entity_type="organization",
+        canonical_id=str(canon.id),
     )
     session.delete(canon)
     session.commit()

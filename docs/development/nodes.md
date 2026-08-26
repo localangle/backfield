@@ -306,7 +306,7 @@ Tab IDs and labels are centralized in `src/lib/nodePanelTabs.ts`. Current routin
 | Gather | Settings, Info; Output when run output exists |
 | Document Chunker | Settings, Info; Output when run output exists |
 | JSON Output | Output only when run output exists |
-| Backfield Output | Settings, Stylebook |
+| Backfield Output | Settings, Stylebook, Connections |
 | S3 Output | Settings; Output when run output exists |
 
 Wrap each panel section in `NodePanelTabGate`. Update `getNodePanelTabs` whenever a
