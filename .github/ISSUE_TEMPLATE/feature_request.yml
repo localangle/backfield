@@ -48,14 +48,6 @@ body:
     validations:
       required: true
 
-  - type: checkboxes
-    id: scope
-    attributes:
-      label: Scope acknowledgement
-      options:
-        - label: I understand production self-hosting is unsupported in this checkout for now
-          required: true
-
   - type: textarea
     id: extra
     attributes:
