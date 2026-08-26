@@ -107,6 +107,3 @@ class AutoConnectionCandidateDecision(BaseModel):
         stripped = value.strip().lower()
         return stripped or None
 
-
-class AutoConnectionFamilyResponse(BaseModel):
-    edges: list[AutoConnectionEdgeProposal] = Field(default_factory=list)

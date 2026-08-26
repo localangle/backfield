@@ -80,6 +80,50 @@ def head_name_segment(label: str | None) -> str:
     return normalize_organization_text(str(label).split(",")[0])
 
 
+_MIN_SITE_NAME_LEN = 4
+MATCH_BASIS_SITE_NAME_EXACT = "site_name_exact"
+MATCH_BASIS_ORG_AT_NAMED_PLACE = "org_at_named_place"
+
+
+def head_name_tokens(label: str | None) -> tuple[str, ...]:
+    """Normalized tokens from the primary (pre-comma) label segment."""
+    head = head_name_segment(label)
+    if not head:
+        return ()
+    return tuple(head.split())
+
+
+def org_location_site_names_match(
+    org_label: str,
+    location_label: str,
+) -> tuple[bool, str]:
+    """True when an org and place canonical clearly name the same site.
+
+    The place head must be a contiguous token prefix of the org head (or equal).
+    Single-token place names require an exact token-sequence match so city names
+    do not absorb unrelated orgs (Chicago Public Schools ↮ Chicago).
+    """
+    org_tokens = head_name_tokens(org_label)
+    loc_tokens = head_name_tokens(location_label)
+    if not org_tokens or not loc_tokens:
+        return False, ""
+
+    loc_head = " ".join(loc_tokens)
+    if len(loc_head) < _MIN_SITE_NAME_LEN:
+        return False, ""
+
+    if org_tokens == loc_tokens:
+        return True, MATCH_BASIS_SITE_NAME_EXACT
+
+    if len(loc_tokens) == 1:
+        return False, ""
+
+    if len(org_tokens) > len(loc_tokens) and org_tokens[: len(loc_tokens)] == loc_tokens:
+        return True, MATCH_BASIS_ORG_AT_NAMED_PLACE
+
+    return False, ""
+
+
 def location_comention_tokens(label: str | None) -> tuple[str, ...]:
     """Search tokens for a location label (head name + optional neighborhood segment)."""
     tokens: list[str] = []

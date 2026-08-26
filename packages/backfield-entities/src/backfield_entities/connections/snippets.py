@@ -36,6 +36,31 @@ def _comention_tokens_for_entity(entity: LinkedEntitySnapshot) -> tuple[str, ...
     )
 
 
+def collect_entity_pair_text_evidence(
+    left: LinkedEntitySnapshot,
+    right: LinkedEntitySnapshot,
+    article_text: str,
+) -> tuple[str, ...]:
+    """Article quotes for a pair (alias co-mention, linked occurrences, label windows)."""
+    from backfield_entities.connections.candidate_pairs import (
+        _pair_text_evidence,
+        _sentences,
+    )
+
+    snippets, _source, _score = _pair_text_evidence(
+        left,
+        right,
+        _sentences(article_text),
+    )
+    if snippets:
+        return snippets
+    return collect_pair_snippets_for_entities(
+        left=left,
+        right=right,
+        article_text=article_text,
+    )
+
+
 def collect_pair_snippets_for_entities(
     *,
     left: LinkedEntitySnapshot,

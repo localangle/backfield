@@ -35,6 +35,9 @@ from backfield_entities.connections.inference import (
     classify_candidate_batches,
 )
 from backfield_entities.connections.postprocess import resolve_auto_connection_proposals
+from backfield_entities.connections.same_site_links import (
+    infer_same_site_org_location_edges,
+)
 from backfield_entities.connections.summary import build_auto_connections_summary
 from backfield_entities.connections.types import (
     AutoConnectionCandidatePair,
@@ -125,6 +128,8 @@ def _endpoint_family_for_proposal(
         return candidate.from_entity_type, candidate.to_entity_type
     if edge.match_basis == "affiliation_match":
         return "person", "organization"
+    if edge.match_basis in {"site_name_exact", "org_at_named_place"}:
+        return "organization", "location"
     if edge.match_basis == "explicit_party_district_construction":
         return "person", "location"
     return None
@@ -209,10 +214,20 @@ def run_auto_connections_for_db_output(
             organizations=context.organizations,
             article_text=context.article_text,
         )
+        same_site_edges = infer_same_site_org_location_edges(
+            organizations=context.organizations,
+            locations=context.locations,
+            article_text=context.article_text,
+        )
         deterministic_edges = build_deterministic_connection_proposals(
             selected_candidates
         )
-        all_proposals = (*affiliation_edges, *deterministic_edges, *inference.edges)
+        all_proposals = (
+            *affiliation_edges,
+            *same_site_edges,
+            *deterministic_edges,
+            *inference.edges,
+        )
         resolution = resolve_auto_connection_proposals(
             list(all_proposals),
             candidates=candidate_by_id,
@@ -278,6 +293,7 @@ def run_auto_connections_for_db_output(
             "malformed_proposals": inference.counts.malformed_proposals,
             "deterministic_proposals": len(deterministic_edges),
             "affiliation_proposals": len(affiliation_edges),
+            "same_site_proposals": len(same_site_edges),
             "elapsed_seconds": round(inference.counts.elapsed_seconds, 3),
             "exact_duplicates": resolution.stats.exact_duplicates,
             "subsumed": resolution.stats.subsumed,

@@ -358,9 +358,13 @@ the pair. High-precision constructions include journalistic party+district tags 
 ``D-Ottawa`` / ``R-Springfield`` after a legislator's name (deterministic ``represents``).
 When a person's extracted **affiliation** names an organization in the article (including team
 nicknames such as Phillies → Philadelphia Phillies), Backfield Output may create a
-``plays_for`` / ``coaches`` / ``works_for`` edge without an LLM call. Other extracted metadata
-remains a lower-trust hint for the model. Every model proposal must identify its candidate and copy
-an exact quote from that pair's evidence packet.
+``plays_for`` / ``coaches`` / ``works_for`` edge without an LLM call. When an organization and
+place canonical name the same site (place head tokens are a prefix of the org head, or
+equal; single-token city names require exact match), Backfield Output may create a deterministic
+``located_at`` edge when the article also co-mentions the pair. Single-token city names alone do
+not qualify (Chicago Public Schools ↮ Chicago). Other extracted metadata remains a lower-trust
+hint for the model. Every model proposal must identify its candidate and copy an exact quote from
+that pair's evidence packet.
 
 The model returns one explicit `link=true|false` judgment for every submitted pair. Only
 `link=true` decisions continue through quote, nature, confidence, and endpoint validation;
