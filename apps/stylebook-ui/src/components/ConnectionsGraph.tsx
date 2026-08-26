@@ -21,7 +21,6 @@ import ConnectionGraphDetailPanel, {
 import type { GraphEntityProfileLines } from "@/lib/connectionGraphEntityProfile"
 import {
   bundleEdgeLabel,
-  bundleEdgeTitle,
   classifyConnectionHop,
   entityRefKey,
   groupConnectionsByDirectedEdge,
@@ -347,7 +346,6 @@ function buildGraphLayout(
         source: nodeId(conn.from_entity_type, conn.from_entity_id),
         target: nodeId(conn.to_entity_type, conn.to_entity_id),
         label: showLabel ? bundleEdgeLabel(bundleConnections) : undefined,
-        title: bundleEdgeTitle(bundleConnections),
         data: { connectionIds },
         type: "smoothstep",
         pathOptions: { borderRadius: 16, offset: hop === 1 ? 12 : 4 },
@@ -530,53 +528,51 @@ export default function ConnectionsGraph({
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex h-[min(560px,68vh)] min-h-[400px] overflow-hidden rounded-xl border bg-gradient-to-b from-muted/15 to-background">
-        <div className="connections-graph h-full min-w-0 flex-1 [&_.react-flow__controls-button]:border-border [&_.react-flow__controls-button]:bg-background">
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            nodeTypes={nodeTypes}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onNodeClick={onNodeClick}
-            onEdgeClick={onEdgeClick}
-            onPaneClick={onPaneClick}
-            fitView
-            fitViewOptions={{ padding: 0.14, maxZoom: 1 }}
-            minZoom={0.12}
-            maxZoom={1.2}
-            nodesDraggable={false}
-            nodesConnectable={false}
-            elementsSelectable
-            proOptions={{ hideAttribution: true }}
-          >
-            <Controls showInteractive={false} position="bottom-left" />
-            <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="hsl(var(--border))" />
-          </ReactFlow>
-        </div>
-        {selection ? (
-          <ConnectionGraphDetailPanel
-            selection={selection}
-            center={center}
-            connections={neighborhood.connections}
-            connectionsById={connectionsById}
-            stylebookSlug={stylebookSlug}
-            projectSlug={projectSlug}
-            centerProfileLines={centerProfileLines}
-            catalogBasePath={catalogBasePath}
-            catalogScopeSuffix={catalogScopeSuffix}
-            onClear={() => setSelection(null)}
-            onSelectConnection={(connectionIds) =>
-              setSelection({ kind: "edge", connectionIds })
-            }
-            onSelectNode={(entityType, entityId) =>
-              setSelection({ kind: "node", entityType, entityId })
-            }
-            onConnectionsChanged={onConnectionsChanged}
-          />
-        ) : null}
+    <div className="flex h-[min(560px,68vh)] min-h-[400px] overflow-hidden rounded-xl border bg-gradient-to-b from-muted/15 to-background">
+      <div className="connections-graph h-full min-w-0 flex-1 [&_.react-flow__controls-button]:border-border [&_.react-flow__controls-button]:bg-background">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={onNodeClick}
+          onEdgeClick={onEdgeClick}
+          onPaneClick={onPaneClick}
+          fitView
+          fitViewOptions={{ padding: 0.14, maxZoom: 1 }}
+          minZoom={0.12}
+          maxZoom={1.2}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable
+          proOptions={{ hideAttribution: true }}
+        >
+          <Controls showInteractive={false} position="bottom-left" />
+          <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="hsl(var(--border))" />
+        </ReactFlow>
       </div>
+      {selection ? (
+        <ConnectionGraphDetailPanel
+          selection={selection}
+          center={center}
+          connections={neighborhood.connections}
+          connectionsById={connectionsById}
+          stylebookSlug={stylebookSlug}
+          projectSlug={projectSlug}
+          centerProfileLines={centerProfileLines}
+          catalogBasePath={catalogBasePath}
+          catalogScopeSuffix={catalogScopeSuffix}
+          onClear={() => setSelection(null)}
+          onSelectConnection={(connectionIds) =>
+            setSelection({ kind: "edge", connectionIds })
+          }
+          onSelectNode={(entityType, entityId) =>
+            setSelection({ kind: "node", entityType, entityId })
+          }
+          onConnectionsChanged={onConnectionsChanged}
+        />
+      ) : null}
     </div>
   )
 }

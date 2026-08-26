@@ -18,7 +18,7 @@ from backfield_db import (
     StylebookConnection,
     StylebookConnectionEvidence,
 )
-from sqlalchemy import func, inspect
+from sqlalchemy import inspect
 from sqlmodel import Session, col, select
 
 from backfield_entities.connections.natures import (
@@ -65,7 +65,7 @@ class ConnectionKgMigrateReport:
     quarantine_samples: list[dict[str, Any]] = field(default_factory=list)
     merge_groups: int = 0
     duplicates_deleted: int = 0
-    evidence_created: int = 0
+    evidence_moved: int = 0
     evidence_skipped_existing: int = 0
     open_edge_groups: int = 0
 
@@ -126,6 +126,16 @@ def _is_self_loop(conn: StylebookConnection) -> bool:
         conn.from_entity_type.strip().lower() == conn.to_entity_type.strip().lower()
         and str(conn.from_entity_id) == str(conn.to_entity_id)
     )
+
+
+def _delete_connection_evidence(session: Session, connection_id: int) -> None:
+    """Remove evidence children before deleting a connection (FK has no cascade pre-078)."""
+    for evidence in session.exec(
+        select(StylebookConnectionEvidence).where(
+            StylebookConnectionEvidence.connection_id == connection_id
+        )
+    ).all():
+        session.delete(evidence)
 
 
 def _evidence_narrative(session: Session, connection_id: int) -> str:
@@ -263,8 +273,8 @@ def migrate_connections_kg_phase_a(
     report.stylebook_id_backfilled = _backfill_stylebook_ids(session, rows, apply=apply)
 
     if inventory_only:
-        if apply:
-            session.rollback()
+        # _backfill_stylebook_ids mutates rows in memory even when apply is false; discard.
+        session.rollback()
         return report
 
     if apply and report.stylebook_id_backfilled:
@@ -340,11 +350,15 @@ def migrate_connections_kg_phase_a(
                     }
                 )
             if apply:
+                if conn.id is not None:
+                    _delete_connection_evidence(session, int(conn.id))
                 session.delete(conn)
             continue
         if view.from_type == view.to_type and view.from_id == view.to_id:
             report.quarantined += 1
             if apply:
+                if conn.id is not None:
+                    _delete_connection_evidence(session, int(conn.id))
                 session.delete(conn)
             continue
         keep_views.append(view)
@@ -387,7 +401,7 @@ def migrate_connections_kg_phase_a(
                         session.delete(evidence)
                         continue
                 evidence.connection_id = survivor_id
-                report.evidence_created += 1
+                report.evidence_moved += 1
             session.delete(dup)
         survivor.updated_at = datetime.now(UTC)
 
@@ -400,7 +414,3 @@ def migrate_connections_kg_phase_a(
         session.rollback()
 
     return report
-
-
-def connection_count(session: Session) -> int:
-    return int(session.exec(select(func.count()).select_from(StylebookConnection)).one())

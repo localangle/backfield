@@ -49,7 +49,8 @@ replacement catalog.
 Phase A connection redesign ships in two schema steps plus an offline data command:
 
 1. `077_conn_kg_phase_a` — additive `stylebook_id` / `closed_at` / evidence + custom nature tables.
-2. `backfield migrate-connection-kg --apply` — remap natures, merge duplicates, backfill evidence.
+2. `backfield migrate-connection-kg --apply` — remap natures, merge duplicates, and reattach
+   surviving evidence rows during merges (`078` materializes remaining `evidence_json`).
 3. `078_conn_kg_cutover` — open-edge unique index on Stylebook scope, drop connection
    `description` / `evidence_json`, cascade-delete evidence with parent.
 
@@ -64,6 +65,10 @@ make migrate
 After cutover, Stylebook Remove soft-closes edges (`closed_at`); reopen clears it.
 Public entity connection lists hide closed rows unless `include_closed=true`.
 Hard-delete remains for internal/migrate paths only.
+
+Downgrading `078` is unsupported on retained data: the dropped `description` / `evidence_json`
+values are not restored, and recreating the legacy exact-edge unique index can fail once
+soft-closed duplicates of an open edge exist. Prefer forward repair.
 
 ## Connection currentness
 
@@ -81,6 +86,11 @@ Revision `080_conn_currentness_review` adds `currentness_review_source` to disti
 model-reviewed, manual, deterministic, and unreviewed evidence. Existing rows remain `unreviewed`;
 this revision does not reclassify or backfill historical currentness.
 
+Revision `081_conn_evidence_fk` sets `stylebook_connection_evidence.article_id` to
+`ON DELETE SET NULL` so project teardown can remove articles without FK violations, and drops
+redundant indexes superseded by composite keys (`stylebook_id` + endpoints, `connection_id` +
+`created_at`, and the unused `currentness` btree).
+
 ## Historical connection inference
 
 `backfield backfill-connections` reuses the forward evidence, budget, resolution, and reinforce
@@ -96,7 +106,7 @@ backfield backfill-connections --project-id 42 --after-article-id 12000 --apply
 The JSON report includes per-article diagnostics, budget-limited `unprocessed` candidate counts,
 and `resume_cursor`; pass that value back through `--after-article-id` after an interruption.
 `--start-article-id`, `--end-article-id`,
-`--max-requests-per-article` (maximum eight), `--model`, and `--model-config-id` provide bounded
+`--max-requests-per-article` (default and maximum 16), `--model`, and `--model-config-id` provide bounded
 control. Apply mode is idempotent: it reinforces existing endpoint+nature edges, skips article
 evidence already attached, and never closes existing edges.
 

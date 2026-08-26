@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Literal
 
 from backfield_db import StylebookConnectionNatureCustom
@@ -191,7 +190,3 @@ def ensure_custom_nature_for_manual_slug(
         label=normalized.replace("_", " "),
     )
     return normalized
-
-
-def touch_custom_nature_updated_at(row: StylebookConnectionNatureCustom) -> None:
-    row.updated_at = datetime.now(UTC)

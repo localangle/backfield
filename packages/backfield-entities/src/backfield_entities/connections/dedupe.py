@@ -20,27 +20,5 @@ def normalize_connection_description(description: str | None) -> str | None:
     return stripped or None
 
 
-def connection_edge_key(
-    *,
-    project_id: int,
-    from_entity_type: str,
-    from_entity_id: str,
-    to_entity_type: str,
-    to_entity_id: str,
-    nature: str | None,
-    description: str | None = None,
-) -> tuple[int, str, str, str, str, str]:
-    """Batch / in-memory identity for reinforce: ends + nature (description ignored)."""
-    _ = description
-    return (
-        int(project_id),
-        from_entity_type.strip().lower(),
-        str(from_entity_id),
-        to_entity_type.strip().lower(),
-        str(to_entity_id),
-        normalize_connection_nature(nature) or "",
-    )
-
-
 def connection_nature_coalesced(column: object = StylebookConnection.nature) -> object:
     return func.coalesce(column, "")

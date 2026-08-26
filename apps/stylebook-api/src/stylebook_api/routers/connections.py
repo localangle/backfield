@@ -33,8 +33,10 @@ from backfield_entities.connections.dedupe import connection_nature_coalesced
 from backfield_entities.connections.display import (
     ConnectionEvidenceOut,
     derived_connection_description,
-    evidence_out_list,
-    legacy_evidence_json_for_connection,
+    derived_connection_description_from_rows,
+    evidence_out_list_from_rows,
+    legacy_evidence_json_from_rows,
+    list_connection_evidence,
 )
 from backfield_entities.connections.evidence import reference_time_is_newer
 from backfield_entities.connections.natures import temporal_kind_for_nature
@@ -48,6 +50,7 @@ from stylebook_api.deps import get_auth, get_session
 from stylebook_api.helpers.connections_utils import (
     get_canonical_display_name,
     normalize_connection_entity_id,
+    normalize_manual_connection_nature,
     validate_canonical_exists,
     validate_connection_pair,
     validate_manual_connection_labels,
@@ -175,7 +178,7 @@ class UpdateConnectionRequest(BaseModel):
             and self.description is None
             and self.asserted_currentness is None
         ):
-            raise ValueError("Provide at least one of nature or description")
+            raise ValueError("Provide a description, nature, or currentness update.")
         if self.nature is not None and not self.nature.strip():
             raise ValueError("nature cannot be empty")
         if self.description is not None and not self.description.strip():
@@ -218,22 +221,31 @@ def _display_name(
     return f"{entity_type} #{sid}"
 
 
+def _static_nature_slugs(session: Session, *, stylebook_id: int) -> set[str]:
+    """Slugs whose catalog entry pins the connection as static, loaded once per request."""
+    return {
+        entry.slug
+        for entry in merged_nature_catalog(session, stylebook_id=int(stylebook_id))
+        if entry.temporal_kind == "static"
+    }
+
+
 def _connection_temporal_kind(
     session: Session,
     conn: StylebookConnection,
     *,
     stylebook_id: int | None = None,
+    static_nature_slugs: set[str] | None = None,
 ) -> Literal["static", "dynamic"]:
     nature = (conn.nature or "").strip()
     catalog_id = stylebook_id or conn.stylebook_id
     if nature and catalog_id is not None:
-        for entry in merged_nature_catalog(
-            session,
-            stylebook_id=int(catalog_id),
-            q=nature,
-        ):
-            if entry.slug == nature and entry.temporal_kind == "static":
-                return "static"
+        if static_nature_slugs is None:
+            static_nature_slugs = _static_nature_slugs(
+                session, stylebook_id=int(catalog_id)
+            )
+        if nature in static_nature_slugs:
+            return "static"
     if nature:
         return temporal_kind_for_nature(
             nature,
@@ -249,12 +261,17 @@ def _connection_response_from_row(
     project_id: int,
     conn: StylebookConnection,
     catalog_stylebook_id: int | None = None,
+    static_nature_slugs: set[str] | None = None,
 ) -> ConnectionResponse:
     nature = conn.nature
     temporal = _connection_temporal_kind(
         session,
         conn,
         stylebook_id=catalog_stylebook_id,
+        static_nature_slugs=static_nature_slugs,
+    )
+    evidence_rows = list_connection_evidence(
+        session, connection_id=int(conn.id)  # type: ignore[arg-type]
     )
     return ConnectionResponse(
         id=int(conn.id),  # type: ignore[arg-type]
@@ -276,17 +293,13 @@ def _connection_response_from_row(
             conn.to_entity_id,
             catalog_stylebook_id,
         ),
-        description=derived_connection_description(
-            session, connection_id=int(conn.id)  # type: ignore[arg-type]
-        ),
+        description=derived_connection_description_from_rows(evidence_rows),
         nature=nature,
         temporal_kind=temporal,
         currentness=conn.currentness if temporal == "dynamic" else None,
         currentness_as_of=conn.currentness_as_of if temporal == "dynamic" else None,
-        evidence_json=legacy_evidence_json_for_connection(
-            session, connection_id=int(conn.id)  # type: ignore[arg-type]
-        ),
-        evidence=evidence_out_list(session, connection_id=int(conn.id)),  # type: ignore[arg-type]
+        evidence_json=legacy_evidence_json_from_rows(evidence_rows),
+        evidence=evidence_out_list_from_rows(evidence_rows),
         closed_at=conn.closed_at,
         created_at=conn.created_at,
         updated_at=conn.updated_at,
@@ -398,42 +411,47 @@ def _list_connections_for_entity(
     conns = session.exec(
         select(StylebookConnection).where(*filters).order_by(StylebookConnection.created_at)
     ).all()
-    rows = [
-        _connection_response_from_row(
-            session,
-            project_id=project_id,
-            conn=c,
-            catalog_stylebook_id=catalog_stylebook_id,
-        )
-        for c in conns
-    ]
-    total = len(rows)
-    page = rows[offset : offset + limit]
+    total = len(conns)
+    page_conns = conns[offset : offset + limit]
+    static_slugs = (
+        _static_nature_slugs(session, stylebook_id=int(catalog_stylebook_id))
+        if catalog_stylebook_id is not None
+        else None
+    )
     return ConnectionListResponse(
-        connections=page,
+        connections=[
+            _connection_response_from_row(
+                session,
+                project_id=project_id,
+                conn=c,
+                catalog_stylebook_id=catalog_stylebook_id,
+                static_nature_slugs=static_slugs,
+            )
+            for c in page_conns
+        ],
         total=total,
         limit=limit,
         offset=offset,
     )
 
 
-def _stylebook_project_ids(session: Session, *, organization_id: int) -> list[int]:
-    rows = session.exec(
+def _stylebook_project_id_for_catalog(session: Session, *, stylebook_id: int) -> int | None:
+    row = session.exec(
         select(BackfieldProject.id)
-        .where(BackfieldProject.organization_id == organization_id)
+        .where(BackfieldProject.stylebook_id == int(stylebook_id))
         .order_by(BackfieldProject.id.asc())
-    ).all()
-    return [int(r) for r in rows if r is not None]
+    ).first()
+    return int(row) if row is not None else None
 
 
-def _stylebook_storage_project_id(session: Session, *, organization_id: int) -> int:
-    project_ids = _stylebook_project_ids(session, organization_id=organization_id)
-    if not project_ids:
+def _stylebook_storage_project_id(session: Session, *, stylebook_id: int) -> int:
+    project_id = _stylebook_project_id_for_catalog(session, stylebook_id=stylebook_id)
+    if project_id is None:
         raise HTTPException(
             status_code=400,
             detail="This stylebook needs at least one project before connections can be edited.",
         )
-    return project_ids[0]
+    return project_id
 
 
 def _canonical_in_stylebook_or_404(
@@ -527,29 +545,25 @@ def _apply_connection_update(
             auth=auth,
             asserted_currentness=payload.asserted_currentness or "unspecified",
         )
+    conn.updated_at = datetime.now(UTC)
     return conn
 
 
 def _find_existing_connection(
     session: Session,
     *,
-    project_ids: list[int],
+    stylebook_id: int,
     from_entity_type: str,
     from_entity_id: str,
     to_entity_type: str,
     to_entity_id: str,
     nature: str | None,
-    description: str | None = None,
 ) -> StylebookConnection | None:
-    _ = description
-    normalized_nature, _normalized_description = validate_manual_connection_labels(
-        nature=nature,
-        description=description,
-    )
+    normalized_nature = normalize_manual_connection_nature(nature)
     return session.exec(
         select(StylebookConnection)
         .where(
-            StylebookConnection.project_id.in_(project_ids),
+            StylebookConnection.stylebook_id == int(stylebook_id),
             StylebookConnection.from_entity_type == from_entity_type,
             StylebookConnection.from_entity_id == from_entity_id,
             StylebookConnection.to_entity_type == to_entity_type,
@@ -564,7 +578,6 @@ def _find_existing_connection(
 def _list_stylebook_connections_for_entity(
     session: Session,
     *,
-    project_ids: list[int],
     entity_type: str,
     entity_id: str,
     catalog_stylebook_id: int,
@@ -573,7 +586,6 @@ def _list_stylebook_connections_for_entity(
     limit: int = CONNECTIONS_DEFAULT_LIMIT,
     offset: int = 0,
 ) -> ConnectionListResponse:
-    _ = project_ids
     filters = [
         StylebookConnection.stylebook_id == int(catalog_stylebook_id),
         or_(
@@ -606,6 +618,9 @@ def _list_stylebook_connections_for_entity(
         deduped.append(conn)
     total = len(deduped)
     page_rows = deduped[offset : offset + limit]
+    static_slugs = _static_nature_slugs(
+        session, stylebook_id=int(catalog_stylebook_id)
+    )
     return ConnectionListResponse(
         connections=[
             _connection_response_from_row(
@@ -613,6 +628,7 @@ def _list_stylebook_connections_for_entity(
                 project_id=display_project_id,
                 conn=c,
                 catalog_stylebook_id=catalog_stylebook_id,
+                static_nature_slugs=static_slugs,
             )
             for c in page_rows
         ],
@@ -626,20 +642,22 @@ def _soft_close_connection(
     session: Session,
     *,
     conn: StylebookConnection,
-    stylebook_id: int,
+    stylebook_id: int | None,
     auth: dict[str, Any],
 ) -> None:
     if conn.closed_at is None:
         conn.closed_at = datetime.now(UTC)
         conn.updated_at = datetime.now(UTC)
         session.add(conn)
-        _log_stylebook_connection_event(
-            session,
-            stylebook_id=stylebook_id,
-            auth=auth,
-            event_type=EVENT_CONNECTION_CLOSED,
-            conn=conn,
-        )
+        # Legacy closed rows can lack a stylebook; close them without activity logging.
+        if stylebook_id is not None:
+            _log_stylebook_connection_event(
+                session,
+                stylebook_id=stylebook_id,
+                auth=auth,
+                event_type=EVENT_CONNECTION_CLOSED,
+                conn=conn,
+            )
 
 
 def _reopen_connection(
@@ -678,28 +696,33 @@ def _natures_response(session: Session, *, stylebook_id: int, q: str | None) -> 
     )
 
 
-def _matching_stylebook_connection_rows(
+def _find_stylebook_entity_connection(
     session: Session,
     *,
-    project_ids: list[int],
-    connection: StylebookConnection,
-    open_only: bool = True,
-) -> list[StylebookConnection]:
-    filters = [
-        StylebookConnection.project_id.in_(project_ids),
-        StylebookConnection.from_entity_type == connection.from_entity_type,
-        StylebookConnection.from_entity_id == connection.from_entity_id,
-        StylebookConnection.to_entity_type == connection.to_entity_type,
-        StylebookConnection.to_entity_id == connection.to_entity_id,
-        connection_nature_coalesced() == (connection.nature or ""),
-    ]
-    if open_only:
-        filters.append(col(StylebookConnection.closed_at).is_(None))
-    else:
-        filters.append(col(StylebookConnection.closed_at).is_not(None))
-    return session.exec(
-        select(StylebookConnection).where(*filters).order_by(StylebookConnection.id.asc())
-    ).all()
+    stylebook_id: int,
+    entity_type: str,
+    entity_id: str,
+    connection_id: int,
+) -> StylebookConnection:
+    conn = session.exec(
+        select(StylebookConnection).where(
+            StylebookConnection.id == connection_id,
+            StylebookConnection.stylebook_id == int(stylebook_id),
+            or_(
+                and_(
+                    StylebookConnection.from_entity_type == entity_type,
+                    StylebookConnection.from_entity_id == entity_id,
+                ),
+                and_(
+                    StylebookConnection.to_entity_type == entity_type,
+                    StylebookConnection.to_entity_id == entity_id,
+                ),
+            ),
+        )
+    ).first()
+    if conn is None:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    return conn
 
 
 @connections_router.get("/natures", response_model=NaturesResponse)
@@ -782,8 +805,9 @@ def create_location_connection(
     nature = ensure_custom_nature_for_manual_slug(
         session, stylebook_id=int(sb_id), nature=nature
     )
-    conn = StylebookConnection(
-        project_id=int(proj.id),
+    # Dedupe against the open-edge unique index instead of 500ing on IntegrityError.
+    conn = _find_existing_connection(
+        session,
         stylebook_id=int(sb_id),
         from_entity_type="location",
         from_entity_id=loc_key,
@@ -791,8 +815,18 @@ def create_location_connection(
         to_entity_id=to_key,
         nature=nature,
     )
-    session.add(conn)
-    session.flush()
+    if conn is None:
+        conn = StylebookConnection(
+            project_id=int(proj.id),
+            stylebook_id=int(sb_id),
+            from_entity_type="location",
+            from_entity_id=loc_key,
+            to_entity_type=payload.to_entity_type,
+            to_entity_id=to_key,
+            nature=nature,
+        )
+        session.add(conn)
+        session.flush()
     _add_manual_evidence(
         session,
         connection_id=int(conn.id),  # type: ignore[arg-type]
@@ -890,17 +924,10 @@ def delete_location_connection(
     ).first()
     if conn is None:
         raise HTTPException(status_code=404, detail="Connection not found")
-    stylebook_id = int(conn.stylebook_id)
-    project_ids = _stylebook_project_ids(
-        session, organization_id=int(proj.organization_id)
+    stylebook_id = int(conn.stylebook_id) if conn.stylebook_id is not None else None
+    _soft_close_connection(
+        session, conn=conn, stylebook_id=stylebook_id, auth=auth
     )
-    rows = _matching_stylebook_connection_rows(
-        session, project_ids=project_ids, connection=conn
-    )
-    for row in rows or [conn]:
-        _soft_close_connection(
-            session, conn=row, stylebook_id=stylebook_id, auth=auth
-        )
     session.commit()
     return {"ok": True, "closed": True}
 
@@ -1003,18 +1030,17 @@ def list_stylebook_location_connections(
     _canonical_in_stylebook_or_404(
         session, stylebook_id=int(sb.id), canonical_id=location_id
     )
-    project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
-    if not project_ids:
+    project_id = _stylebook_project_id_for_catalog(session, stylebook_id=int(sb.id))
+    if project_id is None:
         return ConnectionListResponse(
             connections=[], total=0, limit=limit, offset=offset
         )
     return _list_stylebook_connections_for_entity(
         session,
-        project_ids=project_ids,
         entity_type="location",
         entity_id=str(location_id),
         catalog_stylebook_id=int(sb.id),
-        display_project_id=project_ids[0],
+        display_project_id=project_id,
         include_closed=include_closed,
         limit=limit,
         offset=offset,
@@ -1042,18 +1068,17 @@ def list_stylebook_person_connections(
     _canonical_person_in_stylebook_or_404(
         session, stylebook_id=int(sb.id), canonical_id=person_id
     )
-    project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
-    if not project_ids:
+    project_id = _stylebook_project_id_for_catalog(session, stylebook_id=int(sb.id))
+    if project_id is None:
         return ConnectionListResponse(
             connections=[], total=0, limit=limit, offset=offset
         )
     return _list_stylebook_connections_for_entity(
         session,
-        project_ids=project_ids,
         entity_type="person",
         entity_id=str(person_id),
         catalog_stylebook_id=int(sb.id),
-        display_project_id=project_ids[0],
+        display_project_id=project_id,
         include_closed=include_closed,
         limit=limit,
         offset=offset,
@@ -1081,18 +1106,17 @@ def list_stylebook_organization_connections(
     _canonical_organization_in_stylebook_or_404(
         session, stylebook_id=int(sb.id), canonical_id=organization_id
     )
-    project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
-    if not project_ids:
+    project_id = _stylebook_project_id_for_catalog(session, stylebook_id=int(sb.id))
+    if project_id is None:
         return ConnectionListResponse(
             connections=[], total=0, limit=limit, offset=offset
         )
     return _list_stylebook_connections_for_entity(
         session,
-        project_ids=project_ids,
         entity_type="organization",
         entity_id=str(organization_id),
         catalog_stylebook_id=int(sb.id),
-        display_project_id=project_ids[0],
+        display_project_id=project_id,
         include_closed=include_closed,
         limit=limit,
         offset=offset,
@@ -1117,91 +1141,20 @@ def create_stylebook_location_connection(
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
     storage_project_id = _stylebook_storage_project_id(
-        session, organization_id=int(sb.organization_id)
+        session, stylebook_id=int(sb.id)
     )
-    project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
     loc_key = str(location_id)
     validate_canonical_exists(
         session, storage_project_id, "location", location_id, int(sb.id)
     )
-    validate_connection_pair("location", payload.to_entity_type)
-    validate_canonical_exists(
+    return _create_stylebook_entity_connection(
         session,
-        storage_project_id,
-        payload.to_entity_type,
-        payload.to_entity_id,
-        int(sb.id),
-    )
-    to_key = normalize_connection_entity_id(payload.to_entity_type, payload.to_entity_id)
-    validate_not_self_connection(
-        "location",
-        loc_key,
-        payload.to_entity_type,
-        to_key,
-    )
-    nature, description = validate_manual_connection_labels(
-        nature=payload.nature,
-        description=payload.description,
-    )
-    nature = ensure_custom_nature_for_manual_slug(
-        session, stylebook_id=int(sb.id), nature=nature
-    )
-    existing = _find_existing_connection(
-        session,
-        project_ids=project_ids,
+        storage_project_id=storage_project_id,
+        catalog_stylebook_id=int(sb.id),
+        auth=auth,
         from_entity_type="location",
         from_entity_id=loc_key,
-        to_entity_type=payload.to_entity_type,
-        to_entity_id=to_key,
-        nature=nature,
-        description=description,
-    )
-    if existing is None:
-        existing = StylebookConnection(
-            project_id=storage_project_id,
-            stylebook_id=int(sb.id),
-            from_entity_type="location",
-            from_entity_id=loc_key,
-            to_entity_type=payload.to_entity_type,
-            to_entity_id=to_key,
-            nature=nature,
-        )
-        session.add(existing)
-        session.flush()
-        _add_manual_evidence(
-            session,
-            connection_id=int(existing.id),  # type: ignore[arg-type]
-            description=description,
-            stylebook_id=int(sb.id),
-            auth=auth,
-            asserted_currentness=payload.asserted_currentness,
-        )
-        session.commit()
-        session.refresh(existing)
-        _log_stylebook_connection_event(
-            session,
-            stylebook_id=int(sb.id),
-            auth=auth,
-            event_type=EVENT_CONNECTION_CREATED,
-            conn=existing,
-        )
-        session.commit()
-    else:
-        _add_manual_evidence(
-            session,
-            connection_id=int(existing.id),  # type: ignore[arg-type]
-            description=description,
-            stylebook_id=int(sb.id),
-            auth=auth,
-            asserted_currentness=payload.asserted_currentness,
-        )
-        session.commit()
-        session.refresh(existing)
-    return _connection_response_from_row(
-        session,
-        project_id=storage_project_id,
-        conn=existing,
-        catalog_stylebook_id=int(sb.id),
+        payload=payload,
     )
 
 
@@ -1224,54 +1177,21 @@ def update_stylebook_location_connection(
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
     storage_project_id = _stylebook_storage_project_id(
-        session, organization_id=int(sb.organization_id)
+        session, stylebook_id=int(sb.id)
     )
-    project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
     validate_canonical_exists(
         session, storage_project_id, "location", location_id, int(sb.id)
     )
     loc_key = str(location_id)
-    conn = session.exec(
-        select(StylebookConnection).where(
-            StylebookConnection.id == connection_id,
-            StylebookConnection.project_id.in_(project_ids),
-            or_(
-                and_(
-                    StylebookConnection.from_entity_type == "location",
-                    StylebookConnection.from_entity_id == loc_key,
-                ),
-                and_(
-                    StylebookConnection.to_entity_type == "location",
-                    StylebookConnection.to_entity_id == loc_key,
-                ),
-            ),
-        )
-    ).first()
-    if conn is None:
-        raise HTTPException(status_code=404, detail="Connection not found")
-    rows = _matching_stylebook_connection_rows(
-        session, project_ids=project_ids, connection=conn
-    )
-    for row in rows:
-        _apply_connection_update(
-            session, row, payload, stylebook_id=int(sb.id), auth=auth
-        )
-        session.add(row)
-    _log_stylebook_connection_event(
+    return _update_stylebook_entity_connection(
         session,
-        stylebook_id=int(sb.id),
-        auth=auth,
-        event_type=EVENT_CONNECTION_UPDATED,
-        conn=conn,
-        payload_json={"replica_count": len(rows)},
-    )
-    session.commit()
-    session.refresh(conn)
-    return _connection_response_from_row(
-        session,
-        project_id=storage_project_id,
-        conn=conn,
+        storage_project_id=storage_project_id,
         catalog_stylebook_id=int(sb.id),
+        auth=auth,
+        entity_type="location",
+        entity_id=loc_key,
+        connection_id=connection_id,
+        payload=payload,
     )
 
 
@@ -1292,40 +1212,20 @@ def delete_stylebook_location_connection(
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
     storage_project_id = _stylebook_storage_project_id(
-        session, organization_id=int(sb.organization_id)
+        session, stylebook_id=int(sb.id)
     )
-    project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
     validate_canonical_exists(
         session, storage_project_id, "location", location_id, int(sb.id)
     )
     loc_key = str(location_id)
-    conn = session.exec(
-        select(StylebookConnection).where(
-            StylebookConnection.id == connection_id,
-            StylebookConnection.project_id.in_(project_ids),
-            or_(
-                and_(
-                    StylebookConnection.from_entity_type == "location",
-                    StylebookConnection.from_entity_id == loc_key,
-                ),
-                and_(
-                    StylebookConnection.to_entity_type == "location",
-                    StylebookConnection.to_entity_id == loc_key,
-                ),
-            ),
-        )
-    ).first()
-    if conn is None:
-        raise HTTPException(status_code=404, detail="Connection not found")
-    rows = _matching_stylebook_connection_rows(
-        session, project_ids=project_ids, connection=conn
+    return _delete_stylebook_entity_connection(
+        session,
+        catalog_stylebook_id=int(sb.id),
+        auth=auth,
+        entity_type="location",
+        entity_id=loc_key,
+        connection_id=connection_id,
     )
-    for row in rows or [conn]:
-        _soft_close_connection(
-            session, conn=row, stylebook_id=int(sb.id), auth=auth
-        )
-    session.commit()
-    return {"ok": True, "closed": True}
 
 
 @locations_connections_router.post(
@@ -1346,45 +1246,20 @@ def reopen_stylebook_location_connection(
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
     storage_project_id = _stylebook_storage_project_id(
-        session, organization_id=int(sb.organization_id)
+        session, stylebook_id=int(sb.id)
     )
-    project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
     validate_canonical_exists(
         session, storage_project_id, "location", location_id, int(sb.id)
     )
     loc_key = str(location_id)
-    conn = session.exec(
-        select(StylebookConnection).where(
-            StylebookConnection.id == connection_id,
-            StylebookConnection.project_id.in_(project_ids),
-            or_(
-                and_(
-                    StylebookConnection.from_entity_type == "location",
-                    StylebookConnection.from_entity_id == loc_key,
-                ),
-                and_(
-                    StylebookConnection.to_entity_type == "location",
-                    StylebookConnection.to_entity_id == loc_key,
-                ),
-            ),
-        )
-    ).first()
-    if conn is None:
-        raise HTTPException(status_code=404, detail="Connection not found")
-    rows = _matching_stylebook_connection_rows(
-        session, project_ids=project_ids, connection=conn, open_only=False
-    )
-    for row in rows or [conn]:
-        _reopen_connection(
-            session, conn=row, stylebook_id=int(sb.id), auth=auth
-        )
-    session.commit()
-    session.refresh(conn)
-    return _connection_response_from_row(
+    return _reopen_stylebook_entity_connection(
         session,
-        project_id=storage_project_id,
-        conn=conn,
+        storage_project_id=storage_project_id,
         catalog_stylebook_id=int(sb.id),
+        auth=auth,
+        entity_type="location",
+        entity_id=loc_key,
+        connection_id=connection_id,
     )
 
 
@@ -1392,7 +1267,6 @@ def _create_stylebook_entity_connection(
     session: Session,
     *,
     storage_project_id: int,
-    project_ids: list[int],
     catalog_stylebook_id: int,
     auth: dict[str, Any],
     from_entity_type: str,
@@ -1423,13 +1297,12 @@ def _create_stylebook_entity_connection(
     )
     existing = _find_existing_connection(
         session,
-        project_ids=project_ids,
+        stylebook_id=int(catalog_stylebook_id),
         from_entity_type=from_entity_type,
         from_entity_id=from_entity_id,
         to_entity_type=payload.to_entity_type,
         to_entity_id=to_key,
         nature=nature,
-        description=description,
     )
     if existing is None:
         existing = StylebookConnection(
@@ -1451,8 +1324,6 @@ def _create_stylebook_entity_connection(
             auth=auth,
             asserted_currentness=payload.asserted_currentness,
         )
-        session.commit()
-        session.refresh(existing)
         _log_stylebook_connection_event(
             session,
             stylebook_id=int(catalog_stylebook_id),
@@ -1461,6 +1332,7 @@ def _create_stylebook_entity_connection(
             conn=existing,
         )
         session.commit()
+        session.refresh(existing)
     else:
         _add_manual_evidence(
             session,
@@ -1480,33 +1352,96 @@ def _create_stylebook_entity_connection(
     )
 
 
-def _find_stylebook_entity_connection(
+def _update_stylebook_entity_connection(
     session: Session,
     *,
-    project_ids: list[int],
+    storage_project_id: int,
+    catalog_stylebook_id: int,
+    auth: dict[str, Any],
     entity_type: str,
     entity_id: str,
     connection_id: int,
-) -> StylebookConnection:
-    conn = session.exec(
-        select(StylebookConnection).where(
-            StylebookConnection.id == connection_id,
-            StylebookConnection.project_id.in_(project_ids),
-            or_(
-                and_(
-                    StylebookConnection.from_entity_type == entity_type,
-                    StylebookConnection.from_entity_id == entity_id,
-                ),
-                and_(
-                    StylebookConnection.to_entity_type == entity_type,
-                    StylebookConnection.to_entity_id == entity_id,
-                ),
-            ),
-        )
-    ).first()
-    if conn is None:
-        raise HTTPException(status_code=404, detail="Connection not found")
-    return conn
+    payload: UpdateConnectionRequest,
+) -> ConnectionResponse:
+    conn = _find_stylebook_entity_connection(
+        session,
+        stylebook_id=catalog_stylebook_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        connection_id=connection_id,
+    )
+    conn = _apply_connection_update(
+        session, conn, payload, stylebook_id=catalog_stylebook_id, auth=auth
+    )
+    session.add(conn)
+    _log_stylebook_connection_event(
+        session,
+        stylebook_id=catalog_stylebook_id,
+        auth=auth,
+        event_type=EVENT_CONNECTION_UPDATED,
+        conn=conn,
+    )
+    session.commit()
+    session.refresh(conn)
+    return _connection_response_from_row(
+        session,
+        project_id=storage_project_id,
+        conn=conn,
+        catalog_stylebook_id=catalog_stylebook_id,
+    )
+
+
+def _delete_stylebook_entity_connection(
+    session: Session,
+    *,
+    catalog_stylebook_id: int,
+    auth: dict[str, Any],
+    entity_type: str,
+    entity_id: str,
+    connection_id: int,
+) -> dict[str, bool]:
+    conn = _find_stylebook_entity_connection(
+        session,
+        stylebook_id=catalog_stylebook_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        connection_id=connection_id,
+    )
+    _soft_close_connection(
+        session, conn=conn, stylebook_id=catalog_stylebook_id, auth=auth
+    )
+    session.commit()
+    return {"ok": True, "closed": True}
+
+
+def _reopen_stylebook_entity_connection(
+    session: Session,
+    *,
+    storage_project_id: int,
+    catalog_stylebook_id: int,
+    auth: dict[str, Any],
+    entity_type: str,
+    entity_id: str,
+    connection_id: int,
+) -> ConnectionResponse:
+    conn = _find_stylebook_entity_connection(
+        session,
+        stylebook_id=catalog_stylebook_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        connection_id=connection_id,
+    )
+    _reopen_connection(
+        session, conn=conn, stylebook_id=catalog_stylebook_id, auth=auth
+    )
+    session.commit()
+    session.refresh(conn)
+    return _connection_response_from_row(
+        session,
+        project_id=storage_project_id,
+        conn=conn,
+        catalog_stylebook_id=catalog_stylebook_id,
+    )
 
 
 @locations_connections_router.post(
@@ -1527,9 +1462,8 @@ def create_stylebook_person_connection(
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
     storage_project_id = _stylebook_storage_project_id(
-        session, organization_id=int(sb.organization_id)
+        session, stylebook_id=int(sb.id)
     )
-    project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
     person_key = str(person_id)
     validate_canonical_exists(
         session, storage_project_id, "person", person_id, int(sb.id)
@@ -1537,7 +1471,6 @@ def create_stylebook_person_connection(
     return _create_stylebook_entity_connection(
         session,
         storage_project_id=storage_project_id,
-        project_ids=project_ids,
         catalog_stylebook_id=int(sb.id),
         auth=auth,
         from_entity_type="person",
@@ -1565,43 +1498,21 @@ def update_stylebook_person_connection(
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
     storage_project_id = _stylebook_storage_project_id(
-        session, organization_id=int(sb.organization_id)
+        session, stylebook_id=int(sb.id)
     )
-    project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
     person_key = str(person_id)
     validate_canonical_exists(
         session, storage_project_id, "person", person_id, int(sb.id)
     )
-    conn = _find_stylebook_entity_connection(
+    return _update_stylebook_entity_connection(
         session,
-        project_ids=project_ids,
+        storage_project_id=storage_project_id,
+        catalog_stylebook_id=int(sb.id),
+        auth=auth,
         entity_type="person",
         entity_id=person_key,
         connection_id=connection_id,
-    )
-    rows = _matching_stylebook_connection_rows(
-        session, project_ids=project_ids, connection=conn
-    )
-    for row in rows:
-        _apply_connection_update(
-            session, row, payload, stylebook_id=int(sb.id), auth=auth
-        )
-        session.add(row)
-    _log_stylebook_connection_event(
-        session,
-        stylebook_id=int(sb.id),
-        auth=auth,
-        event_type=EVENT_CONNECTION_UPDATED,
-        conn=conn,
-        payload_json={"replica_count": len(rows)},
-    )
-    session.commit()
-    session.refresh(conn)
-    return _connection_response_from_row(
-        session,
-        project_id=storage_project_id,
-        conn=conn,
-        catalog_stylebook_id=int(sb.id),
+        payload=payload,
     )
 
 
@@ -1622,29 +1533,20 @@ def delete_stylebook_person_connection(
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
     storage_project_id = _stylebook_storage_project_id(
-        session, organization_id=int(sb.organization_id)
+        session, stylebook_id=int(sb.id)
     )
-    project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
     person_key = str(person_id)
     validate_canonical_exists(
         session, storage_project_id, "person", person_id, int(sb.id)
     )
-    conn = _find_stylebook_entity_connection(
+    return _delete_stylebook_entity_connection(
         session,
-        project_ids=project_ids,
+        catalog_stylebook_id=int(sb.id),
+        auth=auth,
         entity_type="person",
         entity_id=person_key,
         connection_id=connection_id,
     )
-    rows = _matching_stylebook_connection_rows(
-        session, project_ids=project_ids, connection=conn
-    )
-    for row in rows or [conn]:
-        _soft_close_connection(
-            session, conn=row, stylebook_id=int(sb.id), auth=auth
-        )
-    session.commit()
-    return {"ok": True, "closed": True}
 
 
 @locations_connections_router.post(
@@ -1665,34 +1567,20 @@ def reopen_stylebook_person_connection(
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
     storage_project_id = _stylebook_storage_project_id(
-        session, organization_id=int(sb.organization_id)
+        session, stylebook_id=int(sb.id)
     )
-    project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
     person_key = str(person_id)
     validate_canonical_exists(
         session, storage_project_id, "person", person_id, int(sb.id)
     )
-    conn = _find_stylebook_entity_connection(
+    return _reopen_stylebook_entity_connection(
         session,
-        project_ids=project_ids,
+        storage_project_id=storage_project_id,
+        catalog_stylebook_id=int(sb.id),
+        auth=auth,
         entity_type="person",
         entity_id=person_key,
         connection_id=connection_id,
-    )
-    rows = _matching_stylebook_connection_rows(
-        session, project_ids=project_ids, connection=conn, open_only=False
-    )
-    for row in rows or [conn]:
-        _reopen_connection(
-            session, conn=row, stylebook_id=int(sb.id), auth=auth
-        )
-    session.commit()
-    session.refresh(conn)
-    return _connection_response_from_row(
-        session,
-        project_id=storage_project_id,
-        conn=conn,
-        catalog_stylebook_id=int(sb.id),
     )
 
 
@@ -1714,9 +1602,8 @@ def create_stylebook_organization_connection(
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
     storage_project_id = _stylebook_storage_project_id(
-        session, organization_id=int(sb.organization_id)
+        session, stylebook_id=int(sb.id)
     )
-    project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
     org_key = str(organization_id)
     validate_canonical_exists(
         session, storage_project_id, "organization", organization_id, int(sb.id)
@@ -1724,7 +1611,6 @@ def create_stylebook_organization_connection(
     return _create_stylebook_entity_connection(
         session,
         storage_project_id=storage_project_id,
-        project_ids=project_ids,
         catalog_stylebook_id=int(sb.id),
         auth=auth,
         from_entity_type="organization",
@@ -1752,43 +1638,21 @@ def update_stylebook_organization_connection(
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
     storage_project_id = _stylebook_storage_project_id(
-        session, organization_id=int(sb.organization_id)
+        session, stylebook_id=int(sb.id)
     )
-    project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
     org_key = str(organization_id)
     validate_canonical_exists(
         session, storage_project_id, "organization", organization_id, int(sb.id)
     )
-    conn = _find_stylebook_entity_connection(
+    return _update_stylebook_entity_connection(
         session,
-        project_ids=project_ids,
+        storage_project_id=storage_project_id,
+        catalog_stylebook_id=int(sb.id),
+        auth=auth,
         entity_type="organization",
         entity_id=org_key,
         connection_id=connection_id,
-    )
-    rows = _matching_stylebook_connection_rows(
-        session, project_ids=project_ids, connection=conn
-    )
-    for row in rows:
-        _apply_connection_update(
-            session, row, payload, stylebook_id=int(sb.id), auth=auth
-        )
-        session.add(row)
-    _log_stylebook_connection_event(
-        session,
-        stylebook_id=int(sb.id),
-        auth=auth,
-        event_type=EVENT_CONNECTION_UPDATED,
-        conn=conn,
-        payload_json={"replica_count": len(rows)},
-    )
-    session.commit()
-    session.refresh(conn)
-    return _connection_response_from_row(
-        session,
-        project_id=storage_project_id,
-        conn=conn,
-        catalog_stylebook_id=int(sb.id),
+        payload=payload,
     )
 
 
@@ -1809,29 +1673,20 @@ def delete_stylebook_organization_connection(
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
     storage_project_id = _stylebook_storage_project_id(
-        session, organization_id=int(sb.organization_id)
+        session, stylebook_id=int(sb.id)
     )
-    project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
     org_key = str(organization_id)
     validate_canonical_exists(
         session, storage_project_id, "organization", organization_id, int(sb.id)
     )
-    conn = _find_stylebook_entity_connection(
+    return _delete_stylebook_entity_connection(
         session,
-        project_ids=project_ids,
+        catalog_stylebook_id=int(sb.id),
+        auth=auth,
         entity_type="organization",
         entity_id=org_key,
         connection_id=connection_id,
     )
-    rows = _matching_stylebook_connection_rows(
-        session, project_ids=project_ids, connection=conn
-    )
-    for row in rows or [conn]:
-        _soft_close_connection(
-            session, conn=row, stylebook_id=int(sb.id), auth=auth
-        )
-    session.commit()
-    return {"ok": True, "closed": True}
 
 
 @locations_connections_router.post(
@@ -1852,32 +1707,18 @@ def reopen_stylebook_organization_connection(
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
     storage_project_id = _stylebook_storage_project_id(
-        session, organization_id=int(sb.organization_id)
+        session, stylebook_id=int(sb.id)
     )
-    project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
     org_key = str(organization_id)
     validate_canonical_exists(
         session, storage_project_id, "organization", organization_id, int(sb.id)
     )
-    conn = _find_stylebook_entity_connection(
+    return _reopen_stylebook_entity_connection(
         session,
-        project_ids=project_ids,
+        storage_project_id=storage_project_id,
+        catalog_stylebook_id=int(sb.id),
+        auth=auth,
         entity_type="organization",
         entity_id=org_key,
         connection_id=connection_id,
-    )
-    rows = _matching_stylebook_connection_rows(
-        session, project_ids=project_ids, connection=conn, open_only=False
-    )
-    for row in rows or [conn]:
-        _reopen_connection(
-            session, conn=row, stylebook_id=int(sb.id), auth=auth
-        )
-    session.commit()
-    session.refresh(conn)
-    return _connection_response_from_row(
-        session,
-        project_id=storage_project_id,
-        conn=conn,
-        catalog_stylebook_id=int(sb.id),
     )

@@ -20,14 +20,14 @@ def register_subcommand(subparsers) -> None:
         "migrate-connection-kg",
         help=(
             "Phase A knowledge-graph connection migration: inventory, nature remaps, "
-            "merge duplicate edges, and backfill stylebook_connection_evidence "
-            "(default dry-run)"
+            "and duplicate-edge merges that reattach evidence to survivors; "
+            "078 materializes remaining evidence_json (default dry-run)"
         ),
     )
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="Commit remaps, merges, and evidence backfill (default is dry-run)",
+        help="Commit remaps, merges, and evidence reattachment (default is dry-run)",
     )
     parser.add_argument(
         "--inventory-only",
@@ -85,7 +85,7 @@ def _run(args: argparse.Namespace) -> int:
         CONSOLE.print(f"  {would}quarantine: {report.quarantined}")
         CONSOLE.print(f"  merge groups: {report.merge_groups}")
         CONSOLE.print(f"  {would}delete duplicates: {report.duplicates_deleted}")
-        CONSOLE.print(f"  {would}create evidence: {report.evidence_created}")
+        CONSOLE.print(f"  {would}move evidence to survivors: {report.evidence_moved}")
         CONSOLE.print(f"  {would}skip existing evidence: {report.evidence_skipped_existing}")
     if report.by_nature_pair:
         CONSOLE.print("[bold]Top nature×pair counts[/bold]")

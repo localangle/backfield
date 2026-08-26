@@ -120,6 +120,8 @@ export function useGraphEntityProfile(
     }
 
     let active = true
+    // Reset so a previous entity's lines never show while this entity's fetch is in flight.
+    setLines(profileCache.get(cacheKey) ?? [])
     setLoading(true)
     void fetchGraphEntityProfile(stylebookSlug, entityType, entityId, projectSlug)
       .then((fetched) => {

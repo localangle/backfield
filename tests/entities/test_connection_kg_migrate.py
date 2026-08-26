@@ -84,10 +84,24 @@ def test_inventory_only_does_not_mutate() -> None:
             nature="works_for",
         )
     )
+    unbackfilled = StylebookConnection(
+        project_id=project_id,
+        stylebook_id=None,
+        from_entity_type="person",
+        from_entity_id=person,
+        to_entity_type="organization",
+        to_entity_id=org,
+        nature="member_of",
+    )
+    session.add(unbackfilled)
     session.commit()
     report = migrate_connections_kg_phase_a(session, inventory_only=True)
-    assert report.connection_total == 1
+    assert report.connection_total == 2
     assert report.remapped == 0
+    assert report.stylebook_id_backfilled == 1
+    # The in-memory backfill of stylebook_id must be rolled back, not persisted.
+    session.refresh(unbackfilled)
+    assert unbackfilled.stylebook_id is None
 
 
 def test_represented_by_swap_and_merge() -> None:

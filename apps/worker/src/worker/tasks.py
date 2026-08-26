@@ -55,17 +55,10 @@ from backfield_db import (
     StylebookCandidateAiReview,
     StylebookCleanupAiReview,
     StylebookCleanupCheckRun,
-    SubstrateArticle,
 )
 from backfield_db.session import get_engine, null_pool_session
 from backfield_entities.catalog.candidate_ai_review import list_open_candidate_ids_for_review
 from backfield_entities.catalog.full_bundle import export_stylebook_bundle, import_stylebook_bundle
-from backfield_entities.connections.caps import (
-    MAX_INLINE_CONNECTION_REQUESTS,
-    MAX_TOTAL_CONNECTION_REQUESTS,
-)
-from backfield_entities.connections.db_output import run_auto_connections_for_db_output
-from backfield_entities.ingest.db_output_settings import DbOutputCanonicalSettings
 from backfield_entities.ingest.semantic_indexing.reindex_contract import SemanticReindexScope
 from backfield_entities.processed_item_article_link import (
     resolve_substrate_article_id_for_processed_item,
@@ -124,10 +117,6 @@ from worker.s3_ingestion_ledger import (
 )
 from worker.semantic_indexing.reindex import run_semantic_reindex_for_scope
 from worker.substrate.candidates.ai_review import run_candidate_ai_review
-from worker.substrate.canonical.llm_call_policy import (
-    ADJUDICATION_LLM_MAX_RETRIES,
-    ADJUDICATION_LLM_TIMEOUT_S,
-)
 from worker.substrate.cleanup.ai_review import (
     load_cluster_members,
     run_cleanup_review_clusters,
@@ -1996,62 +1985,6 @@ def reindex_semantic_documents(
     )
     with Session(engine) as session:
         return run_semantic_reindex_for_scope(session, scope)
-
-
-@celery_app.task(name="worker.tasks.infer_deferred_article_connections")
-def infer_deferred_article_connections(
-    project_id: int,
-    article_id: int,
-    candidate_ids: list[str],
-    settings_payload: dict[str, Any],
-    run_id: str | None = None,
-    processed_item_id: int | None = None,
-) -> dict[str, Any]:
-    """Process explicit connection candidate ids (backfill / manual replay)."""
-    if not candidate_ids:
-        return {"status": "succeeded", "deferred": 0}
-    engine = get_engine()
-    tracking_token = None
-    with Session(engine) as session:
-        article = session.get(SubstrateArticle, int(article_id))
-        if article is None or int(article.project_id) != int(project_id):
-            return {"status": "skipped", "reason": "article_not_found"}
-        overlay = merge_project_and_org_llm_api_keys(session, int(project_id))
-        settings = DbOutputCanonicalSettings.model_validate(settings_payload)
-        tracking_token = attach_llm_tracking_context(
-            LlmAttemptTrackingContext(
-                project_id=int(project_id),
-                run_id=run_id,
-            )
-        )
-        try:
-            with _env_overlay(overlay):
-                summary = run_auto_connections_for_db_output(
-                    session,
-                    project_id=int(project_id),
-                    article_id=int(article_id),
-                    article_text=str(article.text or ""),
-                    settings=settings,
-                    run_id=run_id,
-                    processed_item_id=processed_item_id,
-                    call_llm=lambda prompt, **kwargs: _call_llm_with_env_api_keys(
-                        prompt,
-                        max_retries=ADJUDICATION_LLM_MAX_RETRIES,
-                        timeout=ADJUDICATION_LLM_TIMEOUT_S,
-                        allow_max_tokens_bump=False,
-                        **kwargs,
-                    ),
-                    candidate_ids=tuple(candidate_ids),
-                    max_requests=(
-                        MAX_TOTAL_CONNECTION_REQUESTS - MAX_INLINE_CONNECTION_REQUESTS
-                    ),
-                    defer_overflow=False,
-                )
-            session.commit()
-            return summary
-        finally:
-            if tracking_token is not None:
-                reset_llm_tracking_context(tracking_token)
 
 
 def _fail_cleanup_ai_review(engine: Any, review_id: str, message: str) -> None:

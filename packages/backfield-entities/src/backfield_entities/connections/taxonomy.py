@@ -25,13 +25,6 @@ AUTO_CONNECTION_EVIDENCE_SOURCE = "dboutput_auto_connections"
 AUTO_CONNECTION_PROMPT_VERSION = "auto_connections_v1"
 AUTO_CONNECTION_PROMPT_VERSION_EVIDENCE_PAIRS = "auto_connections_v6"
 
-# Back-compat aliases used by tests / older imports.
-PERSON_ORGANIZATION_NATURES = auto_link_natures_for_pair("person", "organization")
-ORGANIZATION_LOCATION_NATURES = auto_link_natures_for_pair("organization", "location")
-PERSON_LOCATION_NATURES = auto_link_natures_for_pair("person", "location")
-PERSON_PERSON_NATURES = auto_link_natures_for_pair("person", "person")
-ORGANIZATION_ORGANIZATION_NATURES = auto_link_natures_for_pair("organization", "organization")
-
 __all__ = [
     "AUTO_CONNECTION_EVIDENCE_SOURCE",
     "AUTO_CONNECTION_MIN_CONFIDENCE",
@@ -45,12 +38,7 @@ __all__ = [
     "LIVES_IN_LOCATION_TYPES",
     "LOCATED_AT_LOCATION_TYPES",
     "OPERATES_OR_SERVES_LOCATION_TYPES",
-    "ORGANIZATION_LOCATION_NATURES",
-    "ORGANIZATION_ORGANIZATION_NATURES",
     "OWNS_PROPERTY_IN_LOCATION_TYPES",
-    "PERSON_LOCATION_NATURES",
-    "PERSON_ORGANIZATION_NATURES",
-    "PERSON_PERSON_NATURES",
     "REPRESENTS_PERSON_LOCATION_TYPES",
     "allowed_location_types_for_auto_nature",
     "auto_link_natures_for_pair",

@@ -5,22 +5,51 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from backfield_db import StylebookConnection
+from backfield_db import StylebookConnection, StylebookConnectionEvidence
 from pydantic import BaseModel
 from sqlalchemy import and_, or_
 from sqlmodel import Session, col, select
 
 from backfield_entities.connections.custom_natures import merged_nature_catalog
 from backfield_entities.connections.display import (
-    ConnectionEvidenceOut,
-    derived_connection_description,
-    evidence_out_list,
+    derived_connection_description_from_rows,
+    list_connection_evidence,
 )
 from backfield_entities.connections.natures import temporal_kind_for_nature
 from backfield_entities.public.canonical_display import public_canonical_label
 from backfield_entities.public.nature_filters import normalize_natures
 
 PublicConnectionEntityType = Literal["location", "person", "organization"]
+
+
+class PublicConnectionEvidenceOut(BaseModel):
+    """Public connection citation without internal pipeline provenance."""
+
+    article_id: int | None = None
+    description: str | None = None
+    quote: str | None = None
+    reason: str | None = None
+    confidence: float | None = None
+    asserted_currentness: str = "unspecified"
+    observed_at: datetime | None = None
+
+
+def public_evidence_out_list_from_rows(
+    rows: list[StylebookConnectionEvidence],
+) -> list[PublicConnectionEvidenceOut]:
+    """Shape pre-fetched evidence rows for the public API (already sorted)."""
+    return [
+        PublicConnectionEvidenceOut(
+            article_id=int(row.article_id) if row.article_id is not None else None,
+            description=row.description,
+            quote=row.quote,
+            reason=row.reason,
+            confidence=float(row.confidence) if row.confidence is not None else None,
+            asserted_currentness=row.asserted_currentness,
+            observed_at=row.observed_at,
+        )
+        for row in rows
+    ]
 
 
 class PublicConnectionOut(BaseModel):
@@ -37,7 +66,7 @@ class PublicConnectionOut(BaseModel):
     currentness: Literal["current", "former", "unknown"] | None = None
     currentness_as_of: datetime | None = None
     closed_at: datetime | None = None
-    evidence: list[ConnectionEvidenceOut] = []
+    evidence: list[PublicConnectionEvidenceOut] = []
 
 
 def _connection_label(
@@ -131,37 +160,65 @@ def list_public_entity_connections(
     if nature_values:
         filters.append(col(StylebookConnection.nature).in_(nature_values))
     rows = session.exec(select(StylebookConnection).where(*filters)).all()
-    out: list[PublicConnectionOut] = []
+
+    # Sorting needs only the label of the far side of each edge, so compute
+    # those first, then slice to the requested page before hydrating evidence.
+    sortable: list[tuple[tuple[str, str, int], StylebookConnection, str, bool]] = []
     for conn in rows:
         if conn.id is None:
             continue
+        from_side_matches = (
+            str(conn.from_entity_type) == entity_type
+            and str(conn.from_entity_id) == entity_id
+        )
+        if from_side_matches:
+            target_type = str(conn.to_entity_type)
+            target_id = str(conn.to_entity_id)
+        else:
+            target_type = str(conn.from_entity_type)
+            target_id = str(conn.from_entity_id)
+        target_label = _connection_label(
+            session,
+            stylebook_id=stylebook_id,
+            entity_type=target_type,
+            entity_id=target_id,
+        )
+        sort_key = (target_label.casefold(), target_type, int(conn.id))
+        sortable.append((sort_key, conn, target_label, from_side_matches))
+
+    sortable.sort(key=lambda item: item[0])
+    total = len(sortable)
+    page = sortable[offset : offset + limit]
+
+    entity_label: str | None = None
+    if page:
+        entity_label = _connection_label(
+            session,
+            stylebook_id=stylebook_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+        )
+
+    out: list[PublicConnectionOut] = []
+    for _sort_key, conn, target_label, from_side_matches in page:
         temporal_kind = _connection_temporal_kind(
             session,
             stylebook_id=stylebook_id,
             connection=conn,
         )
+        evidence_rows = list_connection_evidence(session, connection_id=int(conn.id))
+        from_label = entity_label if from_side_matches else target_label
+        to_label = target_label if from_side_matches else entity_label
         out.append(
             PublicConnectionOut(
                 id=int(conn.id),
                 from_entity_type=str(conn.from_entity_type),
                 from_entity_id=str(conn.from_entity_id),
-                from_label=_connection_label(
-                    session,
-                    stylebook_id=stylebook_id,
-                    entity_type=str(conn.from_entity_type),
-                    entity_id=str(conn.from_entity_id),
-                ),
+                from_label=str(from_label),
                 to_entity_type=str(conn.to_entity_type),
                 to_entity_id=str(conn.to_entity_id),
-                to_label=_connection_label(
-                    session,
-                    stylebook_id=stylebook_id,
-                    entity_type=str(conn.to_entity_type),
-                    entity_id=str(conn.to_entity_id),
-                ),
-                description=derived_connection_description(
-                    session, connection_id=int(conn.id)
-                ),
+                to_label=str(to_label),
+                description=derived_connection_description_from_rows(evidence_rows),
                 nature=conn.nature,
                 temporal_kind=temporal_kind,
                 currentness=conn.currentness if temporal_kind == "dynamic" else None,
@@ -169,26 +226,7 @@ def list_public_entity_connections(
                     conn.currentness_as_of if temporal_kind == "dynamic" else None
                 ),
                 closed_at=conn.closed_at,
-                evidence=evidence_out_list(session, connection_id=int(conn.id)),
+                evidence=public_evidence_out_list_from_rows(evidence_rows),
             )
         )
-
-    def target_sort_key(connection: PublicConnectionOut) -> tuple[str, str, int]:
-        if (
-            connection.from_entity_type == entity_type
-            and connection.from_entity_id == entity_id
-        ):
-            return (
-                connection.to_label.casefold(),
-                connection.to_entity_type,
-                connection.id,
-            )
-        return (
-            connection.from_label.casefold(),
-            connection.from_entity_type,
-            connection.id,
-        )
-
-    out.sort(key=target_sort_key)
-    total = len(out)
-    return out[offset : offset + limit], total
+    return out, total

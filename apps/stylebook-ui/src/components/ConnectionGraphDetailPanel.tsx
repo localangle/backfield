@@ -12,11 +12,13 @@ import {
 import {
   classifyConnectionHop,
   connectionsTouchingEntity,
+  entityRefKey,
   formatNatureLabel,
   otherEndFromConnection,
   type GraphEntityRef,
   type GraphHop,
 } from "@/lib/connectionGraph"
+import { entityDetailUrl } from "@/lib/stylebookPaths"
 import {
   useGraphEntityProfile,
   type GraphEntityProfileLines,
@@ -55,26 +57,6 @@ interface ConnectionGraphDetailPanelProps {
   onSelectConnection: (connectionIds: number[]) => void
   onSelectNode: (entityType: ConnectionsEntityType, entityId: string) => void
   onConnectionsChanged?: () => void
-}
-
-function getDetailUrl(
-  entityType: ConnectionsEntityType,
-  entityId: string,
-  catalogBasePath: string,
-  scopeSuffix: string,
-): string {
-  const base = window.location.origin
-  const prefix = `${base}${catalogBasePath}`
-  if (entityType === "person") {
-    return `${prefix}/people/canonical/${entityId}${scopeSuffix}`
-  }
-  if (entityType === "organization") {
-    return `${prefix}/organizations/canonical/${entityId}${scopeSuffix}`
-  }
-  if (entityType === "work") {
-    return `${prefix}/works/canonical/${entityId}${scopeSuffix}`
-  }
-  return `${prefix}/locations/canonical/${entityId}${scopeSuffix}`
 }
 
 function useConnectionLifecycle(
@@ -244,7 +226,7 @@ function ConnectionRow({
       <ConnectionStatusMeta conn={conn} compact />
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
         <a
-          href={getDetailUrl(other.entityType, other.entityId, catalogBasePath, catalogScopeSuffix)}
+          href={entityDetailUrl(other.entityType, other.entityId, catalogBasePath, catalogScopeSuffix)}
           target="_blank"
           rel="noopener noreferrer"
           onClick={(event) => event.stopPropagation()}
@@ -372,7 +354,7 @@ function EntityHeader({
       {hop !== 0 ? (
         <Button variant="outline" size="sm" className="w-full" asChild>
           <a
-            href={getDetailUrl(
+            href={entityDetailUrl(
               entityRef.entityType,
               entityRef.entityId,
               catalogBasePath,
@@ -388,10 +370,6 @@ function EntityHeader({
       ) : null}
     </div>
   )
-}
-
-function entityRefKey(ref: Pick<GraphEntityRef, "entityType" | "entityId">): string {
-  return `${ref.entityType}:${ref.entityId}`
 }
 
 function nodeHop(

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Generator
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from backfield_db import (
@@ -3709,7 +3710,7 @@ def test_stylebook_canonical_location_connections_roundtrip(
 
     r2b = editor_client.get("/v1/connections/stylebooks/default/natures")
     assert r2b.status_code == 200
-    assert "near" in r2b.json()["natures"]
+    assert "near" in [entry["slug"] for entry in r2b.json()["natures"]]
 
     r3 = editor_client.patch(
         f"/v1/stylebooks/default/canonical-locations/{aid}/connections/{conn_id}",
@@ -3723,9 +3724,11 @@ def test_stylebook_canonical_location_connections_roundtrip(
     )
     assert r4.status_code == 200
 
+    # Stylebook remove soft-closes the edge; the row is retained with closed_at set.
     with Session(engine) as s:
         row = s.get(StylebookConnection, conn_id)
-        assert row is None
+        assert row is not None
+        assert row.closed_at is not None
 
 
 def test_stylebook_person_and_organization_connections_list(
@@ -3844,7 +3847,8 @@ def test_stylebook_person_connection_crud(
     assert create_res.status_code == 200
     body = create_res.json()
     conn_id = int(body["id"])
-    assert body["nature"] == "born in"
+    # Manual natures normalize to catalog slugs.
+    assert body["nature"] == "born_in"
     assert body["to_display_name"] == "Manual Conn Place"
     assert body.get("evidence_json") is None
 
@@ -3857,16 +3861,18 @@ def test_stylebook_person_connection_crud(
         json={"nature": "lives in"},
     )
     assert update_res.status_code == 200
-    assert update_res.json()["nature"] == "lives in"
+    assert update_res.json()["nature"] == "lives_in"
 
     delete_res = editor_client.delete(
         f"/v1/stylebooks/default/canonical-people/{person_id}/connections/{conn_id}"
     )
     assert delete_res.status_code == 200
 
+    # Stylebook remove soft-closes the edge; the row is retained with closed_at set.
     with Session(engine) as s:
         row = s.get(StylebookConnection, conn_id)
-        assert row is None
+        assert row is not None
+        assert row.closed_at is not None
 
 
 def test_stylebook_connection_lists_auto_connection_evidence(
@@ -4086,3 +4092,89 @@ def test_stylebook_connection_create_returns_existing_duplicate(
             )
         ).all()
         assert len(rows) == 1
+
+
+def test_stylebook_connection_writes_require_editor(member_client: TestClient) -> None:
+    """Members without stylebook edit access cannot create, update, or delete connections."""
+    location_id = str(uuid4())
+    other_location_id = str(uuid4())
+    connection_id = 12345
+
+    create = member_client.post(
+        f"/v1/stylebooks/default/canonical-locations/{location_id}/connections",
+        json={
+            "to_entity_type": "location",
+            "to_entity_id": other_location_id,
+            "nature": "near",
+        },
+    )
+    assert create.status_code == 403
+
+    update = member_client.patch(
+        f"/v1/stylebooks/default/canonical-locations/{location_id}/connections/{connection_id}",
+        json={"nature": "near"},
+    )
+    assert update.status_code == 403
+
+    delete = member_client.delete(
+        f"/v1/stylebooks/default/canonical-locations/{location_id}/connections/{connection_id}"
+    )
+    assert delete.status_code == 403
+
+
+def test_stylebook_connection_update_keeps_newer_currentness_assertion(
+    editor_client: TestClient,
+    stylebook_test_engine: Engine,
+) -> None:
+    """An older currentness assertion must not regress a newer ``currentness_as_of``."""
+    with Session(stylebook_test_engine) as session:
+        stylebook = session.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        person = StylebookPersonCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Stale Assertion Person",
+            slug="stale-assertion-person",
+            status="active",
+        )
+        organization = StylebookOrganizationCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Stale Assertion Organization",
+            slug="stale-assertion-organization",
+            status="active",
+        )
+        session.add(person)
+        session.add(organization)
+        session.commit()
+        session.refresh(person)
+        session.refresh(organization)
+        person_id = str(person.id)
+        organization_id = str(organization.id)
+
+    created = editor_client.post(
+        f"/v1/stylebooks/default/canonical-people/{person_id}/connections",
+        json={
+            "to_entity_type": "organization",
+            "to_entity_id": organization_id,
+            "nature": "works_for",
+            "description": "Works for Stale Assertion Organization.",
+            "asserted_currentness": "current",
+        },
+    )
+    assert created.status_code == 200
+    connection_id = int(created.json()["id"])
+    assert created.json()["currentness"] == "current"
+
+    # Simulate a review that already recorded a newer currentness reference time.
+    with Session(stylebook_test_engine) as session:
+        connection = session.get(StylebookConnection, connection_id)
+        assert connection is not None
+        connection.currentness_as_of = datetime(2031, 1, 1, tzinfo=UTC)
+        session.add(connection)
+        session.commit()
+
+    updated = editor_client.patch(
+        f"/v1/stylebooks/default/canonical-people/{person_id}/connections/{connection_id}",
+        json={"asserted_currentness": "former"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["currentness"] == "current"
+    assert updated.json()["currentness_as_of"].startswith("2031-01-01")

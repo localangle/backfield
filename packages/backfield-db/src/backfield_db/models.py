@@ -1133,7 +1133,6 @@ class StylebookConnection(SQLModel, table=True):
     stylebook_id: int | None = Field(
         default=None,
         foreign_key="stylebook.id",
-        index=True,
     )
     from_entity_type: str = Field(sa_column=Column(Text, nullable=False, index=True))
     from_entity_id: str = Field(sa_column=Column(Text, nullable=False, index=True))
@@ -1142,7 +1141,7 @@ class StylebookConnection(SQLModel, table=True):
     nature: str | None = Field(default=None, sa_column=Column(Text, nullable=True, index=True))
     currentness: str = Field(
         default="unknown",
-        sa_column=Column(Text, nullable=False, server_default="unknown", index=True),
+        sa_column=Column(Text, nullable=False, server_default="unknown"),
     )
     currentness_as_of: datetime | None = Field(
         default=None,
@@ -1192,13 +1191,16 @@ class StylebookConnectionEvidence(SQLModel, table=True):
             Integer,
             ForeignKey("stylebook_connections.id", ondelete="CASCADE"),
             nullable=False,
-            index=True,
         )
     )
     article_id: int | None = Field(
         default=None,
-        foreign_key="substrate_article.id",
-        index=True,
+        sa_column=Column(
+            Integer,
+            ForeignKey("substrate_article.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
+        ),
     )
     description: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     quote: str | None = Field(default=None, sa_column=Column(Text, nullable=True))

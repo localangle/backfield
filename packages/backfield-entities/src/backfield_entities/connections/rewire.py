@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from backfield_db import StylebookConnection
+from backfield_db import StylebookConnection, StylebookConnectionEvidence
 from sqlalchemy import and_, or_
 from sqlmodel import Session, col, select
 
@@ -19,6 +19,35 @@ class RewireConnectionsResult:
     rewired_count: int
     deduped_count: int
     dropped_self_count: int
+
+
+def _move_evidence_to_survivor(
+    session: Session,
+    *,
+    duplicate_id: int,
+    survivor_id: int,
+) -> None:
+    """Reattach the duplicate's evidence before deletion so the FK cascade cannot destroy it.
+
+    Evidence citing an article the survivor already cites is deleted with the duplicate.
+    """
+    for evidence in session.exec(
+        select(StylebookConnectionEvidence).where(
+            StylebookConnectionEvidence.connection_id == duplicate_id
+        )
+    ).all():
+        if evidence.article_id is not None:
+            already_cited = session.exec(
+                select(StylebookConnectionEvidence.id).where(
+                    StylebookConnectionEvidence.connection_id == survivor_id,
+                    StylebookConnectionEvidence.article_id == int(evidence.article_id),
+                )
+            ).first()
+            if already_cited is not None:
+                session.delete(evidence)
+                continue
+        evidence.connection_id = survivor_id
+    session.flush()
 
 
 def _rewired_endpoint(
@@ -117,6 +146,12 @@ def rewire_connections_for_canonical_merge(
             )
         existing = session.exec(existing_stmt).first()
         if existing is not None and existing.id != conn.id:
+            if conn.id is not None and existing.id is not None:
+                _move_evidence_to_survivor(
+                    session,
+                    duplicate_id=int(conn.id),
+                    survivor_id=int(existing.id),
+                )
             session.delete(conn)
             deduped += 1
             continue

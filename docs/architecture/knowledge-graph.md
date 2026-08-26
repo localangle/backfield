@@ -405,9 +405,6 @@ by direct grammar, same-sentence evidence, adjacent-sentence evidence, then meta
 evidence. Overflow pairs that exceed the request budget are reported as `unprocessed` in
 diagnostics rather than queued for a second pass.
 
-An idempotent Celery task (`infer_deferred_article_connections`) remains available for scoped
-backfills that pass explicit candidate ids.
-
 All deterministic and model proposals are resolved together before writing:
 
 - symmetric natures use stable endpoint order;

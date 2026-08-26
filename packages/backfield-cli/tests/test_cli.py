@@ -118,6 +118,7 @@ def test_repair_s3_article_sources_dry_run_json(monkeypatch, capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert payload["scanned"] == 3
     assert payload["updated"] == 2
+    assert payload["unchanged"] == 1
 
 
 def test_repair_orphan_connections_dry_run_json(monkeypatch, capsys) -> None:

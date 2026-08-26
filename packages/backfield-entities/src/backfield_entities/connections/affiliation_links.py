@@ -5,7 +5,6 @@ from __future__ import annotations
 from backfield_entities.connections.match_tokens import (
     person_affiliation_matches_organization_label,
 )
-from backfield_entities.connections.snippets import quote_is_supported
 from backfield_entities.connections.taxonomy import AUTO_CONNECTION_MIN_CONFIDENCE
 from backfield_entities.connections.types import AutoConnectionEdgeProposal, LinkedEntitySnapshot
 from backfield_entities.connections.validation import validate_auto_connection_candidate
@@ -43,7 +42,6 @@ def _affiliation_edge_description(
 def _select_affiliation_quote(
     *,
     person: LinkedEntitySnapshot,
-    org: LinkedEntitySnapshot,
     article_text: str,
 ) -> str | None:
     """Evidence for an affiliation link: where the person appears in the story.
@@ -52,7 +50,6 @@ def _select_affiliation_quote(
     affiliation field (not prose team nicknames) is the link basis. The quote cites the
     person in context; it does not re-require the organization name in the same span.
     """
-    _ = org
     person_label = person.label.strip()
     if not person_label:
         return None
@@ -96,7 +93,6 @@ def infer_affiliation_person_organization_edges(
                 continue
             quote = _select_affiliation_quote(
                 person=person,
-                org=org,
                 article_text=article_text,
             )
             if not quote:
@@ -120,14 +116,6 @@ def infer_affiliation_person_organization_edges(
                 quote=proposal.quote,
             )
             if not validation.ok:
-                continue
-            if not quote_is_supported(
-                proposal.quote,
-                article_text=article_text,
-                from_entity=person,
-                to_entity=org,
-                pair_snippets=(quote,),
-            ):
                 continue
             seen.add(key)
             edges.append(proposal)

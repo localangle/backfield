@@ -67,7 +67,6 @@ export interface NatureEntry {
 }
 
 export const CONNECTIONS_PER_PAGE = 10
-export const CONNECTIONS_GRAPH_FETCH_LIMIT = 500
 
 /** Coerce list payloads so pagination never receives NaN from legacy API responses. */
 export function normalizeConnectionListResponse(
@@ -143,16 +142,6 @@ export async function listStylebookConnectionNatures(
       : row,
   )
   return { natures: natureSlugs(raw), entries }
-}
-
-export async function createStylebookCustomNature(
-  stylebookSlug: string,
-  body: { slug: string; label?: string; equivalent_to?: string; temporal_kind?: string },
-): Promise<NatureEntry> {
-  return stylebookJsonFetch<NatureEntry>(
-    `/v1/connections/stylebooks/${encodeURIComponent(stylebookSlug)}/connection-natures`,
-    { method: "POST", body: JSON.stringify(body) },
-  )
 }
 
 export async function listStylebookConnectionsForLocation(
@@ -368,10 +357,3 @@ export async function reopenStylebookConnection(
   }
   throw new Error("This connection cannot be reopened from Stylebook yet.")
 }
-
-/** @deprecated Prefer closeStylebookConnectionForLocation */
-export const deleteStylebookConnectionForLocation = closeStylebookConnectionForLocation
-/** @deprecated Prefer closeStylebookConnectionForPerson */
-export const deleteStylebookConnectionForPerson = closeStylebookConnectionForPerson
-/** @deprecated Prefer closeStylebookConnectionForOrganization */
-export const deleteStylebookConnectionForOrganization = closeStylebookConnectionForOrganization

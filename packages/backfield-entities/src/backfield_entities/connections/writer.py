@@ -407,9 +407,9 @@ def write_auto_connections(
             description=description,
             observed_at=evidence_observed_at,
         )
-        session.add(evidence_row)
         try:
             with session.begin_nested():
+                session.add(evidence_row)
                 session.flush()
         except IntegrityError:
             session.delete(row)

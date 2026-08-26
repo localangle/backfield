@@ -12,9 +12,6 @@ from contextvars import copy_context
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from backfield_entities.connections.candidate_pairs import (
-    explicit_person_represents_party_district_evidence,
-)
 from backfield_entities.connections.caps import (
     MAX_CANDIDATE_PAIRS_PER_BATCH,
     MAX_CONNECTION_REQUEST_CONCURRENCY,
@@ -86,26 +83,6 @@ def _record_candidate_skip(
 ) -> None:
     counts.skipped += 1
     counts.skip_reasons[reason] = counts.skip_reasons.get(reason, 0) + 1
-
-
-def _candidate_for_proposal(
-    proposal: AutoConnectionEdgeProposal,
-    batch: tuple[AutoConnectionCandidatePair, ...],
-) -> AutoConnectionCandidatePair | None:
-    by_id = {candidate.candidate_id: candidate for candidate in batch}
-    if proposal.candidate_id:
-        return by_id.get(proposal.candidate_id)
-    # Compatibility for older model responses: endpoint matching is still pair-bound.
-    matches = [
-        candidate
-        for candidate in batch
-        if {
-            candidate.from_entity.canonical_id,
-            candidate.to_entity.canonical_id,
-        }
-        == {proposal.from_entity_id, proposal.to_entity_id}
-    ]
-    return matches[0] if len(matches) == 1 else None
 
 
 def _proposal_matches_candidate(
@@ -200,10 +177,6 @@ def _quote_supports_specialized_nature(
                 text,
             )
         )
-    if nature == "represents":
-        party_district = explicit_person_represents_party_district_evidence(candidate)
-        if party_district is not None:
-            return True
     if nature == "holds_office_in":
         return bool(
             re.search(
@@ -274,8 +247,6 @@ def _validate_candidate_batch_response(
             counts.malformed_proposals += 1
             _record_candidate_skip(counts, "malformed_link_decision")
             continue
-        candidate = _candidate_for_proposal(proposal, batch)
-        assert candidate is not None
         if not _proposal_matches_candidate(proposal, candidate):
             _record_candidate_skip(counts, "candidate_endpoint_mismatch")
             continue

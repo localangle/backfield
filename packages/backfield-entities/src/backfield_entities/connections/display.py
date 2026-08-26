@@ -49,11 +49,10 @@ def list_connection_evidence(
     return rows
 
 
-def evidence_out_list(
-    session: Session,
-    *,
-    connection_id: int,
+def evidence_out_list_from_rows(
+    rows: list[StylebookConnectionEvidence],
 ) -> list[ConnectionEvidenceOut]:
+    """Shape pre-fetched evidence rows (sorted by ``list_connection_evidence``)."""
     return [
         ConnectionEvidenceOut(
             id=int(row.id) if row.id is not None else None,
@@ -73,8 +72,18 @@ def evidence_out_list(
             currentness_review_source=row.currentness_review_source,
             observed_at=row.observed_at,
         )
-        for row in list_connection_evidence(session, connection_id=connection_id)
+        for row in rows
     ]
+
+
+def evidence_out_list(
+    session: Session,
+    *,
+    connection_id: int,
+) -> list[ConnectionEvidenceOut]:
+    return evidence_out_list_from_rows(
+        list_connection_evidence(session, connection_id=connection_id)
+    )
 
 
 def best_connection_evidence(
@@ -86,13 +95,11 @@ def best_connection_evidence(
     return rows[0] if rows else None
 
 
-def derived_connection_description(
-    session: Session,
-    *,
-    connection_id: int,
+def derived_connection_description_from_rows(
+    rows: list[StylebookConnectionEvidence],
 ) -> str | None:
-    """Display label from best evidence (description, then quote, then reason)."""
-    evidence = best_connection_evidence(session, connection_id=connection_id)
+    """Display label from pre-fetched evidence rows (best row first)."""
+    evidence = rows[0] if rows else None
     if evidence is None:
         return None
     for value in (evidence.description, evidence.quote, evidence.reason):
@@ -102,13 +109,22 @@ def derived_connection_description(
     return None
 
 
-def legacy_evidence_json_for_connection(
+def derived_connection_description(
     session: Session,
     *,
     connection_id: int,
+) -> str | None:
+    """Display label from best evidence (description, then quote, then reason)."""
+    return derived_connection_description_from_rows(
+        list_connection_evidence(session, connection_id=connection_id)
+    )
+
+
+def legacy_evidence_json_from_rows(
+    rows: list[StylebookConnectionEvidence],
 ) -> dict[str, Any] | None:
-    """Best evidence shaped like the former connection ``evidence_json`` blob."""
-    evidence = best_connection_evidence(session, connection_id=connection_id)
+    """Best pre-fetched evidence shaped like the former ``evidence_json`` blob."""
+    evidence = rows[0] if rows else None
     if evidence is None:
         return None
     payload: dict[str, Any] = {}
@@ -136,3 +152,14 @@ def legacy_evidence_json_for_connection(
         for key, value in evidence.payload_json.items():
             payload.setdefault(key, value)
     return payload or None
+
+
+def legacy_evidence_json_for_connection(
+    session: Session,
+    *,
+    connection_id: int,
+) -> dict[str, Any] | None:
+    """Best evidence shaped like the former connection ``evidence_json`` blob."""
+    return legacy_evidence_json_from_rows(
+        list_connection_evidence(session, connection_id=connection_id)
+    )

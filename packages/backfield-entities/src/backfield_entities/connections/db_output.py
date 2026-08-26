@@ -287,6 +287,7 @@ def run_auto_connections_for_db_output(
         ]
 
         write_result = AutoConnectionWriteResult()
+        family_unresolved = 0
         edges_by_family: dict[
             tuple[str, str],
             list[AutoConnectionEdgeProposal],
@@ -294,6 +295,13 @@ def run_auto_connections_for_db_output(
         for edge in resolved_edges:
             family = _endpoint_family_for_proposal(edge, candidate_by_id)
             if family is None:
+                family_unresolved += 1
+                logger.warning(
+                    "Dropping resolved auto-connection edge with unresolved endpoint "
+                    "family: match_basis=%s nature=%s",
+                    edge.match_basis,
+                    edge.nature,
+                )
                 continue
             edges_by_family[family].append(edge)
 
@@ -365,6 +373,7 @@ def run_auto_connections_for_db_output(
             ],
             "request_phase": "deferred" if candidate_ids is not None else "inline",
             "resolved_edges": len(resolved_edges),
+            "family_unresolved": family_unresolved,
             "currentness_review": {
                 "inherited_llm": inherited_currentness_reviews,
                 "attempted": currentness_review.counts.attempted,

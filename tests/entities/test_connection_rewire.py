@@ -8,6 +8,7 @@ from backfield_db import (
     BackfieldOrganization,
     BackfieldProject,
     StylebookConnection,
+    StylebookConnectionEvidence,
     StylebookLocationCanonical,
     StylebookOrganizationCanonical,
     StylebookPersonCanonical,
@@ -180,6 +181,79 @@ def test_rewire_connections_dedupes_when_target_edge_exists() -> None:
         rows = session.exec(select(StylebookConnection)).all()
         assert len(rows) == 1
         assert rows[0].from_entity_id == str(target.id)
+
+
+def test_rewire_dedupe_moves_evidence_to_surviving_edge() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        _org_id, stylebook_id, project_id = _seed(session)
+        source = StylebookPersonCanonical(
+            id=str(uuid4()),
+            stylebook_id=stylebook_id,
+            label="Jane Source",
+            slug="jane-source",
+        )
+        target = StylebookPersonCanonical(
+            id=str(uuid4()),
+            stylebook_id=stylebook_id,
+            label="Jane Target",
+            slug="jane-target",
+        )
+        org = StylebookOrganizationCanonical(
+            id=str(uuid4()),
+            stylebook_id=stylebook_id,
+            label="City Council",
+            slug="city-council",
+            organization_type="government",
+        )
+        session.add(source)
+        session.add(target)
+        session.add(org)
+        session.commit()
+
+        duplicate = StylebookConnection(
+            project_id=project_id,
+            from_entity_type="person",
+            from_entity_id=str(source.id),
+            to_entity_type="organization",
+            to_entity_id=str(org.id),
+            nature="works_for",
+        )
+        survivor = StylebookConnection(
+            project_id=project_id,
+            from_entity_type="person",
+            from_entity_id=str(target.id),
+            to_entity_type="organization",
+            to_entity_id=str(org.id),
+            nature="works_for",
+        )
+        session.add(duplicate)
+        session.add(survivor)
+        session.commit()
+        session.add(
+            StylebookConnectionEvidence(
+                connection_id=int(duplicate.id),  # type: ignore[arg-type]
+                quote="Jane works for the council.",
+                source="dboutput_auto_connections",
+            )
+        )
+        session.commit()
+
+        result = rewire_connections_for_canonical_merge(
+            session,
+            entity_type="person",
+            source_canonical_id=str(source.id),
+            target_canonical_id=str(target.id),
+            project_ids=[project_id],
+        )
+        session.commit()
+
+        assert result.deduped_count == 1
+        evidence_rows = session.exec(select(StylebookConnectionEvidence)).all()
+        assert len(evidence_rows) == 1
+        assert evidence_rows[0].connection_id == int(survivor.id)  # type: ignore[arg-type]
+        assert evidence_rows[0].quote == "Jane works for the council."
 
 
 def test_rewire_connections_drops_self_loop_created_by_merge() -> None:

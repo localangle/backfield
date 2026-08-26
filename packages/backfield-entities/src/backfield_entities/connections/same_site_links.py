@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 from backfield_entities.connections.match_tokens import org_location_site_names_match
-from backfield_entities.connections.snippets import (
-    collect_entity_pair_text_evidence,
-    quote_is_supported,
-)
+from backfield_entities.connections.snippets import collect_entity_pair_text_evidence
 from backfield_entities.connections.taxonomy import AUTO_CONNECTION_MIN_CONFIDENCE
 from backfield_entities.connections.types import AutoConnectionEdgeProposal, LinkedEntitySnapshot
 from backfield_entities.connections.validation import validate_auto_connection_candidate
@@ -86,14 +83,6 @@ def infer_same_site_org_location_edges(
                 location_type=location.location_type,
             )
             if not validation.ok:
-                continue
-            if not quote_is_supported(
-                proposal.quote,
-                article_text=article_text,
-                from_entity=org,
-                to_entity=location,
-                pair_snippets=pair_snippets,
-            ):
                 continue
             seen.add(key)
             edges.append(proposal)

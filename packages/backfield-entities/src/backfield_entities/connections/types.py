@@ -8,6 +8,8 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 AssertedConnectionCurrentness = Literal["current", "former", "unspecified"]
+# "deterministic" is reserved for future deterministic review tooling; no code path
+# produces it yet, but it is part of the DB check constraint (migration 080, models.py).
 CurrentnessReviewSource = Literal["unreviewed", "llm", "manual", "deterministic"]
 
 

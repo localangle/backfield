@@ -27,18 +27,16 @@ export interface ConnectionNeighborhood {
   neighborsSkipped: number
 }
 
-export function entityRefKey(ref: Pick<GraphEntityRef, "entityType" | "entityId">): string {
-  return `${ref.entityType}:${ref.entityId}`
+export const EMPTY_CONNECTION_NEIGHBORHOOD: ConnectionNeighborhood = {
+  connections: [],
+  hop1ConnectionCount: 0,
+  hop2ConnectionCount: 0,
+  neighborsExpanded: 0,
+  neighborsSkipped: 0,
 }
 
-export function parseEntityRefKey(key: string): GraphEntityRef | null {
-  const match = key.match(/^(person|location|organization|work):(.+)$/)
-  if (!match) return null
-  return {
-    entityType: match[1] as EntityType,
-    entityId: match[2],
-    displayName: "",
-  }
+export function entityRefKey(ref: Pick<GraphEntityRef, "entityType" | "entityId">): string {
+  return `${ref.entityType}:${ref.entityId}`
 }
 
 export function neighborFromConnection(
@@ -183,9 +181,6 @@ export async function fetchConnectionNeighborhood(
     hop1Neighbors,
     options?.hop2NeighborCap ?? GRAPH_HOP2_NEIGHBOR_CAP,
   )
-
-  const hop1Keys = new Set(hop1Neighbors.map(entityRefKey))
-  hop1Keys.add(entityRefKey(center))
 
   const hop2Batches = await mapConcurrent(selected, 6, (neighbor) =>
     listConnectionsForEntity(stylebookSlug, neighbor, {
@@ -334,8 +329,4 @@ export function bundleEdgeLabel(connections: Connection[]): string | undefined {
   }
   const head = `${labels[0]} · ${labels[1]}`
   return head.length > 32 ? `${head.slice(0, 29)}… +${labels.length - 2}` : `${head} +${labels.length - 2}`
-}
-
-export function bundleEdgeTitle(connections: Connection[]): string {
-  return connections.map((conn) => formatConnectionSummaryLabel(conn)).join("\n")
 }

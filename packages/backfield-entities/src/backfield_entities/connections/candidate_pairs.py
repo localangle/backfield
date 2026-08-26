@@ -106,7 +106,7 @@ def _contains_alias(text: str, aliases: tuple[str, ...]) -> bool:
     return any(alias.casefold() in lowered for alias in aliases)
 
 
-def _sentences(article_text: str) -> tuple[str, ...]:
+def split_article_sentences(article_text: str) -> tuple[str, ...]:
     text = _clean(article_text)
     if not text:
         return ()
@@ -175,7 +175,7 @@ def _linked_occurrence_evidence(
     return tuple(evidence[:4]), source, score
 
 
-def _pair_text_evidence(
+def pair_text_evidence(
     left: LinkedEntitySnapshot,
     right: LinkedEntitySnapshot,
     article_sentences: tuple[str, ...],
@@ -260,9 +260,8 @@ def _affiliation_hint(
 def _metadata_evidence(
     left: LinkedEntitySnapshot,
     right: LinkedEntitySnapshot,
-    hint: str,
 ) -> tuple[str, ...]:
-    """Return article excerpts for interpretation; the hint itself is not proof."""
+    """Return article excerpts for interpretation; the affiliation hint itself is not proof."""
     snippets: list[str] = []
     seen: set[str] = set()
     for snippet in (*left.snippets, *right.snippets):
@@ -270,7 +269,6 @@ def _metadata_evidence(
         if text and text not in seen:
             seen.add(text)
             snippets.append(text)
-    _ = hint
     return tuple(snippets[:4])
 
 
@@ -367,7 +365,7 @@ def _best_pair_evidence_scores(
         "organization": organizations,
         "location": locations,
     }
-    article_sentences = _sentences(article_text)
+    article_sentences = split_article_sentences(article_text)
     best_scores: dict[str, int] = {}
     for from_type, to_type in AUTO_CONNECTION_FAMILIES:
         pairs = _family_pairs(
@@ -376,7 +374,7 @@ def _best_pair_evidence_scores(
             same_type=from_type == to_type,
         )
         for left, right in pairs:
-            snippets, _source, score = _pair_text_evidence(left, right, article_sentences)
+            snippets, _source, score = pair_text_evidence(left, right, article_sentences)
             if not snippets or score < MIN_PAIR_EVIDENCE_SCORE_FOR_ENTITY_RESERVATION:
                 continue
             for entity in (left, right):
@@ -467,7 +465,7 @@ def generate_connection_candidates(
         "organization": organizations,
         "location": locations,
     }
-    article_sentences = _sentences(article_text)
+    article_sentences = split_article_sentences(article_text)
     candidates: list[AutoConnectionCandidatePair] = []
     stats = CandidateGenerationStats()
 
@@ -479,11 +477,11 @@ def generate_connection_candidates(
         )
         for left, right in pairs:
             stats.considered += 1
-            snippets, source, score = _pair_text_evidence(left, right, article_sentences)
+            snippets, source, score = pair_text_evidence(left, right, article_sentences)
             hint = _affiliation_hint(left, right)
             hints = (hint,) if hint else ()
             if not snippets and hint:
-                snippets = _metadata_evidence(left, right, hint)
+                snippets = _metadata_evidence(left, right)
                 source = "metadata_hint"
                 score = 10
             if not snippets or source is None:

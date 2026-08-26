@@ -65,14 +65,21 @@ def _normalize_edge(
     )
 
 
+def _evidence_score(
+    edge: AutoConnectionEdgeProposal,
+    candidates: dict[str, AutoConnectionCandidatePair],
+) -> int:
+    """Evidence score for an edge; standalone edges without a candidate default to 50."""
+    candidate = candidates.get(edge.candidate_id or "")
+    return candidate.evidence.score if candidate is not None else 50
+
+
 def _proposal_rank(
     edge: AutoConnectionEdgeProposal,
     candidates: dict[str, AutoConnectionCandidatePair],
 ) -> tuple[int, float, int, str]:
-    candidate = candidates.get(edge.candidate_id or "")
-    evidence_score = candidate.evidence.score if candidate is not None else 50
     return (
-        evidence_score,
+        _evidence_score(edge, candidates),
         float(edge.confidence),
         len(edge.quote.strip()),
         edge.candidate_id or "",
@@ -118,10 +125,8 @@ def _conflict_winner(
     candidates: dict[str, AutoConnectionCandidatePair],
 ) -> AutoConnectionEdgeProposal | None:
     confidence_gap = abs(float(left.confidence) - float(right.confidence))
-    left_candidate = candidates.get(left.candidate_id or "")
-    right_candidate = candidates.get(right.candidate_id or "")
-    left_score = left_candidate.evidence.score if left_candidate is not None else 0
-    right_score = right_candidate.evidence.score if right_candidate is not None else 0
+    left_score = _evidence_score(left, candidates)
+    right_score = _evidence_score(right, candidates)
     score_gap = abs(left_score - right_score)
     if (
         confidence_gap < CONFLICT_CONFIDENCE_MARGIN
@@ -222,30 +227,3 @@ def resolve_auto_connection_proposals(
             invalid_candidates=invalid_candidates,
         ),
     )
-
-
-def apply_subsumption_rules(
-    edges: list[AutoConnectionEdgeProposal],
-) -> list[AutoConnectionEdgeProposal]:
-    """Drop redundant natures for the same canonical pair in one run."""
-    grouped: dict[tuple[str, str], list[AutoConnectionEdgeProposal]] = defaultdict(list)
-    for edge in edges:
-        grouped[(edge.from_entity_id, edge.to_entity_id)].append(edge)
-
-    out: list[AutoConnectionEdgeProposal] = []
-    for group in grouped.values():
-        natures = {edge.nature for edge in group if edge.nature}
-        filtered = list(group)
-        if "leads" in natures and "works_for" in natures:
-            filtered = [edge for edge in filtered if edge.nature != "works_for"]
-        if "located_at" in natures and "based_in" in natures:
-            filtered = [edge for edge in filtered if edge.nature != "based_in"]
-        if "plays_for" in natures and "member_of" in natures:
-            filtered = [edge for edge in filtered if edge.nature != "member_of"]
-        if "coaches" in natures and "works_for" in natures:
-            filtered = [edge for edge in filtered if edge.nature != "works_for"]
-        if "holds_office_in" in natures and "represents" in natures:
-            # Prefer office-holding over district representation when both proposed.
-            filtered = [edge for edge in filtered if edge.nature != "represents"]
-        out.extend(filtered)
-    return out
