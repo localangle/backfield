@@ -1,6 +1,9 @@
 # Local PRD / issues / tasks trees (see .cursor/skills/write-a-prd, prd-to-issues, issues-to-tasks)
 prd/
 
+# Local scratch files (debug exports, one-off analysis)
+tmp/
+
 .venv/
 __pycache__/
 *.py[cod]
