@@ -26,6 +26,7 @@ from backfield_db import (
     BackfieldWorkspace,
     BackfieldWorkspaceMembership,
     SubstrateArticle,
+    SubstrateArticleMeta,
     SubstratePerson,
     SubstratePersonMention,
 )
@@ -944,12 +945,26 @@ def test_delete_graph_cleans_up_run_dependencies(monkeypatch, tmp_path):
                 source_item_id=item.id,
             )
             s.add(article)
+            s.flush()
+            assert article.id is not None
+
+            meta = SubstrateArticleMeta(
+                article_id=article.id,
+                meta_type="subject",
+                category="local_news",
+                rationale="Smoke test metadata",
+                confidence=0.9,
+                source_run_id=run_id,
+            )
+            s.add(meta)
             s.commit()
             s.refresh(call)
             s.refresh(article)
+            s.refresh(meta)
             call_id = call.id
             article_id = article.id
             item_id = item.id
+            meta_id = meta.id
 
         resp = tc.delete(f"/graphs/{graph['id']}")
         assert resp.status_code == 204
@@ -963,6 +978,9 @@ def test_delete_graph_cleans_up_run_dependencies(monkeypatch, tmp_path):
             assert article_row is not None
             assert article_row.source_run_id is None
             assert article_row.source_item_id is None
+            meta_row = s.get(SubstrateArticleMeta, meta_id)
+            assert meta_row is not None
+            assert meta_row.source_run_id is None
     finally:
         app.dependency_overrides.clear()
 
