@@ -73,15 +73,36 @@ function sourceLabel(source: string | null | undefined): string {
   return "Saved"
 }
 
-export function formatConnectionDate(value: string | null | undefined): string | null {
+export function formatConnectionDate(
+  value: string | null | undefined,
+  options?: { compactYear?: boolean },
+): string | null {
   if (!value) return null
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return null
   return date.toLocaleDateString(undefined, {
-    year: "numeric",
+    year: options?.compactYear ? "2-digit" : "numeric",
     month: "short",
     day: "numeric",
   })
+}
+
+function formatTemporalKindLabel(
+  temporalKind: "static" | "dynamic" | null | undefined,
+): "Static" | "Dynamic" {
+  return temporalKind === "static" ? "Static" : "Dynamic"
+}
+
+function formatDynamicCurrentnessStatus(
+  currentness: "current" | "former" | "unknown",
+  asOfRaw: string | null | undefined,
+): string {
+  if (currentness === "unknown") {
+    return "Unknown"
+  }
+  const status = currentness === "current" ? "Current" : "Former"
+  const asOf = formatConnectionDate(asOfRaw, { compactYear: true })
+  return asOf ? `${status} · ${asOf}` : status
 }
 
 function connectionSourceLabel(conn: {
@@ -93,16 +114,6 @@ function connectionSourceLabel(conn: {
   const raw = typeof evidence.source === "string" ? evidence.source : null
   if (!raw?.trim()) return null
   return sourceLabel(raw)
-}
-
-function evidenceObservedAt(conn: {
-  evidence?: ReadonlyArray<object | null | undefined> | null
-  evidence_json?: Record<string, unknown> | null
-}): string | null {
-  const evidence = bestEvidenceRecord(conn)
-  if (!evidence) return null
-  const raw = evidence.observed_at
-  return typeof raw === "string" ? raw : null
 }
 
 /** Compact status rows for connection detail / list panels. */
@@ -117,25 +128,19 @@ export function formatConnectionStatusMeta(conn: {
   evidence_json?: Record<string, unknown> | null
 }): ConnectionStatusMetaRow[] {
   const rows: ConnectionStatusMetaRow[] = [
-    { label: "Status", value: conn.closed_at ? "Closed" : "Open" },
+    {
+      label: "Timing",
+      value: formatTemporalKindLabel(conn.temporal_kind),
+    },
   ]
-  if (conn.temporal_kind === "static") {
-    rows.push({ label: "Timing", value: "Enduring relationship" })
-  } else if (conn.temporal_kind === "dynamic") {
-    const asOf = formatConnectionDate(conn.currentness_as_of)
-    if (conn.currentness === "current") {
-      rows.push({
-        label: "Currentness",
-        value: asOf ? `Reported current as of ${asOf}` : "Reported current",
-      })
-    } else if (conn.currentness === "former") {
-      rows.push({
-        label: "Currentness",
-        value: asOf ? `Reported former as of ${asOf}` : "Reported former",
-      })
-    } else {
-      rows.push({ label: "Currentness", value: "Current status unknown" })
-    }
+  if (conn.temporal_kind !== "static") {
+    rows.push({
+      label: "Currentness",
+      value: formatDynamicCurrentnessStatus(
+        conn.currentness ?? "unknown",
+        conn.currentness_as_of,
+      ),
+    })
   }
   const source = connectionSourceLabel(conn)
   if (source) {
@@ -148,10 +153,6 @@ export function formatConnectionStatusMeta(conn: {
   const closed = formatConnectionDate(conn.closed_at)
   if (closed) {
     rows.push({ label: "Closed", value: closed })
-  }
-  const observed = formatConnectionDate(evidenceObservedAt(conn))
-  if (observed && observed !== added) {
-    rows.push({ label: "Seen in coverage", value: observed })
   }
   return rows
 }
@@ -173,9 +174,9 @@ export function formatConnectionEvidence(
     typeof row.asserted_currentness === "string" ? row.asserted_currentness : "unspecified"
   const currentnessLabel =
     assertedCurrentness === "current"
-      ? "Reported current"
+      ? "Current"
       : assertedCurrentness === "former"
-        ? "Reported former"
+        ? "Former"
         : null
   const displayQuote = quote || description
   if (!displayQuote && !reason && !currentnessLabel) {

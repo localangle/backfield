@@ -28,7 +28,7 @@ describe('connectionEvidence helpers', () => {
     expect(view?.confidencePercent).toBe(94)
     expect(view?.quote).toContain('Jane Smith')
     expect(view?.showReason).toBe(true)
-    expect(view?.currentnessLabel).toBe('Reported current')
+    expect(view?.currentnessLabel).toBe('Current')
   })
 
   it('hides boilerplate reasons that repeat the relationship nature', () => {
@@ -76,14 +76,13 @@ describe('connectionEvidence helpers', () => {
         evidence: [{ source: 'dboutput_auto_connections', observed_at: '2026-02-01T00:00:00Z' }],
       }),
     ).toEqual([
-      { label: 'Status', value: 'Open' },
+      { label: 'Timing', value: 'Dynamic' },
       {
         label: 'Currentness',
-        value: `Reported current as of ${formatConnectionDate('2026-02-01T00:00:00Z')}`,
+        value: `Current · ${formatConnectionDate('2026-02-01T00:00:00Z', { compactYear: true })}`,
       },
       { label: 'Source', value: 'Automatic' },
       { label: 'Added', value: formatConnectionDate('2026-03-12T15:00:00Z') },
-      { label: 'Seen in coverage', value: formatConnectionDate('2026-02-01T00:00:00Z') },
     ])
   })
 
@@ -95,8 +94,7 @@ describe('connectionEvidence helpers', () => {
         temporal_kind: 'static',
       }),
     ).toEqual([
-      { label: 'Status', value: 'Closed' },
-      { label: 'Timing', value: 'Enduring relationship' },
+      { label: 'Timing', value: 'Static' },
       { label: 'Added', value: formatConnectionDate('2026-01-01T00:00:00Z') },
       { label: 'Closed', value: formatConnectionDate('2026-08-01T00:00:00Z') },
     ])
@@ -111,13 +109,13 @@ describe('connectionEvidence helpers', () => {
       })[1],
     ).toEqual({
       label: 'Currentness',
-      value: `Reported former as of ${formatConnectionDate('2020-01-01T00:00:00Z')}`,
+      value: `Former · ${formatConnectionDate('2020-01-01T00:00:00Z', { compactYear: true })}`,
     })
     expect(
       formatConnectionStatusMeta({
         temporal_kind: 'dynamic',
         currentness: 'unknown',
       })[1],
-    ).toEqual({ label: 'Currentness', value: 'Current status unknown' })
+    ).toEqual({ label: 'Currentness', value: 'Unknown' })
   })
 })

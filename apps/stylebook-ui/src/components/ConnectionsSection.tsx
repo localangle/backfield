@@ -796,9 +796,9 @@ export default function ConnectionsSection({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="unspecified">Current status unknown</SelectItem>
-                    <SelectItem value="current">Reported current</SelectItem>
-                    <SelectItem value="former">Reported former</SelectItem>
+                    <SelectItem value="unspecified">Unknown</SelectItem>
+                    <SelectItem value="current">Current</SelectItem>
+                    <SelectItem value="former">Former</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">

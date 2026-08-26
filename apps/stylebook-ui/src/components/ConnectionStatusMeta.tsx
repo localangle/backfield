@@ -31,7 +31,6 @@ export default function ConnectionStatusMeta({
           className={cn(
             "h-5 gap-1 border-transparent px-1.5 font-normal",
             compact ? "text-[11px]" : "text-xs",
-            row.label === "Status" && row.value === "Closed" && "text-muted-foreground",
           )}
         >
           <span className="text-muted-foreground">{row.label}</span>
