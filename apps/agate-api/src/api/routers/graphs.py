@@ -16,6 +16,7 @@ from backfield_db import (
     BackfieldAiCallRecord,
     BackfieldProject,
     SubstrateArticle,
+    SubstrateArticleMeta,
 )
 from backfield_entities.catalog.graph_stylebook_refs import (
     StylebookGraphRefsError,
@@ -227,6 +228,11 @@ def delete_graph(
             update(SubstrateArticle)
             .where(SubstrateArticle.source_run_id.in_(run_ids))
             .values(source_run_id=None, source_item_id=None)
+        )
+        session.exec(
+            update(SubstrateArticleMeta)
+            .where(SubstrateArticleMeta.source_run_id.in_(run_ids))
+            .values(source_run_id=None)
         )
         session.exec(delete(BackfieldAiCallRecord).where(BackfieldAiCallRecord.run_id.in_(run_ids)))
         session.exec(delete(AgateProcessedItem).where(AgateProcessedItem.run_id.in_(run_ids)))
