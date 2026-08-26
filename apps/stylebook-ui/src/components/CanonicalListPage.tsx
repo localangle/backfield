@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
@@ -10,7 +10,7 @@ import type {
   CanonicalListBaseUrlState,
   CanonicalListPageConfig,
 } from "@/lib/entityConfigs/canonicalListTypes"
-import { useCanonicalListUrlState } from "@/lib/useCanonicalListUrlState"
+import { useCanonicalListUrlState, canonicalListFilterAttr } from "@/lib/useCanonicalListUrlState"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -78,6 +78,8 @@ export function CanonicalListPage<
 
   const [canonicals, setCanonicals] = useState<TCanonical[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const [projects, setProjects] = useState<Project[]>([])
   const [projectsLoading, setProjectsLoading] = useState(true)
   const [types, setTypes] = useState<string[]>([])
@@ -127,8 +129,13 @@ export function CanonicalListPage<
 
   const loadCanonicals = async () => {
     if (!stylebookSlug) return
+    const restoreSearchFocus = document.activeElement === searchInputRef.current
     try {
-      setLoading(true)
+      if (canonicals.length > 0) {
+        setRefreshing(true)
+      } else {
+        setLoading(true)
+      }
       const data = await config.fetchCanonicals(
         stylebookSlug,
         projectFilterSlug || undefined,
@@ -143,6 +150,10 @@ export function CanonicalListPage<
       console.error("Failed to load canonicals:", error)
     } finally {
       setLoading(false)
+      setRefreshing(false)
+      if (restoreSearchFocus) {
+        searchInputRef.current?.focus({ preventScroll: true })
+      }
     }
   }
 
@@ -206,11 +217,14 @@ export function CanonicalListPage<
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label>Search</Label>
+                <Label htmlFor="canonical-list-search">Search</Label>
                 <Input
+                  ref={searchInputRef}
+                  id="canonical-list-search"
                   placeholder={searchPlaceholder}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  {...{ [canonicalListFilterAttr]: "q" }}
                 />
               </div>
               {config.renderExtraFilters?.(filterContext)}
@@ -290,7 +304,7 @@ export function CanonicalListPage<
         </div>
 
         <div className="col-span-9">
-          {loading ? (
+          {loading && canonicals.length === 0 ? (
             <div className="flex justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
@@ -302,6 +316,12 @@ export function CanonicalListPage<
             </Card>
           ) : (
             <>
+              {refreshing ? (
+                <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                  Updating results…
+                </div>
+              ) : null}
               {total > perPage && (
                 <div className="mb-4">
                   <Pagination

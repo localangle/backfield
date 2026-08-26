@@ -11,6 +11,7 @@ import type {
   CanonicalListFilterContext,
   CanonicalListPageConfig,
 } from "@/lib/entityConfigs/canonicalListTypes"
+import { canonicalListFilterAttr } from "@/lib/useCanonicalListUrlState"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -80,6 +81,7 @@ function renderPersonExtraFilters(ctx: CanonicalListFilterContext<CanonicalPerso
           placeholder="Filter by title…"
           value={ctx.textQueries.title ?? ""}
           onChange={(e) => ctx.setTextQuery("title", e.target.value)}
+          {...{ [canonicalListFilterAttr]: "title" }}
         />
       </div>
       <div>
@@ -88,6 +90,7 @@ function renderPersonExtraFilters(ctx: CanonicalListFilterContext<CanonicalPerso
           placeholder="Filter by affiliation…"
           value={ctx.textQueries.affiliation ?? ""}
           onChange={(e) => ctx.setTextQuery("affiliation", e.target.value)}
+          {...{ [canonicalListFilterAttr]: "affiliation" }}
         />
       </div>
       <div>
