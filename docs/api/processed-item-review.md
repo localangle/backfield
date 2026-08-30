@@ -4,6 +4,11 @@ Processed-item review is an Agate API contract layered over immutable worker out
 
 Routes are under `/runs/{run_id}/items/{item_id}` and require access to the run's project.
 
+To find an item without knowing the run, Agate UI uses project-scoped discovery
+`GET /projects/{project_id}/processed-items` (Articles tab). That endpoint returns review
+targets only; overlay edits and entity lanes still go through the run-scoped item routes
+below.
+
 ## Item detail
 
 `GET /runs/{run_id}/items/{item_id}` returns:

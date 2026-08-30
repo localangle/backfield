@@ -6,7 +6,7 @@ import {
   useState,
   type KeyboardEvent,
 } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { InlineNameEditor } from '@/components/InlineNameEditor'
@@ -17,6 +17,7 @@ import ProjectDetailFlowsTab from '@/components/project/ProjectDetailFlowsTab'
 import ProjectDetailRunsTab, {
   type ProjectDetailRunsTabHandle,
 } from '@/components/project/ProjectDetailRunsTab'
+import ProjectDetailArticlesTab from '@/components/project/ProjectDetailArticlesTab'
 import ProjectDetailModelsTab from '@/components/project/ProjectDetailModelsTab'
 import ProjectDetailIntegrationsTab from '@/components/project/ProjectDetailIntegrationsTab'
 import {
@@ -33,6 +34,10 @@ import { stylebookShellHref } from '@/lib/platformUrls'
 import { formatDurationMs } from '@/lib/formatDuration'
 import { useAuth } from '@/lib/auth'
 import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
+import {
+  parseProjectWorkspaceTab,
+  projectWorkspaceTabSearch,
+} from '@/lib/projectWorkspaceTab'
 import { Loader2, Plus, RefreshCw } from 'lucide-react'
 
 function formatCurrencySummary(
@@ -83,6 +88,7 @@ function StatMinMaxRange({
 
 export default function ProjectDetailPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { organizationId, isOrgAdmin } = useAuth()
   const { projectSlug: projectSlugParam } = useParams<{ projectSlug: string }>()
   const slug = projectSlugParam ? decodeURIComponent(projectSlugParam) : ''
@@ -92,7 +98,7 @@ export default function ProjectDetailPage() {
   const [overviewLoading, setOverviewLoading] = useState(true)
   const [overviewError, setOverviewError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [workspaceTab, setWorkspaceTab] = useState('flows')
+  const workspaceTab = parseProjectWorkspaceTab(searchParams.get('tab'))
   const runsTabRef = useRef<ProjectDetailRunsTabHandle>(null)
   const [runsRefreshBusy, setRunsRefreshBusy] = useState(false)
   const keysSettingsRef = useRef<ProjectSettingsHandle>(null)
@@ -190,9 +196,19 @@ export default function ProjectDetailPage() {
     }
   }, [])
 
-  const handleWorkspaceTabChange = useCallback((value: string) => {
-    setWorkspaceTab(value)
-  }, [])
+  const handleWorkspaceTabChange = useCallback(
+    (value: string) => {
+      const tab = parseProjectWorkspaceTab(value)
+      navigate(
+        {
+          pathname: window.location.pathname,
+          search: projectWorkspaceTabSearch(tab),
+        },
+        { replace: true },
+      )
+    },
+    [navigate],
+  )
 
   const handleWorkspaceTabsPointerDownCapture = useCallback(() => {
     captureWorkspaceScrollAnchor()
@@ -482,18 +498,18 @@ export default function ProjectDetailPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Average cost per run
+                Average cost per item
               </CardTitle>
             </CardHeader>
             <CardContent>
               {stats &&
               stats.runs_succeeded > 0 &&
-              stats.avg_estimated_ai_cost_per_run != null &&
+              stats.avg_estimated_ai_cost_per_item != null &&
               stats.avg_estimated_ai_cost_currency ? (
                 <>
                   <p className="text-3xl font-semibold tabular-nums">
                     {formatCurrencySummary(
-                      stats.avg_estimated_ai_cost_per_run,
+                      stats.avg_estimated_ai_cost_per_item,
                       stats.avg_estimated_ai_cost_currency || 'USD',
                     )}
                     {stats.avg_estimated_ai_cost_incomplete ? (
@@ -505,7 +521,9 @@ export default function ProjectDetailPage() {
                       </span>
                     ) : null}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">Among completed runs</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Among items in completed runs
+                  </p>
                   {stats.top_flows_by_cost && stats.top_flows_by_cost.length > 0 ? (
                     <StatMinMaxRange
                       title="Flows"
@@ -535,15 +553,15 @@ export default function ProjectDetailPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Average time per run
+                Average time per item
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-semibold tabular-nums">
-                {overviewPending ? '…' : formatDurationMs(stats?.avg_duration_ms_per_run)}
+                {overviewPending ? '…' : formatDurationMs(stats?.avg_duration_ms_per_item)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Wall time per completed run
+                Processing time per completed item
               </p>
               {stats?.slowest_flows && stats.slowest_flows.length > 0 ? (
                 <StatMinMaxRange
@@ -565,7 +583,7 @@ export default function ProjectDetailPage() {
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold">Project workspace</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Flows, runs, integrations and API keys for this project.
+              Flows, runs, articles, integrations and API keys for this project.
             </p>
           </div>
           <div className="flex flex-shrink-0 flex-wrap items-center gap-2 sm:justify-end">
@@ -622,12 +640,15 @@ export default function ProjectDetailPage() {
           onKeyDownCapture={handleWorkspaceTabsKeyDownCapture}
           className="w-full min-w-0"
         >
-          <TabsList className="grid w-full max-w-none grid-cols-2 gap-1 h-auto p-1 sm:grid-cols-3 lg:grid-cols-5">
+          <TabsList className="grid w-full max-w-none grid-cols-2 gap-1 h-auto p-1 sm:grid-cols-3 lg:grid-cols-6">
             <TabsTrigger value="flows" className="w-full">
               Flows
             </TabsTrigger>
             <TabsTrigger value="runs" className="w-full">
               Runs
+            </TabsTrigger>
+            <TabsTrigger value="articles" className="w-full">
+              Articles
             </TabsTrigger>
             <TabsTrigger value="models" className="w-full">
               Models
@@ -660,6 +681,9 @@ export default function ProjectDetailPage() {
                 projectId={project.id}
                 onDataChanged={() => void reload()}
               />
+            ) : null}
+            {workspaceTab === 'articles' ? (
+              <ProjectDetailArticlesTab projectId={project.id} />
             ) : null}
             {workspaceTab === 'models' ? (
               <div className="w-full min-w-0 space-y-10">

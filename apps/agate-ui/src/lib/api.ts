@@ -94,6 +94,8 @@ export interface ProjectStats {
   slowest_flows?: SlowestFlowStat[]
   /** Mean tracked LLM spend per succeeded run. */
   avg_estimated_ai_cost_per_run?: string | number | null
+  /** Mean tracked LLM spend per terminal processed item on succeeded runs. */
+  avg_estimated_ai_cost_per_item?: string | number | null
   top_flows_by_cost?: TopFlowByCostStat[]
   avg_estimated_ai_cost_currency?: string | null
   avg_estimated_ai_cost_incomplete?: boolean
@@ -331,6 +333,7 @@ export interface ListGraphsOptions {
 
 export interface ListRunsOptions {
   projectId?: number
+  graphId?: string
   limit?: number
   offset?: number
   includeResult?: boolean
@@ -824,6 +827,9 @@ export async function listRuns(options: ListRunsOptions = {}): Promise<Run[]> {
   if (options.projectId != null) {
     params.set('project_id', String(options.projectId))
   }
+  if (options.graphId) {
+    params.set('graph_id', options.graphId)
+  }
   if (options.limit != null) {
     params.set('limit', String(options.limit))
   }
@@ -908,6 +914,51 @@ export async function getProjectEstimatedAiCost(
   projectId: number,
 ): Promise<ProjectEstimatedAiCost> {
   return fetchAPI(`/projects/${projectId}/estimated-ai-cost`) as Promise<ProjectEstimatedAiCost>
+}
+
+export interface ProjectProcessedItem {
+  id: number
+  run_id: string
+  flow_name: string
+  title: string
+  url: string | null
+  status: string
+  created_at: string
+  source_file: string | null
+}
+
+export interface ProjectProcessedItemsPage {
+  total: number
+  limit: number
+  offset: number
+  q: string | null
+  items: ProjectProcessedItem[]
+}
+
+export interface ListProjectProcessedItemsOptions {
+  q?: string | null
+  limit?: number
+  offset?: number
+}
+
+export async function listProjectProcessedItems(
+  projectId: number,
+  options: ListProjectProcessedItemsOptions = {},
+): Promise<ProjectProcessedItemsPage> {
+  const params = new URLSearchParams()
+  if (options.q != null && options.q.trim()) {
+    params.set('q', options.q.trim())
+  }
+  if (options.limit != null) {
+    params.set('limit', String(options.limit))
+  }
+  if (options.offset != null) {
+    params.set('offset', String(options.offset))
+  }
+  const query = params.toString()
+  return fetchAPI(
+    `/projects/${projectId}/processed-items${query ? `?${query}` : ''}`,
+  ) as Promise<ProjectProcessedItemsPage>
 }
 
 interface RawProcessedItemDetail {
