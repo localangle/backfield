@@ -11,6 +11,7 @@ from decimal import Decimal
 from typing import Any
 
 from api.deps import get_auth, get_session
+from api.project_processed_items import list_project_processed_items
 from backfield_auth.gate import (
     require_org_admin,
     require_project_access,
@@ -65,6 +66,27 @@ class ProjectEstimatedAiCostOut(BaseModel):
 class AiCostModelBreakdown(BaseModel):
     provider_model_id: str
     estimated_total: Decimal
+
+
+class ProjectProcessedItemOut(BaseModel):
+    """One processed item in a project Articles list (discovery → review)."""
+
+    id: int
+    run_id: str
+    flow_name: str
+    title: str
+    url: str | None = None
+    status: str
+    created_at: datetime
+    source_file: str | None = None
+
+
+class ProjectProcessedItemsPageOut(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    q: str | None = None
+    items: list[ProjectProcessedItemOut]
 
 
 def _settings_dict(project: BackfieldProject) -> dict:
@@ -1013,4 +1035,56 @@ def get_project_estimated_ai_cost(
         incomplete_estimate=incomplete,
         attempt_count=attempt_count,
         model_breakdown=_project_ai_cost_model_breakdown(session, project_id),
+    )
+
+
+@router.get(
+    "/{project_id}/processed-items",
+    response_model=ProjectProcessedItemsPageOut,
+)
+def list_project_processed_items_endpoint(
+    project_id: int,
+    q: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    """List or search processed items in a project (Articles tab discovery)."""
+    require_project_access(session, auth, project_id)
+    p = session.get(BackfieldProject, project_id)
+    if not p:
+        raise HTTPException(404, "Project not found")
+
+    if limit < 1 or limit > 500:
+        raise HTTPException(400, "limit must be between 1 and 500")
+    if offset < 0:
+        raise HTTPException(400, "offset must be >= 0")
+
+    query = (q or "").strip() or None
+    rows, total = list_project_processed_items(
+        session,
+        project_id,
+        q=query,
+        limit=limit,
+        offset=offset,
+    )
+    return ProjectProcessedItemsPageOut(
+        total=total,
+        limit=limit,
+        offset=offset,
+        q=query,
+        items=[
+            ProjectProcessedItemOut(
+                id=row.id,
+                run_id=row.run_id,
+                flow_name=row.flow_name,
+                title=row.title,
+                url=row.url,
+                status=row.status,
+                created_at=row.created_at,
+                source_file=row.source_file,
+            )
+            for row in rows
+        ],
     )

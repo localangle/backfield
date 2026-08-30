@@ -50,6 +50,16 @@ Node panels and synced node UI are documented in
 - While an S3 batch run is creating processed items, the run table shows
   **Preparing items ...** instead of the empty-run state.
 
+## Project workspace tabs
+
+On the project detail page, the workspace strip uses `?tab=<id>` with values
+`flows`, `runs`, `articles`, `models`, `integrations`, and `keys`. Missing or invalid
+values resolve to `flows`. The **Articles** tab lists recent processed items for the
+project and supports headline/URL search via `GET /projects/{id}/processed-items`; each
+row opens `/runs/{runId}/items/{itemId}` for review.
+
+Helpers live in `src/lib/projectWorkspaceTab.ts`.
+
 ## Processed-item deep links
 
 Processed-item detail tabs are:
