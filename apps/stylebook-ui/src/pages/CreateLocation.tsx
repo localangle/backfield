@@ -573,16 +573,6 @@ export default function CreateLocation() {
                       : null
                   }
                   interactiveWhenEmpty={geometryEditing && geometryAddMode === "point" && !geometryDraft}
-                  tileUrl={
-                    geometryEditing
-                      ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-                      : undefined
-                  }
-                  tileAttribution={
-                    geometryEditing
-                      ? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                      : undefined
-                  }
                   onMapClick={
                     geometryEditing &&
                     geometryAddMode === "point" &&

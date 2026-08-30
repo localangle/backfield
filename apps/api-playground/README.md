@@ -98,7 +98,7 @@ sufficient by itself.
 - Generated curl uses `$BACKFIELD_PROJECT_API_KEY` instead of printing the entered key.
 - The production build injects a restrictive Content Security Policy. `index.html` also sets
   `Referrer-Policy: no-referrer` through a meta policy, which works on any static host.
-  Map tiles are loaded from `https://*.basemaps.cartocdn.com` (allowed in `img-src`).
+  Map tiles are loaded from `https://*.tile.openstreetmap.org` (allowed in `img-src`).
 - The production static host should send the same CSP and `Referrer-Policy: no-referrer` as HTTP
   response headers. The in-document policies remain a defense when an operator has not yet added
   host-level headers.

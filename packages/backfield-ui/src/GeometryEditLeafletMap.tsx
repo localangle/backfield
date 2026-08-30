@@ -12,10 +12,6 @@ import {
   type LeafletMapProps,
 } from "./LeafletMap"
 
-const EDIT_TILE = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-const EDIT_ATTR =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-
 function isPointGeometry(geometry: Record<string, unknown> | null): geometry is {
   type: "Point"
   coordinates: [number, number]
@@ -149,8 +145,6 @@ export function GeometryEditLeafletMap({
       initialCenter={addModeCenter ?? initialCenter}
       initialZoom={addModeZoom ?? initialZoom}
       interactiveWhenEmpty={geometryEditing && geometryAddMode === "point" && !geometryDraft}
-      tileUrl={geometryEditing ? EDIT_TILE : undefined}
-      tileAttribution={geometryEditing ? EDIT_ATTR : undefined}
       onFeatureClick={onFeatureClick}
       onMapClick={
         geometryEditing &&
