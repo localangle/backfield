@@ -1,15 +1,10 @@
-import { ReactNode } from "react"
-import { useNavigate } from "react-router-dom"
+import { Outlet, useNavigate } from "react-router-dom"
 import { AgateProductMark, ShellProductBrand, UserAccountMenu } from "@backfield/ui"
 import AppSidebar from "./AppSidebar"
 import OrganizationSetupBanner from "./OrganizationSetupBanner"
 import { useAuth } from "@/lib/auth"
 
-interface HubLayoutProps {
-  children: ReactNode
-}
-
-export default function HubLayout({ children }: HubLayoutProps) {
+export default function HubLayout() {
   const navigate = useNavigate()
   const { username, logout } = useAuth()
 
@@ -39,7 +34,7 @@ export default function HubLayout({ children }: HubLayoutProps) {
         <main className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-y-contain">
           <div className="w-full max-w-none px-4 sm:px-6 lg:px-8 py-8">
             <OrganizationSetupBanner />
-            {children}
+            <Outlet />
           </div>
         </main>
       </div>

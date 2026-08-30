@@ -5,11 +5,14 @@ import {
   classifyConnectionHop,
   connectionsTouchingEntity,
   dedupeConnections,
+  egoGraphLayoutMetrics,
   formatNatureLabel,
+  gridColumns,
   groupConnectionsByDirectedEdge,
+  layoutNeighborGrid,
   neighborFromConnection,
   otherEndFromConnection,
-  selectNeighborsForHop2Expansion,
+  selectConnectionsForGraphDisplay,
   type GraphEntityRef,
 } from "@/lib/connectionGraph"
 import type { Connection } from "@/lib/stylebook-api/connections"
@@ -59,18 +62,42 @@ describe("connectionGraph", () => {
     expect(rows.map((r) => r.id)).toEqual([1, 2])
   })
 
-  it("prioritizes organizations when capping hop-2 expansion", () => {
-    const neighbors: GraphEntityRef[] = [
-      { entityType: "location", entityId: "l1", displayName: "Alpha Loc" },
-      { entityType: "organization", entityId: "o1", displayName: "Zeta Org" },
-      { entityType: "person", entityId: "p1", displayName: "Beta Person" },
+  it("prioritizes organizations when capping graph display", () => {
+    const center: GraphEntityRef = {
+      entityType: "person",
+      entityId: "peggy",
+      displayName: "Peggy Buffington",
+    }
+    const rows = [
+      conn({
+        id: 1,
+        from_entity_id: "peggy",
+        to_entity_type: "location",
+        to_entity_id: "l1",
+        to_display_name: "Alpha Loc",
+      }),
+      conn({
+        id: 2,
+        from_entity_id: "peggy",
+        to_entity_id: "o1",
+        to_display_name: "Zeta Org",
+      }),
+      conn({
+        id: 3,
+        from_entity_id: "peggy",
+        to_entity_type: "person",
+        to_entity_id: "p1",
+        to_display_name: "Beta Person",
+      }),
     ]
-    const { selected, skipped } = selectNeighborsForHop2Expansion(neighbors, 2)
-    expect(selected.map((n) => n.entityId)).toEqual(["o1", "p1"])
-    expect(skipped).toBe(1)
+    const { selected, displayedNeighborCount, skippedNeighborCount } =
+      selectConnectionsForGraphDisplay(rows, center, 2)
+    expect(displayedNeighborCount).toBe(2)
+    expect(skippedNeighborCount).toBe(1)
+    expect(selected.map((row) => row.to_entity_id)).toEqual(["o1", "p1"])
   })
 
-  it("classifies hop-1 vs hop-2 edges", () => {
+  it("classifies direct connections as hop 1 and others as hop 0", () => {
     const center = { entityType: "person" as const, entityId: "peggy" }
     expect(
       classifyConnectionHop(
@@ -93,7 +120,25 @@ describe("connectionGraph", () => {
         }),
         center,
       ),
-    ).toBe(2)
+    ).toBe(0)
+  })
+
+  it("lays out neighbors in a compact grid above the center", () => {
+    expect(gridColumns(1)).toBe(1)
+    expect(gridColumns(5)).toBe(3)
+    expect(gridColumns(20)).toBe(5)
+
+    const keys = ["organization:o1", "person:p1", "location:l1"]
+    const positions = layoutNeighborGrid(keys, 500, 48)
+    expect(positions.size).toBe(3)
+    expect(positions.get("organization:o1")).toEqual({ x: 310, y: 48 })
+    expect(positions.get("person:p1")).toEqual({ x: 514, y: 48 })
+    expect(positions.get("location:l1")).toEqual({ x: 412, y: 140 })
+
+    const metrics = egoGraphLayoutMetrics(3)
+    expect(metrics.centerX).toBe(500)
+    expect(metrics.neighborTopY).toBe(48)
+    expect(metrics.centerY).toBeGreaterThan(metrics.neighborTopY)
   })
 
   it("formats nature labels for display", () => {

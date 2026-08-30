@@ -7,11 +7,12 @@ import {
   type Connection,
 } from "@/lib/stylebook-api/connections"
 
-export const GRAPH_HOP1_LIMIT = 500
-export const GRAPH_HOP2_NEIGHBOR_CAP = 18
-export const GRAPH_HOP2_PER_NEIGHBOR_LIMIT = 40
+/** Max connections fetched before prioritizing neighbors for the graph. */
+export const GRAPH_HOP1_FETCH_LIMIT = 128
+/** Max unique neighbors rendered in the ego graph. */
+export const GRAPH_HOP1_DISPLAY_CAP = 32
 
-export type GraphHop = 0 | 1 | 2
+export type GraphHop = 0 | 1
 
 export interface GraphEntityRef {
   entityType: EntityType
@@ -21,18 +22,19 @@ export interface GraphEntityRef {
 
 export interface ConnectionNeighborhood {
   connections: Connection[]
-  hop1ConnectionCount: number
-  hop2ConnectionCount: number
-  neighborsExpanded: number
-  neighborsSkipped: number
+  /** Total open connections for the center entity (from API). */
+  totalCount: number
+  /** Unique neighbors represented in `connections`. */
+  displayedNeighborCount: number
+  /** Unique neighbors omitted because of `GRAPH_HOP1_DISPLAY_CAP`. */
+  skippedNeighborCount: number
 }
 
 export const EMPTY_CONNECTION_NEIGHBORHOOD: ConnectionNeighborhood = {
   connections: [],
-  hop1ConnectionCount: 0,
-  hop2ConnectionCount: 0,
-  neighborsExpanded: 0,
-  neighborsSkipped: 0,
+  totalCount: 0,
+  displayedNeighborCount: 0,
+  skippedNeighborCount: 0,
 }
 
 export function entityRefKey(ref: Pick<GraphEntityRef, "entityType" | "entityId">): string {
@@ -80,72 +82,76 @@ export function dedupeConnections(connections: Connection[]): Connection[] {
   return out
 }
 
-function neighborExpansionPriority(ref: GraphEntityRef): number {
+function neighborDisplayPriority(ref: GraphEntityRef): number {
   if (ref.entityType === "organization") return 0
   if (ref.entityType === "person") return 1
   if (ref.entityType === "location") return 2
   return 3
 }
 
-export function selectNeighborsForHop2Expansion(
-  neighbors: GraphEntityRef[],
-  cap: number = GRAPH_HOP2_NEIGHBOR_CAP,
-): { selected: GraphEntityRef[]; skipped: number } {
-  const unique = new Map<string, GraphEntityRef>()
-  for (const ref of neighbors) {
-    unique.set(entityRefKey(ref), ref)
+export function selectConnectionsForGraphDisplay(
+  connections: Connection[],
+  center: GraphEntityRef,
+  cap: number = GRAPH_HOP1_DISPLAY_CAP,
+): {
+  selected: Connection[]
+  displayedNeighborCount: number
+  skippedNeighborCount: number
+} {
+  const byNeighbor = new Map<string, { ref: GraphEntityRef; connections: Connection[] }>()
+  for (const conn of connections) {
+    const neighbor = neighborFromConnection(conn, center)
+    if (!neighbor) continue
+    const key = entityRefKey(neighbor)
+    const bucket = byNeighbor.get(key)
+    if (bucket) {
+      bucket.connections.push(conn)
+    } else {
+      byNeighbor.set(key, { ref: neighbor, connections: [conn] })
+    }
   }
-  const sorted = Array.from(unique.values()).sort((a, b) => {
-    const priority = neighborExpansionPriority(a) - neighborExpansionPriority(b)
+
+  const groups = Array.from(byNeighbor.values()).sort((a, b) => {
+    const priority = neighborDisplayPriority(a.ref) - neighborDisplayPriority(b.ref)
     if (priority !== 0) return priority
-    return a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" })
+    return a.ref.displayName.localeCompare(b.ref.displayName, undefined, {
+      sensitivity: "base",
+    })
   })
-  if (sorted.length <= cap) {
-    return { selected: sorted, skipped: 0 }
+
+  const picked = groups.slice(0, cap)
+  const skippedNeighborCount = Math.max(0, groups.length - picked.length)
+  return {
+    selected: picked.flatMap((group) => group.connections),
+    displayedNeighborCount: picked.length,
+    skippedNeighborCount,
   }
-  return { selected: sorted.slice(0, cap), skipped: sorted.length - cap }
 }
 
 async function listConnectionsForEntity(
   stylebookSlug: string,
   ref: Pick<GraphEntityRef, "entityType" | "entityId">,
   options: { limit: number; includeClosed?: boolean },
-): Promise<Connection[]> {
+): Promise<{ connections: Connection[]; total: number }> {
   const canonicalId = String(ref.entityId)
   const fetchOptions = { limit: options.limit, offset: 0, includeClosed: options.includeClosed }
   if (ref.entityType === "person") {
-    return (await listStylebookConnectionsForPerson(stylebookSlug, canonicalId, fetchOptions))
-      .connections
+    const res = await listStylebookConnectionsForPerson(stylebookSlug, canonicalId, fetchOptions)
+    return { connections: res.connections, total: res.total }
   }
   if (ref.entityType === "organization") {
-    return (
-      await listStylebookConnectionsForOrganization(stylebookSlug, canonicalId, fetchOptions)
-    ).connections
+    const res = await listStylebookConnectionsForOrganization(
+      stylebookSlug,
+      canonicalId,
+      fetchOptions,
+    )
+    return { connections: res.connections, total: res.total }
   }
   if (ref.entityType === "location") {
-    return (await listStylebookConnectionsForLocation(stylebookSlug, canonicalId, fetchOptions))
-      .connections
+    const res = await listStylebookConnectionsForLocation(stylebookSlug, canonicalId, fetchOptions)
+    return { connections: res.connections, total: res.total }
   }
-  return []
-}
-
-async function mapConcurrent<T, R>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  if (items.length === 0) return []
-  const results: R[] = new Array(items.length)
-  let index = 0
-  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (index < items.length) {
-      const current = index
-      index += 1
-      results[current] = await fn(items[current])
-    }
-  })
-  await Promise.all(workers)
-  return results
+  return { connections: [], total: 0 }
 }
 
 export async function fetchConnectionNeighborhood(
@@ -153,70 +159,22 @@ export async function fetchConnectionNeighborhood(
   center: GraphEntityRef,
   options?: {
     includeClosed?: boolean
-    expandHops?: 1 | 2
-    hop2NeighborCap?: number
+    displayCap?: number
   },
 ): Promise<ConnectionNeighborhood> {
-  const expandHops = options?.expandHops ?? 1
-  const hop1 = await listConnectionsForEntity(stylebookSlug, center, {
-    limit: GRAPH_HOP1_LIMIT,
+  const { connections: fetched, total } = await listConnectionsForEntity(stylebookSlug, center, {
+    limit: GRAPH_HOP1_FETCH_LIMIT,
     includeClosed: options?.includeClosed,
   })
 
-  if (expandHops < 2) {
-    return {
-      connections: hop1,
-      hop1ConnectionCount: hop1.length,
-      hop2ConnectionCount: 0,
-      neighborsExpanded: 0,
-      neighborsSkipped: 0,
-    }
-  }
-
-  const hop1Neighbors = hop1
-    .map((conn) => neighborFromConnection(conn, center))
-    .filter((ref): ref is GraphEntityRef => ref !== null)
-
-  const { selected, skipped } = selectNeighborsForHop2Expansion(
-    hop1Neighbors,
-    options?.hop2NeighborCap ?? GRAPH_HOP2_NEIGHBOR_CAP,
-  )
-
-  const hop2Batches = await mapConcurrent(selected, 6, (neighbor) =>
-    listConnectionsForEntity(stylebookSlug, neighbor, {
-      limit: GRAPH_HOP2_PER_NEIGHBOR_LIMIT,
-      includeClosed: options?.includeClosed,
-    }),
-  )
-
-  const hop2: Connection[] = []
-  for (const batch of hop2Batches) {
-    for (const conn of batch) {
-      const fromKey = entityRefKey({
-        entityType: conn.from_entity_type as EntityType,
-        entityId: String(conn.from_entity_id),
-      })
-      const toKey = entityRefKey({
-        entityType: conn.to_entity_type as EntityType,
-        entityId: String(conn.to_entity_id),
-      })
-      if (fromKey === entityRefKey(center) || toKey === entityRefKey(center)) {
-        continue
-      }
-      hop2.push(conn)
-    }
-  }
-
-  const merged = dedupeConnections([...hop1, ...hop2])
-  const hop1Ids = new Set(hop1.map((c) => c.id))
-  const hop2Only = merged.filter((c) => !hop1Ids.has(c.id))
+  const { selected, displayedNeighborCount, skippedNeighborCount } =
+    selectConnectionsForGraphDisplay(fetched, center, options?.displayCap ?? GRAPH_HOP1_DISPLAY_CAP)
 
   return {
-    connections: merged,
-    hop1ConnectionCount: hop1.length,
-    hop2ConnectionCount: hop2Only.length,
-    neighborsExpanded: selected.length,
-    neighborsSkipped: skipped,
+    connections: selected,
+    totalCount: total,
+    displayedNeighborCount,
+    skippedNeighborCount,
   }
 }
 
@@ -241,8 +199,77 @@ export function classifyConnectionHop(
   conn: Connection,
   center: Pick<GraphEntityRef, "entityType" | "entityId">,
 ): GraphHop {
-  if (connectionTouchesEntity(conn, center)) return 1
-  return 2
+  return connectionTouchesEntity(conn, center) ? 1 : 0
+}
+
+export const GRAPH_NODE_LAYOUT_WIDTH = 176
+export const GRAPH_NODE_LAYOUT_HEIGHT = 56
+const GRAPH_GRID_GAP_X = 28
+const GRAPH_GRID_GAP_Y = 36
+
+export function gridColumns(count: number): number {
+  if (count <= 1) return 1
+  if (count <= 4) return 2
+  if (count <= 9) return 3
+  if (count <= 16) return 4
+  if (count <= 25) return 5
+  return 6
+}
+
+function gridWidth(cols: number, count: number): number {
+  const itemsInWidestRow = Math.min(cols, count)
+  if (itemsInWidestRow <= 1) return GRAPH_NODE_LAYOUT_WIDTH
+  return (
+    (itemsInWidestRow - 1) * (GRAPH_NODE_LAYOUT_WIDTH + GRAPH_GRID_GAP_X) +
+    GRAPH_NODE_LAYOUT_WIDTH
+  )
+}
+
+function gridHeight(rows: number): number {
+  if (rows <= 1) return GRAPH_NODE_LAYOUT_HEIGHT
+  return (rows - 1) * (GRAPH_NODE_LAYOUT_HEIGHT + GRAPH_GRID_GAP_Y) + GRAPH_NODE_LAYOUT_HEIGHT
+}
+
+/** Place neighbor node centers in a compact grid above the subject. */
+export function layoutNeighborGrid(
+  neighborKeys: string[],
+  centerX: number,
+  topY: number,
+): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>()
+  if (neighborKeys.length === 0) return positions
+
+  const cols = gridColumns(neighborKeys.length)
+  const rows = Math.ceil(neighborKeys.length / cols)
+
+  neighborKeys.forEach((key, index) => {
+    const row = Math.floor(index / cols)
+    const col = index % cols
+    const itemsInRow = Math.min(cols, neighborKeys.length - row * cols)
+    const rowWidth = gridWidth(cols, itemsInRow)
+    const x = centerX - rowWidth / 2 + col * (GRAPH_NODE_LAYOUT_WIDTH + GRAPH_GRID_GAP_X)
+    const y = topY + row * (GRAPH_NODE_LAYOUT_HEIGHT + GRAPH_GRID_GAP_Y)
+    positions.set(key, { x, y })
+  })
+
+  return positions
+}
+
+export function egoGraphLayoutMetrics(neighborCount: number): {
+  centerX: number
+  centerY: number
+  neighborTopY: number
+  canvasMinHeight: number
+} {
+  const cols = gridColumns(neighborCount)
+  const rows = Math.max(1, Math.ceil(Math.max(neighborCount, 1) / cols))
+  const neighborGridHeight = gridHeight(rows)
+  const centerX = 500
+  const neighborTopY = 48
+  const centerY =
+    neighborTopY + neighborGridHeight + GRAPH_NODE_LAYOUT_HEIGHT + GRAPH_GRID_GAP_Y + 24
+  const canvasMinHeight = centerY + GRAPH_NODE_LAYOUT_HEIGHT + 48
+  return { centerX, centerY, neighborTopY, canvasMinHeight }
 }
 
 export function formatNatureLabel(nature?: string | null): string | null {

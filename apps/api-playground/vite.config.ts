@@ -5,8 +5,8 @@ import { defineConfig, type Plugin } from "vite"
 
 const appRoot = path.dirname(fileURLToPath(import.meta.url))
 
-// Leaflet basemaps load raster tiles from CARTO (see GeoAreaMap / H3CellMap).
-const mapTileImgSrc = "https://*.basemaps.cartocdn.com"
+// Leaflet basemaps load raster tiles from OpenStreetMap (see GeoAreaMap / H3CellMap).
+const mapTileImgSrc = "https://*.tile.openstreetmap.org"
 
 const productionCsp = [
   "default-src 'none'",
