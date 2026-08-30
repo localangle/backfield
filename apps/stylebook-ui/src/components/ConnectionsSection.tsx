@@ -203,7 +203,6 @@ export default function ConnectionsSection({
         },
         {
           includeClosed: false,
-          expandHops: entityType === "person" ? 2 : 1,
         },
       )
       if (requestId !== graphRequestSeq.current) return
@@ -605,7 +604,17 @@ export default function ConnectionsSection({
                     Loading graph...
                   </div>
                 ) : (
-                <ConnectionsGraph
+                <>
+                  {graphNeighborhood &&
+                  (graphNeighborhood.skippedNeighborCount > 0 ||
+                    graphNeighborhood.totalCount > graphNeighborhood.connections.length) ? (
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      Showing {graphNeighborhood.displayedNeighborCount} connected{" "}
+                      {graphNeighborhood.displayedNeighborCount === 1 ? "entry" : "entries"} in the
+                      graph. Use List to browse all {graphNeighborhood.totalCount} connections.
+                    </p>
+                  ) : null}
+                  <ConnectionsGraph
                   entityType={entityType}
                   entityId={entityId}
                   entityDisplayName={entityDisplayName}
@@ -615,6 +624,7 @@ export default function ConnectionsSection({
                   neighborhood={graphNeighborhood ?? EMPTY_CONNECTION_NEIGHBORHOOD}
                   onConnectionsChanged={refreshConnections}
                 />
+                </>
                 )}
               </TabsContent>
             </Tabs>

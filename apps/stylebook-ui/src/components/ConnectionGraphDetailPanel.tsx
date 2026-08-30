@@ -375,12 +375,8 @@ function EntityHeader({
 function nodeHop(
   entityRef: GraphEntityRef,
   center: GraphEntityRef,
-  connections: Connection[],
 ): GraphHop {
-  if (entityRefKey(entityRef) === entityRefKey(center)) return 0
-  const touching = connectionsTouchingEntity(connections, entityRef)
-  if (touching.some((conn) => classifyConnectionHop(conn, center) === 1)) return 1
-  return 2
+  return entityRefKey(entityRef) === entityRefKey(center) ? 0 : 1
 }
 
 export default function ConnectionGraphDetailPanel({
@@ -506,7 +502,7 @@ export default function ConnectionGraphDetailPanel({
             )?.displayName ?? "Unknown",
   }
 
-  const hop = nodeHop(entityRef, center, connections)
+  const hop = nodeHop(entityRef, center)
   const profileSeedLines =
     entityRefKey(entityRef) === entityRefKey(center) ? centerProfileLines : undefined
 
