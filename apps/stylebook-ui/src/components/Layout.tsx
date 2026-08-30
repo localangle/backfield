@@ -272,7 +272,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
 
   useEffect(() => {
     void loadWorkspaces()
-  }, [loadWorkspaces, location.pathname])
+  }, [loadWorkspaces])
 
   useEffect(() => {
     const onChanged = () => {

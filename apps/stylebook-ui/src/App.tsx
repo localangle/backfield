@@ -194,17 +194,18 @@ function OrganizationScopedRoutes() {
     )
   }
 
-  if (
+  const shouldHealOrgPath =
     !loading &&
     isAuthenticated &&
-    organizationSlug &&
+    Boolean(organizationSlug) &&
     location.pathname !== "/login" &&
-    pathScope?.redirectPath
-  ) {
-    return <Navigate to={pathScope.redirectPath} replace />
-  }
+    Boolean(pathScope?.redirectPath)
 
   return (
+    <>
+      {shouldHealOrgPath && pathScope?.redirectPath ? (
+        <Navigate to={pathScope.redirectPath} replace />
+      ) : null}
         <Routes location={{ ...location, pathname: scopedPathname }}>
           <Route path="/login" element={<Login />} />
 
@@ -312,5 +313,6 @@ function OrganizationScopedRoutes() {
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
+    </>
   )
 }
