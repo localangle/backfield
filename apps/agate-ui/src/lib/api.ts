@@ -331,6 +331,7 @@ export interface ListGraphsOptions {
 
 export interface ListRunsOptions {
   projectId?: number
+  graphId?: string
   limit?: number
   offset?: number
   includeResult?: boolean
@@ -823,6 +824,9 @@ export async function listRuns(options: ListRunsOptions = {}): Promise<Run[]> {
   const params = new URLSearchParams()
   if (options.projectId != null) {
     params.set('project_id', String(options.projectId))
+  }
+  if (options.graphId) {
+    params.set('graph_id', options.graphId)
   }
   if (options.limit != null) {
     params.set('limit', String(options.limit))
