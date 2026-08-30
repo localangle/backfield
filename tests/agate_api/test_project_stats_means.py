@@ -80,3 +80,98 @@ def test_project_stats_and_ai_cost_with_succeeded_run() -> None:
         )
         assert avg == Decimal("0")
         assert incomplete is False
+
+
+def test_project_stats_avg_cost_per_item_with_two_items() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from api.routers.projects import _avg_ai_cost_stats_for_terminal_items
+    from backfield_db import AgateProcessedItem, BackfieldAiCallRecord
+
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="Org", slug="org-items")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        project = BackfieldProject(
+            **project_ownership_fields(session, org.id),
+            organization_id=org.id,
+            name="Items",
+            slug="items",
+        )
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+        graph = AgateGraph(name="Flow", spec_json="{}", project_id=project.id)
+        session.add(graph)
+        session.commit()
+        session.refresh(graph)
+        run = AgateRun(graph_id=graph.id, status="succeeded")
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        started = datetime.now(UTC) - timedelta(seconds=20)
+        ended = datetime.now(UTC)
+        item_a = AgateProcessedItem(
+            run_id=run.id,
+            status="succeeded",
+            started_at=started,
+            created_at=started,
+            updated_at=ended,
+        )
+        item_b = AgateProcessedItem(
+            run_id=run.id,
+            status="succeeded",
+            started_at=started,
+            created_at=started,
+            updated_at=ended,
+        )
+        session.add(item_a)
+        session.add(item_b)
+        session.commit()
+        session.refresh(item_a)
+        session.refresh(item_b)
+
+        session.add(
+            BackfieldAiCallRecord(
+                project_id=project.id,
+                run_id=run.id,
+                processed_item_id=item_a.id,
+                provider="openai",
+                provider_model_id="gpt-test",
+                status="succeeded",
+                estimated_cost=Decimal("0.20"),
+                currency="USD",
+            )
+        )
+        session.add(
+            BackfieldAiCallRecord(
+                project_id=project.id,
+                run_id=run.id,
+                processed_item_id=item_b.id,
+                provider="openai",
+                provider_model_id="gpt-test",
+                status="succeeded",
+                estimated_cost=Decimal("0.40"),
+                currency="USD",
+            )
+        )
+        session.commit()
+
+        avg, incomplete, currency = _avg_ai_cost_stats_for_terminal_items(
+            session,
+            int(project.id),
+            [graph.id],
+        )
+        assert avg is not None
+        assert abs(avg - Decimal("0.3")) < Decimal("0.0001")
+        assert incomplete is False
+        assert currency == "USD"
+
+        stats = _project_stats(session, project)
+        assert stats.avg_estimated_ai_cost_per_item is not None
+        assert abs(stats.avg_estimated_ai_cost_per_item - Decimal("0.3")) < Decimal("0.0001")
+        assert stats.avg_duration_ms_per_item is not None

@@ -94,6 +94,8 @@ export interface ProjectStats {
   slowest_flows?: SlowestFlowStat[]
   /** Mean tracked LLM spend per succeeded run. */
   avg_estimated_ai_cost_per_run?: string | number | null
+  /** Mean tracked LLM spend per terminal processed item on succeeded runs. */
+  avg_estimated_ai_cost_per_item?: string | number | null
   top_flows_by_cost?: TopFlowByCostStat[]
   avg_estimated_ai_cost_currency?: string | null
   avg_estimated_ai_cost_incomplete?: boolean

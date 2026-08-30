@@ -346,6 +346,7 @@ class ProjectStatsOut(BaseModel):
     avg_duration_ms_per_item: float | None = None
     slowest_flows: list[SlowestFlowOut] = Field(default_factory=list)
     avg_estimated_ai_cost_per_run: Decimal | None = None
+    avg_estimated_ai_cost_per_item: Decimal | None = None
     top_flows_by_cost: list[TopFlowByCostOut] = Field(default_factory=list)
     avg_estimated_ai_cost_currency: str | None = None
     avg_estimated_ai_cost_incomplete: bool = False
@@ -505,22 +506,26 @@ def _slowest_flows_for_project(
     *,
     limit: int = 5,
 ) -> list[SlowestFlowOut]:
+    """Flows ranked by mean terminal processed-item wall time (succeeded runs only)."""
     if not graph_ids:
         return []
-    run_duration_ms = _run_wall_duration_ms_expr()
+    item_duration_ms = _processed_item_duration_ms_expr()
     rows = session.exec(
         select(
             AgateGraph.id,
             AgateGraph.name,
-            func.avg(run_duration_ms),
+            func.avg(item_duration_ms),
         )
+        .select_from(AgateProcessedItem)
+        .join(AgateRun, AgateProcessedItem.run_id == AgateRun.id)
         .join(AgateGraph, AgateGraph.id == AgateRun.graph_id)
         .where(
             AgateRun.graph_id.in_(graph_ids),
             AgateRun.status == "succeeded",
+            col(AgateProcessedItem.status).in_(_ITEM_TERMINAL_STATUSES),
         )
         .group_by(AgateGraph.id, AgateGraph.name)
-        .order_by(func.avg(run_duration_ms).desc())
+        .order_by(func.avg(item_duration_ms).desc())
         .limit(limit)
     ).all()
     return [
@@ -541,34 +546,40 @@ def _top_flows_by_avg_ai_cost_for_project(
     *,
     limit: int = 5,
 ) -> list[TopFlowByCostOut]:
+    """Flows ranked by mean tracked LLM spend per terminal processed item."""
     if not graph_ids:
         return []
-    per_run_cost = func.coalesce(func.sum(BackfieldAiCallRecord.estimated_cost), 0)
-    per_run_subq = (
+    per_item_cost = func.coalesce(func.sum(BackfieldAiCallRecord.estimated_cost), 0)
+    per_item_subq = (
         select(
-            BackfieldAiCallRecord.run_id.label("run_id"),
-            per_run_cost.label("total_cost"),
+            BackfieldAiCallRecord.processed_item_id.label("item_id"),
+            per_item_cost.label("total_cost"),
         )
-        .where(BackfieldAiCallRecord.project_id == project_id)
-        .group_by(BackfieldAiCallRecord.run_id)
+        .where(
+            BackfieldAiCallRecord.project_id == project_id,
+            BackfieldAiCallRecord.processed_item_id.is_not(None),
+        )
+        .group_by(BackfieldAiCallRecord.processed_item_id)
         .subquery()
     )
-    run_total = func.coalesce(per_run_subq.c.total_cost, 0)
+    item_total = func.coalesce(per_item_subq.c.total_cost, 0)
     rows = session.exec(
         select(
             AgateGraph.id,
             AgateGraph.name,
-            func.avg(run_total),
+            func.avg(item_total),
         )
-        .select_from(AgateRun)
+        .select_from(AgateProcessedItem)
+        .join(AgateRun, AgateProcessedItem.run_id == AgateRun.id)
         .join(AgateGraph, AgateGraph.id == AgateRun.graph_id)
-        .outerjoin(per_run_subq, per_run_subq.c.run_id == AgateRun.id)
+        .outerjoin(per_item_subq, per_item_subq.c.item_id == AgateProcessedItem.id)
         .where(
             AgateRun.graph_id.in_(graph_ids),
             AgateRun.status == "succeeded",
+            col(AgateProcessedItem.status).in_(_ITEM_TERMINAL_STATUSES),
         )
         .group_by(AgateGraph.id, AgateGraph.name)
-        .order_by(func.avg(run_total).desc())
+        .order_by(func.avg(item_total).desc())
         .limit(limit)
     ).all()
     return [
@@ -656,6 +667,53 @@ def _avg_ai_cost_stats_for_succeeded_runs(
     return Decimal(str(avg_cost)), bool(incomplete_flag), currency
 
 
+def _avg_ai_cost_stats_for_terminal_items(
+    session: Session,
+    project_id: int,
+    graph_ids: list[str],
+) -> tuple[Decimal | None, bool, str | None]:
+    """Mean tracked LLM spend per terminal processed item on succeeded runs."""
+    if not graph_ids:
+        return None, False, None
+    succeeded_run_ids = select(AgateRun.id).where(
+        AgateRun.graph_id.in_(graph_ids),
+        AgateRun.status == "succeeded",
+    )
+    per_item_cost = func.coalesce(func.sum(BackfieldAiCallRecord.estimated_cost), 0)
+    per_item_subq = (
+        select(
+            BackfieldAiCallRecord.processed_item_id.label("item_id"),
+            per_item_cost.label("total_cost"),
+            _ai_cost_incomplete_aggregate().label("incomplete"),
+            func.max(BackfieldAiCallRecord.currency).label("currency"),
+        )
+        .where(
+            BackfieldAiCallRecord.project_id == project_id,
+            BackfieldAiCallRecord.processed_item_id.is_not(None),
+        )
+        .group_by(BackfieldAiCallRecord.processed_item_id)
+        .subquery()
+    )
+    item_total = func.coalesce(per_item_subq.c.total_cost, 0)
+    row = session.exec(
+        select(
+            func.avg(item_total),
+            func.max(case((per_item_subq.c.incomplete > 0, 1), else_=0)),
+            func.max(per_item_subq.c.currency),
+        )
+        .select_from(AgateProcessedItem)
+        .outerjoin(per_item_subq, per_item_subq.c.item_id == AgateProcessedItem.id)
+        .where(
+            AgateProcessedItem.run_id.in_(succeeded_run_ids),
+            col(AgateProcessedItem.status).in_(_ITEM_TERMINAL_STATUSES),
+        )
+    ).one()
+    avg_cost, incomplete_flag, currency = row
+    if avg_cost is None:
+        return None, bool(incomplete_flag), currency
+    return Decimal(str(avg_cost)), bool(incomplete_flag), currency
+
+
 def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
     graphs = session.exec(
         select(AgateGraph).where(AgateGraph.project_id == p.id)
@@ -718,6 +776,13 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
     avg_ai, ai_incomplete, ai_currency = _avg_ai_cost_stats_for_succeeded_runs(
         session, pid, graph_ids
     )
+    avg_ai_item, ai_item_incomplete, ai_item_currency = (
+        _avg_ai_cost_stats_for_terminal_items(session, pid, graph_ids)
+    )
+    if avg_ai_item is None:
+        avg_ai_item = avg_ai
+        ai_item_incomplete = ai_incomplete
+        ai_item_currency = ai_currency
     slowest_flows = _slowest_flows_for_project(session, graph_ids)
     top_flows_by_cost = _top_flows_by_avg_ai_cost_for_project(session, pid, graph_ids)
 
@@ -733,9 +798,14 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
         avg_duration_ms_per_item=avg_item_duration,
         slowest_flows=slowest_flows,
         avg_estimated_ai_cost_per_run=avg_ai,
+        avg_estimated_ai_cost_per_item=avg_ai_item,
         top_flows_by_cost=top_flows_by_cost,
-        avg_estimated_ai_cost_currency=ai_currency if runs_succeeded > 0 else None,
-        avg_estimated_ai_cost_incomplete=ai_incomplete if runs_succeeded > 0 else False,
+        avg_estimated_ai_cost_currency=(
+            ai_item_currency if runs_succeeded > 0 else None
+        ),
+        avg_estimated_ai_cost_incomplete=(
+            ai_item_incomplete if runs_succeeded > 0 else False
+        ),
     )
 
 

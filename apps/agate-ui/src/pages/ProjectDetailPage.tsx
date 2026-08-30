@@ -498,18 +498,18 @@ export default function ProjectDetailPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Average cost per run
+                Average cost per item
               </CardTitle>
             </CardHeader>
             <CardContent>
               {stats &&
               stats.runs_succeeded > 0 &&
-              stats.avg_estimated_ai_cost_per_run != null &&
+              stats.avg_estimated_ai_cost_per_item != null &&
               stats.avg_estimated_ai_cost_currency ? (
                 <>
                   <p className="text-3xl font-semibold tabular-nums">
                     {formatCurrencySummary(
-                      stats.avg_estimated_ai_cost_per_run,
+                      stats.avg_estimated_ai_cost_per_item,
                       stats.avg_estimated_ai_cost_currency || 'USD',
                     )}
                     {stats.avg_estimated_ai_cost_incomplete ? (
@@ -521,7 +521,9 @@ export default function ProjectDetailPage() {
                       </span>
                     ) : null}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">Among completed runs</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Among items in completed runs
+                  </p>
                   {stats.top_flows_by_cost && stats.top_flows_by_cost.length > 0 ? (
                     <StatMinMaxRange
                       title="Flows"
@@ -551,15 +553,15 @@ export default function ProjectDetailPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Average time per run
+                Average time per item
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-semibold tabular-nums">
-                {overviewPending ? '…' : formatDurationMs(stats?.avg_duration_ms_per_run)}
+                {overviewPending ? '…' : formatDurationMs(stats?.avg_duration_ms_per_item)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Wall time per completed run
+                Processing time per completed item
               </p>
               {stats?.slowest_flows && stats.slowest_flows.length > 0 ? (
                 <StatMinMaxRange
