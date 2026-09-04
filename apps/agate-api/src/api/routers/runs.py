@@ -141,6 +141,13 @@ class AiCostNodeBreakdown(BaseModel):
     estimated_total: Decimal
 
 
+class GeocoderProviderHealthOut(BaseModel):
+    provider: str
+    auth_error: int = 0
+    rate_limit: int = 0
+    http_error: int = 0
+
+
 class RunEstimatedAiCostOut(BaseModel):
     run_id: str
     currency: str
@@ -148,6 +155,8 @@ class RunEstimatedAiCostOut(BaseModel):
     incomplete_estimate: bool
     attempt_count: int
     node_breakdown: list[AiCostNodeBreakdown]
+    geocoder_provider_health: list[GeocoderProviderHealthOut] = []
+    geocoder_degraded: bool = False
 
 
 class RunCreate(BaseModel):
@@ -2813,6 +2822,82 @@ def get_run(
     return _serialize_run(session, r)
 
 
+def _merge_geocoder_health_maps(
+    into: dict[str, dict[str, int]],
+    raw: object,
+) -> None:
+    if not isinstance(raw, dict):
+        return
+    for provider, counts in raw.items():
+        if not isinstance(provider, str) or not isinstance(counts, dict):
+            continue
+        bucket = into.setdefault(
+            provider,
+            {"auth_error": 0, "rate_limit": 0, "http_error": 0},
+        )
+        for key in ("auth_error", "rate_limit", "http_error"):
+            try:
+                bucket[key] += int(counts.get(key) or 0)
+            except (TypeError, ValueError):
+                continue
+
+
+def _geocoder_health_from_node_outputs(node_outputs: object) -> dict[str, dict[str, int]]:
+    """Collect ``geocoder_provider_health`` from a run/item result_json dict."""
+    out: dict[str, dict[str, int]] = {}
+    if not isinstance(node_outputs, dict):
+        return out
+    # Run-level aggregate (optional) or GeocodeAgent contribution under any node id.
+    top = node_outputs.get("geocoder_provider_health")
+    _merge_geocoder_health_maps(out, top)
+    for value in node_outputs.values():
+        if not isinstance(value, dict):
+            continue
+        _merge_geocoder_health_maps(out, value.get("geocoder_provider_health"))
+    return out
+
+
+def _geocoder_provider_health_for_run(
+    session: Session,
+    run: AgateRun,
+) -> tuple[list[GeocoderProviderHealthOut], bool]:
+    merged: dict[str, dict[str, int]] = {}
+    payload = parse_run_result_payload(run.result_json)
+    _merge_geocoder_health_maps(merged, payload.get("geocoder_provider_health"))
+    # Single-item runs store executor output on result_json; scan node contributions.
+    for key, value in payload.items():
+        if key in ("items", "s3_batch", GRAPH_SPEC_JSON_KEY, "geocoder_provider_health"):
+            continue
+        if isinstance(value, dict):
+            _merge_geocoder_health_maps(merged, value.get("geocoder_provider_health"))
+
+    item_rows = session.exec(
+        select(AgateProcessedItem.result_json).where(AgateProcessedItem.run_id == run.id)
+    ).all()
+    for raw in item_rows:
+        if not raw:
+            continue
+        try:
+            parsed = json.loads(raw) if isinstance(raw, str) else raw
+        except (TypeError, json.JSONDecodeError):
+            continue
+        for provider, counts in _geocoder_health_from_node_outputs(parsed).items():
+            _merge_geocoder_health_maps(merged, {provider: counts})
+
+    rows = [
+        GeocoderProviderHealthOut(
+            provider=provider,
+            auth_error=int(counts.get("auth_error") or 0),
+            rate_limit=int(counts.get("rate_limit") or 0),
+            http_error=int(counts.get("http_error") or 0),
+        )
+        for provider, counts in sorted(merged.items())
+        if any(int(counts.get(k) or 0) > 0 for k in ("auth_error", "rate_limit", "http_error"))
+    ]
+    degraded = any(row.auth_error > 0 or row.rate_limit > 0 for row in rows)
+    return rows, degraded
+
+
 @router.get("/{run_id}/estimated-ai-cost", response_model=RunEstimatedAiCostOut)
 def get_run_estimated_ai_cost(
     run_id: str,
@@ -2852,6 +2937,8 @@ def get_run_estimated_ai_cost(
         )
     ]
 
+    health_rows, geocoder_degraded = _geocoder_provider_health_for_run(session, r)
+
     return RunEstimatedAiCostOut(
         run_id=run_id,
         currency=currency,
@@ -2859,4 +2946,6 @@ def get_run_estimated_ai_cost(
         incomplete_estimate=incomplete,
         attempt_count=len(rows),
         node_breakdown=breakdown,
+        geocoder_provider_health=health_rows,
+        geocoder_degraded=geocoder_degraded,
     )

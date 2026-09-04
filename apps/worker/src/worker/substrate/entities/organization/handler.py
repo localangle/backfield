@@ -191,10 +191,33 @@ class OrganizationPersistHandler:
                 disposed_substrates=0,
             )
 
+        # Authoritative replace: clear prior machine associations before upsert so a
+        # partial prior persist cannot leave dirty ORM rows that collide with dispose.
+        pre_retired_mentions = 0
+        pre_disposed_substrates = 0
+        if policy == "replace" and ctx.article_id is not None:
+            pre_retired_mentions, retired_organization_ids, _pre_preserved = (
+                retire_stale_article_mentions_for_rerun(
+                    session,
+                    article_id=int(ctx.article_id),
+                    touched_organization_ids=set(),
+                )
+            )
+            if retired_organization_ids:
+                pre_disposed_substrates = dispose_orphan_substrates_after_retired_mentions(
+                    session,
+                    project_id=int(ctx.project_id),
+                    organization_ids=retired_organization_ids,
+                    provenance="agate_replace_preclear",
+                )
+            session.expire_all()
+
         touched_organization_ids: set[int] = set()
         added = 0
         updated = 0
         skipped = 0
+        # Editorial preservation is counted on the post-upsert retire pass so we
+        # do not double-count rows already seen during replace pre-clear.
         preserved = 0
         pending_variant_recall: list[_OrgCanonicalWork] = []
         pending_adjudication: list[_PendingOrgAdjudication] = []
@@ -520,6 +543,9 @@ class OrganizationPersistHandler:
                     retired_mentions,
                     substrates_disposed,
                 )
+
+        retired_mentions += pre_retired_mentions
+        substrates_disposed += pre_disposed_substrates
 
         return HandlerPersistResult(
             summary=DomainReconciliationSummary(

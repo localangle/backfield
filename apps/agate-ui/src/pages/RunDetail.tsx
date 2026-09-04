@@ -675,7 +675,7 @@ export default function RunDetail() {
         </CardContent>
       </Card>
 
-      {aiCost && aiCost.attempt_count > 0 ? (
+      {aiCost && (aiCost.attempt_count > 0 || aiCost.geocoder_degraded) ? (
         <Card>
           <CardHeader>
             <CardTitle>Estimated AI usage cost</CardTitle>
@@ -684,13 +684,59 @@ export default function RunDetail() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="text-2xl font-semibold">
-              {formatCurrencySummary(Number(aiCost.estimated_total), aiCost.currency || 'USD')}
-            </div>
+            {aiCost.attempt_count > 0 ? (
+              <div className="text-2xl font-semibold">
+                {formatCurrencySummary(Number(aiCost.estimated_total), aiCost.currency || 'USD')}
+              </div>
+            ) : null}
             {aiCost.incomplete_estimate ? (
               <p className="text-sm text-amber-700 dark:text-amber-400">
                 Some usage data was missing, so this total may be incomplete.
               </p>
+            ) : null}
+            {aiCost.geocoder_degraded ? (
+              <div className="text-sm text-amber-700 dark:text-amber-400 space-y-1">
+                <p>
+                  Location lookup had trouble with a configured provider during this run.
+                  Results may have used a backup source.
+                </p>
+                {aiCost.geocoder_provider_health?.length ? (
+                  <ul className="list-disc pl-5 space-y-1">
+                    {aiCost.geocoder_provider_health.map((row) => {
+                      const parts: string[] = []
+                      if (row.auth_error > 0) {
+                        parts.push(
+                          `${row.auth_error} sign-in ${row.auth_error === 1 ? 'failure' : 'failures'}`,
+                        )
+                      }
+                      if (row.rate_limit > 0) {
+                        parts.push(
+                          `${row.rate_limit} rate-limit ${row.rate_limit === 1 ? 'hit' : 'hits'}`,
+                        )
+                      }
+                      if (row.http_error > 0) {
+                        parts.push(
+                          `${row.http_error} other ${row.http_error === 1 ? 'error' : 'errors'}`,
+                        )
+                      }
+                      if (!parts.length) return null
+                      const label =
+                        row.provider === 'pelias'
+                          ? 'Primary address search'
+                          : row.provider === 'geocodio'
+                            ? 'Backup address search'
+                            : row.provider === 'overpass'
+                              ? 'Map data lookup'
+                              : 'Location lookup'
+                      return (
+                        <li key={row.provider}>
+                          {label}: {parts.join(', ')}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                ) : null}
+              </div>
             ) : null}
             {aiCost.node_breakdown?.length ? (
               <div className="text-sm text-muted-foreground">

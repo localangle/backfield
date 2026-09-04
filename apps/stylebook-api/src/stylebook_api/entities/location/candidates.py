@@ -35,6 +35,7 @@ from backfield_entities.entities.linking.substrate_actions import (
 )
 from backfield_entities.entities.location.persist import refresh_aliases_for_linked_location
 from backfield_entities.entities.location.types import PLACE_EXTRACT_LOCATION_TYPES
+from backfield_entities.geo.geometry_bind import assign_geojson_geometry
 from backfield_events import record_canonical_created, record_canonical_evidence_changed
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -780,7 +781,8 @@ def accept_candidate(
         if not label:
             raise HTTPException(status_code=400, detail="name is required when create_new is true")
         # Review UI often omits geometry; inherit from substrate (parity with ingest materialize).
-        if isinstance(body.geometry_json, dict):
+        bind_body_geometry = isinstance(body.geometry_json, dict)
+        if bind_body_geometry:
             gj: dict[str, Any] | None = dict(body.geometry_json)
             canon_geometry: object | None = None
         else:
@@ -829,6 +831,10 @@ def accept_candidate(
         )
         session.add(canon)
         session.flush()
+        # Body-supplied GeoJSON must also populate PostGIS (same as create_standalone_canonical).
+        if bind_body_geometry and isinstance(gj, dict):
+            assign_geojson_geometry(session, canon, gj)
+            session.flush()
         loc.stylebook_location_canonical_id = str(canon.id)
     else:
         if body.stylebook_location_id is None:

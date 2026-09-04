@@ -74,6 +74,10 @@ Webhook metrics never use project IDs, endpoint IDs, URLs, or error text as dime
 
 Never log: secrets, auth headers, raw DB/Redis URLs, passwords, or customer content (addresses, article text, geocoder queries/results, provider bodies).
 
+Pelias HTTP calls retry on 429/502/503/504 (honoring `Retry-After` when present) and never retry
+401/403. Auth and rate-limit counts for the geocode pass are attached to GeocodeAgent output as
+`geocoder_provider_health` and surfaced on the run estimated-cost panel when degraded.
+
 ## Collector (cloud handoff)
 
 - **Image:** production worker image.

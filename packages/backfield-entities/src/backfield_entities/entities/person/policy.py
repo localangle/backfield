@@ -130,6 +130,8 @@ def _strong_identity_canonical_ids(
     matches: list[str] = []
     seen: set[str] = set()
 
+    # Trusted exact-alias hits already prove name identity (docs: name or alias).
+    # Only affiliation must still match; label equality is not required.
     for cid in canonical_ids_from_person_name_keys(
         session,
         stylebook_id=stylebook_id,
@@ -139,7 +141,7 @@ def _strong_identity_canonical_ids(
         canon = session.get(StylebookPersonCanonical, cid)
         if canon is None or canon.id is None or canon.status != "active":
             continue
-        if person_strong_identity_matches_canonical(person, canon):
+        if person_affiliation_matches_canonical(person, canon):
             if cid not in seen:
                 seen.add(cid)
                 matches.append(cid)

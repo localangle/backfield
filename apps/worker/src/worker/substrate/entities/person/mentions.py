@@ -238,7 +238,15 @@ def _dispose_orphan_substrate_without_requeue(
         person_id=int(person.id),
         project_id=int(person.project_id),
     )
+    # Flush unlink UPDATEs before DELETE so ORM rowcount checks cannot race a
+    # vanished PK (StaleDataError on replace after partial persist).
+    session.flush()
     session.delete(person)
+    session.flush()
+    try:
+        session.expunge(person)
+    except Exception:
+        pass
 
 
 def _suppress_prior_system_occurrences_for_mention(
