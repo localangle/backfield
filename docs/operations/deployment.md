@@ -46,11 +46,10 @@ make docker-build-prod-worker \
 The Bake targets are `agate-api`, `core-api`, `stylebook-api`, and `worker`. They use the repository
 root as build context, target each Dockerfile's `prod` stage, and build for `linux/amd64`.
 
-Production (and shared `base`) stages use `python:3.11-slim-trixie`. The prod stage then
-installs OpenSSL `3.6.4-1` from Debian sid (pinned so only those packages come from unstable)
-before removing `perl-base`. That satisfies NVD/ECR for CVE-2026-75803 (fixed upstream in
-3.5.8 / 3.6.4); Debian's own trixie-security `3.5.7-1~deb13u2` is marked fixed in the Debian
-tracker but ECR still treats `<3.5.8` as CRITICAL. bookworm still has no fixed openssl package.
+Production (and shared `base`) stages use `python:3.11-slim-trixie` and explicitly install
+`openssl` / `libssl3t64` from trixie-security (≥ `3.5.7-1~deb13u2`) before removing `perl-base`.
+Prod images use only Debian stable packages; do not pull packages from sid/unstable to satisfy
+scanners.
 
 The production API stages install non-editable packages and start Uvicorn without reload as a
 non-root `appuser`. The worker starts Celery through `apps/worker/scripts/entrypoint.sh` (also
@@ -104,7 +103,7 @@ After lint, tests, and required smoke pass on `main` in the canonical
 
 1. derive the immutable version `main-<first-12-sha>-amd64`
 2. build and push any missing image targets to ECR with SBOM and supply-chain attestations
-3. wait for ECR scanning and block publication on critical findings
+3. wait for ECR scanning and block publication on critical findings (see below)
 4. build all three UIs and create deterministic gzip archives
 5. upload UI archives under `versions/<version>/ui/`
 6. upload `manifests/<version>.json` last as the ready-to-deploy marker
@@ -119,6 +118,18 @@ than synthesizing paths from the SemVer alias.
 
 Publishing is retry-safe: CI skips image tags already present, and the manifest is written only after
 every required artifact is available and verified. Fork workflows do not publish artifacts.
+
+### ECR scan gate and the CVE allowlist
+
+The publish gate blocks on any CRITICAL ECR finding **unless** the CVE is listed in
+`SCAN_FINDING_ALLOWLIST` in `scripts/release_manifest.py`. ECR basic scanning matches NVD records
+against upstream version numbers, so it regularly flags Debian stable packages that are already
+patched via backport, or that Debian has triaged as minor with no stable fix planned. Do not chase
+those findings by pulling packages from sid/unstable; instead, verify the finding against the
+[Debian security tracker](https://security-tracker.debian.org/) and, if it is a version-matching
+false positive or a Debian `no-dsa` minor issue, add an allowlist entry with the evidence and an
+expiry date. Expired entries block publication again, which forces a re-review. Gate failures print
+the CVE and package for every blocking finding.
 
 ## Release aliases
 

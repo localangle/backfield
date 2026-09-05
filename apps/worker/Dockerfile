@@ -48,19 +48,15 @@ ENV APP_VERSION=${APP_VERSION} \
     GIT_SHA=${GIT_SHA} \
     BUILD_TIME=${BUILD_TIME}
 
-# CVE-2026-75803: NVD/ECR treat OpenSSL <3.5.8 / <3.6.4 as CRITICAL even though
-# Debian marks trixie-security 3.5.7-1~deb13u2 fixed. Install upstream-fixed
-# openssl 3.6.4-1 from sid (pinned so only these packages come from unstable),
-# then remove perl-base (CRITICAL on the slim base). No package management after.
-RUN echo "deb http://deb.debian.org/debian sid main" > /etc/apt/sources.list.d/sid.list \
-    && printf "Package: *\nPin: release a=unstable\nPin-Priority: 100\n" \
-        > /etc/apt/preferences.d/sid \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends -t sid \
+# Pin OpenSSL to trixie-security (≥ 3.5.7-1~deb13u2) for CVE-2026-75803 before
+# any further package removals. bookworm has no fixed openssl package yet.
+# The final Python service does not invoke Perl; remove perl-base after that.
+# No package management runs after this point.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
         openssl \
         libssl3t64 \
         openssl-provider-legacy \
-    && rm -f /etc/apt/sources.list.d/sid.list /etc/apt/preferences.d/sid \
     && rm -rf /var/lib/apt/lists/* \
     && dpkg --purge --force-depends --force-remove-essential perl-base \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser
