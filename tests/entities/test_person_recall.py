@@ -10,7 +10,10 @@ from backfield_db import (
     SubstratePerson,
 )
 from backfield_entities.canonical.plan_types import CanonicalPersistDecision
-from backfield_entities.entities.person.persist import upsert_alias_for_canonical_text
+from backfield_entities.entities.person.persist import (
+    create_standalone_canonical,
+    upsert_alias_for_canonical_text,
+)
 from backfield_entities.entities.person.policy import (
     decide_person_canonical_persist_plan,
     find_existing_person_canonical_id_by_strong_identity,
@@ -252,6 +255,60 @@ def test_alias_hit_with_affiliation_mismatch_defers_not_links() -> None:
         session.refresh(person)
         plan = decide_person_canonical_persist_plan(session, stylebook_id=sb_id, person=person)
         assert plan.decision == CanonicalPersistDecision.DEFER
+
+
+def test_exact_alias_with_title_suffix_tier1_links_bare_name() -> None:
+    """CSV labels like ``Name, Title`` must still exact-alias match the bare name."""
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed(session)
+        canon = create_standalone_canonical(
+            session,
+            stylebook_id=sb_id,
+            label="Christine Hines, County Clerk",
+            title="County Clerk",
+            affiliation="St. Croix County",
+            provenance="stylebook_ui_import_csv",
+        )
+        session.commit()
+        # Affiliation-only peers that previously drowned recall.
+        for label, slug in (
+            ("Other Official", "other-official"),
+            ("Another Official", "another-official"),
+        ):
+            peer = StylebookPersonCanonical(
+                stylebook_id=sb_id,
+                label=label,
+                slug=slug,
+                affiliation="St. Croix County",
+                status="active",
+            )
+            session.add(peer)
+        session.commit()
+
+        person = SubstratePerson(
+            project_id=pid,
+            name="Christine Hines",
+            normalized_name="christine hines",
+            title="County Clerk",
+            affiliation="St. Croix County",
+        )
+        session.add(person)
+        session.commit()
+        session.refresh(person)
+
+        linked = find_existing_person_canonical_id_by_strong_identity(
+            session, stylebook_id=sb_id, person=person
+        )
+        assert linked == str(canon.id)
+
+        ranked = retrieve_person_canonical_candidates(
+            session, stylebook_id=sb_id, person=person, limit=10
+        )
+        recall_ids = [cid for cid, _label in ranked]
+        assert str(canon.id) in recall_ids
+        # Affiliation-only peers must not appear without name evidence.
+        assert all("Hines" in label or label.startswith("Christine") for _cid, label in ranked)
 
 
 def test_same_affiliation_different_name_does_not_tier1_link() -> None:

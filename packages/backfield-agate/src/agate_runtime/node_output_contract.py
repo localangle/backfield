@@ -37,7 +37,7 @@ NODE_CONTRIBUTION_KEYS: dict[str, frozenset[str]] = {
     "PlaceExtract": frozenset({"locations", "extraction_diagnostics"}),
     "PersonExtract": frozenset({"people", "extraction_diagnostics"}),
     "OrganizationExtract": frozenset({"organizations", "extraction_diagnostics"}),
-    "GeocodeAgent": frozenset({"places"}),
+    "GeocodeAgent": frozenset({"places", "geocoder_provider_health"}),
     "Gather": frozenset({"gathered"}),
     "Output": frozenset({"consolidated"}),
     "S3Output": frozenset({"consolidated", "s3_bucket", "s3_key"}),

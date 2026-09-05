@@ -3,7 +3,10 @@
 import asyncio
 import logging
 import re
+import time
+from email.utils import parsedate_to_datetime
 from typing import Any, Dict, List, Optional
+from datetime import UTC
 
 import httpx
 from agate_utils.geocoding.geocoding_types import (
@@ -14,12 +17,17 @@ from agate_utils.geocoding.geocoding_types import (
     GeometryPolygon,
     bbox_west_south_east_north_to_polygon_coordinates,
 )
+from agate_utils.geocoding.provider_health import record_geocoder_http_status
 
 logger = logging.getLogger(__name__)
 
 # Geocode.Earth can be slow; connect timeouts often mean edge/network congestion, not bad params.
 _PELIAS_HTTP_TIMEOUT = httpx.Timeout(60.0, connect=20.0)
 _PELIAS_API_KEY_IN_URL = re.compile(r"([?&])api_key=[^&]*", re.IGNORECASE)
+_RETRYABLE_HTTP_STATUSES: frozenset[int] = frozenset({429, 502, 503, 504})
+_MAX_HTTP_RETRIES = 4
+_MAX_RETRY_DELAY_S = 30.0
+_BASE_RETRY_DELAY_S = 0.75
 
 
 def _redact_pelias_url(url_str: str) -> str:
@@ -34,52 +42,112 @@ def _params_for_log(params: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _retry_delay_seconds(
+    *,
+    response: httpx.Response | None,
+    attempt: int,
+    rate_limited: bool,
+) -> float:
+    """Backoff for retryable HTTP statuses; honor Retry-After when present."""
+    if response is not None:
+        retry_after = response.headers.get("Retry-After", "").strip()
+        if retry_after:
+            if retry_after.isdigit():
+                return min(float(retry_after), _MAX_RETRY_DELAY_S)
+            try:
+                retry_at = parsedate_to_datetime(retry_after)
+                if retry_at.tzinfo is None:
+                    retry_at = retry_at.replace(tzinfo=UTC)
+                delta = retry_at.timestamp() - time.time()
+                if delta > 0:
+                    return min(delta, _MAX_RETRY_DELAY_S)
+            except (TypeError, ValueError, OverflowError):
+                pass
+    multiplier = 2 ** max(0, attempt - 1)
+    floor = 8.0 if rate_limited else _BASE_RETRY_DELAY_S
+    return min(floor * multiplier, _MAX_RETRY_DELAY_S)
+
+
 async def _pelias_get(
     client: httpx.AsyncClient, url: str, params: dict[str, Any]
 ) -> httpx.Response:
-    """GET with one retry on transient connect/read/pool timeouts."""
-    import time
+    """GET with retries on timeouts and retryable HTTP statuses (429/5xx).
 
+    Auth failures (401/403) are never retried; they are recorded for run-level
+    provider health surfacing.
+    """
     from backfield_observability.external import emit_external_request
 
     transient = (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.PoolTimeout)
-    started = time.perf_counter()
-    try:
+    last_response: httpx.Response | None = None
+
+    for attempt in range(1, _MAX_HTTP_RETRIES + 1):
+        started = time.perf_counter()
         try:
-            response = await client.get(url, params=params)
-        except transient as first:
-            logger.warning("Pelias %s, retrying once", type(first).__name__)
+            try:
+                response = await client.get(url, params=params)
+            except transient as first:
+                logger.warning("Pelias %s, retrying once", type(first).__name__)
+                emit_external_request(
+                    operation="geocoding",
+                    duration_seconds=time.perf_counter() - started,
+                    failed=True,
+                    provider="pelias",
+                    error_type=type(first).__name__,
+                    outcome="retry",
+                )
+                await asyncio.sleep(_BASE_RETRY_DELAY_S)
+                started = time.perf_counter()
+                response = await client.get(url, params=params)
+
+            failed = response.status_code >= 400
+            emit_external_request(
+                operation="geocoding",
+                duration_seconds=time.perf_counter() - started,
+                failed=failed,
+                provider="pelias",
+                error_type=f"http_{response.status_code}" if failed else None,
+                outcome="failure" if failed else "success",
+            )
+            if failed:
+                record_geocoder_http_status("pelias", response.status_code)
+
+            last_response = response
+            if response.status_code < 400:
+                return response
+            # Never retry auth failures — the key is dead for the whole run.
+            if response.status_code in (401, 403):
+                return response
+            if response.status_code not in _RETRYABLE_HTTP_STATUSES:
+                return response
+            if attempt >= _MAX_HTTP_RETRIES:
+                return response
+
+            rate_limited = response.status_code == 429
+            delay = _retry_delay_seconds(
+                response=response, attempt=attempt, rate_limited=rate_limited
+            )
+            logger.warning(
+                "Pelias HTTP %s, retrying in %.1fs (attempt %s/%s)",
+                response.status_code,
+                delay,
+                attempt,
+                _MAX_HTTP_RETRIES,
+            )
+            await asyncio.sleep(delay)
+        except Exception as exc:
             emit_external_request(
                 operation="geocoding",
                 duration_seconds=time.perf_counter() - started,
                 failed=True,
                 provider="pelias",
-                error_type=type(first).__name__,
-                outcome="retry",
+                error_type=type(exc).__name__,
+                outcome="exception",
             )
-            await asyncio.sleep(0.75)
-            started = time.perf_counter()
-            response = await client.get(url, params=params)
-        failed = response.status_code >= 400
-        emit_external_request(
-            operation="geocoding",
-            duration_seconds=time.perf_counter() - started,
-            failed=failed,
-            provider="pelias",
-            error_type=f"http_{response.status_code}" if failed else None,
-            outcome="failure" if failed else "success",
-        )
-        return response
-    except Exception as exc:
-        emit_external_request(
-            operation="geocoding",
-            duration_seconds=time.perf_counter() - started,
-            failed=True,
-            provider="pelias",
-            error_type=type(exc).__name__,
-            outcome="exception",
-        )
-        raise
+            raise
+
+    assert last_response is not None
+    return last_response
 
 
 def _pelias_http_error_suffix(exc: Exception) -> str:

@@ -9,6 +9,10 @@ from pydantic import AliasChoices, BaseModel, Field, ConfigDict, model_validator
 
 from agate_runtime.context import AgateEnvContext
 from agate_runtime.upstream_input import flatten_upstream_inputs
+from agate_utils.geocoding.provider_health import (
+    begin_geocoder_health_tracking,
+    end_geocoder_health_tracking,
+)
 
 from .agent import run_advanced_geocoding_agent
 from .location_limits import location_needs_review_entry, split_locations_for_geocoding
@@ -170,6 +174,10 @@ class GeocodeAgentOutput(BaseModel):
     model_config = ConfigDict(extra='allow')
     
     places: Dict[str, Any] = Field(description="Consolidated places structure with areas, points, etc.")
+    geocoder_provider_health: Optional[Dict[str, Dict[str, int]]] = Field(
+        default=None,
+        description="Per-provider auth/rate-limit/http error counts for this geocode pass",
+    )
 
 
 def _places_have_terminal_output(places: object) -> bool:
@@ -194,9 +202,34 @@ async def run_geocode_agent_pipeline(
     log_label: str = "GeocodeAgent",
 ) -> GeocodeAgentOutput:
     """Geocode locations using the LangGraph pipeline (cache → route_strategy → external geocode → consolidate)."""
+    health_token = begin_geocoder_health_tracking()
+    try:
+        return await _run_geocode_agent_pipeline_tracked(
+            inp, params, ctx, log_label=log_label
+        )
+    finally:
+        # Snapshot is attached inside the tracked helper before return; reset context here.
+        end_geocoder_health_tracking(health_token)
+
+
+async def _run_geocode_agent_pipeline_tracked(
+    inp: GeocodeAgentInput,
+    params: GeocodeAgentParams,
+    ctx: AgateEnvContext,
+    *,
+    log_label: str = "GeocodeAgent",
+) -> GeocodeAgentOutput:
+    """Inner pipeline body; assumes geocoder health tracking is already active."""
+    from agate_utils.geocoding.provider_health import snapshot_geocoder_health
 
     def _pipe_log(msg: str, *args: object) -> None:
         logger.debug(msg, *args)
+
+    def _finalize(output_data: dict[str, Any]) -> GeocodeAgentOutput:
+        health = snapshot_geocoder_health()
+        if health:
+            output_data["geocoder_provider_health"] = health
+        return GeocodeAgentOutput(**output_data)
 
     # Get all state (namespaced by upstream node id from the Backfield executor)
     state_dict = inp.model_dump()
@@ -240,7 +273,7 @@ async def run_geocode_agent_pipeline(
         # Include text at root level if found
         if text:
             output_data["text"] = text
-        return GeocodeAgentOutput(**output_data)
+        return _finalize(output_data)
         
     # Handle empty locations list
     if not isinstance(locations_data, list) or len(locations_data) == 0:
@@ -263,7 +296,7 @@ async def run_geocode_agent_pipeline(
         # Include text at root level if found
         if text:
             output_data["text"] = text
-        return GeocodeAgentOutput(**output_data)
+        return _finalize(output_data)
         
     # Filter for supported types. Unsupported extractions receive an explicit terminal disposition.
     filtered_locations = [
@@ -605,7 +638,7 @@ async def run_geocode_agent_pipeline(
     if text:
         output_data["text"] = text
 
-    return GeocodeAgentOutput(**output_data)
+    return _finalize(output_data)
 
 
 ########## AGENT NODE ##########

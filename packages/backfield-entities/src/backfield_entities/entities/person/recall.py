@@ -145,7 +145,12 @@ def _score_canonical_for_person(
     title_norm: str,
     aff_norm: str,
     canon: StylebookPersonCanonical,
-) -> int:
+) -> tuple[int, int]:
+    """Return ``(total_score, name_score)``.
+
+    Title/affiliation bonuses must not alone clear the recall floor — otherwise
+    unrelated peers who share an employer drown out exact-name candidates.
+    """
     cid = str(canon.id) if canon.id is not None else ""
     aliases = _alias_texts_for_canonical(session, canon_id=cid) if cid else []
     score = score_person_name_overlap(
@@ -161,11 +166,13 @@ def _score_canonical_for_person(
             or normalize_person_text(canon.label) in norm
         ):
             score = 40
-    if title_norm and normalize_person_text(canon.title) == title_norm:
-        score += 20
-    if aff_norm and normalize_person_text(canon.affiliation) == aff_norm:
-        score += 20
-    return score
+    name_score = score
+    if name_score > 0:
+        if title_norm and normalize_person_text(canon.title) == title_norm:
+            score += 20
+        if aff_norm and normalize_person_text(canon.affiliation) == aff_norm:
+            score += 20
+    return score, name_score
 
 
 def _canonical_ids_from_exact_alias(
@@ -267,7 +274,7 @@ def retrieve_person_canonical_candidates(
         canon = session.get(StylebookPersonCanonical, cid)
         if canon is None or canon.id is None or canon.status != "active":
             continue
-        score = _score_canonical_for_person(
+        score, name_score = _score_canonical_for_person(
             session,
             query_display=query_display,
             norm=norm,
@@ -275,7 +282,7 @@ def retrieve_person_canonical_candidates(
             aff_norm=aff_norm,
             canon=canon,
         )
-        if score > 0:
+        if score > 0 and (name_score > 0 or cid in exact_alias_ids):
             if cid in exact_alias_ids:
                 score = max(score, 100)
             scored[str(canon.id)] = (score, str(canon.label))
@@ -293,7 +300,7 @@ def retrieve_person_canonical_candidates(
         if canon.id is None:
             continue
         cid = str(canon.id)
-        score = _score_canonical_for_person(
+        score, name_score = _score_canonical_for_person(
             session,
             query_display=query_display,
             norm=norm,
@@ -301,6 +308,8 @@ def retrieve_person_canonical_candidates(
             aff_norm=aff_norm,
             canon=canon,
         )
+        if name_score < PERSON_RECALL_MIN_SCORE:
+            continue
         if score < PERSON_RECALL_MIN_SCORE:
             continue
         prev = scored.get(cid)

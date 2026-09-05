@@ -137,10 +137,30 @@ class PersonPersistHandler:
                 disposed_substrates=0,
             )
 
+        pre_retired_mentions = 0
+        pre_disposed_substrates = 0
+        if policy == "replace" and ctx.article_id is not None:
+            pre_retired_mentions, retired_person_ids, _pre_preserved = (
+                retire_stale_article_mentions_for_rerun(
+                    session,
+                    article_id=int(ctx.article_id),
+                    touched_person_ids=set(),
+                )
+            )
+            if retired_person_ids:
+                pre_disposed_substrates = dispose_orphan_substrates_after_retired_mentions(
+                    session,
+                    project_id=int(ctx.project_id),
+                    person_ids=retired_person_ids,
+                    provenance="agate_replace_preclear",
+                )
+            session.expire_all()
+
         touched_person_ids: set[int] = set()
         added = 0
         updated = 0
         skipped = 0
+        # Editorial preservation is counted on the post-upsert retire pass.
         preserved = 0
         pending_adjudication: list[_PendingPersonAdjudication] = []
         adj_model = (ctx.settings.adjudication_model or "").strip() or "gpt-5-nano"
@@ -348,6 +368,9 @@ class PersonPersistHandler:
                     retired_mentions,
                     substrates_disposed,
                 )
+
+        retired_mentions += pre_retired_mentions
+        substrates_disposed += pre_disposed_substrates
 
         return HandlerPersistResult(
             summary=DomainReconciliationSummary(

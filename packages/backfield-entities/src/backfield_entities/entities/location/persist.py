@@ -45,6 +45,7 @@ from backfield_entities.entities.location.catalog_provenance import (
 from backfield_entities.entities.location.policy import plan_has_ambiguous_canonical_match
 from backfield_entities.entities.location.recall import location_alias_lookup_keys
 from backfield_entities.entities.location.types import is_address_like_location_type
+from backfield_entities.geo.geometry_bind import assign_geojson_geometry
 from backfield_entities.geo.h3_index import apply_h3_fields
 from backfield_entities.text.match_normalize import normalize_match_text
 
@@ -260,12 +261,10 @@ def create_standalone_canonical(
     if not clean:
         raise ValueError("label is required")
     gj = dict(geometry_json) if isinstance(geometry_json, dict) else None
-    gt_raw = gj.get("type") if isinstance(gj, dict) else None
-    geometry_type_str = str(gt_raw) if gt_raw is not None else None
     lt = (location_type or "").strip().lower() or None
     fa = (formatted_address or "").strip() or None
     def _build_row(slug: str) -> StylebookLocationCanonical:
-        return StylebookLocationCanonical(
+        row = StylebookLocationCanonical(
             stylebook_id=stylebook_id,
             label=clean,
             slug=slug,
@@ -273,11 +272,15 @@ def create_standalone_canonical(
             formatted_address=fa,
             primary_substrate_location_id=None,
             status="active",
-            geometry_json=gj,
-            geometry_type=geometry_type_str,
+            geometry_json=None,
+            geometry_type=None,
             geometry=None,
-            **_h3_field_kwargs(geometry_json=gj),
+            h3_cell=None,
+            h3_resolution=None,
         )
+        # Write GeoJSON + PostGIS + H3 together (geo-search/bbox require ``geometry``).
+        assign_geojson_geometry(session, row, gj)
+        return row
 
     canon = flush_new_canonical_with_slug_retry(
         session,

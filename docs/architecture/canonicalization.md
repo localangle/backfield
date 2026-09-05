@@ -74,9 +74,13 @@ merge an address extraction with a named-place extraction.
 
 ## Person policy
 
-Person tier-one matching requires an exact normalized name or alias plus affiliation; title is
-used by stricter comparison and recall but not by that automatic-link identity. When recall
-returns no candidates, policy creates a canonical unless extraction review signals block
+Person tier-one matching requires an exact normalized name or trusted alias plus affiliation;
+title is used by stricter comparison and recall but not by that automatic-link identity. Name
+matching strips a multi-token ``Given Family, Title…`` suffix so CSV labels like
+``Christine Hines, County Clerk`` still exact-match the bare name ``Christine Hines``. Trusted
+alias hits do not also require label equality. Affiliation- or title-only scores cannot alone
+clear recall so unrelated peers who share an employer do not drown exact-name candidates. When
+recall returns no candidates, policy creates a canonical unless extraction review signals block
 materialization. Ambiguous recall, descriptive pseudonyms, first-name-only identities, children,
 animals, and non-person extractions defer according to their review metadata.
 
@@ -106,13 +110,15 @@ Canonicalization and article reconciliation are separate controls. Backfield Out
 `smart_merge`, and `replace` policies decide how newly produced domains affect prior
 machine-generated mentions. `replace` is authoritative for every emitted domain, including an empty
 array: omitted machine associations and their system-extraction occurrences are retired while
-editor-added, editor-modified, and non-extraction associations remain. Shared substrate identities
-remain available to other articles; true orphans are unlinked and removed. When the last linked
-substrate for an ingest-only location, person, or organization canonical is disposed or unlinked,
-that empty catalog shell is pruned (manual, CSV, bundle, and review-queue rows stay). Stylebook
-unlink responses report that prune as ``canonical_pruned`` so the catalog UI can leave the detail
-page instead of refetching a row that no longer exists. `smart_merge`
-and `add_only` retain their non-authoritative behavior.
+editor-added, editor-modified, and non-extraction associations remain. For places, machine geography
+is cleared before upsert; for people and organizations, machine associations are pre-cleared the
+same way so a partial prior persist can be recovered without wedging the article. Shared substrate
+identities remain available to other articles; true orphans are unlinked and removed. When the last
+linked substrate for an ingest-only location, person, or organization canonical is disposed or
+unlinked, that empty catalog shell is pruned (manual, CSV, bundle, and review-queue rows stay).
+Stylebook unlink responses report that prune as ``canonical_pruned`` so the catalog UI can leave the
+detail page instead of refetching a row that no longer exists. `smart_merge` and `add_only` retain
+their non-authoritative behavior.
 
 Occurrence offsets are optional evidence, not best-effort guesses. Ingest stores `start_char` and
 `end_char` only when normalized source text can be mapped back to an equivalent exact article

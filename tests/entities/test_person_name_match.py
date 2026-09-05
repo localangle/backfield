@@ -36,6 +36,22 @@ def test_person_alias_lookup_keys_include_punctuation_stripped() -> None:
     assert "cj stroud" in keys
 
 
+def test_person_match_key_strips_title_after_comma() -> None:
+    assert person_match_key("Christine Hines, County Clerk") == person_match_key("Christine Hines")
+    assert person_names_match("Christine Hines", "Christine Hines, County Clerk")
+
+
+def test_person_match_key_preserves_last_first_comma_form() -> None:
+    # Single-token head is treated as Last, First — not a title suffix.
+    assert person_match_key("Smith, John") == "smith john"
+
+
+def test_person_alias_lookup_keys_include_name_core_without_title() -> None:
+    keys = person_alias_lookup_keys("Christine Hines, County Clerk")
+    assert "christine hines" in keys
+    assert person_match_key("Christine Hines") in keys
+
+
 def test_person_name_tokens_strips_middle_initial() -> None:
     given, family, tokens = person_name_tokens("Ronald L. Wyden")
     assert given == "ronald"

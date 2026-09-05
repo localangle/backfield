@@ -68,13 +68,35 @@ def normalize_person_text(value: str | None) -> str:
     return normalize_match_text(value)
 
 
+def person_display_name_core(value: str | None) -> str:
+    """Return the name core used for identity matching.
+
+    CSV and editorial imports often jam a role into the label as
+    ``Given Family, Title…`` (e.g. ``Christine Hines, County Clerk``). Multi-token
+    text before the first comma is treated as the person name; single-token heads
+    (``Last, First``) are left unchanged.
+    """
+    raw = (value or "").strip()
+    if not raw or "," not in raw:
+        return raw
+    head, _sep, tail = raw.partition(",")
+    head = head.strip()
+    tail = tail.strip()
+    if not head or not tail:
+        return raw
+    if len(head.split()) >= 2:
+        return head
+    return raw
+
+
 def person_match_key(value: str | None) -> str:
     """Accent- and punctuation-insensitive key for person-name equality.
 
     Display text is unchanged elsewhere. Periods and other non-alphanumerics are
-    removed so ``C.J. Stroud`` and ``CJ Stroud`` share a key.
+    removed so ``C.J. Stroud`` and ``CJ Stroud`` share a key. Role suffixes after a
+    comma (``Name, Title``) are stripped when the head is a multi-token name.
     """
-    folded = match_fold_key(value)
+    folded = match_fold_key(person_display_name_core(value))
     if not folded:
         return ""
     stripped = _PERSON_KEY_PUNCT_RE.sub("", folded)
@@ -108,12 +130,22 @@ def person_alias_lookup_keys(value: str | None) -> tuple[str, ...]:
     """Stored ``normalized_alias`` variants for recall and exact alias lookup.
 
     Includes literal + accent-folded forms plus the punctuation-stripped
-    ``person_match_key`` so dotted initials hit both stored shapes.
+    ``person_match_key`` so dotted initials hit both stored shapes. When the
+    display string includes a ``, Title`` suffix, also seed keys for the name
+    core so ingest of the bare name can exact-match.
     """
     keys = list(alias_lookup_keys(value))
     folded = person_match_key(value)
     if folded and folded not in keys:
         keys.append(folded)
+    core = person_display_name_core(value)
+    if core and core != (value or "").strip():
+        for extra in alias_lookup_keys(core):
+            if extra not in keys:
+                keys.append(extra)
+        core_folded = person_match_key(core)
+        if core_folded and core_folded not in keys:
+            keys.append(core_folded)
     return tuple(keys)
 
 

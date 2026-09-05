@@ -559,11 +559,11 @@ def test_organizations_replace_reconciles_omissions_and_preserves_editorial_asso
         session.commit()
 
         summary = next(item for item in result.domain_summaries if item.domain == "organizations")
-        assert summary.removed == 2
+        assert summary.removed == 3
         assert summary.preserved == 3
-        assert summary.disposed == 1
-        assert result.retired_mentions == 2
-        assert result.disposed_substrates == 1
+        assert summary.disposed == 2
+        assert result.retired_mentions == 3
+        assert result.disposed_substrates == 2
 
     with Session(engine) as session:
         remaining_names = {

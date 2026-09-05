@@ -895,6 +895,13 @@ export interface RunEstimatedAiCost {
     node_type?: string | null
     estimated_total: string
   }>
+  geocoder_provider_health?: Array<{
+    provider: string
+    auth_error: number
+    rate_limit: number
+    http_error: number
+  }>
+  geocoder_degraded?: boolean
 }
 
 export async function getRunEstimatedAiCost(runId: string): Promise<RunEstimatedAiCost> {

@@ -102,10 +102,12 @@ commits from prose alone.
 
 Exact-alias lookups used for tier-1 / exact-identity autolink ignore
 `substrate_ingest` aliases (`trusted_alias_only=True`). Editorial provenances
-such as `stylebook_ui_accept` and `stylebook_ui_link` still count. Ingest aliases
-may still appear in fuzzy recall for LLM adjudication; autolink-tier fuzzy
-scores and the sync commit gate must not treat machine aliases as identity
-evidence alone.
+such as `stylebook_ui_accept`, `stylebook_ui_link`, and `stylebook_ui_import_csv`
+still count. Person name keys strip a multi-token ``Name, Title`` suffix so
+title-glued CSV labels still exact-match bare names. Ingest aliases may still
+appear in fuzzy recall for LLM adjudication; autolink-tier fuzzy scores and the
+sync commit gate must not treat machine aliases as identity evidence alone.
+Affiliation- or title-only bonuses cannot alone clear person recall.
 
 An exact location alias is a candidate set, not a first-row winner. Linking
 requires one active, compatible, self-consistent survivor; multiple survivors
@@ -167,7 +169,8 @@ that reference it. Existing orphans can be repaired with
 Canonicals can be created manually, imported, or transferred in an organization
 Stylebook bundle:
 
-- locations import from GeoJSON;
+- locations import from GeoJSON (standalone create writes both `geometry_json` and PostGIS
+  `geometry` so bbox / geo-search work);
 - people and organizations import from CSV;
 - bundle transfer includes location, person, and organization canonicals, aliases,
   project-scoped metadata, and connections whose endpoints are included.
