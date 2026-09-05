@@ -14,6 +14,8 @@ import json
 import re
 import tarfile
 import time
+from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +32,38 @@ UI_NAMES_V1 = ("agate-ui", "stylebook-ui")
 UI_NAMES_V2 = ("agate-ui", "stylebook-ui", "api-playground")
 CURRENT_SCHEMA_VERSION = 2
 SEMVER_RE = re.compile(r"^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$")
+
+
+@dataclass(frozen=True)
+class ScanFindingAllowlistEntry:
+    """A reviewed ECR CRITICAL finding the publish gate may ignore until expiry."""
+
+    reason: str
+    expires: date
+
+
+# ECR basic scanning matches NVD records against upstream version numbers, so it
+# flags Debian stable packages that are already patched via backport or that
+# Debian has triaged as minor with no stable fix planned. Every entry here must
+# cite that evidence and carry an expiry so it gets re-reviewed instead of
+# rotting. Non-listed CRITICAL findings still block publication.
+SCAN_FINDING_ALLOWLIST: dict[str, ScanFindingAllowlistEntry] = {
+    "CVE-2026-75803": ScanFindingAllowlistEntry(
+        reason=(
+            "openssl: Debian trixie-security 3.5.7-1~deb13u2 backports the upstream "
+            "fix (Debian tracker marks trixie fixed); NVD matches <3.5.8 by version."
+        ),
+        expires=date(2026, 12, 31),
+    ),
+    "CVE-2026-5450": ScanFindingAllowlistEntry(
+        reason=(
+            "glibc scanf %mc heap overflow: Debian tracker marks trixie/bookworm "
+            "no-dsa (minor issue) with no stable fix planned; our Python services "
+            "do not call scanf."
+        ),
+        expires=date(2026, 12, 31),
+    ),
+}
 
 
 def required_ui_names(schema_version: int) -> tuple[str, ...]:
@@ -228,40 +262,59 @@ def _wait_for_scan(ecr: Any, repository: str, tag: str) -> dict[str, int]:
     raise RuntimeError(f"ECR scan timed out for {repository}:{tag} ({image_id})")
 
 
-def _critical_finding_summaries(
-    ecr: Any, repository: str, tag: str, *, limit: int = 8
-) -> list[str]:
-    """Best-effort package/CVE labels for CRITICAL findings (for gate error text)."""
+def _critical_findings(ecr: Any, repository: str, tag: str) -> list[dict[str, str]]:
+    """All CRITICAL findings for an image as {name, label} records (paginated)."""
     image_id = _scan_image_id(ecr, repository, tag)
-    try:
-        response = ecr.describe_image_scan_findings(
-            repositoryName=repository,
-            imageId=image_id,
-        )
-    except ClientError:
-        return []
-    findings = response.get("imageScanFindings", {}).get("findings") or []
-    summaries: list[str] = []
-    for finding in findings:
-        if str(finding.get("severity") or "").upper() != "CRITICAL":
-            continue
-        name = str(finding.get("name") or "unknown")
-        attrs = {
-            str(item.get("key")): str(item.get("value"))
-            for item in (finding.get("attributes") or [])
-            if isinstance(item, dict)
-        }
-        package = attrs.get("package_name") or attrs.get("packageName") or ""
-        version = attrs.get("package_version") or attrs.get("packageVersion") or ""
-        if package and version:
-            summaries.append(f"{name} ({package} {version})")
-        elif package:
-            summaries.append(f"{name} ({package})")
-        else:
-            summaries.append(name)
-        if len(summaries) >= limit:
+    findings: list[dict[str, str]] = []
+    next_token: str | None = None
+    while True:
+        kwargs: dict[str, Any] = {"repositoryName": repository, "imageId": image_id}
+        if next_token:
+            kwargs["nextToken"] = next_token
+        response = ecr.describe_image_scan_findings(**kwargs)
+        for finding in response.get("imageScanFindings", {}).get("findings") or []:
+            if str(finding.get("severity") or "").upper() != "CRITICAL":
+                continue
+            name = str(finding.get("name") or "unknown")
+            attrs = {
+                str(item.get("key")): str(item.get("value"))
+                for item in (finding.get("attributes") or [])
+                if isinstance(item, dict)
+            }
+            package = attrs.get("package_name") or attrs.get("packageName") or ""
+            version = attrs.get("package_version") or attrs.get("packageVersion") or ""
+            label = name
+            if package and version:
+                label = f"{name} ({package} {version})"
+            elif package:
+                label = f"{name} ({package})"
+            findings.append({"name": name, "label": label})
+        next_token = response.get("nextToken")
+        if not next_token:
             break
-    return summaries
+    return findings
+
+
+def _partition_critical_findings(
+    findings: list[dict[str, str]],
+    *,
+    today: date,
+    allowlist: dict[str, ScanFindingAllowlistEntry],
+) -> tuple[list[str], list[str]]:
+    """Split CRITICAL findings into blocking labels and allowlisted notes."""
+    blocking: list[str] = []
+    allowed: list[str] = []
+    for finding in findings:
+        entry = allowlist.get(finding["name"])
+        if entry is None:
+            blocking.append(finding["label"])
+        elif today > entry.expires:
+            blocking.append(
+                f"{finding['label']} (allowlist expired {entry.expires.isoformat()})"
+            )
+        else:
+            allowed.append(f"{finding['label']}: {entry.reason}")
+    return blocking, allowed
 
 
 def build_manifest(
@@ -296,10 +349,22 @@ def build_manifest(
         detail = _image_detail(ecr, repository, version)
         repo = ecr.describe_repositories(repositoryNames=[repository])["repositories"][0]
         scans = _wait_for_scan(ecr, repository, version) if enforce_scans else {}
-        if scans.get("CRITICAL", 0):
-            detail_bits = _critical_finding_summaries(ecr, repository, version)
-            suffix = f" [{'; '.join(detail_bits)}]" if detail_bits else ""
-            critical.append(f"{repository}: {scans['CRITICAL']} CRITICAL{suffix}")
+        critical_count = scans.get("CRITICAL", 0)
+        if critical_count:
+            findings = _critical_findings(ecr, repository, version)
+            blocking, allowed = _partition_critical_findings(
+                findings, today=date.today(), allowlist=SCAN_FINDING_ALLOWLIST
+            )
+            if len(findings) < critical_count:
+                # Fail closed if the findings list does not account for every
+                # CRITICAL the severity counts reported.
+                blocking.append(
+                    f"{critical_count - len(findings)} unresolved CRITICAL finding(s)"
+                )
+            for note in allowed:
+                print(f"allowlisted CRITICAL for {repository}: {note}")
+            if blocking:
+                critical.append(f"{repository}: {'; '.join(blocking)}")
         images[repository] = {
             "tag": version,
             "digest": detail["imageDigest"],

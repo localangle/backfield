@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import sys
 import tarfile
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +16,8 @@ _SCRIPT = Path(__file__).parents[1] / "scripts" / "release_manifest.py"
 _SPEC = importlib.util.spec_from_file_location("release_manifest", _SCRIPT)
 assert _SPEC is not None and _SPEC.loader is not None
 release_manifest = importlib.util.module_from_spec(_SPEC)
+# Register before exec so decorators like @dataclass can resolve the module.
+sys.modules["release_manifest"] = release_manifest
 _SPEC.loader.exec_module(release_manifest)
 
 alias_ecr_image = release_manifest.alias_ecr_image
@@ -26,6 +30,8 @@ validate_manifest_inventory = release_manifest.validate_manifest_inventory
 validate_release_version = release_manifest.validate_release_version
 scan_image_id = release_manifest._scan_image_id
 publish_manifest = release_manifest.publish_manifest
+partition_critical_findings = release_manifest._partition_critical_findings
+ScanFindingAllowlistEntry = release_manifest.ScanFindingAllowlistEntry
 CURRENT_SCHEMA_VERSION = release_manifest.CURRENT_SCHEMA_VERSION
 REPOSITORIES = release_manifest.REPOSITORIES
 UI_NAMES_V1 = release_manifest.UI_NAMES_V1
@@ -360,7 +366,7 @@ def test_build_manifest_requires_api_playground_and_emits_schema_v2(tmp_path: Pa
         )
 
 
-def test_build_manifest_critical_gate_includes_finding_labels(tmp_path: Path) -> None:
+def _scan_gate_archives(tmp_path: Path) -> dict[str, Path]:
     archives = {
         "agate-ui": tmp_path / "agate-ui.tar.gz",
         "stylebook-ui": tmp_path / "stylebook-ui.tar.gz",
@@ -368,29 +374,34 @@ def test_build_manifest_critical_gate_includes_finding_labels(tmp_path: Path) ->
     }
     for path in archives.values():
         path.write_bytes(b"archive")
+    return archives
 
+
+def _critical_finding(name: str, package: str, version: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "severity": "CRITICAL",
+        "attributes": [
+            {"key": "package_name", "value": package},
+            {"key": "package_version", "value": version},
+        ],
+    }
+
+
+def test_build_manifest_blocks_unlisted_critical_with_labels(tmp_path: Path) -> None:
+    archives = _scan_gate_archives(tmp_path)
     source_sha = "0123456789abcdef0123456789abcdef01234567"
     version = canonical_version(source_sha)
     ecr = FakeScanGateEcr(
         critical_counts={"backfield-agate-api": 1},
         findings_by_repo={
             "backfield-agate-api": [
-                {
-                    "name": "CVE-2026-75803",
-                    "severity": "CRITICAL",
-                    "attributes": [
-                        {"key": "package_name", "value": "libssl3t64"},
-                        {"key": "package_version", "value": "3.5.7-1~deb13u2"},
-                    ],
-                }
+                _critical_finding("CVE-2099-0001", "somepkg", "1.0-1")
             ]
         },
     )
 
-    expected = (
-        r"backfield-agate-api: 1 CRITICAL "
-        r"\[CVE-2026-75803 \(libssl3t64 3\.5\.7-1~deb13u2\)\]"
-    )
+    expected = r"backfield-agate-api: CVE-2099-0001 \(somepkg 1\.0-1\)"
     with pytest.raises(RuntimeError, match=expected):
         build_manifest(
             version=version,
@@ -402,6 +413,86 @@ def test_build_manifest_critical_gate_includes_finding_labels(tmp_path: Path) ->
             s3=FakePublishS3(),
             enforce_scans=True,
         )
+
+
+def test_build_manifest_allows_allowlisted_critical(tmp_path: Path) -> None:
+    archives = _scan_gate_archives(tmp_path)
+    source_sha = "0123456789abcdef0123456789abcdef01234567"
+    version = canonical_version(source_sha)
+    # Mirrors the trixie prod images: glibc CVE-2026-5450 (Debian no-dsa) and
+    # openssl CVE-2026-75803 (fixed via Debian backport, flagged by version).
+    findings = {
+        repo: [
+            _critical_finding("CVE-2026-5450", "glibc", "2.41-12+deb13u3"),
+            _critical_finding("CVE-2026-75803", "libssl3t64", "3.5.7-1~deb13u2"),
+        ]
+        for repo in REPOSITORIES
+    }
+    ecr = FakeScanGateEcr(
+        critical_counts={repo: 2 for repo in REPOSITORIES},
+        findings_by_repo=findings,
+    )
+
+    manifest = build_manifest(
+        version=version,
+        source_sha=source_sha,
+        build_time="2026-01-01T00:00:00Z",
+        artifact_bucket="artifacts",
+        ui_archives=archives,
+        ecr=ecr,
+        s3=FakePublishS3(),
+        enforce_scans=True,
+    )
+    assert manifest["images"]["backfield-worker"]["scan_findings"] == {"CRITICAL": 2}
+
+
+def test_build_manifest_fails_closed_on_unresolved_critical_count(
+    tmp_path: Path,
+) -> None:
+    archives = _scan_gate_archives(tmp_path)
+    source_sha = "0123456789abcdef0123456789abcdef01234567"
+    version = canonical_version(source_sha)
+    # Severity counts report a CRITICAL but the findings list is empty.
+    ecr = FakeScanGateEcr(critical_counts={"backfield-core-api": 1})
+
+    with pytest.raises(RuntimeError, match=r"1 unresolved CRITICAL finding"):
+        build_manifest(
+            version=version,
+            source_sha=source_sha,
+            build_time="2026-01-01T00:00:00Z",
+            artifact_bucket="artifacts",
+            ui_archives=archives,
+            ecr=ecr,
+            s3=FakePublishS3(),
+            enforce_scans=True,
+        )
+
+
+def test_partition_critical_findings_expires_allowlist_entries() -> None:
+    allowlist = {
+        "CVE-1111-1": ScanFindingAllowlistEntry(
+            reason="reviewed", expires=date(2026, 6, 30)
+        ),
+    }
+    findings = [
+        {"name": "CVE-1111-1", "label": "CVE-1111-1 (pkg 1.0)"},
+        {"name": "CVE-2222-2", "label": "CVE-2222-2 (other 2.0)"},
+    ]
+
+    blocking, allowed = partition_critical_findings(
+        findings, today=date(2026, 6, 1), allowlist=allowlist
+    )
+    assert blocking == ["CVE-2222-2 (other 2.0)"]
+    assert allowed == ["CVE-1111-1 (pkg 1.0): reviewed"]
+
+    blocking, allowed = partition_critical_findings(
+        findings, today=date(2026, 7, 1), allowlist=allowlist
+    )
+    assert blocking == [
+        "CVE-1111-1 (pkg 1.0) (allowlist expired 2026-06-30)",
+        "CVE-2222-2 (other 2.0)",
+    ]
+    assert allowed == []
 
 
 def test_release_alias_preserves_ui_object_keys_for_schema_v1_and_v2() -> None:
