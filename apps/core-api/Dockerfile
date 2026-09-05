@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.11-slim-bookworm AS base
+FROM python:3.11-slim-trixie AS base
 
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -31,7 +31,7 @@ RUN uv pip install --system /app/packages/backfield-db \
     && uv pip install --system /app/packages/backfield-auth \
     && uv pip install --system /app/apps/core-api
 
-FROM python:3.11-slim-bookworm AS prod
+FROM python:3.11-slim-trixie AS prod
 
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -44,9 +44,17 @@ ENV APP_VERSION=${APP_VERSION} \
     GIT_SHA=${GIT_SHA} \
     BUILD_TIME=${BUILD_TIME}
 
-# The final Python service does not invoke Perl. Remove the unpatched Debian
-# runtime package; no package management runs after this point.
-RUN dpkg --purge --force-depends --force-remove-essential perl-base \
+# Pin OpenSSL to trixie-security (≥ 3.5.7-1~deb13u2) for CVE-2026-75803 before
+# any further package removals. bookworm has no fixed openssl package yet.
+# The final Python service does not invoke Perl; remove perl-base after that.
+# No package management runs after this point.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        openssl \
+        libssl3t64 \
+        openssl-provider-legacy \
+    && rm -rf /var/lib/apt/lists/* \
+    && dpkg --purge --force-depends --force-remove-essential perl-base \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser
 
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
