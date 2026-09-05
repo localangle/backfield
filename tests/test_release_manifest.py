@@ -244,12 +244,51 @@ class FakePublishEcr:
     def describe_images(self, **kwargs: Any) -> dict[str, Any]:
         return {"imageDetails": [{"imageDigest": "sha256:canonical"}]}
 
+    def batch_get_image(self, **kwargs: Any) -> dict[str, Any]:
+        # Single-arch manifest (no OCI index children) so scans key off imageTag.
+        return {
+            "images": [
+                {
+                    "imageManifest": json.dumps(
+                        {"schemaVersion": 2, "config": {}, "layers": []}
+                    )
+                }
+            ]
+        }
+
     def describe_repositories(self, **kwargs: Any) -> dict[str, Any]:
         name = kwargs["repositoryNames"][0]
         return {
             "repositories": [
                 {"repositoryUri": f"123.dkr.ecr.us-east-1.amazonaws.com/{name}"}
             ]
+        }
+
+
+class FakeScanGateEcr(FakePublishEcr):
+    """ECR stub that reports COMPLETE scans with optional CRITICAL findings."""
+
+    def __init__(
+        self,
+        *,
+        critical_counts: dict[str, int] | None = None,
+        findings_by_repo: dict[str, list[dict[str, Any]]] | None = None,
+    ) -> None:
+        self.critical_counts = critical_counts or {}
+        self.findings_by_repo = findings_by_repo or {}
+
+    def describe_image_scan_findings(self, **kwargs: Any) -> dict[str, Any]:
+        repository = kwargs["repositoryName"]
+        critical = int(self.critical_counts.get(repository, 0))
+        counts: dict[str, int] = {}
+        if critical:
+            counts["CRITICAL"] = critical
+        return {
+            "imageScanStatus": {"status": "COMPLETE"},
+            "imageScanFindings": {
+                "findingSeverityCounts": counts,
+                "findings": list(self.findings_by_repo.get(repository, [])),
+            },
         }
 
 
@@ -318,6 +357,50 @@ def test_build_manifest_requires_api_playground_and_emits_schema_v2(tmp_path: Pa
             ecr=FakePublishEcr(),
             s3=FakePublishS3(),
             enforce_scans=False,
+        )
+
+
+def test_build_manifest_critical_gate_includes_finding_labels(tmp_path: Path) -> None:
+    archives = {
+        "agate-ui": tmp_path / "agate-ui.tar.gz",
+        "stylebook-ui": tmp_path / "stylebook-ui.tar.gz",
+        "api-playground": tmp_path / "api-playground.tar.gz",
+    }
+    for path in archives.values():
+        path.write_bytes(b"archive")
+
+    source_sha = "0123456789abcdef0123456789abcdef01234567"
+    version = canonical_version(source_sha)
+    ecr = FakeScanGateEcr(
+        critical_counts={"backfield-agate-api": 1},
+        findings_by_repo={
+            "backfield-agate-api": [
+                {
+                    "name": "CVE-2026-75803",
+                    "severity": "CRITICAL",
+                    "attributes": [
+                        {"key": "package_name", "value": "libssl3t64"},
+                        {"key": "package_version", "value": "3.5.7-1~deb13u2"},
+                    ],
+                }
+            ]
+        },
+    )
+
+    expected = (
+        r"backfield-agate-api: 1 CRITICAL "
+        r"\[CVE-2026-75803 \(libssl3t64 3\.5\.7-1~deb13u2\)\]"
+    )
+    with pytest.raises(RuntimeError, match=expected):
+        build_manifest(
+            version=version,
+            source_sha=source_sha,
+            build_time="2026-01-01T00:00:00Z",
+            artifact_bucket="artifacts",
+            ui_archives=archives,
+            ecr=ecr,
+            s3=FakePublishS3(),
+            enforce_scans=True,
         )
 
 
