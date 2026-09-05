@@ -228,6 +228,42 @@ def _wait_for_scan(ecr: Any, repository: str, tag: str) -> dict[str, int]:
     raise RuntimeError(f"ECR scan timed out for {repository}:{tag} ({image_id})")
 
 
+def _critical_finding_summaries(
+    ecr: Any, repository: str, tag: str, *, limit: int = 8
+) -> list[str]:
+    """Best-effort package/CVE labels for CRITICAL findings (for gate error text)."""
+    image_id = _scan_image_id(ecr, repository, tag)
+    try:
+        response = ecr.describe_image_scan_findings(
+            repositoryName=repository,
+            imageId=image_id,
+        )
+    except ClientError:
+        return []
+    findings = response.get("imageScanFindings", {}).get("findings") or []
+    summaries: list[str] = []
+    for finding in findings:
+        if str(finding.get("severity") or "").upper() != "CRITICAL":
+            continue
+        name = str(finding.get("name") or "unknown")
+        attrs = {
+            str(item.get("key")): str(item.get("value"))
+            for item in (finding.get("attributes") or [])
+            if isinstance(item, dict)
+        }
+        package = attrs.get("package_name") or attrs.get("packageName") or ""
+        version = attrs.get("package_version") or attrs.get("packageVersion") or ""
+        if package and version:
+            summaries.append(f"{name} ({package} {version})")
+        elif package:
+            summaries.append(f"{name} ({package})")
+        else:
+            summaries.append(name)
+        if len(summaries) >= limit:
+            break
+    return summaries
+
+
 def build_manifest(
     *,
     version: str,
@@ -261,7 +297,9 @@ def build_manifest(
         repo = ecr.describe_repositories(repositoryNames=[repository])["repositories"][0]
         scans = _wait_for_scan(ecr, repository, version) if enforce_scans else {}
         if scans.get("CRITICAL", 0):
-            critical.append(f"{repository}: {scans['CRITICAL']} CRITICAL")
+            detail_bits = _critical_finding_summaries(ecr, repository, version)
+            suffix = f" [{'; '.join(detail_bits)}]" if detail_bits else ""
+            critical.append(f"{repository}: {scans['CRITICAL']} CRITICAL{suffix}")
         images[repository] = {
             "tag": version,
             "digest": detail["imageDigest"],

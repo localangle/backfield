@@ -46,10 +46,11 @@ make docker-build-prod-worker \
 The Bake targets are `agate-api`, `core-api`, `stylebook-api`, and `worker`. They use the repository
 root as build context, target each Dockerfile's `prod` stage, and build for `linux/amd64`.
 
-Production (and shared `base`) stages use `python:3.11-slim-trixie` and explicitly install
-`openssl` / `libssl3t64` from trixie-security (≥ `3.5.7-1~deb13u2`) before removing `perl-base`.
-That clears ECR CRITICAL `CVE-2026-75803`; Debian bookworm still has no fixed openssl package, so
-staying on `slim-bookworm` cannot pass the publish scan gate until a bookworm DSA ships.
+Production (and shared `base`) stages use `python:3.11-slim-trixie`. The prod stage then
+installs OpenSSL `3.6.4-1` from Debian sid (pinned so only those packages come from unstable)
+before removing `perl-base`. That satisfies NVD/ECR for CVE-2026-75803 (fixed upstream in
+3.5.8 / 3.6.4); Debian's own trixie-security `3.5.7-1~deb13u2` is marked fixed in the Debian
+tracker but ECR still treats `<3.5.8` as CRITICAL. bookworm still has no fixed openssl package.
 
 The production API stages install non-editable packages and start Uvicorn without reload as a
 non-root `appuser`. The worker starts Celery through `apps/worker/scripts/entrypoint.sh` (also
