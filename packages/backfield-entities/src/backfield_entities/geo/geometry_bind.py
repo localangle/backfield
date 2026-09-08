@@ -7,6 +7,16 @@ from typing import Any, Protocol
 from backfield_entities.geo.h3_index import apply_h3_fields
 from sqlmodel import Session
 
+# ``str.title()`` mangles camelCase GeoJSON types (``MultiPolygon`` → ``Multipolygon``).
+_GEOJSON_TYPE_BY_KEY: dict[str, str] = {
+    "point": "Point",
+    "multipoint": "MultiPoint",
+    "linestring": "LineString",
+    "multilinestring": "MultiLineString",
+    "polygon": "Polygon",
+    "multipolygon": "MultiPolygon",
+}
+
 
 class HasLocationGeometry(Protocol):
     geometry: object | None
@@ -14,6 +24,18 @@ class HasLocationGeometry(Protocol):
     geometry_type: str | None
     h3_cell: str | None
     h3_resolution: int | None
+
+
+class GeometryBindError(ValueError):
+    """GeoJSON was provided but could not be converted to a PostGIS bind value."""
+
+
+def normalize_geojson_type(raw: object | None) -> str | None:
+    """Return the canonical GeoJSON geometry type, or ``None`` when unrecognized."""
+    if not isinstance(raw, str):
+        return None
+    key = raw.strip().lower().replace("_", "").replace(" ", "")
+    return _GEOJSON_TYPE_BY_KEY.get(key)
 
 
 def _coord_pair_wkt(pair: Any) -> str | None:
@@ -41,7 +63,9 @@ def _ring_coords_wkt(ring: Any) -> str | None:
 
 def geojson_to_wkt(geometry_json: dict[str, Any]) -> str | None:
     """Return WKT for a GeoJSON geometry, or ``None`` when the shape is invalid."""
-    gtype = str(geometry_json.get("type") or "").title()
+    gtype = normalize_geojson_type(geometry_json.get("type"))
+    if gtype is None:
+        return None
     coords = geometry_json.get("coordinates")
 
     try:
@@ -72,6 +96,22 @@ def geojson_to_wkt(geometry_json: dict[str, Any]) -> str | None:
                     return None
                 pts.append(wkt_pair)
             return "LINESTRING (" + ", ".join(pts) + ")"
+
+        if gtype == "MultiLineString":
+            if not isinstance(coords, list) or not coords:
+                return None
+            lines: list[str] = []
+            for line in coords:
+                if not isinstance(line, list) or len(line) < 2:
+                    return None
+                pts = []
+                for pair in line:
+                    wkt_pair = _coord_pair_wkt(pair)
+                    if not wkt_pair:
+                        return None
+                    pts.append(wkt_pair)
+                lines.append("(" + ", ".join(pts) + ")")
+            return "MULTILINESTRING (" + ", ".join(lines) + ")"
 
         if gtype == "Polygon":
             if not isinstance(coords, list) or not coords:
@@ -129,7 +169,12 @@ def assign_geojson_geometry(
     row: HasLocationGeometry,
     geometry_json: dict[str, Any] | None,
 ) -> None:
-    """Write GeoJSON, PostGIS, type, and H3 onto a canonical or saved-place row."""
+    """Write GeoJSON, PostGIS, type, and H3 onto a canonical or saved-place row.
+
+    When ``geometry_json`` is provided it must convert to a PostGIS bind value; otherwise
+    this raises :class:`GeometryBindError` so callers never leave GeoJSON/H3 updated while
+    ``geometry`` is cleared (article geo-search keys off PostGIS).
+    """
     if geometry_json is None:
         row.geometry_json = None
         row.geometry = None
@@ -139,10 +184,16 @@ def assign_geojson_geometry(
         return
 
     copied = dict(geometry_json)
+    bind = geometry_bind_value(session, copied)
+    if bind is None:
+        raise GeometryBindError(
+            f"Could not convert GeoJSON to PostGIS geometry (type={copied.get('type')!r})."
+        )
+
     row.geometry_json = copied
-    gt = copied.get("type")
+    gt = normalize_geojson_type(copied.get("type")) or copied.get("type")
     row.geometry_type = str(gt) if gt else None
-    row.geometry = geometry_bind_value(session, copied)
+    row.geometry = bind
     cell, resolution = apply_h3_fields(geometry_json=copied)
     row.h3_cell = cell
     row.h3_resolution = resolution

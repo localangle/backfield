@@ -25,7 +25,7 @@ from backfield_entities.entities.location.geometry_apply import (
     suggest_substrate_for_geometry_apply,
 )
 from backfield_entities.entities.location.persist import create_standalone_canonical
-from backfield_entities.geo.geometry_bind import assign_geojson_geometry
+from backfield_entities.geo.geometry_bind import GeometryBindError, assign_geojson_geometry
 from backfield_events import record_canonical_updated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -610,7 +610,10 @@ def patch_canonical_location_geometry(
     canon = session.get(StylebookLocationCanonical, canonical_id)
     if canon is None or int(canon.stylebook_id) != int(sb.id):
         raise HTTPException(status_code=404, detail="Canonical location not found")
-    assign_geojson_geometry(session, canon, body.geometry_json)
+    try:
+        assign_geojson_geometry(session, canon, body.geometry_json)
+    except GeometryBindError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     canon.updated_at = datetime.now(UTC)
     log_stylebook_activity_safe(
         session,
@@ -667,12 +670,15 @@ def apply_canonical_location_geometry_to_substrates(
         project_slug=project,
         organization_id=int(sb.organization_id),
     )
-    result = apply_canonical_geometry_to_substrates(
-        session,
-        canon=canon,
-        substrate_ids=body.substrate_location_ids,
-        visible_project_ids=project_ids,
-    )
+    try:
+        result = apply_canonical_geometry_to_substrates(
+            session,
+            canon=canon,
+            substrate_ids=body.substrate_location_ids,
+            visible_project_ids=project_ids,
+        )
+    except GeometryBindError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     log_stylebook_activity_safe(
         session,
         stylebook_id=int(sb.id),

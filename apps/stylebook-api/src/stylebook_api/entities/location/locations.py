@@ -24,7 +24,7 @@ from backfield_entities.entities.linking.substrate_actions import (
     unlink_substrate_from_canonical,
 )
 from backfield_entities.entities.location.types import PLACE_EXTRACT_LOCATION_TYPES
-from backfield_entities.geo.geometry_bind import assign_geojson_geometry
+from backfield_entities.geo.geometry_bind import GeometryBindError, assign_geojson_geometry
 from backfield_entities.ingest.semantic_indexing.reindex import (
     location_patch_affects_semantic_index,
 )
@@ -653,7 +653,10 @@ def patch_location_geometry(
     loc = session.get(SubstrateLocation, location_id)
     if loc is None or int(loc.project_id) != int(proj.id):
         raise HTTPException(status_code=404, detail="Location not found")
-    assign_geojson_geometry(session, loc, body.geometry_json)
+    try:
+        assign_geojson_geometry(session, loc, body.geometry_json)
+    except GeometryBindError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     loc.updated_at = datetime.now(UTC)
     session.add(loc)
     session.commit()

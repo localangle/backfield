@@ -137,7 +137,10 @@ Location catalog geography can be copied onto selected linked saved places from 
 That override stays on the saved-place row (including PostGIS and H3) so article geo-search
 follows the catalog shape. The next ingest of the same geocode finds the existing row by
 identity fingerprint and keeps the editorial geometry unless an authoritative geocode
-rejection clears it.
+rejection clears it. Rows left with GeoJSON/H3 but null PostGIS (historical MultiPolygon
+bind bug) can be repaired with
+`uv run python scripts/rebind_location_postgis_geometry.py` (dry-run by default; `--apply`
+to commit). That script is intentionally not a `backfield` CLI subcommand.
 
 Occurrence offsets are written only for a normalization-equivalent article slice.
 When whitespace or encoding artifacts cannot be mapped back exactly, the evidence
