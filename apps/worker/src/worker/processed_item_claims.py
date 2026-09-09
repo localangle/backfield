@@ -66,8 +66,17 @@ def should_reconcile_orphan_running_items(
     *,
     run_id: str,
     concurrency: int = _WORKER_CONCURRENCY,
+    active_count: int | None = None,
 ) -> bool:
-    if running_count <= concurrency:
+    """Return True when orphan reconcile should run (interval-throttled).
+
+    Reconcile when running claims exceed configured concurrency, or when
+    ``active_count`` is provided and running claims exceed live Celery
+    executions for this pool (SIGKILL/OOM can leave claims without workers).
+    """
+    over_concurrency = running_count > concurrency
+    over_active = active_count is not None and running_count > active_count
+    if not (over_concurrency or over_active):
         return False
     now = time.monotonic()
     last = _orphan_reconcile_last_by_run.get(run_id, 0.0)

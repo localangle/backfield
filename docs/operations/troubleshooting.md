@@ -47,7 +47,7 @@ Check:
 3. that producer and worker use the same `CELERY_QUEUE` (`agate` by default)
 4. that the worker has the graph's provider credentials
 
-For a batch with many UI items marked Running but few active Celery tasks, old claims may remain after child crashes. The worker reconciles inactive claims using `BATCH_ORPHAN_RUNNING_AFTER_S` and `BATCH_ORPHAN_RECONCILE_INTERVAL_S`. After reconciliation, retry failed items from Agate UI.
+For a batch with many UI items marked Running but few active Celery tasks, old claims may remain after child crashes. The worker reconciles inactive claims when running rows exceed concurrency **or** exceed the inspected active Celery task count, throttled by `BATCH_ORPHAN_RECONCILE_INTERVAL_S` and aged by `BATCH_ORPHAN_RUNNING_AFTER_S`. After reconciliation, retry failed items from Agate UI.
 
 ## APIs slow down during a large run
 
@@ -69,6 +69,8 @@ If Backfield Output repeatedly reports deadlocks, workers may be updating the sa
 Signal 9 without a Celery time-limit message usually indicates an out-of-memory kill. Total memory grows with `CELERY_WORKER_CONCURRENCY` because each prefork child has an import baseline plus the current article's working set.
 
 Lower concurrency or increase the container/Docker VM memory allocation. `CELERY_MAX_MEMORY_PER_CHILD_KB` replaces a child only after a task completes; it cannot prevent a single task from exceeding container memory.
+
+After SIGKILL/OOM, `acks_late` redelivers tasks while DB claims may still be `running`. The worker releases aged orphan claims (or retries claim collisions with countdown backoff) instead of `Reject(requeue=True)`, which previously pegged CPU with immediate requeue storms. Look for `Claim collision for processed_item` and orphan-release log lines; if storms recur, confirm orphan reconcile is firing (`running` count above live active tasks) and that `BATCH_ORPHAN_RUNNING_AFTER_S` is not far longer than your crash-recovery window.
 
 ## Worker timeouts
 

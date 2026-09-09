@@ -92,8 +92,7 @@ from backfield_observability.lifecycle import (
     emit_worker_lost,
     worker_identity,
 )
-from celery import Celery, chord, group
-from celery.exceptions import Reject
+from celery import Celery, Task, chord, group
 from sqlalchemy import delete, func, update
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, col, select
@@ -102,6 +101,7 @@ from worker.flags.replace_geography import clear_replace_article_geography_flags
 from worker.nodes.db_output import run_db_output
 from worker.processed_item_claims import (
     active_execute_processed_item_ids,
+    is_orphan_running_item,
     release_orphan_running_items_for_run,
     release_running_claim,
     should_reconcile_orphan_running_items,
@@ -155,6 +155,9 @@ _TASK_HARD_TIME_LIMIT = int(os.getenv("TASK_HARD_TIME_LIMIT", "4200"))
 _STALE_RUNNING_GRACE_S = int(os.getenv("TASK_STALE_RUNNING_GRACE_S", "300"))
 _STALE_RUNNING_AFTER_S = _TASK_HARD_TIME_LIMIT + _STALE_RUNNING_GRACE_S
 _STALE_RUNNING_MESSAGE = "Processing interrupted (worker lost or exceeded time limit)"
+# Backoff when a redelivered task cannot claim a still-running row (avoids Reject requeue storms).
+_CLAIM_COLLISION_RETRY_BASE_S = 5
+_CLAIM_COLLISION_RETRY_MAX_S = 60
 
 _current_processed_item_id: contextvars.ContextVar[int | None] = contextvars.ContextVar(
     "current_processed_item_id",
@@ -174,6 +177,24 @@ def _is_stale_running_item(item: AgateProcessedItem, *, now: datetime | None = N
     if touch.tzinfo is None:
         touch = touch.replace(tzinfo=UTC)
     return (now - touch).total_seconds() > _STALE_RUNNING_AFTER_S
+
+
+def _claim_collision_countdown(retries: int) -> int:
+    """Exponential countdown seconds for claim-collision retries (capped)."""
+    return min(
+        _CLAIM_COLLISION_RETRY_MAX_S,
+        _CLAIM_COLLISION_RETRY_BASE_S * (2 ** max(0, retries)),
+    )
+
+
+def _retry_after_claim_collision(task: Task, item_id: int) -> None:
+    countdown = _claim_collision_countdown(int(getattr(task.request, "retries", 0) or 0))
+    logger.info(
+        "Claim collision for processed_item id=%s; retrying in %ss",
+        item_id,
+        countdown,
+    )
+    raise task.retry(countdown=countdown)
 
 
 def _reap_stale_running_items_for_run(
@@ -1451,21 +1472,27 @@ def execute_run_replay_setup(source_run_id: str, new_run_id: str) -> None:
 
 
 @celery_app.task(
+    bind=True,
     name="worker.tasks.execute_processed_item",
     soft_time_limit=_TASK_SOFT_TIME_LIMIT,
     time_limit=_TASK_HARD_TIME_LIMIT,
     acks_late=True,
     reject_on_worker_lost=True,
+    max_retries=None,
 )
-def execute_processed_item(item_id: int, spec_json: str | None = None) -> None:
+def execute_processed_item(self: Task, item_id: int, spec_json: str | None = None) -> None:
     token = _current_processed_item_id.set(int(item_id))
     try:
-        _execute_processed_item_impl(item_id, spec_json=spec_json)
+        _execute_processed_item_impl(self, item_id, spec_json=spec_json)
     finally:
         _current_processed_item_id.reset(token)
 
 
-def _execute_processed_item_impl(item_id: int, spec_json: str | None = None) -> None:
+def _execute_processed_item_impl(
+    task: Task,
+    item_id: int,
+    spec_json: str | None = None,
+) -> None:
     engine = get_engine()
     claimed_at: datetime
     with Session(engine) as session:
@@ -1484,13 +1511,20 @@ def _execute_processed_item_impl(item_id: int, spec_json: str | None = None) -> 
             )
             or 0
         )
+        active_ids = active_execute_processed_item_ids(celery_app)
+        # Include this task so batch orphan reconcile does not release the row we
+        # are about to claim. Claim-miss orphan checks use ``active_ids`` alone.
+        reconcile_active_ids = active_ids | {int(item_id)}
         released = 0
-        if should_reconcile_orphan_running_items(running_count, run_id=item.run_id):
-            active_ids = active_execute_processed_item_ids(celery_app) | {int(item_id)}
+        if should_reconcile_orphan_running_items(
+            running_count,
+            run_id=item.run_id,
+            active_count=len(reconcile_active_ids),
+        ):
             released = release_orphan_running_items_for_run(
                 session,
                 item.run_id,
-                active_item_ids=active_ids,
+                active_item_ids=reconcile_active_ids,
             )
         if reaped or released:
             logger.info(
@@ -1501,11 +1535,23 @@ def _execute_processed_item_impl(item_id: int, spec_json: str | None = None) -> 
                 released,
             )
             session.commit()
-        if not _try_claim_processed_item(session, item):
-            if item.status == "running":
-                # Another worker holds a fresh claim; requeue until the lease goes stale
-                # or orphan reconcile returns the row to pending.
-                raise Reject(requeue=True)
+        claimed = _try_claim_processed_item(session, item)
+        if not claimed and item.status == "running":
+            # SIGKILL/OOM can leave a running claim with no live worker. Prefer
+            # releasing an orphan and reclaiming; otherwise delay instead of
+            # Reject(requeue=True), which storms Redis/CPU with immediate redeliveries.
+            if is_orphan_running_item(item, active_item_ids=active_ids):
+                if release_running_claim(
+                    session,
+                    int(item.id),
+                    observed_started_at=item.started_at,
+                ):
+                    session.refresh(item)
+                    claimed = _try_claim_processed_item(session, item)
+            if not claimed:
+                session.commit()
+                _retry_after_claim_collision(task, item_id)
+        if not claimed:
             return
         if item.started_at is None:
             session.rollback()
