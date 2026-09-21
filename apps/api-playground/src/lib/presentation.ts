@@ -79,6 +79,9 @@ const HUMAN_LABELS: Record<string, string> = {
   asc: "Ascending",
   desc: "Descending",
   pub_date: "Publication date",
+  published: "Published time",
+  updated: "Updated time",
+  relevance: "Relevance",
   created_at: "Created date",
   sort_key: "Default order",
 }
@@ -129,7 +132,7 @@ function loadedOptions(
 
 function sortOptions(operation: PlaygroundOperation): SelectOption[] {
   if (operation.displayPath === "/articles/search") {
-    return optionsFromValues(["relevance", "pub_date"])
+    return optionsFromValues(["relevance", "pub_date", "published", "updated"])
   }
   if (operation.displayPath.endsWith("/mentions")) {
     return optionsFromValues(["article", "created_at"])

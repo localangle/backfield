@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import os
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 from backfield_db import BackfieldOrganization, BackfieldProject, SubstrateArticle
 from backfield_entities.public.articles import (
     PublicArticleSearchParams,
+    PublicArticleSort,
+    PublicSortDirection,
     search_public_articles,
 )
 from backfield_entities.public.keyword_query import article_keyword_tsquery
@@ -65,6 +67,90 @@ def test_sqlite_keyword_search_matches_substring() -> None:
 
     assert total == 1
     assert items[0].headline == "City council votes on budget"
+    assert items[0].published is None
+    assert items[0].updated is None
+
+
+def test_sqlite_timestamp_sort_orders_nulls_and_breaks_ties_by_id() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    same_published = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
+    with Session(engine) as session:
+        project_id = _seed_sqlite_project(session)
+        first = SubstrateArticle(
+            project_id=project_id,
+            headline="Earlier id",
+            text="First body",
+            pub_date=date(2024, 1, 1),
+            published=same_published,
+            updated=None,
+        )
+        second = SubstrateArticle(
+            project_id=project_id,
+            headline="Later id",
+            text="Second body",
+            pub_date=date(2024, 2, 1),
+            published=same_published,
+            updated=datetime(2024, 7, 1, 0, 0, tzinfo=UTC),
+        )
+        missing = SubstrateArticle(
+            project_id=project_id,
+            headline="Missing timestamps",
+            text="Third body",
+            pub_date=date(2024, 3, 1),
+            published=None,
+            updated=datetime(2024, 5, 1, 0, 0, tzinfo=UTC),
+        )
+        session.add(first)
+        session.add(second)
+        session.add(missing)
+        session.commit()
+        session.refresh(first)
+        session.refresh(second)
+        session.refresh(missing)
+        first_id = int(first.id)  # type: ignore[arg-type]
+        second_id = int(second.id)  # type: ignore[arg-type]
+        missing_id = int(missing.id)  # type: ignore[arg-type]
+
+        published_desc, _ = search_public_articles(
+            session,
+            project_id=project_id,
+            params=PublicArticleSearchParams(
+                sort=PublicArticleSort.published,
+                sort_direction=PublicSortDirection.desc,
+            ),
+        )
+        published_asc, _ = search_public_articles(
+            session,
+            project_id=project_id,
+            params=PublicArticleSearchParams(
+                sort=PublicArticleSort.published,
+                sort_direction=PublicSortDirection.asc,
+            ),
+        )
+        updated_desc, _ = search_public_articles(
+            session,
+            project_id=project_id,
+            params=PublicArticleSearchParams(
+                sort=PublicArticleSort.updated,
+                sort_direction=PublicSortDirection.desc,
+            ),
+        )
+        updated_asc, _ = search_public_articles(
+            session,
+            project_id=project_id,
+            params=PublicArticleSearchParams(
+                sort=PublicArticleSort.updated,
+                sort_direction=PublicSortDirection.asc,
+            ),
+        )
+
+    assert [item.id for item in published_desc] == [second_id, first_id, missing_id]
+    assert [item.id for item in published_asc] == [missing_id, first_id, second_id]
+    assert [item.id for item in updated_desc] == [second_id, missing_id, first_id]
+    assert [item.id for item in updated_asc] == [first_id, missing_id, second_id]
+    assert published_desc[0].published is not None
+    assert published_desc[-1].published is None
 
 
 @pytest.fixture(scope="module")

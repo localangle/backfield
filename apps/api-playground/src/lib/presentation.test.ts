@@ -175,6 +175,26 @@ describe("endpoint presentation contract", () => {
     ])
     expect(articleSearchInclude.helperText).toMatch(/images includes up to 10/)
 
+    const sortParameter = articleSearch!.parameters.find(
+      (parameter) => parameter.name === "sort",
+    )
+    expect(sortParameter).toBeDefined()
+    expect(
+      presentationForField(
+        articleSearch!,
+        "sort",
+        resolveInputSchema(document, sortParameter!.schema),
+        sortParameter!.description,
+        blockedContext,
+        "query",
+      ).options,
+    ).toEqual([
+      { value: "relevance", label: "Relevance" },
+      { value: "pub_date", label: "Publication date" },
+      { value: "published", label: "Published time" },
+      { value: "updated", label: "Updated time" },
+    ])
+
     const semanticInclude = presentationForField(
       semanticSearch!,
       "include",

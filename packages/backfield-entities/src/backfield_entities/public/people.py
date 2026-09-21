@@ -20,7 +20,11 @@ from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, func, select
 
 from backfield_entities.catalog.canonical_meta import AttrClause
-from backfield_entities.public.articles import ArticleMetaClause, PublicArticleOut
+from backfield_entities.public.articles import (
+    ArticleMetaClause,
+    PublicArticleOut,
+    PublicUtcTimestamp,
+)
 from backfield_entities.public.canonical_metadata import (
     PublicCanonicalMetaOut,
     append_attr_filters,
@@ -90,6 +94,8 @@ class PublicPersonMentionArticleOut(BaseModel):
     headline: str
     url: str | None = None
     pub_date: date | None = None
+    published: PublicUtcTimestamp = None
+    updated: PublicUtcTimestamp = None
 
 
 class PublicPersonMentionOut(BaseModel):
@@ -481,6 +487,8 @@ def list_public_person_mentions(
                     headline=str(article.headline),
                     url=article.url,
                     pub_date=article.pub_date,
+                    published=article.published,
+                    updated=article.updated,
                 ),
                 label=str(person.name),
                 person_type=person.person_type,

@@ -55,7 +55,7 @@ def search_project_articles(
     pub_date_to: str | None = Query(None),
     sort: PublicArticleSort | None = Query(
         None,
-        description="Sort by relevance or publication date",
+        description="Sort by relevance, publication date, published time, or updated time",
     ),
     sort_direction: PublicSortDirection | None = Query(
         None,

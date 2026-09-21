@@ -137,10 +137,13 @@ Examples: `party`, `!party`, `party:Democrat`, `population:gt:100000`,
 list/search/geo-search include it only with `include=metadata` (otherwise the
 field is an empty array).
 
-Article keyword search accepts `sort=relevance|pub_date` and
+Article keyword search accepts `sort=relevance|pub_date|published|updated` and
 `sort_direction=asc|desc`. With `q`, the default is relevance descending;
 without `q`, the default is publication date descending. Relevance sorting
-requires a non-empty `q`. Responses echo the effective sort and direction.
+requires a non-empty `q` and keeps publication date as its secondary key.
+`published` and `updated` are optional timestamps. Missing values sort last
+when descending and first when ascending. Date filters stay on `pub_date`.
+Responses echo the effective sort and direction.
 
 `external_source` is the publication/outlet name (not the ingest pipeline). S3-backed
 articles store the S3 ledger UUID in `external_id` and the outlet in `external_source`.

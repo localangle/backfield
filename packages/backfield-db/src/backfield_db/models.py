@@ -1595,6 +1595,8 @@ class SubstrateArticle(SQLModel, table=True):
         ),
         UniqueConstraint("project_id", "url", name="uq_substrate_article_project_url"),
         Index("idx_substrate_article_project_pub_date", "project_id", "pub_date"),
+        Index("idx_substrate_article_project_published", "project_id", "published"),
+        Index("idx_substrate_article_project_updated", "project_id", "updated"),
         Index("idx_substrate_article_project_entry_id", "project_id", "entry_id"),
     )
 
@@ -1606,6 +1608,7 @@ class SubstrateArticle(SQLModel, table=True):
     headline: str = Field(sa_column=Column(Text, nullable=False, index=True))
     author: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     pub_date: date | None = Field(default=None, index=True)
+    published: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     updated: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     entry_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     s3_bucket: str | None = Field(default=None, sa_column=Column(Text, nullable=True))

@@ -34,6 +34,7 @@ PREFERRED_KEY_ORDER = [
     "url",
     "author",
     "pub_date",
+    "published",
     "updated",
     "text",
     "images",

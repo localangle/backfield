@@ -66,7 +66,10 @@ All schema changes use the single Alembic chain under `packages/backfield-db/ale
 ### Substrate content and entities
 
 - Content: `substrate_article`, `substrate_image`, `substrate_article_meta`,
-  `substrate_custom_record`.
+  `substrate_custom_record`. `substrate_article` stores optional timezone-aware
+  `published` and `updated` timestamps from the ingest payload. They are
+  independent of the calendar `pub_date`, and `(project_id, published)` and
+  `(project_id, updated)` are indexed for public article search sorts.
 - Generated vectors: `substrate_article_embedding`, `substrate_image_embedding`.
 - Locations: `substrate_location`, `substrate_location_mention`,
   `substrate_location_mention_occurrence`, `substrate_location_cache`,

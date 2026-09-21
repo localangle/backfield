@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from backfield_db import (
     AgateRun,
@@ -277,6 +279,109 @@ def test_upsert_article_reuses_existing_row_by_publication_and_entry_id() -> Non
         assert row.headline == "Updated headline"
         assert row.text == "Updated body"
         assert row.source_run_id == "run-a2"
+
+
+def _utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def test_upsert_article_persists_published_and_updated_timestamps() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    article_url = "https://example.com/timestamps"
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-ts", project_slug="proj-ts")
+        session.add(AgateRun(id="run-ts", graph_id="graph-ts", status="pending"))
+        session.commit()
+
+        created = _upsert_article(
+            session,
+            project_id=project_id,
+            consolidated={
+                "url": article_url,
+                "publication": "Example Times",
+                "entry_id": article_url,
+                "headline": "Timestamp story",
+                "text": "Body",
+                "pub_date": "2026-06-05",
+                "published": "2026-06-05T12:00:00-05:00",
+                "updated": "2026-06-05T18:30:00",
+            },
+            run_id="run-ts",
+        )
+        assert created.created
+        assert not created.content_changed
+        assert created.article.pub_date.isoformat() == "2026-06-05"
+        assert _utc(created.article.published) == datetime(2026, 6, 5, 17, 0, tzinfo=UTC)
+        assert _utc(created.article.updated) == datetime(2026, 6, 5, 18, 30, tzinfo=UTC)
+
+        unchanged = _upsert_article(
+            session,
+            project_id=project_id,
+            consolidated={
+                "url": article_url,
+                "publication": "Example Times",
+                "entry_id": article_url,
+                "headline": "Timestamp story",
+                "text": "Body",
+                "pub_date": "2026-06-05",
+                "published": "2026-06-05T17:00:00Z",
+                "updated": "2026-06-05T18:30:00+00:00",
+            },
+            run_id="run-ts",
+        )
+        assert not unchanged.created
+        assert not unchanged.content_changed
+
+        changed = _upsert_article(
+            session,
+            project_id=project_id,
+            consolidated={
+                "url": article_url,
+                "publication": "Example Times",
+                "entry_id": article_url,
+                "headline": "Timestamp story",
+                "text": "Body",
+                "pub_date": "2026-06-05",
+                "published": "2026-06-06T00:00:00Z",
+                "updated": "2026-06-05T18:30:00Z",
+            },
+            run_id="run-ts",
+        )
+        assert changed.content_changed
+        assert _utc(changed.article.published) == datetime(2026, 6, 6, 0, 0, tzinfo=UTC)
+        session.commit()
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session, org_slug="org-ts-null", project_slug="proj-ts-null"
+        )
+        session.add(AgateRun(id="run-ts-null", graph_id="graph-ts-null", status="pending"))
+        session.commit()
+        missing = _upsert_article(
+            session,
+            project_id=project_id,
+            consolidated={
+                "url": "https://example.com/missing-timestamps",
+                "publication": "Example Times",
+                "entry_id": "https://example.com/missing-timestamps",
+                "headline": "No timestamps",
+                "text": "Body",
+                "pub_date": "2026-06-05",
+                "published": "2026-06-05",
+                "updated": "not-a-timestamp",
+            },
+            run_id="run-ts-null",
+        )
+        assert missing.article.pub_date.isoformat() == "2026-06-05"
+        assert missing.article.published is None
+        assert missing.article.updated is None
+        session.commit()
 
 
 def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> None:

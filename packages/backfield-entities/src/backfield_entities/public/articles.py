@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import UTC, date, datetime
 from enum import StrEnum
+from typing import Annotated
 
 from backfield_db import (
     SubstrateArticle,
@@ -13,7 +14,7 @@ from backfield_db import (
     SubstrateOrganizationMention,
     SubstratePersonMention,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PlainSerializer, WithJsonSchema
 from sqlalchemy import func, literal, or_
 from sqlmodel import Session, col, select
 
@@ -34,6 +35,8 @@ _INTERNAL_ARTICLE_SOURCE_ID = ARTICLE_TEXT_FINGERPRINT_SOURCE
 class PublicArticleSort(StrEnum):
     relevance = "relevance"
     pub_date = "pub_date"
+    published = "published"
+    updated = "updated"
 
 
 class PublicSortDirection(StrEnum):
@@ -52,12 +55,32 @@ class PublicArticleSourceOut(BaseModel):
     name: str
 
 
+def public_timestamp_json(value: datetime | None) -> str | None:
+    """Render a public instant as UTC ISO-8601 with a Z suffix."""
+    if value is None:
+        return None
+    utc = value.astimezone(UTC) if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    rendered = utc.isoformat()
+    if rendered.endswith("+00:00"):
+        return f"{rendered[:-6]}Z"
+    return rendered
+
+
+PublicUtcTimestamp = Annotated[
+    datetime | None,
+    PlainSerializer(public_timestamp_json, when_used="json"),
+    WithJsonSchema({"anyOf": [{"type": "string", "format": "date-time"}, {"type": "null"}]}),
+]
+
+
 class PublicArticleOut(BaseModel):
     id: int
     headline: str
     url: str | None = None
     author: str | None = None
     pub_date: date | None = None
+    published: PublicUtcTimestamp = None
+    updated: PublicUtcTimestamp = None
     source: PublicArticleSourceOut | None = None
     preview: str | None = None
     metadata: list[PublicArticleMetaOut] = Field(default_factory=list)
@@ -229,6 +252,8 @@ def _article_to_public_out(
         url=article.url,
         author=article.author,
         pub_date=article.pub_date,
+        published=article.published,
+        updated=article.updated,
         source=source,
         preview=preview,
         metadata=metadata,
@@ -446,6 +471,15 @@ def search_public_articles(
         pub_date = col(SubstrateArticle.pub_date)
         order_by.append(
             pub_date.desc().nulls_last() if descending else pub_date.asc().nulls_first()
+        )
+    elif params.sort in (PublicArticleSort.published, PublicArticleSort.updated):
+        timestamp = (
+            col(SubstrateArticle.published)
+            if params.sort is PublicArticleSort.published
+            else col(SubstrateArticle.updated)
+        )
+        order_by.append(
+            timestamp.desc().nulls_last() if descending else timestamp.asc().nulls_first()
         )
     else:
         # SQLite has no full-text rank; retain the prior publication-date fallback.

@@ -39,6 +39,22 @@ those rows stay `backfield_s3_ingestion`. The command uses `BACKFIELD_DATABASE_U
 filters and facets use outlet names; `backfield_s3_ingestion` is no longer a facet value for
 repaired rows.
 
+## Article published / updated timestamp backfill
+
+Articles ingested before `published` / `updated` were persisted can be filled from linked
+processed-item JSON (`reviewed_output_json`, then `result_json`, then `input_json`). This is not
+a schema migration and is **not** registered on the `backfield` CLI menu.
+
+```bash
+uv run python scripts/backfill_article_timestamps.py
+uv run python scripts/backfill_article_timestamps.py --apply
+uv run python scripts/backfill_article_timestamps.py --project-slug general --json
+```
+
+Dry-run is the default. Only null columns are filled. The script does not invent `published`
+from `updated` or `pub_date`. Date-only or unparseable values are skipped. Use
+`BACKFIELD_DATABASE_URL` (then `DATABASE_URL`), the same as other host operator scripts.
+
 The strict project runtime migration validates retained projects before making `workspace_id` and
 `stylebook_id` required. It stops with the first project or workspace that has a null, missing, or
 cross-organization assignment. Repair those rows and rerun the migration; it does not guess a

@@ -30,7 +30,11 @@ from backfield_entities.public.article_hub import (
     _canonical_stylebook_slugs,
     _canonical_summary,
 )
-from backfield_entities.public.articles import ArticleMetaClause, _apply_public_article_list_filters
+from backfield_entities.public.articles import (
+    ArticleMetaClause,
+    PublicUtcTimestamp,
+    _apply_public_article_list_filters,
+)
 from backfield_entities.public.mention_evidence import (
     PublicMentionEvidenceOut,
     PublicMentionOccurrenceOut,
@@ -52,6 +56,8 @@ class PublicMentionArticleOut(BaseModel):
     headline: str
     url: str | None = None
     pub_date: date | None = None
+    published: PublicUtcTimestamp = None
+    updated: PublicUtcTimestamp = None
 
 
 class PublicMentionSearchItemOut(BaseModel):
@@ -142,6 +148,8 @@ def _article_article_out(article: SubstrateArticle) -> PublicMentionArticleOut:
         headline=str(article.headline),
         url=article.url,
         pub_date=article.pub_date,
+        published=article.published,
+        updated=article.updated,
     )
 
 

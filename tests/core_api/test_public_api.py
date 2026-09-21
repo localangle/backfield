@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Generator
-from datetime import date
+from datetime import UTC, date, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -615,6 +615,8 @@ def test_public_article_search_sort_defaults_and_validation(
     assert default.json()["sort"] == "pub_date"
     assert default.json()["sort_direction"] == "desc"
     assert [item["id"] for item in default.json()["items"]] == [1, 2]
+    assert default.json()["items"][0]["published"] is None
+    assert default.json()["items"][0]["updated"] is None
 
     ascending = public_client.get(
         "/public/v1/projects/general/articles/search",
@@ -642,6 +644,120 @@ def test_public_article_search_sort_defaults_and_validation(
     )
     assert invalid.status_code == 400
     assert invalid.json()["error"]["code"] == "bad_request"
+
+
+def test_public_article_search_sorts_by_published_and_updated(
+    public_client: TestClient,
+    tmp_path,
+) -> None:
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'public-api-test.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    same_published = datetime(2024, 6, 1, 15, 0, tzinfo=UTC)
+    with Session(engine) as session:
+        general = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "general")
+        ).one()
+        project_id = int(general.id)  # type: ignore[arg-type]
+        early = SubstrateArticle(
+            project_id=project_id,
+            headline="Same published early id",
+            text="Timestamp sort early",
+            pub_date=date(2020, 1, 1),
+            published=same_published,
+            updated=None,
+        )
+        late = SubstrateArticle(
+            project_id=project_id,
+            headline="Same published late id",
+            text="Timestamp sort late",
+            pub_date=date(2020, 1, 2),
+            published=same_published,
+            updated=datetime(2024, 8, 1, 12, 0, tzinfo=UTC),
+        )
+        blank = SubstrateArticle(
+            project_id=project_id,
+            headline="Missing published",
+            text="Timestamp sort blank",
+            pub_date=date(2020, 1, 3),
+            published=None,
+            updated=datetime(2024, 4, 1, 8, 30, tzinfo=UTC),
+        )
+        session.add(early)
+        session.add(late)
+        session.add(blank)
+        session.commit()
+        session.refresh(early)
+        session.refresh(late)
+        session.refresh(blank)
+        early_id = int(early.id)  # type: ignore[arg-type]
+        late_id = int(late.id)  # type: ignore[arg-type]
+        blank_id = int(blank.id)  # type: ignore[arg-type]
+
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+
+    published_desc = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"sort": "published", "sort_direction": "desc", "limit": 100},
+    )
+    assert published_desc.status_code == 200
+    assert published_desc.json()["sort"] == "published"
+    assert [item["id"] for item in published_desc.json()["items"]] == [
+        late_id,
+        early_id,
+        blank_id,
+        2,
+        1,
+    ]
+    late_item = published_desc.json()["items"][0]
+    assert late_item["published"] == "2024-06-01T15:00:00Z"
+    assert late_item["updated"] == "2024-08-01T12:00:00Z"
+    assert published_desc.json()["items"][1]["updated"] is None
+    assert published_desc.json()["items"][-1]["published"] is None
+
+    published_asc = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"sort": "published", "sort_direction": "asc", "limit": 100},
+    )
+    assert [item["id"] for item in published_asc.json()["items"]] == [
+        1,
+        2,
+        blank_id,
+        early_id,
+        late_id,
+    ]
+
+    updated_desc = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"sort": "updated", "sort_direction": "desc", "limit": 100},
+    )
+    assert updated_desc.json()["sort"] == "updated"
+    assert [item["id"] for item in updated_desc.json()["items"]] == [
+        late_id,
+        blank_id,
+        early_id,
+        2,
+        1,
+    ]
+    assert updated_desc.json()["items"][1]["updated"] == "2024-04-01T08:30:00Z"
+
+    updated_asc = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"sort": "updated", "sort_direction": "asc", "limit": 100},
+    )
+    assert [item["id"] for item in updated_asc.json()["items"]] == [
+        1,
+        2,
+        early_id,
+        blank_id,
+        late_id,
+    ]
 
 
 @patch("core_api.routers.public.articles.semantic_search.embed_semantic_search_query")
@@ -1147,6 +1263,8 @@ def test_public_article_detail(public_client: TestClient) -> None:
     body = r.json()
     assert body["headline"] == "City council votes on budget"
     assert body["author"] == "Jane Doe"
+    assert body["published"] is None
+    assert body["updated"] is None
     assert "text" not in body
     assert body["preview"]
     assert body["metadata"][0]["category"] == "local_government_politics"

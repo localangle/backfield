@@ -7,6 +7,8 @@ import re
 from datetime import UTC, date, datetime
 from typing import Any
 
+from backfield_entities.ingest.article_timestamps import parse_article_timestamp
+
 _WS_RE = re.compile(r"\s+")
 
 
@@ -21,6 +23,10 @@ def _normalize_name(value: str) -> str:
 
 def _sha256_hex(payload: str) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _parse_timestamp(value: Any) -> datetime | None:
+    return parse_article_timestamp(value)
 
 
 def _parse_date(value: Any) -> date | None:

@@ -30,7 +30,7 @@ const document = parseOpenApiDocument({
           {
             name: "sort",
             in: "query",
-            schema: { type: "string", enum: ["relevance", "pub_date"] },
+            schema: { type: "string", enum: ["relevance", "pub_date", "published", "updated"] },
           },
           {
             name: "limit",
@@ -128,7 +128,7 @@ describe("request construction", () => {
         "",
         "",
       ),
-    ).toThrow("sort must be one of: relevance, pub_date")
+    ).toThrow("sort must be one of: relevance, pub_date, published, updated")
 
     expect(() =>
       prepareRequest(

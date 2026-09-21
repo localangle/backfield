@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 
 from backfield_db import AgateProcessedItem, SubstrateArticle, SubstrateImage
@@ -19,7 +19,7 @@ from backfield_entities.ingest.article_external_identity import (
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
-from worker.substrate.common import _parse_date, _sha256_hex, _utcnow
+from worker.substrate.common import _parse_date, _parse_timestamp, _sha256_hex, _utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class ArticleUpsertResult:
 
     article: SubstrateArticle
     created: bool
-    #: True when a merge changed headline/author/date/text/url (False for creates).
+    #: True when a merge changed headline, author, dates, timestamps, text, or url.
     content_changed: bool
 
 
@@ -114,6 +114,15 @@ def _fetch_substrate_article_after_unique_violation(
     )
 
 
+def _timestamp_instant(value: datetime | None) -> datetime | None:
+    """Compare stored instants. A naive value is UTC, matching ingest parsing."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def _apply_article_merge(
     session: Session,
     article: SubstrateArticle,
@@ -122,6 +131,8 @@ def _apply_article_merge(
     headline_str: str,
     author_str: str | None,
     pub_date: date | None,
+    published: datetime | None,
+    updated: datetime | None,
     text_str: str,
     run_id: str,
     processed_item_id: int | None = None,
@@ -134,6 +145,8 @@ def _apply_article_merge(
         article.headline != headline_str
         or article.author != author_str
         or article.pub_date != pub_date
+        or _timestamp_instant(article.published) != _timestamp_instant(published)
+        or _timestamp_instant(article.updated) != _timestamp_instant(updated)
         or article.text != text_str
         or article.url != resolved_url
     )
@@ -141,6 +154,8 @@ def _apply_article_merge(
     article.headline = headline_str
     article.author = author_str
     article.pub_date = pub_date
+    article.published = published
+    article.updated = updated
     article.text = text_str
     article.url = resolved_url
     article.source_run_id = run_id
@@ -193,6 +208,8 @@ def _upsert_article(
         author_str = None
 
     pub_date = _parse_date(consolidated.get("pub_date"))
+    published = _parse_timestamp(consolidated.get("published"))
+    updated = _parse_timestamp(consolidated.get("updated"))
 
     publication = consolidated.get("publication")
     publication_str = str(publication).strip() if isinstance(publication, str) else None
@@ -260,6 +277,8 @@ def _upsert_article(
         "headline_str": headline_str,
         "author_str": author_str,
         "pub_date": pub_date,
+        "published": published,
+        "updated": updated,
         "text_str": text_str,
         "run_id": run_id,
         "processed_item_id": processed_item_id,
@@ -277,6 +296,8 @@ def _upsert_article(
             headline=headline_str,
             author=author_str,
             pub_date=pub_date,
+            published=published,
+            updated=updated,
             text=text_str,
             source_run_id=run_id,
             source_item_id=processed_item_id,

@@ -72,7 +72,7 @@ describe("OpenAPI parsing and endpoint rendering", () => {
       info: { title: "Public API", version: "1.2.0" },
       components: {
         schemas: {
-          ArticleSort: { type: "string", enum: ["relevance", "pub_date"] },
+          ArticleSort: { type: "string", enum: ["relevance", "pub_date", "published", "updated"] },
           SortDirection: { type: "string", enum: ["asc", "desc"] },
         },
       },
@@ -247,6 +247,15 @@ describe("OpenAPI parsing and endpoint rendering", () => {
       "",
       "relevance",
       "pub_date",
+      "published",
+      "updated",
+    ])
+    expect(Array.from(sort.options).map((option) => option.textContent)).toEqual([
+      "Default",
+      "Relevance",
+      "Publication date",
+      "Published time",
+      "Updated time",
     ])
     expect(screen.getByLabelText(/sort_direction/)).toHaveValue("")
 

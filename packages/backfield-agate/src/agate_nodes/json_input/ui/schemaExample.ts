@@ -5,7 +5,8 @@ export const JSON_INPUT_SCHEMA_EXAMPLE = `{
   "url": "https://example.com/article",
   "author": "Author name",
   "pub_date": "2026-05-27",
-  "updated": "2026-05-27T12:00:00-05:00",
+  "published": "2026-05-27T12:00:00-05:00",
+  "updated": "2026-05-27T15:30:00Z",
   "text": "Full article text…",
   "images": [
     {

@@ -400,6 +400,18 @@
             ],
             "title": "Pub Date"
           },
+          "published": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published"
+          },
           "source": {
             "anyOf": [
               {
@@ -420,6 +432,18 @@
               }
             ],
             "title": "Text"
+          },
+          "updated": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated"
           },
           "url": {
             "anyOf": [
@@ -869,6 +893,18 @@
             ],
             "title": "Pub Date"
           },
+          "published": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published"
+          },
           "source": {
             "anyOf": [
               {
@@ -878,6 +914,18 @@
                 "type": "null"
               }
             ]
+          },
+          "updated": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated"
           },
           "url": {
             "anyOf": [
@@ -1474,6 +1522,18 @@
             ],
             "title": "Pub Date"
           },
+          "published": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published"
+          },
           "source": {
             "anyOf": [
               {
@@ -1483,6 +1543,18 @@
                 "type": "null"
               }
             ]
+          },
+          "updated": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated"
           },
           "url": {
             "anyOf": [
@@ -1855,6 +1927,18 @@
             ],
             "title": "Pub Date"
           },
+          "published": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published"
+          },
           "score": {
             "title": "Score",
             "type": "number"
@@ -1868,6 +1952,18 @@
                 "type": "null"
               }
             ]
+          },
+          "updated": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated"
           },
           "url": {
             "anyOf": [
@@ -1977,7 +2073,9 @@
       "PublicArticleSort": {
         "enum": [
           "relevance",
-          "pub_date"
+          "pub_date",
+          "published",
+          "updated"
         ],
         "title": "PublicArticleSort",
         "type": "string"
@@ -2756,6 +2854,30 @@
             ],
             "title": "Pub Date"
           },
+          "published": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published"
+          },
+          "updated": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated"
+          },
           "url": {
             "anyOf": [
               {
@@ -3059,6 +3181,30 @@
               }
             ],
             "title": "Pub Date"
+          },
+          "published": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published"
+          },
+          "updated": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated"
           },
           "url": {
             "anyOf": [
@@ -3556,6 +3702,30 @@
             ],
             "title": "Pub Date"
           },
+          "published": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published"
+          },
+          "updated": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated"
+          },
           "url": {
             "anyOf": [
               {
@@ -3822,6 +3992,30 @@
               }
             ],
             "title": "Pub Date"
+          },
+          "published": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published"
+          },
+          "updated": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated"
           },
           "url": {
             "anyOf": [
@@ -6587,7 +6781,7 @@
             }
           },
           {
-            "description": "Sort by relevance or publication date",
+            "description": "Sort by relevance, publication date, published time, or updated time",
             "in": "query",
             "name": "sort",
             "required": false,
@@ -6600,7 +6794,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Sort by relevance or publication date",
+              "description": "Sort by relevance, publication date, published time, or updated time",
               "title": "Sort"
             }
           },

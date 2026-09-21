@@ -23,7 +23,11 @@ from sqlmodel import Session, col, func, select
 
 from backfield_entities.catalog.canonical_meta import AttrClause
 from backfield_entities.catalog.search import catalog_label_alias_ilike_filter
-from backfield_entities.public.articles import ArticleMetaClause, PublicArticleOut
+from backfield_entities.public.articles import (
+    ArticleMetaClause,
+    PublicArticleOut,
+    PublicUtcTimestamp,
+)
 from backfield_entities.public.canonical_metadata import (
     PublicCanonicalMetaOut,
     append_attr_filters,
@@ -78,6 +82,8 @@ class PublicLocationMentionArticleOut(BaseModel):
     headline: str
     url: str | None = None
     pub_date: date | None = None
+    published: PublicUtcTimestamp = None
+    updated: PublicUtcTimestamp = None
 
 
 class PublicLocationMentionOut(BaseModel):
@@ -477,6 +483,8 @@ def list_public_location_mentions(
                     headline=str(article.headline),
                     url=article.url,
                     pub_date=article.pub_date,
+                    published=article.published,
+                    updated=article.updated,
                 ),
                 label=str(location.name),
                 location_type=location.location_type,

@@ -178,6 +178,11 @@ workspace once with `uv sync`; a healthy install does not sync on every command.
 outlet names (dry-run by default; `--apply` to write). See
 [migrations](../operations/migrations.md#s3-article-outlet-source-repair).
 
+`uv run python scripts/backfill_article_timestamps.py` fills null article `published` /
+`updated` values from processed-item JSON (dry-run by default; not a `backfield` CLI
+subcommand). See
+[migrations](../operations/migrations.md#article-published--updated-timestamp-backfill).
+
 Prefer `make migrate` when working entirely through Compose. Use `make migrate-host` when you want
 the host-installed CLI and direct database URL behavior.
 
