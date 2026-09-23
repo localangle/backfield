@@ -1011,7 +1011,12 @@ def execute_json_input_batch_setup(run_id: str) -> None:
             chord(header, finalize_s3_parent_run.s(run_id)).apply_async(queue=_queue)
         except Exception as e:
             logger.exception("JSON Input batch setup failed for run %s", run_id)
-            with Session(engine) as session3:
+            # Unpooled Session: the enclosing `with Session(engine)` above is still
+            # held here, and the worker runs pool_size=1 / max_overflow=0, so asking
+            # the pool for a second connection blocks until it times out and this
+            # handler never marks the run failed. Same rule as
+            # _fail_stylebook_bundle_job below.
+            with null_pool_session() as session3:
                 run_fail = session3.exec(
                     select(AgateRun)
                     .where(AgateRun.id == run_id)
@@ -1356,7 +1361,12 @@ def execute_s3_batch_setup(run_id: str) -> None:
             chord(header, finalize_s3_parent_run.s(run_id)).apply_async(queue=_queue)
         except Exception as e:
             logger.exception("S3 batch setup failed for run %s", run_id)
-            with Session(engine) as session3:
+            # Unpooled Session: the enclosing `with Session(engine)` above is still
+            # held here, and the worker runs pool_size=1 / max_overflow=0, so asking
+            # the pool for a second connection blocks until it times out and this
+            # handler never marks the run failed. Same rule as
+            # _fail_stylebook_bundle_job below.
+            with null_pool_session() as session3:
                 run_fail = session3.exec(
                     select(AgateRun)
                     .where(AgateRun.id == run_id)
