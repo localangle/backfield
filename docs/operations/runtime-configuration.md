@@ -177,6 +177,13 @@ prefix, and region remain flow-node settings. Worker environment credentials are
 fallback, not the normal product configuration. `AGATE_TIMEZONE` controls S3 Output date partitions
 and defaults to `America/Chicago`.
 
+The access key and secret are required. An optional role ARN
+(`platform.storage.s3_role_arn`, worker env `BACKFIELD_S3_ROLE_ARN`) tells the worker to call
+`sts:AssumeRole` with those keys on each flow S3 client. Temporary credentials stay on that client
+and refresh before the default one-hour session ends. Leave the role ARN blank to use the keys
+directly, including an optional session token. A project override replaces the organization role;
+clearing the override restores it. Stylebook bundle storage does not assume this role.
+
 Stylebook bundle storage is operator infrastructure:
 
 - `STYLEBOOK_BUNDLE_S3_BUCKET`: staging bucket for Stylebook import/export. Bundle job routes return

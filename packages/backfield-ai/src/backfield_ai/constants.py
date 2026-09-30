@@ -74,6 +74,7 @@ INTEGRATION_KEY_PLATFORM_BRAVE_SEARCH = "platform.search.brave"
 INTEGRATION_KEY_PLATFORM_S3_ACCESS_KEY_ID = "platform.storage.s3_access_key_id"
 INTEGRATION_KEY_PLATFORM_S3_SECRET_ACCESS_KEY = "platform.storage.s3_secret_access_key"
 INTEGRATION_KEY_PLATFORM_S3_SESSION_TOKEN = "platform.storage.s3_session_token"
+INTEGRATION_KEY_PLATFORM_S3_ROLE_ARN = "platform.storage.s3_role_arn"
 
 ORG_PLATFORM_INTEGRATION_KEYS: frozenset[str] = frozenset(
     {
@@ -83,6 +84,7 @@ ORG_PLATFORM_INTEGRATION_KEYS: frozenset[str] = frozenset(
         INTEGRATION_KEY_PLATFORM_S3_ACCESS_KEY_ID,
         INTEGRATION_KEY_PLATFORM_S3_SECRET_ACCESS_KEY,
         INTEGRATION_KEY_PLATFORM_S3_SESSION_TOKEN,
+        INTEGRATION_KEY_PLATFORM_S3_ROLE_ARN,
     }
 )
 

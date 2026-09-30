@@ -25,6 +25,7 @@ const OVERRIDE_TO_ORG_PLATFORM_KEY: Record<(typeof PROJECT_OVERRIDE_ENV_KEYS)[nu
   AWS_ACCESS_KEY_ID: PLATFORM_INTEGRATION_KEYS.s3AccessKeyId,
   AWS_SECRET_ACCESS_KEY: PLATFORM_INTEGRATION_KEYS.s3SecretAccessKey,
   AWS_SESSION_TOKEN: PLATFORM_INTEGRATION_KEYS.s3SessionToken,
+  BACKFIELD_S3_ROLE_ARN: PLATFORM_INTEGRATION_KEYS.s3RoleArn,
 }
 
 const OVERRIDE_LABELS: Record<string, { title: string; hint: string }> = {
@@ -51,6 +52,10 @@ const OVERRIDE_LABELS: Record<string, { title: string; hint: string }> = {
   AWS_SESSION_TOKEN: {
     title: 'S3 session token',
     hint: 'Optional; for temporary credentials.',
+  },
+  BACKFIELD_S3_ROLE_ARN: {
+    title: 'S3 role ARN (optional)',
+    hint: 'Replaces the organization role for this project. Leave blank to keep the organization default.',
   },
 }
 
@@ -199,6 +204,7 @@ export default function ProjectDetailIntegrationsTab({
             const draft = drafts[keyName] ?? ''
             const draftEmpty = !draft.trim()
             const orgHasKeyForSlot = orgConfigured.has(OVERRIDE_TO_ORG_PLATFORM_KEY[keyName])
+            const isRoleArn = keyName === 'BACKFIELD_S3_ROLE_ARN'
             return (
               <div key={keyName} className="space-y-2 border-b border-border pb-6 last:border-0 last:pb-0">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -219,15 +225,19 @@ export default function ProjectDetailIntegrationsTab({
                     </Label>
                     <Input
                       id={`ov-${keyName}`}
-                      type="password"
+                      type={isRoleArn ? 'text' : 'password'}
                       autoComplete="off"
                       value={draft}
                       onChange={(e) => setDraft(keyName, e.target.value)}
                       placeholder={
                         has && draftEmpty
-                          ? STORED_SECRET_PLACEHOLDER
+                          ? isRoleArn
+                            ? 'Role ARN on file — paste to replace'
+                            : STORED_SECRET_PLACEHOLDER
                           : !has
-                            ? 'Paste key'
+                            ? isRoleArn
+                              ? 'Paste role ARN'
+                              : 'Paste key'
                             : undefined
                       }
                       disabled={saving}

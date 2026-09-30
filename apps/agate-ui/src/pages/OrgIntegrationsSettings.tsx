@@ -38,6 +38,7 @@ export default function OrgIntegrationsSettings() {
   const [awsId, setAwsId] = useState('')
   const [awsSecret, setAwsSecret] = useState('')
   const [awsSession, setAwsSession] = useState('')
+  const [awsRoleArn, setAwsRoleArn] = useState('')
 
   const reload = useCallback(async () => {
     if (organizationId == null) return
@@ -449,6 +450,27 @@ export default function OrgIntegrationsSettings() {
                   className="font-mono text-sm mt-1 w-full"
                 />
               </div>
+              <div>
+                <Label htmlFor="org-aws-role">Role ARN (optional)</Label>
+                <Input
+                  id="org-aws-role"
+                  type="text"
+                  autoComplete="off"
+                  value={awsRoleArn}
+                  onChange={(e) => setAwsRoleArn(e.target.value)}
+                  disabled={saving}
+                  placeholder={
+                    configuredKeys.has(PLATFORM_INTEGRATION_KEYS.s3RoleArn) && !awsRoleArn.trim()
+                      ? 'Role ARN on file — paste to replace'
+                      : undefined
+                  }
+                  className="font-mono text-sm mt-1 w-full"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Only when these keys must assume a role before they can use the bucket. Leave
+                  blank to use the keys directly.
+                </p>
+              </div>
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
@@ -479,9 +501,22 @@ export default function OrgIntegrationsSettings() {
                           PLATFORM_INTEGRATION_KEYS.s3SessionToken,
                         )
                       }
+                      if (awsRoleArn.trim()) {
+                        await putOrganizationIntegrationSecret(
+                          organizationId,
+                          PLATFORM_INTEGRATION_KEYS.s3RoleArn,
+                          { value: awsRoleArn.trim() },
+                        )
+                      } else if (configuredKeys.has(PLATFORM_INTEGRATION_KEYS.s3RoleArn)) {
+                        await deleteOrganizationIntegrationSecret(
+                          organizationId,
+                          PLATFORM_INTEGRATION_KEYS.s3RoleArn,
+                        )
+                      }
                       setAwsId('')
                       setAwsSecret('')
                       setAwsSession('')
+                      setAwsRoleArn('')
                       await reload()
                     } catch (e) {
                       setError('Could not save S3 keys')
@@ -515,6 +550,12 @@ export default function OrgIntegrationsSettings() {
                         await deleteOrganizationIntegrationSecret(
                           organizationId,
                           PLATFORM_INTEGRATION_KEYS.s3SessionToken,
+                        )
+                      }
+                      if (configuredKeys.has(PLATFORM_INTEGRATION_KEYS.s3RoleArn)) {
+                        await deleteOrganizationIntegrationSecret(
+                          organizationId,
+                          PLATFORM_INTEGRATION_KEYS.s3RoleArn,
                         )
                       }
                       await reload()

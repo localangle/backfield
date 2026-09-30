@@ -20,6 +20,7 @@ from backfield_ai.constants import (
     INTEGRATION_KEY_PLATFORM_GEOCODE_EARTH,
     INTEGRATION_KEY_PLATFORM_GEOCODIO,
     INTEGRATION_KEY_PLATFORM_S3_ACCESS_KEY_ID,
+    INTEGRATION_KEY_PLATFORM_S3_ROLE_ARN,
     INTEGRATION_KEY_PLATFORM_S3_SECRET_ACCESS_KEY,
     INTEGRATION_KEY_PLATFORM_S3_SESSION_TOKEN,
     ORG_PLATFORM_INTEGRATION_KEYS,
@@ -91,6 +92,9 @@ def organization_platform_env_keys(session: Session, organization_id: int) -> di
             out["AWS_SECRET_ACCESS_KEY"] = plain
         elif ik == INTEGRATION_KEY_PLATFORM_S3_SESSION_TOKEN:
             out["AWS_SESSION_TOKEN"] = plain
+        elif ik == INTEGRATION_KEY_PLATFORM_S3_ROLE_ARN:
+            # Not AWS_ROLE_ARN: that name is the SDK web-identity provider.
+            out["BACKFIELD_S3_ROLE_ARN"] = plain
     return out
 
 
