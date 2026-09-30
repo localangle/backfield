@@ -9,6 +9,7 @@ export const PLATFORM_INTEGRATION_KEYS = {
   s3AccessKeyId: 'platform.storage.s3_access_key_id',
   s3SecretAccessKey: 'platform.storage.s3_secret_access_key',
   s3SessionToken: 'platform.storage.s3_session_token',
+  s3RoleArn: 'platform.storage.s3_role_arn',
 } as const
 
 export const PLATFORM_INTEGRATION_KEY_LIST: string[] = Object.values(PLATFORM_INTEGRATION_KEYS)
@@ -20,4 +21,5 @@ export const PROJECT_OVERRIDE_ENV_KEYS = [
   'AWS_ACCESS_KEY_ID',
   'AWS_SECRET_ACCESS_KEY',
   'AWS_SESSION_TOKEN',
+  'BACKFIELD_S3_ROLE_ARN',
 ] as const

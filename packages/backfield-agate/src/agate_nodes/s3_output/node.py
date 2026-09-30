@@ -20,27 +20,19 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-import boto3
-
 logger = logging.getLogger(__name__)
 
 
 def _s3_client():
-    aws_access_key = os.environ.get("AWS_ACCESS_KEY_ID")
-    aws_secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
-    aws_session_token = os.environ.get("AWS_SESSION_TOKEN")
-    if not aws_access_key or not aws_secret_key:
-        raise ValueError(
+    # Local import: this module is imported before agate_runtime finishes loading.
+    from agate_runtime.s3_credentials import s3_client_from_env
+
+    return s3_client_from_env(
+        missing_credentials_message=(
             "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set in the environment "
             "(project API keys / worker overlay) for S3Output."
         )
-    session_kwargs: dict[str, str] = {
-        "aws_access_key_id": aws_access_key,
-        "aws_secret_access_key": aws_secret_key,
-    }
-    if aws_session_token:
-        session_kwargs["aws_session_token"] = aws_session_token
-    return boto3.client("s3", **session_kwargs)
+    )
 
 
 def _output_timezone() -> ZoneInfo:

@@ -2,31 +2,21 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
-import boto3
 from agate_runtime.s3_batch import list_json_keys_under_prefix, parse_s3_text_json_document
+from agate_runtime.s3_credentials import s3_client_from_env
 
 from agate_nodes.json_input.node import json_input_output_from_dict
 
 
 def _s3_client():
-    aws_access_key = os.environ.get("AWS_ACCESS_KEY_ID")
-    aws_secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
-    aws_session_token = os.environ.get("AWS_SESSION_TOKEN")
-    if not aws_access_key or not aws_secret_key:
-        raise ValueError(
+    return s3_client_from_env(
+        missing_credentials_message=(
             "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set in the environment "
             "(project API keys / worker overlay) for S3Input."
         )
-    session_kwargs: dict[str, str] = {
-        "aws_access_key_id": aws_access_key,
-        "aws_secret_access_key": aws_secret_key,
-    }
-    if aws_session_token:
-        session_kwargs["aws_session_token"] = aws_session_token
-    return boto3.client("s3", **session_kwargs)
+    )
 
 
 def run_s3_input(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:

@@ -226,7 +226,7 @@ def test_s3_input_first_valid_json_file():
         {"AWS_ACCESS_KEY_ID": "ak", "AWS_SECRET_ACCESS_KEY": "sk"},
         clear=False,
     ):
-        with patch("agate_nodes.s3_input.node.boto3.client", return_value=client):
+        with patch("agate_runtime.s3_credentials.boto3.client", return_value=client):
             out = run_s3_input({"bucket": "my-bucket", "folder_path": "prefix"}, {})
 
     assert out["text"] == "Story from S3."
@@ -266,7 +266,7 @@ def test_s3_input_to_place_extract():
         {"AWS_ACCESS_KEY_ID": "ak", "AWS_SECRET_ACCESS_KEY": "sk"},
         clear=False,
     ):
-        with patch("agate_nodes.s3_input.node.boto3.client", return_value=client):
+        with patch("agate_runtime.s3_credentials.boto3.client", return_value=client):
             with patch(
                 "agate_nodes.place_extract.node_port.call_llm",
                 return_value=_mock_place_extract_json("Chicago", "Illinois", "IL"),
