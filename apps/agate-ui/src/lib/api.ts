@@ -932,6 +932,8 @@ export interface ProjectProcessedItem {
   status: string
   created_at: string
   source_file: string | null
+  processing_count: number
+  article_id: number | null
 }
 
 export interface ProjectProcessedItemsPage {
@@ -946,6 +948,8 @@ export interface ListProjectProcessedItemsOptions {
   q?: string | null
   limit?: number
   offset?: number
+  articleId?: number | null
+  url?: string | null
 }
 
 export async function listProjectProcessedItems(
@@ -955,6 +959,11 @@ export async function listProjectProcessedItems(
   const params = new URLSearchParams()
   if (options.q != null && options.q.trim()) {
     params.set('q', options.q.trim())
+  }
+  if (options.articleId != null) {
+    params.set('article_id', String(options.articleId))
+  } else if (options.url != null && options.url.trim()) {
+    params.set('url', options.url.trim())
   }
   if (options.limit != null) {
     params.set('limit', String(options.limit))

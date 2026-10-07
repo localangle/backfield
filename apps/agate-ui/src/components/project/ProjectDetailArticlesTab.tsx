@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,8 @@ import { formatDate } from '@/lib/utils'
 import {
   AlertTriangle,
   CheckCircle,
+  ChevronDown,
+  ChevronRight,
   Clock,
   Loader2,
   Search,
@@ -19,6 +21,7 @@ import {
 } from 'lucide-react'
 
 const PAGE_SIZE = 50
+const HISTORY_LIMIT = 500
 const SEARCH_DEBOUNCE_MS = 300
 
 interface ProjectDetailArticlesTabProps {
@@ -61,6 +64,73 @@ function shortRunId(runId: string): string {
   return runId.length > 8 ? `${runId.slice(0, 8)}…` : runId
 }
 
+function storyKey(item: ProjectProcessedItem): string | null {
+  if ((item.processing_count ?? 1) <= 1) return null
+  if (item.article_id != null) return `article:${item.article_id}`
+  if (item.url) return `url:${item.url}`
+  return null
+}
+
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <Badge variant="outline" className={`${statusBadgeClass(status)} w-fit`}>
+      {statusIcon(status)}
+      <span className="ml-1 capitalize">{status.replace(/_/g, ' ')}</span>
+    </Badge>
+  )
+}
+
+function ArticleCells({
+  item,
+  nested = false,
+  leading,
+  countLabel,
+}: {
+  item: ProjectProcessedItem
+  nested?: boolean
+  leading?: ReactNode
+  countLabel?: string | null
+}) {
+  return (
+    <>
+      <td className={`p-3 sm:p-4 align-top min-w-0 ${nested ? 'pl-10 sm:pl-12' : ''}`}>
+        <div className="flex items-start gap-2">
+          {leading}
+          <div className="min-w-0">
+            <div className="font-medium break-words">{item.title}</div>
+            {item.url ? (
+              <div className="text-xs text-muted-foreground mt-1 truncate max-w-[28rem]">
+                {item.url}
+              </div>
+            ) : null}
+            {countLabel ? (
+              <div className="text-xs text-muted-foreground mt-1">{countLabel}</div>
+            ) : null}
+          </div>
+        </div>
+      </td>
+      <td className="p-3 sm:p-4 align-top">
+        <StatusBadge status={item.status} />
+      </td>
+      <td className="p-3 sm:p-4 text-muted-foreground align-top hidden sm:table-cell">
+        {item.flow_name || '—'}
+      </td>
+      <td
+        className="p-3 sm:p-4 text-muted-foreground align-top hidden md:table-cell font-mono text-xs"
+        title={item.run_id}
+      >
+        {shortRunId(item.run_id)}
+      </td>
+      <td className="p-3 sm:p-4 text-muted-foreground align-top hidden sm:table-cell whitespace-nowrap">
+        {formatDate(item.created_at, {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        })}
+      </td>
+    </>
+  )
+}
+
 export default function ProjectDetailArticlesTab({
   projectId,
 }: ProjectDetailArticlesTabProps) {
@@ -72,6 +142,10 @@ export default function ProjectDetailArticlesTab({
   const [offset, setOffset] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [expandedKey, setExpandedKey] = useState<string | null>(null)
+  const [historyByKey, setHistoryByKey] = useState<Record<string, ProjectProcessedItem[]>>({})
+  const [historyLoadingKey, setHistoryLoadingKey] = useState<string | null>(null)
+  const [historyErrorKey, setHistoryErrorKey] = useState<string | null>(null)
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -85,6 +159,9 @@ export default function ProjectDetailArticlesTab({
     async (pageOffset: number) => {
       setLoading(true)
       setError(null)
+      setExpandedKey(null)
+      setHistoryByKey({})
+      setHistoryErrorKey(null)
       try {
         const page = await listProjectProcessedItems(projectId, {
           q: debouncedQuery || null,
@@ -109,6 +186,44 @@ export default function ProjectDetailArticlesTab({
   useEffect(() => {
     void loadPage(0)
   }, [loadPage])
+
+  const openItem = useCallback(
+    (item: ProjectProcessedItem) => {
+      navigate(`/runs/${item.run_id}/items/${item.id}`)
+    },
+    [navigate],
+  )
+
+  const toggleHistory = useCallback(
+    async (item: ProjectProcessedItem, key: string) => {
+      if (expandedKey === key) {
+        setExpandedKey(null)
+        return
+      }
+      setExpandedKey(key)
+      if (historyByKey[key]) return
+      setHistoryLoadingKey(key)
+      setHistoryErrorKey(null)
+      try {
+        const page = await listProjectProcessedItems(projectId, {
+          articleId: item.article_id,
+          url: item.article_id == null ? item.url : null,
+          limit: HISTORY_LIMIT,
+          offset: 0,
+        })
+        setHistoryByKey((current) => ({
+          ...current,
+          [key]: page.items.filter((row) => row.id !== item.id),
+        }))
+      } catch (err) {
+        console.error(err)
+        setHistoryErrorKey(key)
+      } finally {
+        setHistoryLoadingKey((current) => (current === key ? null : current))
+      }
+    },
+    [expandedKey, historyByKey, projectId],
+  )
 
   const hasQuery = debouncedQuery.length > 0
   const canPrev = offset > 0
@@ -173,50 +288,88 @@ export default function ProjectDetailArticlesTab({
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((item) => (
-                      <tr
-                        key={item.id}
-                        className="border-b last:border-b-0 hover:bg-muted/[0.07] cursor-pointer transition-colors"
-                        onClick={() =>
-                          navigate(`/runs/${item.run_id}/items/${item.id}`)
-                        }
-                      >
-                        <td className="p-3 sm:p-4 align-top min-w-0">
-                          <div className="font-medium break-words">{item.title}</div>
-                          {item.url ? (
-                            <div className="text-xs text-muted-foreground mt-1 truncate max-w-[28rem]">
-                              {item.url}
-                            </div>
-                          ) : null}
-                        </td>
-                        <td className="p-3 sm:p-4 align-top">
-                          <Badge
-                            variant="outline"
-                            className={`${statusBadgeClass(item.status)} w-fit`}
+                    {items.map((item) => {
+                      const key = storyKey(item)
+                      const expanded = key != null && expandedKey === key
+                      const history = key != null ? historyByKey[key] : undefined
+                      return (
+                        <Fragment key={item.id}>
+                          <tr
+                            className="border-b last:border-b-0 hover:bg-muted/[0.07] cursor-pointer transition-colors"
+                            onClick={() => openItem(item)}
                           >
-                            {statusIcon(item.status)}
-                            <span className="ml-1 capitalize">
-                              {item.status.replace(/_/g, ' ')}
-                            </span>
-                          </Badge>
-                        </td>
-                        <td className="p-3 sm:p-4 text-muted-foreground align-top hidden sm:table-cell">
-                          {item.flow_name || '—'}
-                        </td>
-                        <td
-                          className="p-3 sm:p-4 text-muted-foreground align-top hidden md:table-cell font-mono text-xs"
-                          title={item.run_id}
-                        >
-                          {shortRunId(item.run_id)}
-                        </td>
-                        <td className="p-3 sm:p-4 text-muted-foreground align-top hidden sm:table-cell whitespace-nowrap">
-                          {formatDate(item.created_at, {
-                            dateStyle: 'medium',
-                            timeStyle: 'short',
-                          })}
-                        </td>
-                      </tr>
-                    ))}
+                            <ArticleCells
+                              item={item}
+                              countLabel={
+                                item.processing_count > 1
+                                  ? `Processed ${item.processing_count} times`
+                                  : null
+                              }
+                              leading={
+                                key != null ? (
+                                  <button
+                                    type="button"
+                                    className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                                    aria-expanded={expanded}
+                                    aria-label={
+                                      expanded
+                                        ? 'Hide earlier processings'
+                                        : 'Show earlier processings'
+                                    }
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      void toggleHistory(item, key)
+                                    }}
+                                  >
+                                    {expanded ? (
+                                      <ChevronDown className="h-4 w-4" aria-hidden />
+                                    ) : (
+                                      <ChevronRight className="h-4 w-4" aria-hidden />
+                                    )}
+                                  </button>
+                                ) : (
+                                  <span className="inline-block h-6 w-6 shrink-0" aria-hidden />
+                                )
+                              }
+                            />
+                          </tr>
+                          {expanded && key != null ? (
+                            historyLoadingKey === key ? (
+                              <tr className="border-b bg-muted/30">
+                                <td colSpan={5} className="p-3 sm:p-4 text-muted-foreground">
+                                  <span className="inline-flex items-center gap-2 pl-8">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Loading earlier processings.
+                                  </span>
+                                </td>
+                              </tr>
+                            ) : historyErrorKey === key ? (
+                              <tr className="border-b bg-muted/30">
+                                <td colSpan={5} className="p-3 sm:p-4 text-muted-foreground pl-12">
+                                  Could not load earlier processings.
+                                </td>
+                              </tr>
+                            ) : history && history.length > 0 ? (
+                              history.map((earlier) => (
+                                <tr
+                                  key={earlier.id}
+                                  className="border-b bg-muted/30 hover:bg-muted/50 cursor-pointer"
+                                  onClick={() => openItem(earlier)}
+                                >
+                                  <ArticleCells item={earlier} nested />
+                                </tr>
+                              ))
+                            ) : (
+                              <tr className="border-b bg-muted/30">
+                                <td colSpan={5} className="p-3 sm:p-4 text-muted-foreground pl-12">
+                                  No earlier processings.
+                                </td>
+                              </tr>
+                            )
+                          ) : null}
+                        </Fragment>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

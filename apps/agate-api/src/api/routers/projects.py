@@ -69,7 +69,7 @@ class AiCostModelBreakdown(BaseModel):
 
 
 class ProjectProcessedItemOut(BaseModel):
-    """One processed item in a project Articles list (discovery → review)."""
+    """One story (or one processing, in history mode) on the project Articles list."""
 
     id: int
     run_id: str
@@ -79,6 +79,8 @@ class ProjectProcessedItemOut(BaseModel):
     status: str
     created_at: datetime
     source_file: str | None = None
+    processing_count: int = 1
+    article_id: int | None = None
 
 
 class ProjectProcessedItemsPageOut(BaseModel):
@@ -258,9 +260,7 @@ def create_project(
     workspace_id = int(ws.id)
     organization_id = int(ws.organization_id)
     auth_org_id = auth.get("organization_id")
-    if auth["type"] == "session" and (
-        auth_org_id is None or int(auth_org_id) != organization_id
-    ):
+    if auth["type"] == "session" and (auth_org_id is None or int(auth_org_id) != organization_id):
         raise HTTPException(403, "Workspace is not in the active organization")
     if (
         auth["type"] == "service"
@@ -715,9 +715,7 @@ def _avg_ai_cost_stats_for_terminal_items(
 
 
 def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
-    graphs = session.exec(
-        select(AgateGraph).where(AgateGraph.project_id == p.id)
-    ).all()
+    graphs = session.exec(select(AgateGraph).where(AgateGraph.project_id == p.id)).all()
     graph_ids = [g.id for g in graphs]
     if not graph_ids:
         return ProjectStatsOut(total_runs=0, articles_processed=0)
@@ -732,9 +730,7 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
             func.sum(
                 case(
                     (
-                        ~col(AgateRun.status).in_(
-                            ["succeeded", "pending", "running", "failed"]
-                        ),
+                        ~col(AgateRun.status).in_(["succeeded", "pending", "running", "failed"]),
                         1,
                     ),
                     else_=0,
@@ -756,19 +752,11 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
             func.max(run_duration_ms),
         ).where(base_filter, AgateRun.status == "succeeded")
     ).one()
-    avg_run_duration = (
-        max(float(duration_row[0]), 0.0) if duration_row[0] is not None else None
-    )
-    min_run_duration = (
-        max(float(duration_row[1]), 0.0) if duration_row[1] is not None else None
-    )
-    max_run_duration = (
-        max(float(duration_row[2]), 0.0) if duration_row[2] is not None else None
-    )
+    avg_run_duration = max(float(duration_row[0]), 0.0) if duration_row[0] is not None else None
+    min_run_duration = max(float(duration_row[1]), 0.0) if duration_row[1] is not None else None
+    max_run_duration = max(float(duration_row[2]), 0.0) if duration_row[2] is not None else None
 
-    avg_item_duration = _avg_terminal_processed_item_duration_ms_for_graphs(
-        session, graph_ids
-    )
+    avg_item_duration = _avg_terminal_processed_item_duration_ms_for_graphs(session, graph_ids)
     if avg_item_duration is None:
         avg_item_duration = avg_run_duration
 
@@ -776,8 +764,8 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
     avg_ai, ai_incomplete, ai_currency = _avg_ai_cost_stats_for_succeeded_runs(
         session, pid, graph_ids
     )
-    avg_ai_item, ai_item_incomplete, ai_item_currency = (
-        _avg_ai_cost_stats_for_terminal_items(session, pid, graph_ids)
+    avg_ai_item, ai_item_incomplete, ai_item_currency = _avg_ai_cost_stats_for_terminal_items(
+        session, pid, graph_ids
     )
     if avg_ai_item is None:
         avg_ai_item = avg_ai
@@ -800,12 +788,8 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
         avg_estimated_ai_cost_per_run=avg_ai,
         avg_estimated_ai_cost_per_item=avg_ai_item,
         top_flows_by_cost=top_flows_by_cost,
-        avg_estimated_ai_cost_currency=(
-            ai_item_currency if runs_succeeded > 0 else None
-        ),
-        avg_estimated_ai_cost_incomplete=(
-            ai_item_incomplete if runs_succeeded > 0 else False
-        ),
+        avg_estimated_ai_cost_currency=(ai_item_currency if runs_succeeded > 0 else None),
+        avg_estimated_ai_cost_incomplete=(ai_item_incomplete if runs_succeeded > 0 else False),
     )
 
 
@@ -1024,9 +1008,7 @@ def set_secret(
     if not _KEY_RE.match(key_name):
         raise HTTPException(400, "Invalid key name; use A-Z, digits, underscore")
     if fernet_from_env() is None:
-        raise HTTPException(
-            503, "MASTER_ENCRYPTION_KEY is not configured; cannot store secrets"
-        )
+        raise HTTPException(503, "MASTER_ENCRYPTION_KEY is not configured; cannot store secrets")
     p = session.get(BackfieldProject, project_id)
     if not p:
         raise HTTPException(404, "Project not found")
@@ -1117,10 +1099,17 @@ def list_project_processed_items_endpoint(
     q: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    article_id: int | None = None,
+    url: str | None = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ):
-    """List or search processed items in a project (Articles tab discovery)."""
+    """List stories in a project, or every processing of one story.
+
+    Without ``article_id`` or ``url``, each row is the newest processing of a story.
+    With ``article_id`` (or ``url`` when the story has no saved article), rows are the
+    ungrouped processings for that story, newest first.
+    """
     require_project_access(session, auth, project_id)
     p = session.get(BackfieldProject, project_id)
     if not p:
@@ -1130,6 +1119,8 @@ def list_project_processed_items_endpoint(
         raise HTTPException(400, "limit must be between 1 and 500")
     if offset < 0:
         raise HTTPException(400, "offset must be >= 0")
+    if article_id is not None and article_id < 1:
+        raise HTTPException(400, "article_id must be >= 1")
 
     query = (q or "").strip() or None
     rows, total = list_project_processed_items(
@@ -1138,6 +1129,8 @@ def list_project_processed_items_endpoint(
         q=query,
         limit=limit,
         offset=offset,
+        article_id=article_id,
+        url=url,
     )
     return ProjectProcessedItemsPageOut(
         total=total,
@@ -1154,6 +1147,8 @@ def list_project_processed_items_endpoint(
                 status=row.status,
                 created_at=row.created_at,
                 source_file=row.source_file,
+                processing_count=row.processing_count,
+                article_id=row.article_id,
             )
             for row in rows
         ],
