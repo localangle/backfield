@@ -160,7 +160,9 @@ architecture decision and matching test changes.
 Models and migrations index expected ownership, join, queue, and lookup paths. Important
 specialized indexes include:
 
-- GIN full-text search over article headline, text, and URL;
+- GIN full-text search over article headline, text, and URL for public article search;
+- GIN full-text search over article headline and URL (body excluded) for project Articles
+  discovery;
 - GIN trigram indexes for canonical labels and aliases used by recall and cleanup;
 - GiST indexes on location geometry, including geography-cast indexes used by radius queries;
 - project plus H3 resolution/cell indexes for map aggregation;

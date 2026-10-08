@@ -58,12 +58,13 @@ HTTP endpoint and does not change Agate API ownership of interactive project lif
   that project. Shared Stylebook canonicals for the organization are kept. The reserved
   `general` project cannot be deleted. Unlike flow deletion, project deletion does **not**
   preserve durable article content.
-- `GET /projects/{project_id}/processed-items` lists processed items across flows in the
-  project (newest first) for Agate UI Articles discovery. Optional `q` matches headline and
-  URL (linked article or input fields) plus `source_file`; it does not search article body
-  text. Pagination uses `limit` / `offset` (limit 1–500). Each row includes `title`, `url`,
-  `status`, `created_at`, `flow_name`, and `run_id` so the client can open
-  `/runs/{run_id}/items/{id}` for review.
+- `GET /projects/{project_id}/processed-items` lists one row per story (newest processing)
+  for Agate UI Articles discovery. Optional `q` matches headline and URL (linked article or
+  input fields) plus `source_file`; it does not search article body text. `total` counts
+  stories. Pagination uses `limit` / `offset` (limit 1–500). Each row includes `title`,
+  `url`, `status`, `created_at`, `flow_name`, `run_id`, `processing_count`, and `article_id`
+  so the client can open `/runs/{run_id}/items/{id}` for review. Pass `article_id` or `url`
+  to list that story's processings, newest first, without grouping.
 
 ### Flows and templates
 
