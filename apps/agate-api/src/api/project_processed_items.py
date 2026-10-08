@@ -254,10 +254,13 @@ def _keys_statement(session: Session, project_id: int, query: str | None) -> Any
 
 
 def _keys_cte(session: Session, project_id: int, query: str | None) -> Any:
+    """Story keys as a CTE. Postgres materializes them so count and page share one scan.
+
+    ``cte(materialized=True)`` is not available in SQLAlchemy 2.0.49. A dialect
+    prefix compiles to ``AS MATERIALIZED`` on Postgres and is omitted elsewhere.
+    """
     stmt = _keys_statement(session, project_id, query)
-    if session.get_bind().dialect.name == "postgresql":
-        return stmt.cte("project_item_keys", materialized=True)
-    return stmt.cte("project_item_keys")
+    return stmt.cte("project_item_keys").prefix_with("MATERIALIZED", dialect="postgresql")
 
 
 def _history_group_key(*, article_id: int | None, url: str | None) -> str | None:

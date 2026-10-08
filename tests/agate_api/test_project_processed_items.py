@@ -8,14 +8,15 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from api.deps import get_session
 from api.main import app
-from api.project_processed_items import resolve_project_item_title_and_url
+from api.project_processed_items import _keys_cte, resolve_project_item_title_and_url
 from backfield_db import (
     AgateProcessedItem,
     BackfieldOrganization,
     SubstrateArticle,
 )
 from fastapi.testclient import TestClient
-from sqlmodel import Session, SQLModel, create_engine
+from sqlalchemy.dialects import postgresql
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from tests.agate_api.test_agate_api import _insert_pending_run, _post_project
 from tests.integration_helpers import patch_test_engine
@@ -91,6 +92,16 @@ def test_resolve_title_falls_back_to_source_file() -> None:
     )
     assert title == "story-abc.json"
     assert url is None
+
+
+def test_story_keys_cte_materializes_on_postgresql() -> None:
+    """Postgres compile must emit AS MATERIALIZED without cte(materialized=...)."""
+    engine = create_engine("postgresql+psycopg://")
+    with Session(engine) as session:
+        for query in (None, "white sox"):
+            keys = _keys_cte(session, 1, query)
+            compiled = str(select(keys).compile(dialect=postgresql.dialect()))
+            assert "project_item_keys AS MATERIALIZED" in compiled
 
 
 def test_list_project_processed_items_recent_and_search(
