@@ -9,9 +9,8 @@ from typing import Any
 
 from backfield_db import AgateGraph, AgateProcessedItem, AgateRun, SubstrateArticle
 from backfield_entities.public.keyword_query import article_keyword_tsquery
-from sqlalchemy import String, case, cast, func, literal, or_
+from sqlalchemy import String, and_, case, cast, func, literal, or_, union_all
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import aliased
 from sqlmodel import Session, col, select
 
 _GENERIC_HEADLINES = frozenset({"article"})
@@ -106,54 +105,18 @@ def _headline_url_tsvector() -> Any:
     return func.to_tsvector("english", document)
 
 
-def _apply_project_item_keyword_filter(stmt: Any, q: str, session: Session) -> Any:
-    """Match headline/URL (article or input) and source_file — never article body."""
-    pattern = f"%{q.strip()}%"
-    bind = session.get_bind()
-    dialect = bind.dialect.name
-
-    input_headline = _json_text_field(AgateProcessedItem.input_json, "headline", dialect=dialect)
-    input_title = _json_text_field(AgateProcessedItem.input_json, "title", dialect=dialect)
-    input_input_headline = _json_text_field(
-        AgateProcessedItem.input_json, "input_headline", dialect=dialect
-    )
-    input_url = _json_text_field(AgateProcessedItem.input_json, "url", dialect=dialect)
-
-    field_matches = [
-        AgateProcessedItem.source_file.ilike(pattern),
-        input_headline.ilike(pattern),
-        input_title.ilike(pattern),
-        input_input_headline.ilike(pattern),
-        input_url.ilike(pattern),
-    ]
-
-    if dialect == "postgresql":
-        vector = _headline_url_tsvector()
-        ts_query = article_keyword_tsquery(q)
-        article_match = vector.op("@@")(ts_query)
-        return stmt.where(or_(article_match, *field_matches))
-
+def _matching_article_ids(session: Session, project_id: int, query: str) -> Any:
+    """Article ids whose headline or URL match. Postgres uses the headline/URL GIN index."""
+    stmt = select(SubstrateArticle.id).where(SubstrateArticle.project_id == project_id)
+    if session.get_bind().dialect.name == "postgresql":
+        return stmt.where(_headline_url_tsvector().op("@@")(article_keyword_tsquery(query)))
+    pattern = f"%{query.strip()}%"
     return stmt.where(
         or_(
             SubstrateArticle.headline.ilike(pattern),
             SubstrateArticle.url.ilike(pattern),
-            *field_matches,
         )
     )
-
-
-_ROW_FIELDS = (
-    "item_id",
-    "run_id",
-    "flow_name",
-    "status",
-    "created_at",
-    "source_file",
-    "input_json",
-    "article_headline",
-    "article_url",
-    "resolved_article_id",
-)
 
 
 def _normalized_sql_url(url_expr: Any) -> Any:
@@ -170,63 +133,23 @@ def _input_url_norm(dialect: str) -> Any:
     )
 
 
-def _project_items_select(session: Session, project_id: int) -> Any:
-    """Project processings with a story group key and resolved article id.
-
-    Group key precedence: saved article id, then the project article with the same
-    URL, then the normalized URL, then the processed item alone.
-    """
-    dialect = session.get_bind().dialect.name
-    input_url_norm = _input_url_norm(dialect)
-    article_by_url = aliased(SubstrateArticle)
-    matched_article_id = (
-        select(article_by_url.id)
-        .where(
-            article_by_url.project_id == project_id,
-            _normalized_sql_url(article_by_url.url) == _input_url_norm(dialect),
-        )
-        .order_by(col(article_by_url.id).asc())
-        .limit(1)
-        .correlate_except(article_by_url)
-        .scalar_subquery()
-    )
-    resolved_article_id = case(
-        (
-            AgateProcessedItem.substrate_article_id.is_not(None),
-            AgateProcessedItem.substrate_article_id,
-        ),
-        else_=matched_article_id,
-    )
-    group_key = case(
-        (
-            AgateProcessedItem.substrate_article_id.is_not(None),
-            _prefixed_key("article:", AgateProcessedItem.substrate_article_id),
-        ),
-        (
-            matched_article_id.is_not(None),
-            _prefixed_key("article:", matched_article_id),
-        ),
-        (
-            input_url_norm.is_not(None),
-            _prefixed_key("url:", input_url_norm),
-        ),
-        else_=_prefixed_key("item:", AgateProcessedItem.id),
-    )
+def _article_url_map(project_id: int) -> Any:
+    """One article id per normalized URL. Built once, then hash-joined."""
+    url_norm = _normalized_sql_url(SubstrateArticle.url)
     return (
         select(
-            AgateProcessedItem.id.label("item_id"),
-            AgateProcessedItem.run_id.label("run_id"),
-            AgateGraph.name.label("flow_name"),
-            AgateProcessedItem.status.label("status"),
-            AgateProcessedItem.created_at.label("created_at"),
-            AgateProcessedItem.source_file.label("source_file"),
-            AgateProcessedItem.input_json.label("input_json"),
-            SubstrateArticle.headline.label("article_headline"),
-            SubstrateArticle.url.label("article_url"),
-            group_key.label("group_key"),
-            resolved_article_id.label("resolved_article_id"),
+            func.min(SubstrateArticle.id).label("id"),
+            url_norm.label("url_norm"),
         )
-        .join(AgateRun, AgateProcessedItem.run_id == AgateRun.id)
+        .where(SubstrateArticle.project_id == project_id, url_norm.is_not(None))
+        .group_by(url_norm)
+        .subquery("article_url_map")
+    )
+
+
+def _join_project_items(stmt: Any, project_id: int) -> Any:
+    return (
+        stmt.join(AgateRun, AgateProcessedItem.run_id == AgateRun.id)
         .join(AgateGraph, AgateRun.graph_id == AgateGraph.id)
         .outerjoin(
             SubstrateArticle,
@@ -234,6 +157,107 @@ def _project_items_select(session: Session, project_id: int) -> Any:
         )
         .where(AgateGraph.project_id == project_id)
     )
+
+
+def _linked_item_keys(project_id: int) -> Any:
+    """Linked processings. Grouped by saved article id, with no input JSON parse."""
+    resolved_article_id = AgateProcessedItem.substrate_article_id
+    group_key = _prefixed_key("article:", resolved_article_id)
+    return _join_project_items(
+        select(
+            AgateProcessedItem.id.label("item_id"),
+            AgateProcessedItem.created_at.label("created_at"),
+            group_key.label("group_key"),
+            resolved_article_id.label("resolved_article_id"),
+        ).where(AgateProcessedItem.substrate_article_id.is_not(None)),
+        project_id,
+    )
+
+
+def _unlinked_item_keys(session: Session, project_id: int) -> Any:
+    """Unlinked processings. URL lookup is one grouped article map, not per item."""
+    dialect = session.get_bind().dialect.name
+    input_url_norm = _input_url_norm(dialect)
+    url_map = _article_url_map(project_id)
+    resolved_article_id = url_map.c.id
+    group_key = case(
+        (resolved_article_id.is_not(None), _prefixed_key("article:", resolved_article_id)),
+        (input_url_norm.is_not(None), _prefixed_key("url:", input_url_norm)),
+        else_=_prefixed_key("item:", AgateProcessedItem.id),
+    )
+    return _join_project_items(
+        select(
+            AgateProcessedItem.id.label("item_id"),
+            AgateProcessedItem.created_at.label("created_at"),
+            group_key.label("group_key"),
+            resolved_article_id.label("resolved_article_id"),
+        )
+        .outerjoin(
+            url_map,
+            url_map.c.url_norm == input_url_norm,
+        )
+        .where(AgateProcessedItem.substrate_article_id.is_(None)),
+        project_id,
+    )
+
+
+def _item_keys_union(session: Session, project_id: int) -> Any:
+    return union_all(
+        _linked_item_keys(project_id),
+        _unlinked_item_keys(session, project_id),
+    ).subquery("item_keys")
+
+
+def _qualifying_group_keys(session: Session, project_id: int, query: str) -> Any:
+    """Story keys where any processing matches headline, URL, or source file."""
+    dialect = session.get_bind().dialect.name
+    pattern = f"%{query.strip()}%"
+    article_ids = _matching_article_ids(session, project_id, query)
+    input_headline = _json_text_field(AgateProcessedItem.input_json, "headline", dialect=dialect)
+    input_title = _json_text_field(AgateProcessedItem.input_json, "title", dialect=dialect)
+    input_input_headline = _json_text_field(
+        AgateProcessedItem.input_json, "input_headline", dialect=dialect
+    )
+    input_url = _json_text_field(AgateProcessedItem.input_json, "url", dialect=dialect)
+    field_match = or_(
+        AgateProcessedItem.source_file.ilike(pattern),
+        input_headline.ilike(pattern),
+        input_title.ilike(pattern),
+        input_input_headline.ilike(pattern),
+        input_url.ilike(pattern),
+    )
+    keys = _item_keys_union(session, project_id)
+    matched_items = _join_project_items(
+        select(AgateProcessedItem.id.label("item_id")).where(
+            or_(AgateProcessedItem.substrate_article_id.in_(article_ids), field_match)
+        ),
+        project_id,
+    ).subquery("matched_items")
+    return (
+        select(keys.c.group_key)
+        .where(keys.c.item_id.in_(select(matched_items.c.item_id)))
+        .distinct()
+    )
+
+
+def _keys_statement(session: Session, project_id: int, query: str | None) -> Any:
+    keys = _item_keys_union(session, project_id)
+    stmt = select(
+        keys.c.item_id,
+        keys.c.created_at,
+        keys.c.group_key,
+        keys.c.resolved_article_id,
+    )
+    if not query:
+        return stmt
+    return stmt.where(keys.c.group_key.in_(_qualifying_group_keys(session, project_id, query)))
+
+
+def _keys_cte(session: Session, project_id: int, query: str | None) -> Any:
+    stmt = _keys_statement(session, project_id, query)
+    if session.get_bind().dialect.name == "postgresql":
+        return stmt.cte("project_item_keys", materialized=True)
+    return stmt.cte("project_item_keys")
 
 
 def _history_group_key(*, article_id: int | None, url: str | None) -> str | None:
@@ -248,71 +272,164 @@ def _history_group_key(*, article_id: int | None, url: str | None) -> str | None
     return f"url:{normalized}"
 
 
-def _count_rows(session: Session, stmt: Any) -> int:
-    count_stmt = select(func.count()).select_from(stmt.subquery())
-    return int(session.exec(count_stmt).one())
+def _optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    return int(value)
 
 
-def _select_row_fields(source: Any) -> Any:
-    return select(*(source.c[name] for name in _ROW_FIELDS))
-
-
-def _rows_from_results(
-    rows: Any,
+def _row_from_display(
+    mapping: Any,
     *,
-    fixed_processing_count: int | None = None,
+    processing_count: int,
+    article_id: int | None,
+) -> ProjectProcessedItemRow | None:
+    item_id = mapping["item_id"]
+    run_id = mapping["run_id"]
+    if item_id is None or not run_id:
+        return None
+    title, url = resolve_project_item_title_and_url(
+        item_id=int(item_id),
+        source_file=mapping["source_file"],
+        input_json=mapping["input_json"],
+        article_headline=mapping["article_headline"],
+        article_url=mapping["article_url"],
+    )
+    return ProjectProcessedItemRow(
+        id=int(item_id),
+        run_id=str(run_id),
+        flow_name=str(mapping["flow_name"] or ""),
+        title=title,
+        url=url,
+        status=str(mapping["status"]),
+        created_at=mapping["created_at"],
+        source_file=mapping["source_file"],
+        processing_count=processing_count,
+        article_id=article_id,
+    )
+
+
+def _display_select(project_id: int) -> Any:
+    return _join_project_items(
+        select(
+            AgateProcessedItem.id.label("item_id"),
+            AgateProcessedItem.run_id.label("run_id"),
+            AgateGraph.name.label("flow_name"),
+            AgateProcessedItem.status.label("status"),
+            AgateProcessedItem.created_at.label("created_at"),
+            AgateProcessedItem.source_file.label("source_file"),
+            AgateProcessedItem.input_json.label("input_json"),
+            SubstrateArticle.headline.label("article_headline"),
+            SubstrateArticle.url.label("article_url"),
+        ),
+        project_id,
+    )
+
+
+def _display_rows_for_ids(
+    session: Session,
+    project_id: int,
+    winners: list[tuple[int, int, int | None]],
 ) -> list[ProjectProcessedItemRow]:
-    out: list[ProjectProcessedItemRow] = []
-    for row in rows:
+    """Load review fields for the already chosen story rows, in winner order."""
+    if not winners:
+        return []
+    meta = {item_id: (count, article_id) for item_id, count, article_id in winners}
+    stmt = _display_select(project_id).where(col(AgateProcessedItem.id).in_(list(meta)))
+    by_id: dict[int, ProjectProcessedItemRow] = {}
+    for row in session.exec(stmt).all():
         mapping = row._mapping
-        item_id = mapping["item_id"]
-        run_id = mapping["run_id"]
-        if item_id is None or not run_id:
-            continue
-        title, url = resolve_project_item_title_and_url(
-            item_id=int(item_id),
-            source_file=mapping["source_file"],
-            input_json=mapping["input_json"],
-            article_headline=mapping["article_headline"],
-            article_url=mapping["article_url"],
+        item_id = int(mapping["item_id"])
+        count, article_id = meta[item_id]
+        built = _row_from_display(mapping, processing_count=count, article_id=article_id)
+        if built is not None:
+            by_id[item_id] = built
+    return [by_id[item_id] for item_id, _count, _article_id in winners if item_id in by_id]
+
+
+def _history_select(
+    session: Session,
+    project_id: int,
+    *,
+    article_id: int | None,
+    url: str | None,
+) -> Any:
+    dialect = session.get_bind().dialect.name
+    input_url_norm = _input_url_norm(dialect)
+    display = _display_select(project_id)
+    if article_id is not None:
+        url_map = _article_url_map(project_id)
+        linked = display.where(AgateProcessedItem.substrate_article_id == article_id)
+        unlinked = _join_project_items(
+            select(
+                AgateProcessedItem.id.label("item_id"),
+                AgateProcessedItem.run_id.label("run_id"),
+                AgateGraph.name.label("flow_name"),
+                AgateProcessedItem.status.label("status"),
+                AgateProcessedItem.created_at.label("created_at"),
+                AgateProcessedItem.source_file.label("source_file"),
+                AgateProcessedItem.input_json.label("input_json"),
+                SubstrateArticle.headline.label("article_headline"),
+                SubstrateArticle.url.label("article_url"),
+            ).join(
+                url_map,
+                and_(
+                    AgateProcessedItem.substrate_article_id.is_(None),
+                    url_map.c.url_norm == input_url_norm,
+                    url_map.c.id == article_id,
+                ),
+            ),
+            project_id,
         )
-        if fixed_processing_count is None:
-            processing_count = int(mapping["processing_count"])
-        else:
-            processing_count = fixed_processing_count
-        resolved_article_id = mapping["resolved_article_id"]
-        out.append(
-            ProjectProcessedItemRow(
-                id=int(item_id),
-                run_id=str(run_id),
-                flow_name=str(mapping["flow_name"] or ""),
-                title=title,
-                url=url,
-                status=str(mapping["status"]),
-                created_at=mapping["created_at"],
-                source_file=mapping["source_file"],
-                processing_count=processing_count,
-                article_id=int(resolved_article_id) if resolved_article_id is not None else None,
-            )
-        )
-    return out
+        return union_all(linked, unlinked)
+    normalized = (url or "").strip().lower()
+    return display.where(
+        AgateProcessedItem.substrate_article_id.is_(None),
+        input_url_norm == normalized,
+    )
+
+
+_DISPLAY_COLUMNS = (
+    "item_id",
+    "run_id",
+    "flow_name",
+    "status",
+    "created_at",
+    "source_file",
+    "input_json",
+    "article_headline",
+    "article_url",
+)
 
 
 def _list_story_history(
     session: Session,
     project_id: int,
     *,
-    group_key: str,
+    article_id: int | None,
+    url: str | None,
     limit: int,
     offset: int,
 ) -> tuple[list[ProjectProcessedItemRow], int]:
-    items = _project_items_select(session, project_id).subquery("history_items")
-    stmt = _select_row_fields(items).where(items.c.group_key == group_key)
-    total = _count_rows(session, stmt)
-    page = (
-        stmt.order_by(items.c.created_at.desc(), items.c.item_id.desc()).offset(offset).limit(limit)
+    history = _history_select(session, project_id, article_id=article_id, url=url).subquery(
+        "history_rows"
     )
-    rows = _rows_from_results(session.exec(page).all(), fixed_processing_count=1)
+    total = int(session.exec(select(func.count()).select_from(history)).one())
+    page = session.exec(
+        select(*(history.c[name] for name in _DISPLAY_COLUMNS))
+        .order_by(history.c.created_at.desc(), history.c.item_id.desc())
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    rows: list[ProjectProcessedItemRow] = []
+    for row in page:
+        built = _row_from_display(
+            row._mapping,
+            processing_count=1,
+            article_id=article_id,
+        )
+        if built is not None:
+            rows.append(built)
     return rows, total
 
 
@@ -324,44 +441,63 @@ def _list_grouped_stories(
     limit: int,
     offset: int,
 ) -> tuple[list[ProjectProcessedItemRow], int]:
-    items = _project_items_select(session, project_id).subquery("project_items")
-    if query:
-        matched = _apply_project_item_keyword_filter(
-            _project_items_select(session, project_id),
-            query,
-            session,
-        ).subquery("matched_items")
-        qualifying = select(matched.c.group_key).distinct()
-        scoped = (
-            select(*(items.c[name] for name in (*_ROW_FIELDS, "group_key")))
-            .where(items.c.group_key.in_(qualifying))
-            .subquery("scoped_items")
-        )
-    else:
-        scoped = items
+    """Aggregate story keys, count those groups, then load one page of winners.
 
-    ranked = select(
-        *(scoped.c[name] for name in _ROW_FIELDS),
-        func.row_number()
-        .over(
-            partition_by=scoped.c.group_key,
-            order_by=(scoped.c.created_at.desc(), scoped.c.item_id.desc()),
+    The count is ``count(*)`` of the grouped keys. It does not rank full item
+    payloads or look up an article once per processed item.
+    """
+    keys = _keys_cte(session, project_id, query)
+    grouped = (
+        select(
+            keys.c.group_key.label("group_key"),
+            func.count(keys.c.item_id).label("processing_count"),
+            func.max(keys.c.created_at).label("latest_at"),
         )
-        .label("rn"),
-        func.count(scoped.c.item_id)
-        .over(partition_by=scoped.c.group_key)
-        .label("processing_count"),
-    ).subquery("ranked_items")
-    latest = (
-        _select_row_fields(ranked).add_columns(ranked.c.processing_count).where(ranked.c.rn == 1)
+        .group_by(keys.c.group_key)
+        .cte("story_groups")
     )
-    total = _count_rows(session, latest)
-    page = (
-        latest.order_by(ranked.c.created_at.desc(), ranked.c.item_id.desc())
+    total = int(session.exec(select(func.count()).select_from(grouped)).one())
+    if total == 0 or offset >= total:
+        return [], total
+
+    page_groups = (
+        select(
+            grouped.c.group_key.label("group_key"),
+            grouped.c.processing_count.label("processing_count"),
+            grouped.c.latest_at.label("latest_at"),
+        )
+        .order_by(grouped.c.latest_at.desc(), grouped.c.group_key.desc())
         .offset(offset)
         .limit(limit)
+        .subquery("page_groups")
     )
-    return _rows_from_results(session.exec(page).all()), total
+    winner_id = func.max(keys.c.item_id).label("item_id")
+    winner_rows = session.exec(
+        select(
+            winner_id,
+            page_groups.c.processing_count,
+            func.max(keys.c.resolved_article_id).label("resolved_article_id"),
+        )
+        .select_from(keys)
+        .join(
+            page_groups,
+            and_(
+                keys.c.group_key == page_groups.c.group_key,
+                keys.c.created_at == page_groups.c.latest_at,
+            ),
+        )
+        .group_by(
+            page_groups.c.group_key,
+            page_groups.c.processing_count,
+            page_groups.c.latest_at,
+        )
+        .order_by(page_groups.c.latest_at.desc(), winner_id.desc())
+    ).all()
+    winners = [
+        (int(row.item_id), int(row.processing_count), _optional_int(row.resolved_article_id))
+        for row in winner_rows
+    ]
+    return _display_rows_for_ids(session, project_id, winners), total
 
 
 def list_project_processed_items(
@@ -383,12 +519,12 @@ def list_project_processed_items(
     limit = max(1, min(int(limit), 500))
     offset = max(0, int(offset))
     query = (q or "").strip() or None
-    group_key = _history_group_key(article_id=article_id, url=url)
-    if group_key is not None:
+    if _history_group_key(article_id=article_id, url=url) is not None:
         return _list_story_history(
             session,
             project_id,
-            group_key=group_key,
+            article_id=article_id,
+            url=url,
             limit=limit,
             offset=offset,
         )

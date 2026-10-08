@@ -2255,7 +2255,7 @@ class AgateGraph(SQLModel, table=True):
     name: str = Field(sa_column=Column(Text, nullable=False))
     description: str = Field(default="", sa_column=Column(Text, nullable=False, server_default=""))
     spec_json: str = Field(sa_column=Column(Text, nullable=False))
-    project_id: int = Field(foreign_key="backfield_project.id")
+    project_id: int = Field(foreign_key="backfield_project.id", index=True)
     public_run_enabled: bool = Field(
         default=False,
         sa_column=Column(Boolean, nullable=False, server_default="false"),
