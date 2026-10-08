@@ -69,6 +69,7 @@ def call_llm_tracked_sync(
     max_tokens: int | None = None,
     model_config_id: str | None = None,
     allow_max_tokens_bump: bool = True,
+    reasoning_effort: str | None = None,
 ) -> str:
     if not prompt:
         raise ValueError("Prompt cannot be empty")
@@ -159,6 +160,7 @@ def call_llm_tracked_sync(
                 timeout=float(timeout),
                 force_json_response=bool(force_json),
                 allow_max_tokens_bump=allow_max_tokens_bump,
+                reasoning_effort=reasoning_effort,
             )
             snap = {"provider": result.provider, "provider_model_id": result.provider_model_id}
             persist_llm_attempt(

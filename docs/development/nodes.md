@@ -266,7 +266,10 @@ but truncate prompt/embedding body input safely.
 GPT-5.6 extract completions (`gpt-5.6`, Sol, Terra, Luna) always send
 `reasoning_effort=none` and an explicit completion budget (default 8,192 tokens,
 retried once if the JSON is empty or truncated). Do not fall back to `minimal`; 5.6
-does not support it. Other GPT-5 models still pick the lowest LiteLLM-supported
+does not support it. Place, Person, and Organization Extract send
+`reasoning_effort=low` to the original GPT-5 family (`gpt-5`, `gpt-5-mini`,
+`gpt-5-nano`): at `minimal`, nano answers the extract prompt with an empty list for
+articles full of entities. Other GPT-5 calls still pick the lowest LiteLLM-supported
 effort (`none`, then `minimal`).
 
 ## Canvas components

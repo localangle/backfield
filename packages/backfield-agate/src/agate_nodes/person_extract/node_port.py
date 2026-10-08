@@ -23,6 +23,7 @@ from agate_nodes.extraction.chunked_entity_extract import (
 from agate_nodes.extraction.grounding import ChunkCandidate
 from agate_nodes.extraction.shared_llm import (
     effective_llm_timeout,
+    extract_reasoning_effort,
     model_config_id_from_params,
     preflight_unchunked_prompt,
     resolve_extract_litellm_model,
@@ -398,6 +399,7 @@ class PersonExtractNode:
                     azure_api_base=ctx.get_api_key("AZURE_API_BASE"),
                     project_system_prompt=ctx.project_system_prompt,
                     model_config_id=model_config_id,
+                    reasoning_effort=extract_reasoning_effort(resolved_model),
                 ),
                 timeout=effective_timeout,
             )

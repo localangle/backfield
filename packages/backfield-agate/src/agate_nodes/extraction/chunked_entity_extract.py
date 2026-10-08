@@ -29,6 +29,7 @@ from agate_nodes.extraction.prompt_text import (
     build_chunk_analysis_text,
 )
 from agate_nodes.extraction.shared_llm import (
+    extract_reasoning_effort,
     model_config_id_from_params,
     node_deadline_monotonic,
 )
@@ -107,6 +108,7 @@ async def extract_entities_over_chunks(
                     azure_api_base=ctx.get_api_key("AZURE_API_BASE"),
                     project_system_prompt=ctx.project_system_prompt,
                     model_config_id=model_config_id,
+                    reasoning_effort=extract_reasoning_effort(resolved_model),
                 ),
                 timeout=timeout,
             )

@@ -163,6 +163,70 @@ def test_completion_text_sync_gpt56_defaults(
     assert captured.get("response_format") == {"type": "json_object"}
 
 
+@pytest.mark.parametrize(
+    ("model", "requested", "expected"),
+    [
+        ("openai/gpt-5-nano", "low", "low"),
+        ("gpt-5-mini", "medium", "medium"),
+        ("gpt-5.6-terra", "low", "low"),
+        ("openai/gpt-5-nano", None, "minimal"),
+        ("gpt-5.6-terra", None, "none"),
+    ],
+)
+def test_completion_text_sync_explicit_reasoning_effort_wins(
+    monkeypatch: pytest.MonkeyPatch,
+    model: str,
+    requested: str | None,
+    expected: str,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_completion(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return _ok_resp('{"locations":[]}')
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm, "completion_cost", lambda **_kw: 0.0)
+
+    completion_text_sync(
+        litellm_model=model,
+        messages=[{"role": "user", "content": "hi"}],
+        api_key="sk-test",
+        max_tokens=None,
+        temperature=None,
+        timeout=30.0,
+        force_json_response=True,
+        reasoning_effort=requested,
+    )
+
+    assert captured.get("reasoning_effort") == expected
+
+
+def test_completion_text_sync_sends_no_reasoning_effort_for_non_gpt5_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_completion(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return _ok_resp('{"locations":[]}')
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm, "completion_cost", lambda **_kw: 0.0)
+
+    completion_text_sync(
+        litellm_model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "hi"}],
+        api_key="sk-test",
+        max_tokens=None,
+        temperature=0.0,
+        timeout=30.0,
+        force_json_response=True,
+    )
+
+    assert "reasoning_effort" not in captured
+
+
 def test_completion_text_sync_omits_max_tokens_for_non_gpt56(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -118,6 +118,7 @@ def call_llm(
     *,
     model_config_id: Optional[str] = None,
     allow_max_tokens_bump: bool = True,
+    reasoning_effort: Optional[str] = None,
 ) -> str:
     """
     Call an LLM with the given prompt and model with exponential backoff retries.
@@ -145,6 +146,8 @@ def call_llm(
             when omitted, uses ``BACKFIELD_PROJECT_SYSTEM_PROMPT`` in worker runs)
         timeout: Request timeout in seconds (default: 300s / 5 minutes)
         model_config_id: Optional Backfield AI catalog row id for ``backfield_ai_call_record``.
+        reasoning_effort: Optional ``reasoning_effort`` for GPT-5 models that wins over the
+            default chosen in ``completion_text_sync``. Applied on the worker (LiteLLM) path only.
         
     Returns:
         The LLM response text
@@ -178,6 +181,7 @@ def call_llm(
             timeout=timeout,
             model_config_id=model_config_id,
             allow_max_tokens_bump=allow_max_tokens_bump,
+            reasoning_effort=reasoning_effort,
         )
 
     # Get model from environment if not specified
