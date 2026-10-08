@@ -55,9 +55,10 @@ Node panels and synced node UI are documented in
 On the project detail page, the workspace strip uses `?tab=<id>` with values
 `flows`, `runs`, `articles`, `models`, `integrations`, and `keys`. Missing or invalid
 values resolve to `flows`. The **Runs** tab pages project runs with `limit` / `offset`
-(Previous/Next). The **Articles** tab lists recent processed items for the
-project and supports headline/URL search via `GET /projects/{id}/processed-items`; each
-row opens `/runs/{runId}/items/{itemId}` for review.
+(Previous/Next). The **Articles** tab lists one row per story (newest processing) and
+supports headline/URL search via `GET /projects/{id}/processed-items`. A story processed
+more than once can expand to earlier runs. Each row opens `/runs/{runId}/items/{itemId}`
+for review.
 
 Helpers live in `src/lib/projectWorkspaceTab.ts`.
 
