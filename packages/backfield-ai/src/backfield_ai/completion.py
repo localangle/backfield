@@ -296,6 +296,7 @@ def completion_text_sync(
     timeout: float,
     force_json_response: bool,
     allow_max_tokens_bump: bool = True,
+    reasoning_effort: str | None = None,
 ) -> LiteLLMCompletionResult:
     """Single LiteLLM completion (no Backfield-level retries here).
 
@@ -320,6 +321,9 @@ def completion_text_sync(
     effective_temperature = _litellm_completion_temperature(litellm_model, temperature)
     if effective_temperature is not None:
         kwargs["temperature"] = effective_temperature
+    if reasoning_effort:
+        # An explicit caller choice wins over the "lowest supported" default below.
+        kwargs["reasoning_effort"] = reasoning_effort
     _apply_gpt5_litellm_kwargs(litellm_model, kwargs)
     if force_json_response and _litellm_json_object_response_format_supported(litellm_model):
         kwargs["response_format"] = {"type": "json_object"}

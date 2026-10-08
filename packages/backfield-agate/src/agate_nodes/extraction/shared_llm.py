@@ -60,6 +60,23 @@ def resolve_extract_litellm_model(params: Any, *, log_label: str) -> str:
         return model
 
 
+def extract_reasoning_effort(litellm_model: str) -> str | None:
+    """Reasoning effort for entity extraction on the original GPT-5 family.
+
+    ``completion_text_sync`` defaults every gpt-5 / gpt-5-mini / gpt-5-nano call to
+    ``reasoning_effort="minimal"`` so short completions emit visible text. On the extract
+    prompts that default makes gpt-5-nano answer ``{"locations": []}`` (14 completion tokens,
+    0 reasoning) for articles full of places, people and organizations (issue #176).
+    ``"low"`` extracts them. GPT-5.6 keeps its own ``"none"`` default; other models get none.
+    """
+    model_id = litellm_model.strip().lower().split("/")[-1]
+    if model_id.startswith("gpt-5.") or model_id.startswith("gpt-5-chat"):
+        return None
+    if model_id.startswith("gpt-5"):
+        return "low"
+    return None
+
+
 def model_config_id_from_params(params: Any) -> str | None:
     raw_mc = getattr(params, "aiModelConfigId", None)
     if raw_mc is None:

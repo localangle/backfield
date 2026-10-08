@@ -95,6 +95,16 @@ budget on hidden reasoning and returns a half-written object. Backfield forces
 retries once when the JSON is truncated. If failures persist, add Document Chunker or
 switch the extract node to GPT-5.5.
 
+## Extract nodes succeed but return no entities
+
+A run can succeed with every Place, Person, or Organization Extract returning an empty
+list. With `gpt-5-nano` at `reasoning_effort=minimal`, the model answers the extract
+prompt with the empty envelope (about 14 completion tokens per call, with no reasoning
+tokens) even for articles full of entities. Those three nodes now send `low` to `gpt-5`,
+`gpt-5-mini`, and `gpt-5-nano`. If you still see it, check the per-call completion tokens: a
+constant, tiny count across articles of different lengths means the model is answering
+"none" rather than extracting.
+
 ## Provider or secret errors
 
 - Verify `MASTER_ENCRYPTION_KEY` is the same non-empty value on all APIs and the worker.
