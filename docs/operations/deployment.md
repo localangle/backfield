@@ -92,7 +92,9 @@ Deploy the API Playground at `playground.{organization-slug}.backfield.news`. Co
 DNS, TLS, and static-host routing for those tenant domains. The app infers and calls the matching
 `https://api.{organization-slug}.backfield.news` origin directly; set that tenant API’s
 `PLAYGROUND_ORIGIN` to the exact Playground URL (do not rely on a global origin regex). Preserve
-the Playground CSP and `Referrer-Policy: no-referrer` at the static host.
+the Playground CSP and `Referrer-Policy: no-referrer` at the static host. The CSP `img-src` must
+allow `https://tile.openstreetmap.org`. Map tiles set their own origin-only Referer so that
+document policy does not block the basemap.
 
 Serve hashed assets with a long cache lifetime and `index.html` with `Cache-Control: no-cache`.
 

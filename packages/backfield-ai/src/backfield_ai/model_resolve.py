@@ -12,6 +12,7 @@ from backfield_db import (
 )
 from sqlmodel import Session, select
 
+from backfield_ai.catalog_visibility import is_language_model_kind
 from backfield_ai.constants import (
     AI_DEFAULT_ROLE_GENERATIVE_DEFAULT,
     AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING,
@@ -46,6 +47,24 @@ def _load_enabled_org_config(
     return row
 
 
+def _load_enabled_language_model(
+    session: Session,
+    *,
+    organization_id: int,
+    project_id: int,
+    config_id: str,
+) -> BackfieldAiModelConfig:
+    row = _load_enabled_org_config(
+        session,
+        organization_id=organization_id,
+        project_id=project_id,
+        config_id=config_id,
+    )
+    if not is_language_model_kind(str(row.model_kind)):
+        raise ValueError("That model is not a language model.")
+    return row
+
+
 def resolve_geocode_litellm_models(
     session: Session,
     project_id: int,
@@ -67,7 +86,7 @@ def resolve_geocode_litellm_models(
     est_fallback = str(getattr(params, "geographicEstimationModel", None) or "").strip()
 
     if eval_id:
-        cfg = _load_enabled_org_config(
+        cfg = _load_enabled_language_model(
             session,
             organization_id=org_id,
             project_id=project_id,
@@ -79,7 +98,7 @@ def resolve_geocode_litellm_models(
             provider_model_id=str(cfg.provider_model_id),
         )
     if router_id:
-        cfg_r = _load_enabled_org_config(
+        cfg_r = _load_enabled_language_model(
             session,
             organization_id=org_id,
             project_id=project_id,
@@ -91,7 +110,7 @@ def resolve_geocode_litellm_models(
             provider_model_id=str(cfg_r.provider_model_id),
         )
     if geo_id:
-        cfg_g = _load_enabled_org_config(
+        cfg_g = _load_enabled_language_model(
             session,
             organization_id=org_id,
             project_id=project_id,
@@ -103,7 +122,7 @@ def resolve_geocode_litellm_models(
             provider_model_id=str(cfg_g.provider_model_id),
         )
     if est_id:
-        cfg_e = _load_enabled_org_config(
+        cfg_e = _load_enabled_language_model(
             session,
             organization_id=org_id,
             project_id=project_id,
@@ -134,7 +153,7 @@ def resolve_place_extract_litellm_model(
     if proj is None:
         return fallback
     org_id = int(proj.organization_id)
-    cfg = _load_enabled_org_config(
+    cfg = _load_enabled_language_model(
         session,
         organization_id=org_id,
         project_id=project_id,

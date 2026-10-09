@@ -5,7 +5,9 @@
 
 import type { AiModelConfigCreateInput, CuratedAiModelOption } from '@/lib/core-api'
 
-export type AiModelKind = 'generative' | 'embedding'
+export type AiModelKind = 'generative' | 'embedding' | 'decision'
+
+export const DECISION_CAPABILITY = 'decision'
 
 export const GENERATIVE_CAPABILITY_KEYS = ['text', 'json', 'vision'] as const
 export const EMBEDDING_CAPABILITY = 'embedding'
@@ -25,17 +27,36 @@ export const EMBEDDING_CURATED_PRESET_IDS = [
 const EMBEDDING_CURATED_PRESET_ID_SET = new Set<string>(EMBEDDING_CURATED_PRESET_IDS)
 
 export function normalizeModelKind(raw: string | undefined | null): AiModelKind {
-  return raw === 'embedding' ? 'embedding' : 'generative'
+  if (raw === 'embedding') return 'embedding'
+  if (raw === 'decision') return 'decision'
+  return 'generative'
 }
 
 /** User-facing label for catalog row kind badges and form copy. */
 export function modelKindLabel(kind: AiModelKind): string {
-  return kind === 'embedding' ? 'Embedding' : 'Generative'
+  if (kind === 'embedding') return 'Embedding'
+  if (kind === 'decision') return 'Decision'
+  return 'Generative'
+}
+
+export function customModelPickerLead(kind: AiModelKind): string {
+  if (kind === 'embedding') return 'Choose a provider embedding model from '
+  if (kind === 'decision') return 'Choose a decision model from '
+  return 'Choose any LiteLLM supported model from '
+}
+
+export function customModelRoutingPlaceholder(kind: AiModelKind): string {
+  if (kind === 'embedding') return 'ex. openai/text-embedding-3-small'
+  if (kind === 'decision') return 'ex. typesafe/jev-latest'
+  return 'ex. azure_ai/claude-haiku-4-5'
 }
 
 export function inferCuratedOptionKind(option: CuratedAiModelOption): AiModelKind {
-  if (normalizeModelKind(option.model_kind) === 'embedding') {
-    return 'embedding'
+  if (option.model_kind === 'decision' || option.model_kind === 'embedding') {
+    return option.model_kind
+  }
+  if (option.capabilities.includes(DECISION_CAPABILITY)) {
+    return 'decision'
   }
   if (option.capabilities.includes(EMBEDDING_CAPABILITY)) {
     return 'embedding'
@@ -64,14 +85,21 @@ export function resolveCapabilitiesForKind(
   if (kind === 'embedding') {
     return [EMBEDDING_CAPABILITY]
   }
+  if (kind === 'decision') {
+    return [DECISION_CAPABILITY]
+  }
   return normalizeGenerativeCapabilities(selectedGenerativeCaps)
 }
 
 /** Capabilities sent on create for a curated preset (from API option, not checkbox state). */
 export function resolvePresetCapabilities(option: CuratedAiModelOption | undefined): string[] {
   if (!option) return []
-  if (inferCuratedOptionKind(option) === 'embedding') {
+  const kind = inferCuratedOptionKind(option)
+  if (kind === 'embedding') {
     return [EMBEDDING_CAPABILITY]
+  }
+  if (kind === 'decision') {
+    return [DECISION_CAPABILITY]
   }
   return normalizeGenerativeCapabilities(new Set(option.capabilities))
 }
@@ -94,8 +122,8 @@ export function buildPresetCreateBody(input: {
     integration_secret_id: input.integrationSecretId,
     ...input.prices,
   }
-  if (kind === 'embedding') {
-    body.model_kind = 'embedding'
+  if (kind === 'embedding' || kind === 'decision') {
+    body.model_kind = kind
   }
   return body
 }

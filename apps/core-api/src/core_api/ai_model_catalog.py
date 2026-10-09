@@ -8,10 +8,12 @@ from decimal import Decimal
 from typing import Any
 
 from backfield_ai.constants import (
+    AI_CAPABILITY_DECISION,
     AI_CAPABILITY_EMBEDDING,
     AI_CAPABILITY_JSON,
     AI_CAPABILITY_TEXT,
     AI_CAPABILITY_VISION,
+    AI_MODEL_KIND_DECISION,
     AI_MODEL_KIND_EMBEDDING,
     AI_MODEL_KIND_GENERATIVE,
     DEFAULT_AI_CURRENCY,
@@ -50,9 +52,12 @@ ALLOWED_CAPABILITIES: frozenset[str] = frozenset(
         AI_CAPABILITY_JSON,
         AI_CAPABILITY_VISION,
         AI_CAPABILITY_EMBEDDING,
+        AI_CAPABILITY_DECISION,
     }
 )
-ALLOWED_MODEL_KINDS: frozenset[str] = frozenset({AI_MODEL_KIND_GENERATIVE, AI_MODEL_KIND_EMBEDDING})
+ALLOWED_MODEL_KINDS: frozenset[str] = frozenset(
+    {AI_MODEL_KIND_GENERATIVE, AI_MODEL_KIND_EMBEDDING, AI_MODEL_KIND_DECISION}
+)
 ALLOWED_STATUS: frozenset[str] = frozenset({"active", "disabled"})
 
 
@@ -221,6 +226,18 @@ def _validate_capabilities(caps: list[str], *, model_kind: str) -> list[str]:
             raise HTTPException(
                 status_code=400,
                 detail="Embedding models only support the embedding capability",
+            )
+    elif mk == AI_MODEL_KIND_DECISION:
+        if AI_CAPABILITY_DECISION not in ordered:
+            raise HTTPException(
+                status_code=400,
+                detail="Decision models require the decision capability",
+            )
+        extra = [c for c in ordered if c != AI_CAPABILITY_DECISION]
+        if extra:
+            raise HTTPException(
+                status_code=400,
+                detail="Decision models only support the decision capability",
             )
     else:
         if AI_CAPABILITY_EMBEDDING in ordered:

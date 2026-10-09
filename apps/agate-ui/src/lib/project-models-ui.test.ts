@@ -31,5 +31,20 @@ describe('partitionProjectModelsByKind', () => {
     expect(parts.generative.enabled.map((r) => r.id)).toEqual(['g1'])
     expect(parts.embedding.disabled.map((r) => r.id)).toEqual(['e1'])
     expect(parts.embedding.enabled).toEqual([])
+    expect(parts.decision.enabled).toEqual([])
+  })
+
+  it('keeps decision rows out of the generative section', () => {
+    const parts = partitionProjectModelsByKind([
+      row({
+        id: 'd1',
+        name: 'Jev Latest',
+        model_kind: 'decision',
+        capabilities: ['decision'],
+        project_enabled: true,
+      }),
+    ])
+    expect(parts.decision.enabled.map((r) => r.id)).toEqual(['d1'])
+    expect(parts.generative.enabled).toEqual([])
   })
 })

@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from backfield_ai.curated_catalog import list_curated_templates
-from backfield_db.curated_ai_models import AI_MODEL_KIND_EMBEDDING, AI_MODEL_KIND_GENERATIVE
+from backfield_db.curated_ai_models import (
+    AI_CAPABILITY_DECISION,
+    AI_MODEL_KIND_DECISION,
+    AI_MODEL_KIND_EMBEDDING,
+    AI_MODEL_KIND_GENERATIVE,
+)
 
 _CHAT = {"mode": "chat"}
 _EMBED = {"mode": "embedding"}
@@ -70,6 +75,61 @@ def test_flagship_heuristic_includes_current_and_future_ids() -> None:
     assert catalog["gemini:gemini-2.5-flash-lite"].label == "Gemini 2.5 Flash Lite"
     assert catalog["openai:text-embedding-3-small"].model_kind == AI_MODEL_KIND_EMBEDDING
     assert catalog["openai:gpt-6"].model_kind == AI_MODEL_KIND_GENERATIVE
+
+
+def test_jev_routes_are_decision_presets() -> None:
+    catalog = list_curated_templates(
+        {
+            "typesafe/jev-1.13.0": {"mode": "evaluation"},
+            "typesafe/jev-latest": {"mode": "evaluation"},
+            "typesafe/jev-preview": {"mode": "evaluation"},
+            "typesafe/not-a-judge": {"mode": "chat"},
+            "openrouter/typesafe/jev-1.13": {"mode": "evaluation"},
+            "openrouter/typesafe/jev-router": {"mode": "chat"},
+            "openrouter/qwen/qwen3.6-plus": _CHAT,
+            "gpt-5-nano": _CHAT,
+        }
+    )
+    decision_ids = [
+        template_id
+        for template_id, template in catalog.items()
+        if template.model_kind == AI_MODEL_KIND_DECISION
+    ]
+    assert decision_ids == [
+        "typesafe:jev-1.13.0",
+        "typesafe:jev-latest",
+        "typesafe:jev-preview",
+        "openrouter:typesafe-jev-1.13",
+        "openrouter:typesafe-jev-router",
+    ]
+    latest = catalog["typesafe:jev-latest"]
+    assert latest.label == "Jev Latest"
+    assert latest.provider == "typesafe"
+    assert latest.provider_model_id == "jev-latest"
+    assert latest.capabilities == (AI_CAPABILITY_DECISION,)
+    assert catalog["openrouter:typesafe-jev-router"].label == "Jev Router"
+    assert catalog["openrouter:typesafe-jev-router"].provider_model_id == "typesafe/jev-router"
+    assert "typesafe:not-a-judge" not in catalog
+    assert catalog["openai:gpt-5-nano"].model_kind == AI_MODEL_KIND_GENERATIVE
+
+
+def test_installed_litellm_map_includes_current_jev_presets() -> None:
+    catalog = list_curated_templates()
+    decision = {
+        template.template_id: template
+        for template in catalog.values()
+        if template.model_kind == AI_MODEL_KIND_DECISION
+    }
+    assert {
+        "typesafe:jev-1.13.0",
+        "typesafe:jev-latest",
+        "typesafe:jev-preview",
+        "openrouter:typesafe-jev-1.13",
+    } <= set(decision)
+    for template in decision.values():
+        slug = template.provider_model_id.rsplit("/", 1)[-1].lower()
+        assert slug.startswith("jev")
+        assert template.capabilities == (AI_CAPABILITY_DECISION,)
 
 
 def test_openrouter_keeps_latest_three_per_family() -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from backfield_ai.catalog_runtime import resolve_llm_auth_for_model_config
+from backfield_ai.catalog_visibility import include_in_language_model_list
 from backfield_ai.credentials import merge_project_and_org_llm_api_keys
 from backfield_ai.litellm_model import effective_litellm_model_row
 from backfield_db import BackfieldAiModelConfig, BackfieldProject
@@ -84,6 +85,9 @@ def resolve_cleanup_llm_auth(
             raise ValueError(
                 "Selected AI model is missing or belongs to another organization."
             )
+        caps = cfg.capabilities_json if isinstance(cfg.capabilities_json, list) else []
+        if not include_in_language_model_list(model_kind=str(cfg.model_kind), capabilities=caps):
+            raise ValueError("Selected AI model is not a language model.")
         model = str(cfg.provider_model_id or model).strip() or default_model
         _lm, catalog_key, api_base = resolve_llm_auth_for_model_config(
             session,

@@ -1635,6 +1635,58 @@ def test_ai_models_embedding_curated_create(client: TestClient) -> None:
     assert bad_caps.status_code == 400
 
 
+def test_ai_models_decision_curated_create(client: TestClient) -> None:
+    seed_first_admin(client, "decisionadmin@example.com", "decisionadmin-secret-9")
+    client.post(
+        "/v1/auth/login",
+        json={"email": "decisionadmin@example.com", "password": "decisionadmin-secret-9"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+
+    curated = client.get(f"/v1/organizations/{org_id}/ai-models/curated-options")
+    assert curated.status_code == 200
+    decision_opts = [o for o in curated.json() if o.get("model_kind") == "decision"]
+    assert {o["curated_id"] for o in decision_opts} >= {
+        "typesafe:jev-latest",
+        "typesafe:jev-preview",
+        "openrouter:typesafe-jev-1.13",
+    }
+
+    created = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={"curated_id": "typesafe:jev-latest", "name": "Jev Latest"},
+    )
+    assert created.status_code == 200
+    body = created.json()
+    assert body["model_kind"] == "decision"
+    assert body["capabilities"] == ["decision"]
+    assert body["provider"] == "typesafe"
+    assert body["provider_model_id"] == "jev-latest"
+    cfg_id = body["id"]
+
+    language_lists = client.get("/v1/projects/1/ai-models/effective?capabilities=text,json")
+    assert language_lists.status_code == 200
+    assert all(row["id"] != cfg_id for row in language_lists.json())
+
+    embedding_lists = client.get("/v1/projects/1/ai-models/effective?capabilities=embedding")
+    assert embedding_lists.status_code == 200
+    assert all(row["id"] != cfg_id for row in embedding_lists.json())
+
+    decision_lists = client.get("/v1/projects/1/ai-models/effective?capabilities=decision")
+    assert decision_lists.status_code == 200
+    assert any(row["id"] == cfg_id for row in decision_lists.json())
+
+    mismatch = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={
+            "curated_id": "typesafe:jev-latest",
+            "name": "Jev as chat",
+            "model_kind": "generative",
+        },
+    )
+    assert mismatch.status_code == 400
+
+
 def test_integration_secrets_unified_catalog_requires_auth(client: TestClient) -> None:
     r = client.get("/v1/organizations/1/integration-secrets/catalog")
     assert r.status_code == 401

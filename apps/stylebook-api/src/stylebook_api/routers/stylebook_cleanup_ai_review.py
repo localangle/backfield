@@ -7,6 +7,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from backfield_ai.catalog_visibility import include_in_language_model_list
 from backfield_db import (
     BackfieldAiModelConfig,
     StylebookCleanupAiProposal,
@@ -168,6 +169,9 @@ def _validate_model_selection(
             raise HTTPException(status_code=400, detail="Invalid AI model selection")
         if str(row.provider_model_id) != provider_model_id.strip():
             raise HTTPException(status_code=400, detail="Model id mismatch for selected config")
+        caps = row.capabilities_json if isinstance(row.capabilities_json, list) else []
+        if not include_in_language_model_list(model_kind=str(row.model_kind), capabilities=caps):
+            raise HTTPException(status_code=400, detail="Invalid AI model selection")
 
 
 def _canonical_exists(
@@ -285,8 +289,7 @@ def list_cleanup_ai_models(
     models: list[CleanupAiModelOut] = []
     for row in rows:
         caps = row.capabilities_json if isinstance(row.capabilities_json, list) else []
-        cap_set = {str(cap).strip().lower() for cap in caps}
-        if cap_set and not (cap_set & {"text", "json"}):
+        if not include_in_language_model_list(model_kind=str(row.model_kind), capabilities=caps):
             continue
         if row.id is None:
             continue

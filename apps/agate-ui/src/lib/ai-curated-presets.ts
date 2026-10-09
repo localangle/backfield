@@ -15,6 +15,7 @@ export const CURATED_PROVIDER_SECTION_ORDER = [
   'openai',
   'anthropic',
   'gemini',
+  'typesafe',
   'openrouter',
   'mistral',
   'google',
@@ -31,6 +32,7 @@ export function curatedProviderSectionTitle(providerKey: string): string {
   if (k === 'anthropic') return 'Anthropic'
   if (k === 'gemini') return 'Google Gemini'
   if (k === 'google') return 'Google'
+  if (k === 'typesafe') return 'Typesafe'
   if (k === 'openrouter') return 'OpenRouter'
   if (k === 'meta-llama') return 'Meta Llama'
   if (k === 'mistral') return 'Mistral'

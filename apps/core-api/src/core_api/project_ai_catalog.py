@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from backfield_ai.catalog_visibility import matches_capability_request
 from backfield_ai.constants import (
     AI_DEFAULT_ROLE_GENERATIVE_DEFAULT,
     AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING,
+    AI_MODEL_KIND_DECISION,
     AI_MODEL_KIND_EMBEDDING,
     AI_MODEL_KIND_GENERATIVE,
     PROJECT_AI_DEFAULT_ROLES,
@@ -96,7 +98,7 @@ def _effective_row_from_parts(
 
 
 ALLOWED_PROJECT_MODEL_KINDS: frozenset[str] = frozenset(
-    {AI_MODEL_KIND_GENERATIVE, AI_MODEL_KIND_EMBEDDING}
+    {AI_MODEL_KIND_GENERATIVE, AI_MODEL_KIND_EMBEDDING, AI_MODEL_KIND_DECISION}
 )
 
 
@@ -134,7 +136,11 @@ def list_project_effective_models(
         if not enabled and not include_disabled:
             continue
         caps = list(row.capabilities_json or [])
-        if cap_need and not cap_need.issubset(set(caps)):
+        if not matches_capability_request(
+            model_kind=str(row.model_kind),
+            capabilities=caps,
+            requested=cap_need,
+        ):
             continue
         out.append(_effective_row_from_parts(row, ovr))
     return out

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+AI_CAPABILITY_DECISION = "decision"
 AI_CAPABILITY_EMBEDDING = "embedding"
 AI_CAPABILITY_JSON = "json"
 AI_CAPABILITY_TEXT = "text"
+AI_MODEL_KIND_DECISION = "decision"
 AI_MODEL_KIND_EMBEDDING = "embedding"
 AI_MODEL_KIND_GENERATIVE = "generative"
 

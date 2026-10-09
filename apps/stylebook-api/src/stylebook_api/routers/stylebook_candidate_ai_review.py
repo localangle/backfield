@@ -7,6 +7,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from backfield_ai.catalog_visibility import include_in_language_model_list
 from backfield_auth.gate import require_project_access
 from backfield_db import BackfieldAiModelConfig, BackfieldProject, StylebookCandidateAiReview
 from backfield_entities.catalog.candidate_ai_review import count_open_candidates_for_review
@@ -111,6 +112,9 @@ def _validate_model_selection(
             raise HTTPException(status_code=400, detail="Invalid AI model selection")
         if str(row.provider_model_id) != provider_model_id.strip():
             raise HTTPException(status_code=400, detail="Model id mismatch for selected config")
+        caps = row.capabilities_json if isinstance(row.capabilities_json, list) else []
+        if not include_in_language_model_list(model_kind=str(row.model_kind), capabilities=caps):
+            raise HTTPException(status_code=400, detail="Invalid AI model selection")
 
 
 def _require_project_in_stylebook_org(
@@ -151,8 +155,7 @@ def list_candidate_ai_models(
     models: list[CandidateAiModelOut] = []
     for row in rows:
         caps = row.capabilities_json if isinstance(row.capabilities_json, list) else []
-        cap_set = {str(cap).strip().lower() for cap in caps}
-        if cap_set and not (cap_set & {"text", "json"}):
+        if not include_in_language_model_list(model_kind=str(row.model_kind), capabilities=caps):
             continue
         if row.id is None:
             continue

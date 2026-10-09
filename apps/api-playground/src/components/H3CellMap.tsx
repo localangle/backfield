@@ -9,6 +9,11 @@ import {
   type MutableRefObject,
   type ReactNode,
 } from "react"
+import {
+  OSM_TILE_ATTRIBUTION,
+  OSM_TILE_REFERRER_POLICY,
+  OSM_TILE_URL,
+} from "@backfield/ui/mapTiles"
 import { MapContainer, Polygon, TileLayer, useMap, useMapEvents } from "react-leaflet"
 import type { LatLng, LeafletMouseEvent, Map as LeafletMap } from "leaflet"
 import L from "leaflet"
@@ -407,8 +412,9 @@ export default function H3CellMap({
           className="map-selector-map"
         >
           <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            attribution={OSM_TILE_ATTRIBUTION}
+            referrerPolicy={OSM_TILE_REFERRER_POLICY}
+            url={OSM_TILE_URL}
           />
           <MapViewSync center={center} resolution={activeResolution} />
           <ShiftPaintLayer resolution={activeResolution} onPaintCell={paintCell}>

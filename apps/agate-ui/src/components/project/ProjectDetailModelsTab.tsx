@@ -455,6 +455,8 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
 
   const hasGenerative =
     partitioned.generative.enabled.length > 0 || partitioned.generative.disabled.length > 0
+  const hasDecision =
+    partitioned.decision.enabled.length > 0 || partitioned.decision.disabled.length > 0
   const hasEmbedding =
     partitioned.embedding.enabled.length > 0 || partitioned.embedding.disabled.length > 0
 
@@ -481,7 +483,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
             </div>
           ) : listError ? (
             <p className="text-sm text-muted-foreground">{listError}</p>
-          ) : !hasGenerative && !hasEmbedding ? (
+          ) : !hasGenerative && !hasDecision && !hasEmbedding ? (
             <p className="text-sm text-muted-foreground">
               No models in your organization catalog yet. Ask an administrator to add models under
               Settings → Models.
@@ -504,9 +506,18 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
                     },
                   )
                 : null}
-              {hasGenerative && hasEmbedding ? (
+              {hasGenerative && (hasDecision || hasEmbedding) ? (
                 <div className="border-t border-border" />
               ) : null}
+              {hasDecision
+                ? renderKindSection(
+                    'Decision',
+                    'Models that score and choose among options.',
+                    partitioned.decision.enabled,
+                    partitioned.decision.disabled,
+                  )
+                : null}
+              {hasDecision && hasEmbedding ? <div className="border-t border-border" /> : null}
               {hasEmbedding
                 ? renderKindSection(
                     'Embeddings',

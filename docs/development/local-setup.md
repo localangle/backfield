@@ -111,8 +111,8 @@ See [organization provisioning](../operations/organization-provisioning.md) for 
 password-file format, conflict rules, and machine-readable output.
 
 Organization Settings presets are generated from LiteLLM's model catalog when Core API starts, so
-new flagship model ids appear after a process restart (and a successful cost-map fetch) without
-editing a Python list. `make upgrade-litellm` refreshes `uv.lock` when the LiteLLM SDK itself
+new flagship and Jev decision model ids appear after a process restart (and a successful cost-map
+fetch) without editing a Python list. `make upgrade-litellm` refreshes `uv.lock` when the LiteLLM SDK itself
 needs a bump; a weekly GitHub Action opens that PR. Do not unpinned-upgrade LiteLLM in Docker
 builds. Set `LITELLM_LOCAL_MODEL_COST_MAP=true` to skip GitHub and use the JSON bundled in the
 installed LiteLLM package (tests do this by default).

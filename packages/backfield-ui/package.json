@@ -13,6 +13,7 @@
     "./nodeOutputs": "./src/nodeOutputs.ts",
     "./siblingUiOrigin": "./src/siblingUiOrigin.ts",
     "./LeafletMap": "./src/LeafletMap.tsx",
+    "./mapTiles": "./src/mapTiles.ts",
     "./GeometryEditLeafletMap": "./src/GeometryEditLeafletMap.tsx",
     "./axisAlignedRectangle": "./src/axisAlignedRectangle.ts",
     "./ShellSidebar": "./src/ShellSidebar.tsx",

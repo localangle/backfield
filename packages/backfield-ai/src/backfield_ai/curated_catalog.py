@@ -7,9 +7,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from backfield_db.curated_ai_models import (
+    AI_CAPABILITY_DECISION,
     AI_CAPABILITY_EMBEDDING,
     AI_CAPABILITY_JSON,
     AI_CAPABILITY_TEXT,
+    AI_MODEL_KIND_DECISION,
     AI_MODEL_KIND_EMBEDDING,
     AI_MODEL_KIND_GENERATIVE,
     CuratedAiModelTemplate,
@@ -20,6 +22,7 @@ CURATED_PROVIDER_ORDER: tuple[str, ...] = (
     "openai",
     "anthropic",
     "gemini",
+    "typesafe",
     "openrouter",
     "mistral",
 )
@@ -75,6 +78,9 @@ _GPT_VARIANT_RANK = {
     "-nano": 6,
 }
 _MISTRAL_SIZE_RANK = {"large": 0, "medium": 1, "small": 2}
+_JEV_SLUG_RE = re.compile(r"^jev(?:$|[-.])", re.IGNORECASE)
+_JEV_NUMERIC_VERSION_RE = re.compile(r"\d+(?:\.\d+)*")
+_JEV_ALIAS_RANK = {"latest": 0, "preview": 1, "router": 2}
 
 
 def list_curated_templates(
@@ -99,7 +105,10 @@ def list_curated_templates(
         if template is None or template.template_id in seen_ids:
             continue
         seen_ids.add(template.template_id)
-        if template.provider == "openrouter":
+        if (
+            template.provider == "openrouter"
+            and template.model_kind != AI_MODEL_KIND_DECISION
+        ):
             family = template.provider_model_id.split("/", 1)[0].lower()
             if family in openrouter_by_family:
                 openrouter_by_family[family].append(template)
@@ -133,6 +142,9 @@ def _template_from_cost_entry(
     raw_id = key.strip()
     if not raw_id or raw_id == "sample_spec":
         return None
+    decision = _decision_template(raw_id)
+    if decision is not None:
+        return decision
     if _is_excluded_model_id(raw_id):
         return None
     mode = str(entry.get("mode") or "").strip().lower()
@@ -163,6 +175,62 @@ def _is_excluded_model_id(model_id: str) -> bool:
     if lowered.endswith("-exp") or "-exp-" in lowered:
         return True
     return any(token in lowered for token in _DROP_SUBSTRINGS)
+
+
+def _decision_template(raw_id: str) -> CuratedAiModelTemplate | None:
+    route = _jev_route(raw_id)
+    if route is None:
+        return None
+    provider, provider_model_id = route
+    return CuratedAiModelTemplate(
+        template_id=_curated_id(provider, provider_model_id),
+        provider=provider,
+        provider_model_id=provider_model_id,
+        label=_jev_label(provider_model_id),
+        capabilities=(AI_CAPABILITY_DECISION,),
+        model_kind=AI_MODEL_KIND_DECISION,
+    )
+
+
+def _jev_route(raw_id: str) -> tuple[str, str] | None:
+    """Return provider and model id for a LiteLLM Jev route, if this key is one."""
+    if raw_id.lower().startswith("openrouter/"):
+        rest = raw_id[len("openrouter/") :].strip()
+        slug = rest.rsplit("/", 1)[-1]
+        if _JEV_SLUG_RE.match(slug):
+            return "openrouter", rest
+        return None
+    if raw_id.lower().startswith("typesafe/"):
+        slug = raw_id[len("typesafe/") :].strip()
+        if _JEV_SLUG_RE.match(slug):
+            return "typesafe", slug
+        return None
+    return None
+
+
+def _jev_slug_rest(slug: str) -> str:
+    if slug.lower().startswith("jev"):
+        return slug[3:].lstrip("-.")
+    return slug
+
+
+def _jev_label(provider_model_id: str) -> str:
+    rest = _jev_slug_rest(provider_model_id.rsplit("/", 1)[-1])
+    if not rest:
+        return "Jev"
+    parts = [
+        part.title() if part.lower() in _JEV_ALIAS_RANK else part for part in rest.split("-")
+    ]
+    return f"Jev {' '.join(parts)}"
+
+
+def _jev_version_sort_key(provider_model_id: str) -> tuple[Any, ...]:
+    rest = _jev_slug_rest(provider_model_id.rsplit("/", 1)[-1]).lower()
+    if _JEV_NUMERIC_VERSION_RE.fullmatch(rest):
+        numbers = tuple(-int(part) for part in rest.split("."))
+        return (0, numbers, provider_model_id)
+    alias_rank = _JEV_ALIAS_RANK.get(rest, 9)
+    return (1, (alias_rank,), provider_model_id)
 
 
 def _is_chat_mode(mode: str) -> bool:
@@ -327,6 +395,12 @@ def _dotted_version(major: str, minor: str | None) -> str:
 
 def _presentation_sort_key(template: CuratedAiModelTemplate) -> tuple[Any, ...]:
     provider_rank = _provider_rank(template.provider)
+    if template.model_kind == AI_MODEL_KIND_DECISION:
+        return (
+            2,
+            _provider_rank(template.provider),
+            *_jev_version_sort_key(template.provider_model_id),
+        )
     kind_rank = 1 if template.model_kind == AI_MODEL_KIND_EMBEDDING else 0
     if template.provider == "openai" and template.model_kind == AI_MODEL_KIND_GENERATIVE:
         match = _GPT_RE.fullmatch(template.provider_model_id)

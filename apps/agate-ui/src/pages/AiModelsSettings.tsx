@@ -47,6 +47,8 @@ import { groupCuratedOptionsForPresetUi } from '@/lib/ai-curated-presets'
 import {
   buildCustomCreateBody,
   buildPresetCreateBody,
+  customModelPickerLead,
+  customModelRoutingPlaceholder,
   defaultGenerativeCaps,
   filterCuratedOptionsByKind,
   modelKindLabel,
@@ -880,12 +882,18 @@ export default function AiModelsSettingsPage() {
               <SelectContent>
                 <SelectItem value="generative">Generative — chat and text models</SelectItem>
                 <SelectItem value="embedding">Embedding</SelectItem>
+                <SelectItem value="decision">Decision</SelectItem>
               </SelectContent>
             </Select>
             {addModelKind === 'embedding' ? (
               <p className="text-xs text-muted-foreground">
                 Used when flows index saved entities for meaning-based search. Presets include
                 text-embedding-3-small and text-embedding-3-large.
+              </p>
+            ) : null}
+            {addModelKind === 'decision' ? (
+              <p className="text-xs text-muted-foreground">
+                Used to score and choose among options. Presets include the current Jev models.
               </p>
             ) : null}
           </div>
@@ -897,8 +905,7 @@ export default function AiModelsSettingsPage() {
             <TabsContent value="preset" className="space-y-4 pt-4">
               {curatedOptionsForAddKind.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No {addModelKind === 'embedding' ? 'embedding' : 'generative'} presets are
-                  available yet.
+                  No {addModelKind} presets are available yet.
                 </p>
               ) : (
               <div className="space-y-2">
@@ -1013,9 +1020,7 @@ export default function AiModelsSettingsPage() {
             </TabsContent>
             <TabsContent value="custom" className="space-y-4 pt-4">
               <p className="text-xs text-muted-foreground">
-                {addModelKind === 'embedding'
-                  ? 'Choose a provider embedding model from '
-                  : 'Choose any LiteLLM supported model from '}
+                {customModelPickerLead(addModelKind)}
                 <a
                   href="https://models.litellm.ai/"
                   className="underline underline-offset-2 hover:text-foreground"
@@ -1045,11 +1050,7 @@ export default function AiModelsSettingsPage() {
                   id="cust-litellm"
                   value={customLitellmModel}
                   onChange={(e) => setCustomLitellmModel(e.target.value)}
-                  placeholder={
-                    addModelKind === 'embedding'
-                      ? 'ex. openai/text-embedding-3-small'
-                      : 'ex. azure_ai/claude-haiku-4-5'
-                  }
+                  placeholder={customModelRoutingPlaceholder(addModelKind)}
                   className="font-mono text-sm"
                 />
                 <p className="text-xs text-muted-foreground">Full model name string from LiteLLM</p>

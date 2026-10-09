@@ -143,9 +143,40 @@ describe('inferCuratedOptionKind', () => {
   })
 })
 
+const decisionPreset: CuratedAiModelOption = {
+  curated_id: 'typesafe:jev-latest',
+  provider: 'typesafe',
+  provider_model_id: 'jev-latest',
+  label: 'Jev Latest',
+  model_kind: 'decision',
+  capabilities: ['decision'],
+}
+
+describe('filterCuratedOptionsByKind', () => {
+  it('keeps decision presets out of generative and embedding lists', () => {
+    const all = [generativePreset, embeddingPreset, decisionPreset]
+    expect(filterCuratedOptionsByKind(all, 'decision')).toEqual([decisionPreset])
+    expect(filterCuratedOptionsByKind(all, 'generative')).toEqual([generativePreset])
+  })
+})
+
+describe('buildPresetCreateBody', () => {
+  it('includes model_kind for decision presets', () => {
+    const body = buildPresetCreateBody({
+      curatedId: decisionPreset.curated_id,
+      option: decisionPreset,
+      integrationSecretId: 9,
+      currency: 'USD',
+    })
+    expect(body.model_kind).toBe('decision')
+    expect(body.capabilities).toEqual(['decision'])
+  })
+})
+
 describe('modelKindLabel', () => {
   it('uses product-facing labels', () => {
     expect(modelKindLabel('generative')).toBe('Generative')
     expect(modelKindLabel('embedding')).toBe('Embedding')
+    expect(modelKindLabel('decision')).toBe('Decision')
   })
 })

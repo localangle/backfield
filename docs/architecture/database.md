@@ -45,7 +45,8 @@ All schema changes use the single Alembic chain under `packages/backfield-db/ale
 - Shared AI catalog and accounting: `backfield_ai_model_config`,
   `backfield_ai_project_model_override`, `backfield_ai_default_model_role`,
   `backfield_ai_call_record`. Curated preset *shape* is shared package data in `backfield-db`;
-  the live flagship list is generated in `backfield-ai` from LiteLLM's model cost map.
+  the live flagship and Jev decision lists are generated in `backfield-ai` from LiteLLM's model
+  cost map.
   Provisioning snapshots only the operator's explicit selection into organization-owned rows.
   Core API and `backfield organization create` use the same generated catalog. `backfield-db`
   does not import LiteLLM.

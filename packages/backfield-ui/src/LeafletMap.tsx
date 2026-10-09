@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { MutableRefObject, ReactNode } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import * as L from "leaflet"
+import { OSM_TILE_ATTRIBUTION, OSM_TILE_REFERRER_POLICY, OSM_TILE_URL } from "./mapTiles"
 import { CircleMarker, MapContainer, Marker, Polygon, Popup, Rectangle, TileLayer, useMap, useMapEvents } from "react-leaflet"
 import "leaflet/dist/leaflet.css"
 
@@ -1174,8 +1175,8 @@ export function LeafletMap({
   editableRectangle = null,
   rectangleDraw = null,
   interactiveWhenEmpty = false,
-  tileUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-  tileAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  tileUrl = OSM_TILE_URL,
+  tileAttribution = OSM_TILE_ATTRIBUTION,
   geocoder = false,
   focusBounds = null,
   focusBoundsKey = 0,
@@ -1333,7 +1334,11 @@ export function LeafletMap({
         {rectangleDraw?.enabled ? (
           <RectangleDrawController rectangleDrawRef={rectangleDrawRef} rectangleDrawingRef={rectangleDrawingRef} />
         ) : null}
-        <TileLayer attribution={tileAttribution} url={tileUrl} />
+        <TileLayer
+          attribution={tileAttribution}
+          referrerPolicy={OSM_TILE_REFERRER_POLICY}
+          url={tileUrl}
+        />
         {previewLeafletBounds ? (
           <Rectangle
             bounds={previewLeafletBounds as any}
