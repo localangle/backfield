@@ -10,6 +10,9 @@ from backfield_db import SubstrateOrganization, SubstrateOrganizationMention
 from backfield_entities.canonical.link import CANONICAL_LINK_PENDING, CANONICAL_LINK_UNLINKED
 from backfield_entities.canonical.link_commit_gate import sync_link_commit_blocked
 from backfield_entities.canonical.plan_types import CanonicalPersistPlan
+from backfield_entities.entities.organization.enrichment import (
+    fill_empty_organization_enrichment_from_substrate,
+)
 from backfield_entities.entities.organization.persist import (
     apply_canonical_persist_plan,
     apply_canonical_persist_plan_review_only,
@@ -278,6 +281,7 @@ class OrganizationPersistHandler:
                         organization=organization,
                         provenance="substrate_ingest",
                     )
+                    fill_empty_organization_enrichment_from_substrate(session, organization)
                     _upsert_mention_and_occurrence(
                         session,
                         article_id=int(ctx.article_id),

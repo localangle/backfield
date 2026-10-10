@@ -37,6 +37,9 @@ from backfield_entities.connections.lifecycle import close_open_connections_for_
 from backfield_entities.entities.organization.catalog_provenance import (
     is_organization_catalog_editorial_provenance,
 )
+from backfield_entities.entities.organization.enrichment import (
+    fill_empty_organization_enrichment_from_substrate,
+)
 from backfield_entities.entities.organization.policy import (
     find_existing_organization_canonical_id_by_alias,
     plan_has_ambiguous_organization_canonical_match,
@@ -560,6 +563,7 @@ def apply_canonical_persist_plan(
             related_entity_id=str(plan.existing_canonical_id),
             payload_json={"provenance": provenance},
         )
+        fill_empty_organization_enrichment_from_substrate(session, organization)
         return
     materialize_new_canonical_and_link(
         session,
@@ -584,6 +588,7 @@ def apply_canonical_persist_plan(
         related_entity_id=str(organization.id) if organization.id is not None else None,
         payload_json={"provenance": provenance, "materialized_from_substrate": True},
     )
+    fill_empty_organization_enrichment_from_substrate(session, organization)
 
 
 def rank_canonical_suggestions_for_substrate(

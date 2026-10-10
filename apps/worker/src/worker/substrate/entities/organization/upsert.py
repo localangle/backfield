@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from backfield_db import SubstrateOrganization
+from backfield_entities.entities.organization.enrichment import enrichment_details_from_entry
 from backfield_entities.entities.organization.types import (
     normalize_organization_type,
     organization_identity_fingerprint,
@@ -122,6 +123,7 @@ def _upsert_organization(
     raw_entry_id = entry.get("id") or entry.get("mention_id")
     if raw_entry_id is not None and str(raw_entry_id).strip():
         details["raw_entry_id"] = str(raw_entry_id).strip()
+    details.update(enrichment_details_from_entry(entry))
 
     organization = session.exec(
         select(SubstrateOrganization).where(

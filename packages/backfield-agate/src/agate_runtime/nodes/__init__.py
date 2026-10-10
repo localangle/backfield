@@ -9,6 +9,7 @@ from agate_runtime.nodes.embed_text import run_embed_text
 from agate_runtime.nodes.gather import run_gather
 from agate_runtime.nodes.geocode_agent import run_geocode_agent
 from agate_runtime.nodes.json_input import run_json_input
+from agate_runtime.nodes.organization_enrich import run_organization_enrich
 from agate_runtime.nodes.organization_extract import run_organization_extract
 from agate_runtime.nodes.output import run_output
 from agate_runtime.nodes.person_enrich import run_person_enrich
@@ -27,6 +28,7 @@ NODE_RUNNERS: dict[str, callable] = {
     "PersonExtract": run_person_extract,
     "PersonEnrich": run_person_enrich,
     "OrganizationExtract": run_organization_extract,
+    "OrganizationEnrich": run_organization_enrich,
     "ArticleMetadata": run_article_metadata,
     "CustomExtract": run_custom_extract,
     "EmbedText": run_embed_text,

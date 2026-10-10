@@ -94,6 +94,20 @@ def _identity_name_norms(
     return tuple(norms)
 
 
+def strong_identity_organization_canonical_ids(
+    session: Session,
+    *,
+    stylebook_id: int,
+    organization: SubstrateOrganization,
+) -> list[str]:
+    """Active canonical ids that match name (or a trusted alias) and organization type."""
+    return _strong_identity_canonical_ids(
+        session,
+        stylebook_id=stylebook_id,
+        organization=organization,
+    )
+
+
 def _strong_identity_canonical_ids(
     session: Session,
     *,

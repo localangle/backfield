@@ -40,6 +40,7 @@ export function getNodePanelTabs(
     case 'EmbedText':
       return ['settings', 'info']
     case 'PersonEnrich':
+    case 'OrganizationEnrich':
       return hasRunOutput ? ['settings', 'info', 'outputs'] : ['settings', 'info']
     case 'EmbedImages':
       return ['settings', 'info']

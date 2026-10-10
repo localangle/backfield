@@ -136,6 +136,31 @@ Backfield Output copies accepted links onto empty canonical metadata. Text type
 are not overwritten. The same links are stored on the person when they are not
 canonical yet, so a later accept can fill the empty metadata.
 
+### Organization Enrich
+
+Organization Enrich reads the `organizations` list from Organization Extract and
+passes that same list on. Every extracted organization is considered.
+
+Before any outside lookup, the node reuses links already stored on exactly one
+active Stylebook organization with the same normalized name and organization type,
+including a trusted alias, when that organization already has every selected link.
+Zero matches, or two or more, are not reused. One organization that is missing a
+selected link is looked up again, and persistence fills only the empty metadata.
+
+Selected links are `wikidata_id` and `wikipedia_url` on the organization. Wikipedia
+is the English page for the chosen Wikidata id, not a second search. Reconciliation
+prefers organizations (`Q43229`) without requiring that type. A match is kept only
+when decision confidence is at least the node cutoff (default `0.8`). Below the
+cutoff, or when Wikidata or the decision model fails, that organization is left
+unchanged and the run continues. The project's system prompt is sent with the
+decision. Missing a decision-model credential skips enrichment and records a
+warning.
+
+Backfield Output copies accepted links onto empty canonical metadata. Text type
+`wikidata` holds the id and text type `wikipedia` holds the URL. Existing values
+are not overwritten. The same links are stored on the organization when they are
+not canonical yet, so a later accept can fill the empty metadata.
+
 `GeocodeAgent` reconciles repeated rows before emitting its consolidated `places`
 payload. Administrative rows with the same normalized identity collapse directly;
 fine-grained rows also require the same extraction type and name plus shared

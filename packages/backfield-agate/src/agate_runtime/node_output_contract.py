@@ -38,6 +38,7 @@ NODE_CONTRIBUTION_KEYS: dict[str, frozenset[str]] = {
     "PersonExtract": frozenset({"people", "extraction_diagnostics"}),
     "PersonEnrich": frozenset({"people", "warnings"}),
     "OrganizationExtract": frozenset({"organizations", "extraction_diagnostics"}),
+    "OrganizationEnrich": frozenset({"organizations", "warnings"}),
     "GeocodeAgent": frozenset({"places", "geocoder_provider_health"}),
     "Gather": frozenset({"gathered"}),
     "Output": frozenset({"consolidated"}),

@@ -1,0 +1,32 @@
+{
+  "type": "OrganizationEnrich",
+  "label": "Organization Enrich",
+  "description": "Enrich organizations with external connections and data sources.",
+  "category": "enrichment",
+  "icon": "Sparkles",
+  "color": "bg-indigo-500",
+  "requiredUpstreamNodes": ["OrganizationExtract"],
+  "requiredProjectModelCapabilities": ["decision"],
+  "dependencyHelperText": "Connect this after Organization Extract. It looks up organizations and saves Wikidata and Wikipedia links.",
+  "inputs": [
+    {
+      "id": "organizations",
+      "label": "Organizations",
+      "type": "array",
+      "required": true
+    }
+  ],
+  "outputs": [
+    {
+      "id": "organizations",
+      "label": "Organizations",
+      "type": "array"
+    }
+  ],
+  "defaultParams": {
+    "model": "",
+    "aiModelConfigId": null,
+    "sources": ["wikidata", "wikipedia"],
+    "confidence_cutoff": 0.8
+  }
+}

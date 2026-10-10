@@ -36,6 +36,10 @@ import { organizationCanonicalDetailConfig } from "@/lib/entityConfigs/organizat
 import { Button } from "@/components/ui/button"
 import { SimilarCanonicalNotice } from "@/components/SimilarCanonicalNotice"
 import { mergeCleanupOrganizationCanonical } from "@/lib/stylebook-api/cleanup"
+import {
+  getStylebookCanonicalOrganizationMeta,
+  type CanonicalMetaItem,
+} from "@/lib/stylebook-api/meta"
 import { profileLinesForOrganization } from "@/lib/connectionGraphEntityProfile"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -47,6 +51,45 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+
+type ReferenceLink = { label: string; href: string; text: string }
+
+function httpUrl(value: string): string | null {
+  try {
+    const parsed = new URL(value)
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.toString()
+  } catch {
+    return null
+  }
+  return null
+}
+
+function wikipediaLinkText(url: string): string {
+  try {
+    const slug = new URL(url).pathname.split("/").filter(Boolean).pop() ?? ""
+    const title = decodeURIComponent(slug).replace(/_/g, " ").trim()
+    return title || url
+  } catch {
+    return url
+  }
+}
+
+function referenceLinksFromMeta(meta: CanonicalMetaItem[]): ReferenceLink[] {
+  const links: ReferenceLink[] = []
+  for (const item of meta) {
+    if (typeof item.value !== "string") continue
+    const value = item.value.trim()
+    if (!value) continue
+    if (item.meta_type === "wikidata") {
+      const href = /^Q\d+$/.test(value) ? `https://www.wikidata.org/wiki/${value}` : httpUrl(value)
+      if (href) links.push({ label: "Wikidata", href, text: value })
+    } else if (item.meta_type === "wikipedia") {
+      const href = httpUrl(value)
+      if (href) links.push({ label: "Wikipedia", href, text: wikipediaLinkText(href) })
+    }
+  }
+  return links
+}
 
 const ENTITY_TYPE: CleanupEntityType = "organization"
 
@@ -78,6 +121,7 @@ export default function OrganizationDetail() {
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
   const [moveSubstrate, setMoveSubstrate] = useState<LinkedOrganizationSubstrateItem | null>(null)
   const [mergingSimilarId, setMergingSimilarId] = useState<string | null>(null)
+  const [referenceLinks, setReferenceLinks] = useState<ReferenceLink[]>([])
 
   const canonicalListHref = useMemo(() => {
     const base = `${catalogBasePath}/organizations/canonical`
@@ -103,14 +147,22 @@ export default function OrganizationDetail() {
         setOrganization(row)
         setLabel(row.label)
         setOrganizationType(row.organization_type ?? "")
+        const meta = await getStylebookCanonicalOrganizationMeta(sbSlug, canonicalId).catch(
+          () => null,
+        )
+        setReferenceLinks(meta ? referenceLinksFromMeta(meta.meta) : [])
         return true
       } catch (e) {
         if (isStylebookApiNotFoundError(e)) {
           setOrganization(null)
+          setReferenceLinks([])
           return false
         }
         console.error(e)
-        if (!quiet) setOrganization(null)
+        if (!quiet) {
+          setOrganization(null)
+          setReferenceLinks([])
+        }
         return false
       } finally {
         if (!quiet) setLoading(false)
@@ -481,6 +533,21 @@ export default function OrganizationDetail() {
                 </p>
               )}
             </div>
+            {referenceLinks.map((link) => (
+              <div key={link.label}>
+                <Label>{link.label}</Label>
+                <p className="text-sm mt-1.5">
+                  <a
+                    href={link.href}
+                    className="text-primary hover:underline break-words"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {link.text}
+                  </a>
+                </p>
+              </div>
+            ))}
           </CardContent>
         </Card>
       }

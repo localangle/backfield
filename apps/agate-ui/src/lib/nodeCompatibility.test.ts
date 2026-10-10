@@ -65,6 +65,24 @@ describe('getCompatibleNextNodes', () => {
     expect(withModels.enabled.map((e) => e.type)).toContain('PersonEnrich')
   })
 
+  it('enables Organization Enrich after Organization Extract when a decision model is available', () => {
+    const withoutModels = getCompatibleNextNodes(
+      'OrganizationExtract',
+      ['JSONInput', 'OrganizationExtract'],
+      { projectModelCapabilities: { decision: false } },
+    )
+    const blocked = withoutModels.disabled.find((e) => e.type === 'OrganizationEnrich')
+    expect(blocked).toBeDefined()
+    expect(blocked?.reason).toMatch(/decision model/i)
+
+    const withModels = getCompatibleNextNodes(
+      'OrganizationExtract',
+      ['JSONInput', 'OrganizationExtract'],
+      { projectModelCapabilities: { decision: true } },
+    )
+    expect(withModels.enabled.map((e) => e.type)).toContain('OrganizationEnrich')
+  })
+
   it('disables Embed Text when no embedding models are enabled for the project', () => {
     const withoutModels = getCompatibleNextNodes('TextInput', ['TextInput'], {
       projectModelCapabilities: { embedding: false },

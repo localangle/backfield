@@ -45,6 +45,7 @@ export const textTypes = new Set(['Embed', 'EmbedText', 'LLMEnrich', 'StatsNode'
 export const peopleTypes = new Set(['PersonExtract', 'PeopleExtract', 'PeopleClassify', 'PersonEnrich'])
 export const organizationTypes = new Set([
   'OrganizationExtract',
+  'OrganizationEnrich',
   'OrganizationsExtract',
   'OrgLocationConnections',
 ])
