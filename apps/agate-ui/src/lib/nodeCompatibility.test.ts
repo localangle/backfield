@@ -51,6 +51,20 @@ describe('getCompatibleNextNodes', () => {
     })
   })
 
+  it('enables Person Enrich after Person Extract when a decision model is available', () => {
+    const withoutModels = getCompatibleNextNodes('PersonExtract', ['JSONInput', 'PersonExtract'], {
+      projectModelCapabilities: { decision: false },
+    })
+    const blocked = withoutModels.disabled.find((e) => e.type === 'PersonEnrich')
+    expect(blocked).toBeDefined()
+    expect(blocked?.reason).toMatch(/decision model/i)
+
+    const withModels = getCompatibleNextNodes('PersonExtract', ['JSONInput', 'PersonExtract'], {
+      projectModelCapabilities: { decision: true },
+    })
+    expect(withModels.enabled.map((e) => e.type)).toContain('PersonEnrich')
+  })
+
   it('disables Embed Text when no embedding models are enabled for the project', () => {
     const withoutModels = getCompatibleNextNodes('TextInput', ['TextInput'], {
       projectModelCapabilities: { embedding: false },

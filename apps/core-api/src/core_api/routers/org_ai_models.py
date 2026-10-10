@@ -85,6 +85,6 @@ def post_organization_ai_model_test_connection(
     session: Session = Depends(get_session),
     auth: dict = Depends(get_auth),
 ) -> AiModelConfigOut:
-    """Ping provider through LiteLLM; updates latest test metadata only."""
+    """Ping the provider; updates latest test metadata only."""
     require_org_admin(session, auth, org_id)
     return run_org_model_connection_test(session, org_id, config_id)

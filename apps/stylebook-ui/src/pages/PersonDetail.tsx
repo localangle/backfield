@@ -35,6 +35,10 @@ import { personCanonicalDetailConfig } from "@/lib/entityConfigs/person/canonica
 import { Button } from "@/components/ui/button"
 import { SimilarCanonicalNotice } from "@/components/SimilarCanonicalNotice"
 import { mergeCleanupPersonCanonical } from "@/lib/stylebook-api/cleanup"
+import {
+  getStylebookCanonicalPersonMeta,
+  type CanonicalMetaItem,
+} from "@/lib/stylebook-api/meta"
 import { profileLinesForPerson } from "@/lib/connectionGraphEntityProfile"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -47,6 +51,45 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+
+type ReferenceLink = { label: string; href: string; text: string }
+
+function httpUrl(value: string): string | null {
+  try {
+    const parsed = new URL(value)
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.toString()
+  } catch {
+    return null
+  }
+  return null
+}
+
+function wikipediaLinkText(url: string): string {
+  try {
+    const slug = new URL(url).pathname.split("/").filter(Boolean).pop() ?? ""
+    const title = decodeURIComponent(slug).replace(/_/g, " ").trim()
+    return title || url
+  } catch {
+    return url
+  }
+}
+
+function referenceLinksFromMeta(meta: CanonicalMetaItem[]): ReferenceLink[] {
+  const links: ReferenceLink[] = []
+  for (const item of meta) {
+    if (typeof item.value !== "string") continue
+    const value = item.value.trim()
+    if (!value) continue
+    if (item.meta_type === "wikidata") {
+      const href = /^Q\d+$/.test(value) ? `https://www.wikidata.org/wiki/${value}` : httpUrl(value)
+      if (href) links.push({ label: "Wikidata", href, text: value })
+    } else if (item.meta_type === "wikipedia") {
+      const href = httpUrl(value)
+      if (href) links.push({ label: "Wikipedia", href, text: wikipediaLinkText(href) })
+    }
+  }
+  return links
+}
 
 function derivePersonSortKey(label: string, explicit?: string | null): string {
   const normalize = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ")
@@ -90,6 +133,7 @@ export default function PersonDetail() {
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
   const [moveSubstrate, setMoveSubstrate] = useState<LinkedPersonSubstrateItem | null>(null)
   const [mergingSimilarId, setMergingSimilarId] = useState<string | null>(null)
+  const [referenceLinks, setReferenceLinks] = useState<ReferenceLink[]>([])
 
   const canonicalListHref = useMemo(() => {
     const base = `${catalogBasePath}/people/canonical`
@@ -119,14 +163,20 @@ export default function PersonDetail() {
         setPersonType(row.person_type ?? "")
         setPublicFigure(row.public_figure)
         setSortKey(row.sort_key ?? derivePersonSortKey(row.label))
+        const meta = await getStylebookCanonicalPersonMeta(sbSlug, canonicalId).catch(() => null)
+        setReferenceLinks(meta ? referenceLinksFromMeta(meta.meta) : [])
         return true
       } catch (e) {
         if (isStylebookApiNotFoundError(e)) {
           setPerson(null)
+          setReferenceLinks([])
           return false
         }
         console.error(e)
-        if (!quiet) setPerson(null)
+        if (!quiet) {
+          setPerson(null)
+          setReferenceLinks([])
+        }
         return false
       } finally {
         if (!quiet) setLoading(false)
@@ -550,6 +600,19 @@ export default function PersonDetail() {
                 ) : null}
               </>
             )}
+            {referenceLinks.map((link) => (
+              <div key={link.label}>
+                <span className="text-muted-foreground">{link.label}:</span>{" "}
+                <a
+                  href={link.href}
+                  className="text-primary hover:underline break-words"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {link.text}
+                </a>
+              </div>
+            ))}
           </CardContent>
         </Card>
       }

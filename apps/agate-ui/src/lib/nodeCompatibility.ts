@@ -49,6 +49,9 @@ function missingProjectModelsReason(capabilities: string[]): string {
   if (capabilities.includes('generative')) {
     return 'Enable at least one generative model for this project in Models.'
   }
+  if (capabilities.includes('decision')) {
+    return 'Enable at least one decision model for this project in Models.'
+  }
   return 'Enable the required models for this project in Models.'
 }
 

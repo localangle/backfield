@@ -8,6 +8,7 @@ from typing import Any
 
 from backfield_db import SubstratePerson
 from backfield_entities.editorial_text import normalize_editorial_prose
+from backfield_entities.entities.person.enrichment import enrichment_details_from_entry
 from backfield_entities.entities.person.review import (
     entry_people_bucket as _entry_people_bucket,
 )
@@ -154,6 +155,7 @@ def _upsert_person(
     raw_entry_id = entry.get("id") or entry.get("mention_id")
     if raw_entry_id is not None and str(raw_entry_id).strip():
         details["raw_entry_id"] = str(raw_entry_id).strip()
+    details.update(enrichment_details_from_entry(entry))
 
     person = session.exec(
         select(SubstratePerson).where(

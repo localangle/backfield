@@ -1687,6 +1687,64 @@ def test_ai_models_decision_curated_create(client: TestClient) -> None:
     assert mismatch.status_code == 400
 
 
+def test_decision_model_connection_test_uses_decisions_api(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    seed_first_admin(client, "jevcheck@example.com", "jevcheck-secret-9")
+    client.post(
+        "/v1/auth/login",
+        json={"email": "jevcheck@example.com", "password": "jevcheck-secret-9"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    cred = client.post(
+        f"/v1/organizations/{org_id}/integration-secrets",
+        json={"value": "typesafe-test-key", "display_name": "Typesafe"},
+    )
+    assert cred.status_code == 200
+    created = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={
+            "curated_id": "typesafe:jev-latest",
+            "name": "Jev Latest",
+            "integration_secret_id": cred.json()["integration_secret_id"],
+        },
+    )
+    assert created.status_code == 200
+    cfg_id = created.json()["id"]
+
+    seen: dict[str, object] = {}
+
+    def fake_decisions(**kwargs: object) -> object:
+        seen.update(kwargs)
+
+        class _Answer:
+            choice = "ok"
+
+        class _Response:
+            answers = {"ping": _Answer()}
+
+        return _Response()
+
+    def reject_completion(**_kwargs: object) -> None:
+        raise AssertionError("decision models must not use chat completion")
+
+    monkeypatch.setattr("litellm.decisions", fake_decisions)
+    monkeypatch.setattr("litellm.completion", reject_completion)
+
+    checked = client.post(f"/v1/organizations/{org_id}/ai-models/{cfg_id}/test-connection")
+    assert checked.status_code == 200
+    body = checked.json()
+    assert body["latest_test_status"] == "succeeded"
+    assert body["latest_test_error"] is None
+    assert str(seen["model"]).startswith("typesafe/jev-")
+    assert seen["api_key"] == "typesafe-test-key"
+    questions = seen["questions"]
+    assert isinstance(questions, dict)
+    assert questions["ping"]["type"] == "choice"
+
+
 def test_integration_secrets_unified_catalog_requires_auth(client: TestClient) -> None:
     r = client.get("/v1/organizations/1/integration-secrets/catalog")
     assert r.status_code == 401

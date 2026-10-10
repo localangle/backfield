@@ -11,6 +11,7 @@ from agate_runtime.nodes.geocode_agent import run_geocode_agent
 from agate_runtime.nodes.json_input import run_json_input
 from agate_runtime.nodes.organization_extract import run_organization_extract
 from agate_runtime.nodes.output import run_output
+from agate_runtime.nodes.person_enrich import run_person_enrich
 from agate_runtime.nodes.person_extract import run_person_extract
 from agate_runtime.nodes.place_extract import run_place_extract
 from agate_runtime.nodes.s3_input import run_s3_input
@@ -24,6 +25,7 @@ NODE_RUNNERS: dict[str, callable] = {
     "DocumentChunker": run_document_chunker,
     "PlaceExtract": run_place_extract,
     "PersonExtract": run_person_extract,
+    "PersonEnrich": run_person_enrich,
     "OrganizationExtract": run_organization_extract,
     "ArticleMetadata": run_article_metadata,
     "CustomExtract": run_custom_extract,

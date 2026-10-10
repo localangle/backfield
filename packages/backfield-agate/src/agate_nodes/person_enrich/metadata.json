@@ -1,0 +1,32 @@
+{
+  "type": "PersonEnrich",
+  "label": "Person Enrich",
+  "description": "Enrich public figures with external connections and data sources.",
+  "category": "enrichment",
+  "icon": "Sparkles",
+  "color": "bg-indigo-500",
+  "requiredUpstreamNodes": ["PersonExtract"],
+  "requiredProjectModelCapabilities": ["decision"],
+  "dependencyHelperText": "Connect this after Person Extract. It looks up public figures and saves reference links.",
+  "inputs": [
+    {
+      "id": "people",
+      "label": "People",
+      "type": "array",
+      "required": true
+    }
+  ],
+  "outputs": [
+    {
+      "id": "people",
+      "label": "People",
+      "type": "array"
+    }
+  ],
+  "defaultParams": {
+    "model": "",
+    "aiModelConfigId": null,
+    "sources": ["wikidata", "wikipedia"],
+    "confidence_cutoff": 0.8
+  }
+}

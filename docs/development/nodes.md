@@ -111,6 +111,31 @@ Decide explicitly whether output is:
 Use Pydantic models for structured boundaries and test output shape and failures.
 LLM work must flow through the existing call and usage tracking paths.
 
+### Person Enrich
+
+Person Enrich reads the `people` list from Person Extract and passes that same list
+on. Only people marked as public figures are considered. Everyone else is left
+unchanged.
+
+Before any outside lookup, the node reuses links already stored on exactly one
+active Stylebook person with the same normalized name and affiliation, including a
+trusted alias, when that person already has every selected link. Zero matches, or
+two or more, are not reused. One person who is missing a selected link is looked
+up again, and persistence fills only the empty metadata.
+
+Selected links are `wikidata_id` and `wikipedia_url` on the person. Wikipedia is
+the English page for the chosen Wikidata id, not a second search. A match is kept
+only when decision confidence is at least the node cutoff (default `0.8`). Below
+the cutoff, or when Wikidata or the decision model fails, that person is left
+unchanged and the run continues. The project's system prompt is sent with the
+decision. Missing a decision-model credential skips enrichment and records a
+warning.
+
+Backfield Output copies accepted links onto empty canonical metadata. Text type
+`wikidata` holds the id and text type `wikipedia` holds the URL. Existing values
+are not overwritten. The same links are stored on the person when they are not
+canonical yet, so a later accept can fill the empty metadata.
+
 `GeocodeAgent` reconciles repeated rows before emitting its consolidated `places`
 payload. Administrative rows with the same normalized identity collapse directly;
 fine-grained rows also require the same extraction type and name plus shared

@@ -112,10 +112,22 @@ def find_existing_person_canonical_id_by_strong_identity(
     person: SubstratePerson,
 ) -> str | None:
     """Single canonical match on name + affiliation within a Stylebook."""
-    matches = _strong_identity_canonical_ids(session, stylebook_id=stylebook_id, person=person)
+    matches = strong_identity_person_canonical_ids(
+        session, stylebook_id=stylebook_id, person=person
+    )
     if len(matches) == 1:
         return matches[0]
     return None
+
+
+def strong_identity_person_canonical_ids(
+    session: Session,
+    *,
+    stylebook_id: int,
+    person: SubstratePerson,
+) -> list[str]:
+    """Active canonical ids that match name (or a trusted alias) and affiliation."""
+    return _strong_identity_canonical_ids(session, stylebook_id=stylebook_id, person=person)
 
 
 def _strong_identity_canonical_ids(

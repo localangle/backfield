@@ -619,13 +619,15 @@ def run_org_model_connection_test(
     organization_id: int,
     config_id: str,
 ) -> AiModelConfigOut:
-    """Tiny LiteLLM ping; updates latest test columns only (no LLM call records)."""
+    """Tiny provider ping; updates latest test columns only (no LLM call records)."""
     from backfield_ai.completion import completion_text_sync
     from backfield_ai.credentials import organization_llm_api_keys
+    from backfield_ai.decisions import decision_connection_test_sync
     from backfield_ai.embeddings import EMBEDDING_CONNECTION_TEST_TEXT, embed_texts_sync
 
     row = get_org_model_config(session, organization_id=organization_id, config_id=config_id)
     is_embedding = str(row.model_kind) == AI_MODEL_KIND_EMBEDDING
+    is_decision = str(row.model_kind) == AI_MODEL_KIND_DECISION
     lm = effective_litellm_model_row(
         litellm_model=row.litellm_model,
         provider=str(row.provider),
@@ -707,6 +709,13 @@ def run_org_model_connection_test(
             )
             if batch.batch_error or not batch.items or batch.items[0].vector is None:
                 raise RuntimeError(batch.batch_error or "Embedding test returned no vector")
+        elif is_decision:
+            decision_connection_test_sync(
+                litellm_model=lm,
+                api_key=api_key,
+                api_base=api_base,
+                timeout=60.0,
+            )
         else:
             messages = [
                 {"role": "system", "content": "Reply with exactly OK."},
