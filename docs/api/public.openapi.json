@@ -994,6 +994,17 @@
             "title": "Location Types",
             "type": "array"
           },
+          "max_place_radius_miles": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Place Radius Miles"
+          },
           "natures": {
             "items": {
               "type": "string"
@@ -5895,6 +5906,25 @@
               ],
               "description": "Search radius in miles (required with center_lng/center_lat)",
               "title": "Radius Miles"
+            }
+          },
+          {
+            "description": "Largest stored area a radius search will match, given as the area's own radius in miles. A stored area is often the geocoder's viewport box rather than the outline of the place, so an area much larger than the radius asked for says little about whether the place is near the center. Omit this and the search keeps areas up to 1.3 times radius_miles. Pass a large value to match every area, including states and countries. Ignored for bbox searches. The response echoes the limit it applied.",
+            "in": "query",
+            "name": "max_place_radius_miles",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Largest stored area a radius search will match, given as the area's own radius in miles. A stored area is often the geocoder's viewport box rather than the outline of the place, so an area much larger than the radius asked for says little about whether the place is near the center. Omit this and the search keeps areas up to 1.3 times radius_miles. Pass a large value to match every area, including states and countries. Ignored for bbox searches. The response echoes the limit it applied.",
+              "title": "Max Place Radius Miles"
             }
           },
           {

@@ -43,6 +43,20 @@ def search_project_articles_by_geo(
         ge=0,
         description="Search radius in miles (required with center_lng/center_lat)",
     ),
+    max_place_radius_miles: float | None = Query(
+        None,
+        ge=0,
+        description=(
+            "Largest stored area a radius search will match, given as the "
+            "area's own radius in miles. A stored area is often the geocoder's "
+            "viewport box rather than the outline of the place, so an area "
+            "much larger than the radius asked for says little about whether "
+            "the place is near the center. Omit this and the search keeps "
+            "areas up to 1.3 times radius_miles. Pass a large value to match "
+            "every area, including states and countries. Ignored for bbox "
+            "searches. The response echoes the limit it applied."
+        ),
+    ),
     bbox: str | None = Query(
         None,
         description="Bounding box as min_lng,min_lat,max_lng,max_lat",
@@ -120,6 +134,7 @@ def search_project_articles_by_geo(
             center_lng=center_lng,
             center_lat=center_lat,
             radius_miles=radius_miles,
+            max_place_radius_miles=max_place_radius_miles,
             location_types=location_types,
             natures=natures,
             meta_clauses=meta_clauses,

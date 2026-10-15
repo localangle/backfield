@@ -155,12 +155,16 @@ def _postgres_geo_ids(
         bind["center_lng"] = params.center_lng
         bind["center_lat"] = params.center_lat
         bind["radius_meters"] = params.radius_miles * MILES_TO_METERS
+        # Measure geodesic distance from the center, the same way the ORDER BY
+        # below already does. Filtering through an ST_Buffer polygon could leave
+        # out a row that the ordering would have ranked, so the two are now
+        # consistent.
+        distance_sql = ":radius_meters"
         area_cte = """
         WITH search_area AS (
-            SELECT ST_Buffer(
-                ST_SetSRID(ST_MakePoint(:center_lng, :center_lat), 4326)::geography,
-                :radius_meters
-            ) AS geom
+            SELECT ST_SetSRID(
+                ST_MakePoint(:center_lng, :center_lat), 4326
+            )::geography AS geom
         )
         """
         order_sql = """
@@ -184,6 +188,7 @@ def _postgres_geo_ids(
                 "max_lat": params.max_lat,
             }
         )
+        distance_sql = "0"
         area_cte = """
         WITH search_area AS (
             SELECT ST_SetSRID(
@@ -218,7 +223,9 @@ def _postgres_geo_ids(
         WHERE slc.stylebook_id = :stylebook_id
           AND slc.status = 'active'
           AND slc.geometry IS NOT NULL
-          AND ST_DWithin(slc.geometry::geography, sa.geom, 0)
+          AND ST_DWithin(slc.geometry::geography, sa.geom, """
+        + distance_sql
+        + """)
         """
         + location_type_filter
         + q_filter

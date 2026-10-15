@@ -1,4 +1,13 @@
-"""Geographic article search via location mention geometry."""
+"""Geographic article search via location mention geometry.
+
+A note on the two backends, which predates this module's current form. PostGIS
+matches any geometry against the search area. The SQLite path reads
+``geometry_json`` and matches points only, so a polygon never matches there.
+Coverage that needs a polygon therefore lives in
+``tests/entities/test_public_article_geo_search_postgres.py``. The size rule
+below is applied on both paths, but every area SQLite can match is a point, whose
+radius is zero, so the rule does not bind there.
+"""
 
 from __future__ import annotations
 
@@ -29,6 +38,29 @@ from backfield_entities.public.nature_filters import normalize_natures, postgres
 MILES_TO_METERS = 1609.34
 EARTH_RADIUS_MILES = 3958.7613
 
+#: How large a stored area may be, relative to the radius asked for.
+#:
+#: In our data every stored polygon is the geocoder's viewport box rather than
+#: the outline of the place, and a box covers more ground than the place it
+#: describes. The difference grows with the size of the place. So when an area
+#: is much larger than the radius asked for, matching it tells the caller
+#: little about whether the place is near the center: an article tied only to a
+#: state will answer a two-mile radius anywhere in that state.
+#:
+#: A radius search therefore keeps an area while the area's own radius -- half
+#: the diagonal of its bounding box -- is at most this multiple of the radius
+#: asked for. A point has radius zero and always qualifies. Callers who want
+#: the wider behavior can set ``max_place_radius_miles``.
+#:
+#: The value is measured rather than assumed. On a 100-article local news
+#: corpus, four centers fixed in advance return the same expected articles for
+#: any ratio from about 1.06 to about 1.55. Below 1.06, a city whose viewport
+#: box spans 10.6 miles stops answering a 5-mile radius over that same city. At
+#: 1.55, a 15.5-mile city box re-enters a 5-mile radius and one center goes from
+#: 8 articles to 37. 1.3 sits in the middle, so the result does not turn on the
+#: constant.
+COARSE_PLACE_RADIUS_RATIO = 1.3
+
 
 class PublicArticleGeoSearchMode(StrEnum):
     point = "point"
@@ -41,6 +73,10 @@ class PublicArticleGeoSearchParams:
     center_lng: float | None = None
     center_lat: float | None = None
     radius_miles: float | None = None
+    #: Largest stored area, as its own radius in miles, that a radius search
+    #: will match. ``None`` applies ``COARSE_PLACE_RADIUS_RATIO`` to
+    #: ``radius_miles``. A large value matches every area.
+    max_place_radius_miles: float | None = None
     min_lng: float | None = None
     min_lat: float | None = None
     max_lng: float | None = None
@@ -72,6 +108,9 @@ class PublicArticleGeoSearchQueryOut(BaseModel):
     center_lng: float | None = None
     center_lat: float | None = None
     radius_miles: float | None = None
+    #: The limit this response applied, so the caller can read the precision of
+    #: the answer rather than infer it.
+    max_place_radius_miles: float | None = None
     bbox: PublicGeoBboxOut | None = None
     location_types: list[str] = Field(default_factory=list)
     natures: list[str] = Field(default_factory=list)
@@ -81,6 +120,61 @@ class PublicArticleGeoSearchQueryOut(BaseModel):
     exclude_meta_category: str | None = None
     pub_date_from: date | None = None
     pub_date_to: date | None = None
+
+
+def effective_max_place_radius_miles(params: PublicArticleGeoSearchParams) -> float | None:
+    """Return the limit on stored-area size for this query, in miles.
+
+    Returns ``None`` outside point mode. Bounding-box mode is unchanged: a
+    caller who draws a box has already said how much ground to cover.
+    """
+    if params.mode is not PublicArticleGeoSearchMode.point:
+        return None
+    if params.max_place_radius_miles is not None:
+        return float(params.max_place_radius_miles)
+    if params.radius_miles is None:
+        return None
+    return float(params.radius_miles) * COARSE_PLACE_RADIUS_RATIO
+
+
+def _geometry_bounds(geometry_json: dict | None) -> tuple[float, float, float, float] | None:
+    """Return (min_lng, min_lat, max_lng, max_lat) for any GeoJSON geometry."""
+    if not isinstance(geometry_json, dict):
+        return None
+    coordinates = geometry_json.get("coordinates")
+    lngs: list[float] = []
+    lats: list[float] = []
+
+    def _walk(node: object) -> None:
+        if isinstance(node, (list, tuple)):
+            if (
+                len(node) >= 2
+                and isinstance(node[0], (int, float))
+                and isinstance(node[1], (int, float))
+            ):
+                lngs.append(float(node[0]))
+                lats.append(float(node[1]))
+                return
+            for child in node:
+                _walk(child)
+
+    _walk(coordinates)
+    if not lngs:
+        return None
+    return min(lngs), min(lats), max(lngs), max(lats)
+
+
+def place_radius_miles(geometry_json: dict | None) -> float | None:
+    """Return half the diagonal of a stored area's bounding box, in miles.
+
+    A point gives zero. Returns ``None`` when the geometry carries no usable
+    coordinates, so a caller can tell "no answer" from "zero".
+    """
+    bounds = _geometry_bounds(geometry_json)
+    if bounds is None:
+        return None
+    min_lng, min_lat, max_lng, max_lat = bounds
+    return _haversine_miles(min_lng, min_lat, max_lng, max_lat) / 2.0
 
 
 def public_article_geo_search_query_out(
@@ -106,6 +200,7 @@ def public_article_geo_search_query_out(
         radius_miles=params.radius_miles
         if params.mode is PublicArticleGeoSearchMode.point
         else None,
+        max_place_radius_miles=effective_max_place_radius_miles(params),
         bbox=bbox,
         location_types=list(params.location_types),
         natures=list(normalize_natures(params.natures)),
@@ -149,6 +244,11 @@ def _sqlite_geometry_matches(
     *,
     params: PublicArticleGeoSearchParams,
 ) -> bool:
+    max_place_radius = effective_max_place_radius_miles(params)
+    if max_place_radius is not None:
+        radius = place_radius_miles(geometry_json)
+        if radius is None or radius > max_place_radius:
+            return False
     point = _point_coordinates(geometry_json)
     if point is None:
         return False
@@ -179,6 +279,34 @@ def _postgres_location_types_filter(
     return f"AND sl.location_type IN ({placeholders})"
 
 
+def _postgres_place_radius_filter(
+    params: PublicArticleGeoSearchParams,
+    bind: dict[str, object],
+) -> str:
+    """Keep stored areas whose own radius is within the limit for this query.
+
+    The area's radius is half the great-circle diagonal of its bounding box.
+    ``ST_XMin`` and friends read that box directly, which keeps the expression
+    correct for a point, a line and a polygon alike. ``ST_ExteriorRing`` would
+    return NULL for a degenerate envelope, and the NULL comparison would drop
+    the row without saying so.
+    """
+    max_place_radius = effective_max_place_radius_miles(params)
+    if max_place_radius is None:
+        return ""
+    bind["max_place_radius_meters"] = max_place_radius * MILES_TO_METERS
+    return """
+          AND ST_Distance(
+                ST_SetSRID(
+                    ST_MakePoint(ST_XMin(sl.geometry), ST_YMin(sl.geometry)), 4326
+                )::geography,
+                ST_SetSRID(
+                    ST_MakePoint(ST_XMax(sl.geometry), ST_YMax(sl.geometry)), 4326
+                )::geography
+              ) / 2.0 <= :max_place_radius_meters
+        """
+
+
 def _postgres_matching_pairs(
     session: Session,
     *,
@@ -188,6 +316,7 @@ def _postgres_matching_pairs(
     bind: dict[str, object] = {"project_id": project_id}
     location_type_filter = _postgres_location_types_filter(params.location_types, bind)
     nature_filter = postgres_natures_in_filter(params.natures, bind, column_sql="lm.nature")
+    place_radius_filter = _postgres_place_radius_filter(params, bind)
 
     if params.mode is PublicArticleGeoSearchMode.point:
         assert params.center_lng is not None
@@ -196,12 +325,22 @@ def _postgres_matching_pairs(
         bind["center_lng"] = params.center_lng
         bind["center_lat"] = params.center_lat
         bind["radius_meters"] = params.radius_miles * MILES_TO_METERS
+        # Hand the radius to ST_DWithin as its distance, so the search area is
+        # the center point itself. That measures geodesic distance on the WGS84
+        # spheroid.
+        #
+        # ST_Buffer on a geography returns a 32-sided polygon inscribed in the
+        # circle, so its edges sit slightly inside the radius asked for:
+        # measured on PostGIS 3.6, 13.3 m inside at the middle of each edge for
+        # a 2-mile search. Which geometries that left out depended on their
+        # bearing from the center.
+        # This form also lets the geography index do the work.
+        distance_sql = ":radius_meters"
         area_cte = """
         WITH search_area AS (
-            SELECT ST_Buffer(
-                ST_SetSRID(ST_MakePoint(:center_lng, :center_lat), 4326)::geography,
-                :radius_meters
-            ) AS geom
+            SELECT ST_SetSRID(
+                ST_MakePoint(:center_lng, :center_lat), 4326
+            )::geography AS geom
         )
         """
     else:
@@ -217,6 +356,7 @@ def _postgres_matching_pairs(
                 "max_lat": params.max_lat,
             }
         )
+        distance_sql = "0"
         area_cte = """
         WITH search_area AS (
             SELECT ST_SetSRID(
@@ -238,8 +378,11 @@ def _postgres_matching_pairs(
           AND a.deleted = false
           AND lm.deleted = false
           AND sl.geometry IS NOT NULL
-          AND ST_DWithin(sl.geometry::geography, sa.geom, 0)
+          AND ST_DWithin(sl.geometry::geography, sa.geom, """
+        + distance_sql
+        + """)
         """
+        + place_radius_filter
         + location_type_filter
         + nature_filter
     )

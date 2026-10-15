@@ -37,6 +37,9 @@ class PublicArticleGeoSearchOut(BaseModel):
     center_lng: float | None = None
     center_lat: float | None = None
     radius_miles: float | None = None
+    #: The limit the search applied, in miles. See the max_place_radius_miles
+    #: query parameter.
+    max_place_radius_miles: float | None = None
     bbox: PublicGeoBboxOut | None = None
     location_types: list[str] = Field(default_factory=list)
     natures: list[str] = Field(default_factory=list)
