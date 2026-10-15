@@ -1,4 +1,11 @@
-"""Geographic article search via location mention geometry."""
+"""Geographic article search via location mention geometry.
+
+A note on the two backends, which predates this module's current form. PostGIS
+matches any geometry against the search area. The SQLite path reads
+``geometry_json`` and matches points only, so a polygon never matches there.
+Coverage that needs a polygon therefore lives in
+``tests/entities/test_public_article_geo_search_postgres.py``.
+"""
 
 from __future__ import annotations
 
@@ -196,12 +203,22 @@ def _postgres_matching_pairs(
         bind["center_lng"] = params.center_lng
         bind["center_lat"] = params.center_lat
         bind["radius_meters"] = params.radius_miles * MILES_TO_METERS
+        # Hand the radius to ST_DWithin as its distance, so the search area is
+        # the center point itself. That measures geodesic distance on the WGS84
+        # spheroid.
+        #
+        # ST_Buffer on a geography returns a 32-sided polygon inscribed in the
+        # circle, so its edges sit slightly inside the radius asked for:
+        # measured on PostGIS 3.6, 13.3 m inside at the middle of each edge for
+        # a 2-mile search. Which geometries that left out depended on their
+        # bearing from the center.
+        # This form also lets the geography index do the work.
+        distance_sql = ":radius_meters"
         area_cte = """
         WITH search_area AS (
-            SELECT ST_Buffer(
-                ST_SetSRID(ST_MakePoint(:center_lng, :center_lat), 4326)::geography,
-                :radius_meters
-            ) AS geom
+            SELECT ST_SetSRID(
+                ST_MakePoint(:center_lng, :center_lat), 4326
+            )::geography AS geom
         )
         """
     else:
@@ -217,6 +234,7 @@ def _postgres_matching_pairs(
                 "max_lat": params.max_lat,
             }
         )
+        distance_sql = "0"
         area_cte = """
         WITH search_area AS (
             SELECT ST_SetSRID(
@@ -238,7 +256,9 @@ def _postgres_matching_pairs(
           AND a.deleted = false
           AND lm.deleted = false
           AND sl.geometry IS NOT NULL
-          AND ST_DWithin(sl.geometry::geography, sa.geom, 0)
+          AND ST_DWithin(sl.geometry::geography, sa.geom, """
+        + distance_sql
+        + """)
         """
         + location_type_filter
         + nature_filter
