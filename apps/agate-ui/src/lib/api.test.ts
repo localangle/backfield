@@ -55,6 +55,10 @@ describe('rerun and replay current flow', () => {
     await rerunProcessedItem('run-1', 9)
     expect(sentBody(fetchMock)).toEqual({})
 
+    const anywayMock = stubFetch()
+    await rerunProcessedItem('run-1', 9, { continuePastProcessingGuard: true })
+    expect(sentBody(anywayMock)).toEqual({ continue_past_processing_guard: true })
+
     const replayMock = stubFetch()
     await replayRun('run-1', { useCurrentFlow: true })
     expect(sentBody(replayMock)).toEqual({ use_current_flow: true })

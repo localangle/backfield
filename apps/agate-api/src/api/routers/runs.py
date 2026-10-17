@@ -354,6 +354,8 @@ class UseCurrentFlowBody(BaseModel):
     """Optional body for rerun and replay: execute the current saved flow."""
 
     use_current_flow: bool = False
+    #: One rerun attempt keeps going after Processing Guard limits are exceeded.
+    continue_past_processing_guard: bool = False
 
 
 class RerunItemResponse(BaseModel):
@@ -459,6 +461,10 @@ def _use_current_flow(body: UseCurrentFlowBody | None) -> bool:
     return bool(body and body.use_current_flow)
 
 
+def _continue_past_processing_guard(body: UseCurrentFlowBody | None) -> bool:
+    return bool(body and body.continue_past_processing_guard)
+
+
 def _live_graph_spec_json(session: Session, graph_id: str) -> str:
     graph = session.get(AgateGraph, graph_id)
     if graph is None:
@@ -466,10 +472,17 @@ def _live_graph_spec_json(session: Session, graph_id: str) -> str:
     return graph.spec_json
 
 
-def _send_execute_processed_item(item_id: int, spec_json: str | None = None) -> None:
+def _send_execute_processed_item(
+    item_id: int,
+    spec_json: str | None = None,
+    *,
+    continue_past_processing_guard: bool = False,
+) -> None:
     kwargs: dict[str, Any] = {}
     if spec_json:
         kwargs["spec_json"] = spec_json
+    if continue_past_processing_guard:
+        kwargs["continue_past_processing_guard"] = True
     celery_app.send_task(
         "worker.tasks.execute_processed_item",
         args=[item_id],
@@ -478,10 +491,17 @@ def _send_execute_processed_item(item_id: int, spec_json: str | None = None) -> 
     )
 
 
-def _send_execute_agate_run(run_id: str, spec_json: str | None = None) -> None:
+def _send_execute_agate_run(
+    run_id: str,
+    spec_json: str | None = None,
+    *,
+    continue_past_processing_guard: bool = False,
+) -> None:
     kwargs: dict[str, Any] = {}
     if spec_json:
         kwargs["spec_json"] = spec_json
+    if continue_past_processing_guard:
+        kwargs["continue_past_processing_guard"] = True
     celery_app.send_task(
         "worker.tasks.execute_agate_run",
         args=[run_id],
@@ -2534,7 +2554,11 @@ def rerun_run_processed_item(
         session.add(r)
         session.commit()
         session.refresh(r)
-        _send_execute_agate_run(r.id, spec_json=spec_override)
+        _send_execute_agate_run(
+            r.id,
+            spec_json=spec_override,
+            continue_past_processing_guard=_continue_past_processing_guard(body),
+        )
         return RerunItemResponse(
             item_id=1,
             run_id=r.id,
@@ -2570,7 +2594,11 @@ def rerun_run_processed_item(
     session.commit()
     session.refresh(item)
 
-    _send_execute_processed_item(int(item.id), spec_json=spec_override)
+    _send_execute_processed_item(
+        int(item.id),
+        spec_json=spec_override,
+        continue_past_processing_guard=_continue_past_processing_guard(body),
+    )
 
     iid = item.id
     if iid is None:

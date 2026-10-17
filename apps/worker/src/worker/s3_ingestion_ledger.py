@@ -262,7 +262,9 @@ def mark_ledger_succeeded(
         .where(
             AgateS3IngestionLedger.id == ledger_id,
             AgateS3IngestionLedger.claim_token == claim_token,
-            AgateS3IngestionLedger.status == LEDGER_STATUS_PROCESSING,
+            AgateS3IngestionLedger.status.in_(
+                [LEDGER_STATUS_PROCESSING, LEDGER_STATUS_NEEDS_ATTENTION]
+            ),
         )
         .values(
             status=LEDGER_STATUS_SUCCEEDED,

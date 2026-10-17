@@ -1374,6 +1374,16 @@ def test_rerun_processed_item_use_current_flow_passes_live_spec_without_replacin
             assert run_row is not None
             assert "Austin" in (run_row.result_json or "")
             assert "Chicago" not in (run_row.result_json or "")
+
+        anyway = tc.post(
+            f"/runs/{rid}/items/{iid}/rerun",
+            json={"continue_past_processing_guard": True},
+        )
+        assert anyway.status_code == 200
+        anyway_kwargs = captured.get("task_kwargs") or {}
+        assert isinstance(anyway_kwargs, dict)
+        assert anyway_kwargs.get("continue_past_processing_guard") is True
+        assert "spec_json" not in anyway_kwargs
     finally:
         app.dependency_overrides.clear()
 

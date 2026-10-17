@@ -75,6 +75,8 @@ class ProcessingGuardSummary(BaseModel):
     detector_version: str
     criteria: list[CriterionFinding] = Field(default_factory=list)
     messages: list[str] = Field(default_factory=list)
+    #: True only when this attempt continued after a limit was exceeded.
+    continued_anyway: bool = False
 
 
 def _word_count_message(*, operator: CriterionOperator, triggered: bool) -> str:
@@ -89,11 +91,8 @@ def _word_count_message(*, operator: CriterionOperator, triggered: bool) -> str:
 
 def _entity_message(*, triggered: bool) -> str:
     if triggered:
-        return (
-            "The Processing Guard stopped the processing of this item, based on the "
-            "settings established on the node."
-        )
-    return "The estimated number of names is within the limit for this flow."
+        return "This story may contain more entities than this flow is set to process."
+    return "The estimated number of entities is within the limit for this flow."
 
 
 def _triggered(observed: int, operator: CriterionOperator, threshold: int) -> bool:

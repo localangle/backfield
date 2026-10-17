@@ -307,8 +307,10 @@ the run end as `needs_attention` with an empty `error_message`. Batch rollup is:
 any `failed` item makes the run `failed`; otherwise any `needs_attention` item
 makes the run `needs_attention`; otherwise the run is `succeeded`.
 
-Rerun and replay stay available. They are not a bypass: the same guard runs again.
-This slice does not add a “process anyway” override or adaptive extraction.
+Rerun and replay stay available. They run the guard again. Item rerun accepts
+`continue_past_processing_guard` for one attempt: the guard still records findings,
+sets `continued_anyway`, and later steps run. A later rerun stops again unless the
+flag is sent again. Adaptive extraction is not part of this path.
 
 ### Document Chunker
 

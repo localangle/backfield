@@ -89,8 +89,7 @@ def test_multiple_findings_can_trigger_together() -> None:
     assert name_finding.estimation is True
     assert name_finding.observed == 12
     assert name_finding.message == (
-        "The Processing Guard stopped the processing of this item, based on the "
-        "settings established on the node."
+        "This story may contain more entities than this flow is set to process."
     )
 
 

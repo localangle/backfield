@@ -57,6 +57,12 @@ type GuardCriterion = {
   threshold: number | ''
 }
 
+type GuardSummary = {
+  disposition?: string
+  continued_anyway?: boolean
+  criteria?: GuardFinding[]
+}
+
 type GuardFinding = {
   criterion_id?: string
   type?: string
@@ -134,7 +140,9 @@ export default function ProcessingGuardPanel({
     nodeOutput && typeof nodeOutput === 'object'
       ? ((nodeOutput as Record<string, unknown>).processing_guard as Record<string, unknown> | undefined)
       : undefined
-  const findings = Array.isArray(summary?.criteria) ? (summary.criteria as GuardFinding[]) : []
+  const guardSummary = summary as GuardSummary | undefined
+  const findings = Array.isArray(guardSummary?.criteria) ? guardSummary.criteria : []
+  const continuedAnyway = guardSummary?.continued_anyway === true
 
   return (
     <>
@@ -257,9 +265,11 @@ export default function ProcessingGuardPanel({
             <div>
               <Label className="text-xs font-medium text-muted-foreground">Result</Label>
               <p className="text-sm mt-1">
-                {summary.disposition === 'needs_attention'
-                  ? 'Needs attention. Later steps did not run.'
-                  : 'Within the limits. Later steps can run.'}
+                {continuedAnyway
+                  ? 'Limits were exceeded. This story was processed anyway.'
+                  : summary.disposition === 'needs_attention'
+                    ? 'Needs attention. Later steps did not run.'
+                    : 'Within the limits. Later steps can run.'}
               </p>
             </div>
             <div className="space-y-2">

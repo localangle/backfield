@@ -27,7 +27,10 @@ the run-scoped item routes below.
 A `needs_attention` item is terminal and not an error. Its execution output keeps
 the Processing Guard findings (`processing_guard`) and the original text. Later
 nodes did not run, so entity review lanes are empty. Rerun is available and checks
-the same limits again; this API does not offer a bypass or adaptive reprocess.
+the same limits again. `POST /runs/{run_id}/items/{item_id}/rerun` accepts
+`continue_past_processing_guard: true` so that one attempt continues after a limit
+is exceeded and keeps the findings. A later rerun stops again unless the flag is
+sent again. This API does not change extraction behavior for that attempt.
 
 Document chunks from `DocumentChunker` are not a separate review surface. Review continues to
 show one story body and one merged entity set. Chunk texts and internal offsets are not part of

@@ -90,7 +90,9 @@ Deleting a flow removes its run-control records and detaches durable article row
 - Replay creates a new run from an existing run contract; item rerun requeues an existing processed item and clears its review state.
 - `POST /runs/{run_id}/replay` and `POST /runs/{run_id}/items/{item_id}/rerun` accept optional
   JSON `{ "use_current_flow": true }` to execute the current saved flow. Omit the flag (the default)
-  to keep the run’s pinned spec. In-place item rerun does not replace that pin.
+  to keep the run’s pinned spec. In-place item rerun does not replace that pin. Item rerun also
+  accepts `{ "continue_past_processing_guard": true }` for one attempt that continues after a
+  Processing Guard limit is exceeded. Omit it and the guard stops the story again.
 
 For active runs, poll `GET /runs/{run_id}/status` and page summaries through `GET /runs/{run_id}/items`. Full `GET /runs/{run_id}` remains supported for callers that need the complete run response.
 
@@ -101,8 +103,9 @@ findings stay on the item result under `processing_guard`. Run responses include
 `needs_attention` when any item was held, otherwise `succeeded`.
 `GET /runs/{run_id}/items?status=` accepts `pending`, `running`, `succeeded`,
 `failed`, `skipped`, and `needs_attention` (unknown values return 400). Replay and
-item rerun still accept held items; they run the guard again and are not an
-override.
+item rerun still accept held items and run the guard again. Item rerun with
+`continue_past_processing_guard` keeps the findings, sets `continued_anyway`, and
+runs later steps for that attempt only.
 
 `GET /runs/{run_id}/estimated-ai-cost` returns run totals and node-level attribution. Project statistics and project cost routes aggregate the same tracked call records at project scope.
 

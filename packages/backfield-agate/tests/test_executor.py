@@ -964,6 +964,46 @@ def test_processing_guard_stops_descendants_without_running_them():
     assert held.value.outputs["text_input"]["text"] == "Jane Doe spoke in Chicago."
 
 
+def test_processing_guard_continue_past_limit_runs_descendants_and_keeps_findings():
+    called: list[str] = []
+
+    def _place(_params, _inputs):
+        called.append("place")
+        return {"locations": [{"location": "kept"}]}
+
+    spec = GraphSpec(
+        name="continue-anyway",
+        nodes=[
+            NodeConfig(id="a", type="TextInput", params={"text": "Jane Doe spoke in Chicago."}),
+            NodeConfig(
+                id="g",
+                type="ProcessingGuard",
+                params={
+                    "criteria": [
+                        {
+                            "id": "names",
+                            "type": "estimated_entity_references",
+                            "threshold": 0,
+                        }
+                    ]
+                },
+            ),
+            NodeConfig(id="b", type="PlaceExtract", params={}),
+        ],
+        edges=[Edge(source="a", target="g"), Edge(source="g", target="b")],
+    )
+    out = execute_graph(
+        spec,
+        node_runners={"PlaceExtract": _place},
+        continue_past_processing_guard=True,
+    )
+    assert called == ["place"]
+    summary = out["processing_guard"]["processing_guard"]
+    assert summary["disposition"] == "needs_attention"
+    assert summary["continued_anyway"] is True
+    assert out["place_extract"]["locations"][0]["location"] == "kept"
+
+
 def test_processing_guard_continue_runs_descendants():
     spec = GraphSpec(
         name="clear",

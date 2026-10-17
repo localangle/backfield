@@ -83,7 +83,9 @@ Output). Item and run status `needs_attention` is terminal and is not a failure:
 `error_message` stays empty. Batch rollup is any failure, then any held item, then
 success. S3 ledger rows in `needs_attention` are not reclaimed unless **Reprocess
 completed files** is on. Explicit rerun and replay remain possible and still pass
-through the guard. Override and adaptive extraction are deferred.
+through the guard. Item rerun may set `continue_past_processing_guard` so that one
+attempt continues after a limit is exceeded; a later successful completion records
+the S3 revision as succeeded. Adaptive extraction is deferred.
 
 Optional `DocumentChunker` keeps one processed item and one canonical article text per source
 document. Chunks are execution units inside extract nodes (bounded concurrency, ownership

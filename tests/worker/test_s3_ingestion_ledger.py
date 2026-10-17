@@ -551,6 +551,41 @@ def test_mark_succeeded_requires_claim_token(ledger_engine):
         assert row.status == "succeeded"
 
 
+def test_mark_succeeded_completes_a_held_revision(ledger_engine):
+    engine, _graph_id, pid = ledger_engine
+    listing = S3ObjectListing(key="p/held.json", etag='"e"', size_bytes=1)
+    with Session(engine) as session:
+        claim = claim_ledger_revision(
+            session,
+            project_id=pid,
+            source_id="src-fixed",
+            bucket="my-bucket",
+            key="p/held.json",
+            content_fingerprint=sha256_hex(b"held"),
+            listing=listing,
+            version_id=None,
+            flow_run_id="run-a",
+            lease_duration=timedelta(hours=1),
+        )
+        assert claim is not None
+        assert mark_ledger_needs_attention(
+            session,
+            ledger_id=claim.ledger_id,
+            claim_token=claim.claim_token,
+            processed_item_id=1,
+        )
+        assert mark_ledger_succeeded(
+            session,
+            ledger_id=claim.ledger_id,
+            claim_token=claim.claim_token,
+            processed_item_id=1,
+        )
+        session.commit()
+        row = session.get(AgateS3IngestionLedger, claim.ledger_id)
+        assert row is not None
+        assert row.status == "succeeded"
+
+
 def test_needs_attention_revision_is_terminal_until_reprocess(ledger_engine):
     engine, _graph_id, pid = ledger_engine
     listing = S3ObjectListing(key="p/held.json", etag='"e"', size_bytes=1)

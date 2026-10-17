@@ -751,7 +751,11 @@ def _finalize_s3_parent_run(session: Session, run_id: str) -> None:
 
 
 @celery_app.task(name="worker.tasks.execute_agate_run")
-def execute_agate_run(run_id: str, spec_json: str | None = None) -> None:
+def execute_agate_run(
+    run_id: str,
+    spec_json: str | None = None,
+    continue_past_processing_guard: bool = False,
+) -> None:
     engine = get_engine()
     with Session(engine) as session:
         run = session.get(AgateRun, run_id)
@@ -841,6 +845,7 @@ def execute_agate_run(run_id: str, spec_json: str | None = None) -> None:
                 node_runners=node_runners,
                 before_each_node=before_node,
                 after_each_node=after_node,
+                continue_past_processing_guard=continue_past_processing_guard,
             )
             _log_node_wall_clock_summary(
                 run_id=run_id,
@@ -1494,10 +1499,20 @@ def execute_run_replay_setup(source_run_id: str, new_run_id: str) -> None:
     reject_on_worker_lost=True,
     max_retries=None,
 )
-def execute_processed_item(self: Task, item_id: int, spec_json: str | None = None) -> None:
+def execute_processed_item(
+    self: Task,
+    item_id: int,
+    spec_json: str | None = None,
+    continue_past_processing_guard: bool = False,
+) -> None:
     token = _current_processed_item_id.set(int(item_id))
     try:
-        _execute_processed_item_impl(self, item_id, spec_json=spec_json)
+        _execute_processed_item_impl(
+            self,
+            item_id,
+            spec_json=spec_json,
+            continue_past_processing_guard=continue_past_processing_guard,
+        )
     finally:
         _current_processed_item_id.reset(token)
 
@@ -1506,6 +1521,7 @@ def _execute_processed_item_impl(
     task: Task,
     item_id: int,
     spec_json: str | None = None,
+    continue_past_processing_guard: bool = False,
 ) -> None:
     engine = get_engine()
     claimed_at: datetime
@@ -1764,6 +1780,7 @@ def _execute_processed_item_impl(
                 node_runners=node_runners,
                 before_each_node=before_node,
                 after_each_node=after_node,
+                continue_past_processing_guard=continue_past_processing_guard,
             )
     except NeedsAttention as attention:
         attention_outputs = attention.outputs

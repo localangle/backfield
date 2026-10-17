@@ -1235,13 +1235,14 @@ export interface RerunItemResponse {
 export async function rerunProcessedItem(
   runId: string | number,
   itemId: number,
-  options: { useCurrentFlow?: boolean } = {},
+  options: { useCurrentFlow?: boolean; continuePastProcessingGuard?: boolean } = {},
 ): Promise<RerunItemResponse> {
+  const body: Record<string, boolean> = {}
+  if (options.useCurrentFlow) body.use_current_flow = true
+  if (options.continuePastProcessingGuard) body.continue_past_processing_guard = true
   return fetchAPI(`/runs/${runId}/items/${itemId}/rerun`, {
     method: 'POST',
-    body: JSON.stringify(
-      options.useCurrentFlow ? { use_current_flow: true } : {},
-    ),
+    body: JSON.stringify(body),
   }) as Promise<RerunItemResponse>
 }
 

@@ -44,3 +44,10 @@ def guard_summary_needs_attention(output: dict[str, Any]) -> bool:
     if not isinstance(summary, dict):
         return False
     return summary.get("disposition") == NEEDS_ATTENTION_DISPOSITION
+
+
+def mark_guard_continued_anyway(output: dict[str, Any]) -> None:
+    """Record that this attempt kept going after a limit was exceeded."""
+    summary = output.get(PROCESSING_GUARD_SUMMARY_KEY)
+    if isinstance(summary, dict):
+        summary["continued_anyway"] = True
