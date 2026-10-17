@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import io
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from backfield_observability.identity import RuntimeIdentity
+from backfield_observability.lifecycle import emit_item_terminal, emit_run_terminal
 from backfield_observability.metrics import MetricKind, MetricUnit, log_metric
 
 _FIXTURES = Path(__file__).parent / "fixtures"
@@ -97,6 +99,31 @@ def test_log_metric_rejects_high_cardinality_operation() -> None:
             operation="geocode.pelias.search",
             stream=io.StringIO(),
         )
+
+
+def test_needs_attention_uses_its_own_counters(capsys: pytest.CaptureFixture[str]) -> None:
+    identity = _identity()
+    finished = datetime(2026, 10, 17, tzinfo=UTC)
+    assert emit_run_terminal(
+        previous_status="running",
+        new_status="needs_attention",
+        identity=identity,
+    )
+    assert emit_item_terminal(
+        previous_status="running",
+        new_status="needs_attention",
+        identity=identity,
+        started_at=finished,
+        finished_at=finished,
+    )
+    captured = capsys.readouterr().err
+    assert "runs_needs_attention_total" in captured
+    assert "items_needs_attention_total" in captured
+    assert "item_duration_seconds" in captured
+    assert "runs_completed_total" not in captured
+    assert "runs_failed_total" not in captured
+    assert "items_completed_total" not in captured
+    assert "items_failed_total" not in captured
 
 
 def test_emf_golden_fixture_shape() -> None:

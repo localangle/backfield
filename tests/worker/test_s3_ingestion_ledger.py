@@ -27,6 +27,7 @@ from worker.s3_ingestion_ledger import (
     claim_ledger_revision,
     find_row_for_fingerprint,
     find_succeeded_matching_metadata,
+    mark_ledger_needs_attention,
     mark_ledger_succeeded,
 )
 from worker.substrate.content.article import _upsert_article
@@ -548,6 +549,68 @@ def test_mark_succeeded_requires_claim_token(ledger_engine):
         row = session.get(AgateS3IngestionLedger, claim.ledger_id)
         assert row is not None
         assert row.status == "succeeded"
+
+
+def test_needs_attention_revision_is_terminal_until_reprocess(ledger_engine):
+    engine, _graph_id, pid = ledger_engine
+    listing = S3ObjectListing(key="p/held.json", etag='"e"', size_bytes=1)
+    fingerprint = sha256_hex(b"held")
+    with Session(engine) as session:
+        claim = claim_ledger_revision(
+            session,
+            project_id=pid,
+            source_id="src-fixed",
+            bucket="my-bucket",
+            key="p/held.json",
+            content_fingerprint=fingerprint,
+            listing=listing,
+            version_id=None,
+            flow_run_id="run-a",
+            lease_duration=timedelta(hours=1),
+        )
+        assert claim is not None
+        assert mark_ledger_needs_attention(
+            session,
+            ledger_id=claim.ledger_id,
+            claim_token=claim.claim_token,
+            processed_item_id=1,
+        )
+        session.commit()
+        row = session.get(AgateS3IngestionLedger, claim.ledger_id)
+        assert row is not None
+        assert row.status == "needs_attention"
+        assert row.last_error is None
+
+        skipped = claim_ledger_revision(
+            session,
+            project_id=pid,
+            source_id="src-fixed",
+            bucket="my-bucket",
+            key="p/held.json",
+            content_fingerprint=fingerprint,
+            listing=listing,
+            version_id=None,
+            flow_run_id="run-b",
+            lease_duration=timedelta(hours=1),
+        )
+        assert skipped is None
+
+        reclaimed = claim_ledger_revision(
+            session,
+            project_id=pid,
+            source_id="src-fixed",
+            bucket="my-bucket",
+            key="p/held.json",
+            content_fingerprint=fingerprint,
+            listing=listing,
+            version_id=None,
+            flow_run_id="run-c",
+            lease_duration=timedelta(hours=1),
+            reclaim_succeeded=True,
+        )
+        assert reclaimed is not None
+        assert reclaimed.ledger_id == claim.ledger_id
+        session.commit()
 
 
 def test_article_upsert_prefers_ledger_identity(ledger_engine):

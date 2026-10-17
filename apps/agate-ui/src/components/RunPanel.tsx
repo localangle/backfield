@@ -21,6 +21,8 @@ function runCardTitle(status: string, flowName: string): string {
     case 'completed':
     case 'completed_with_errors':
       return `Completed ${name}`
+    case 'needs_attention':
+      return `${name} needs attention`
     default:
       return name
   }
@@ -42,6 +44,8 @@ export default function RunPanel({
         return 'bg-orange-100 text-orange-800 border-orange-200'
       case 'pending':
         return 'bg-gray-100 text-gray-800 border-gray-200'
+      case 'needs_attention':
+        return 'bg-amber-100 text-amber-900 border-amber-200'
       default:
         return 'bg-gray-100 text-gray-800 border-gray-200'
     }
@@ -54,6 +58,8 @@ export default function RunPanel({
       case 'completed':
         return <CheckCircle className="h-4 w-4" />
       case 'completed_with_errors':
+        return <AlertTriangle className="h-4 w-4" />
+      case 'needs_attention':
         return <AlertTriangle className="h-4 w-4" />
       case 'pending':
         return <Clock className="h-4 w-4" />

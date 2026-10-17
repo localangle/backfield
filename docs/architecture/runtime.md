@@ -75,6 +75,16 @@ Public result keys are stable snake_case names derived from node type and topolo
 `Output` maps to `json_output`, Backfield Output maps to `stylebook_output`, and repeated node
 types receive deterministic suffixes.
 
+`ProcessingGuard`, when present, runs before any other middle node. A triggered
+guard raises `NeedsAttention` instead of `GraphExecutionError`. The executor keeps
+the input and guard findings, cancels or never schedules descendants, and does not
+invoke their hooks or side effects (including Output, Backfield Output, and S3
+Output). Item and run status `needs_attention` is terminal and is not a failure:
+`error_message` stays empty. Batch rollup is any failure, then any held item, then
+success. S3 ledger rows in `needs_attention` are not reclaimed unless **Reprocess
+completed files** is on. Explicit rerun and replay remain possible and still pass
+through the guard. Override and adaptive extraction are deferred.
+
 Optional `DocumentChunker` keeps one processed item and one canonical article text per source
 document. Chunks are execution units inside extract nodes (bounded concurrency, ownership
 ranges, cross-chunk stitching). The transient chunk envelope is stripped from consolidated /

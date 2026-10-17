@@ -150,6 +150,8 @@ const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetai
           return 'bg-orange-100 text-orange-800 border-orange-200'
         case 'pending':
           return 'bg-gray-100 text-gray-800 border-gray-200'
+        case 'needs_attention':
+          return 'bg-amber-100 text-amber-900 border-amber-200'
         default:
           return 'bg-gray-100 text-gray-800 border-gray-200'
       }
@@ -165,6 +167,8 @@ const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetai
           return <AlertTriangle className="h-4 w-4" />
         case 'pending':
           return <Clock className="h-4 w-4" />
+        case 'needs_attention':
+          return <AlertTriangle className="h-4 w-4" />
         default:
           return <Clock className="h-4 w-4" />
       }
@@ -238,6 +242,7 @@ const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetai
                 <SelectItem value="running">Running</SelectItem>
                 <SelectItem value="completed">Completed</SelectItem>
                 <SelectItem value="completed_with_errors">Completed with errors</SelectItem>
+                <SelectItem value="needs_attention">Needs attention</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -291,7 +296,7 @@ const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetai
                               <Badge variant="outline" className={getStatusColor(run.status)}>
                                 {getStatusIcon(run.status)}
                                 <span className="ml-1 capitalize">
-                                  {run.status.replace(/_/g, ' ')}
+                                  {run.status === 'needs_attention' ? 'Needs attention' : run.status.replace(/_/g, ' ')}
                                 </span>
                               </Badge>
                               <div className="text-xs text-muted-foreground mt-1">

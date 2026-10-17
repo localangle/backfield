@@ -13,6 +13,7 @@ class PublicRunCountsOut(BaseModel):
     running: int = 0
     succeeded: int = 0
     failed: int = 0
+    needs_attention: int = 0
 
 
 class PublicRunCreateIn(BaseModel):

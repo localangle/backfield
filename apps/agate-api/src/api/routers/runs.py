@@ -387,6 +387,7 @@ class RunOut(BaseModel):
     running_items: int = 0
     succeeded_items: int = 0
     failed_items: int = 0
+    needs_attention_items: int = 0
     processed_items: list[ProcessedItemOut] = []
     #: Sum of ``BackfieldAiCallRecord`` rows with ``processed_item_id IS NULL`` (single-graph runs).
     whole_run_ai_cost_estimate: Decimal = Decimal("0")
@@ -427,6 +428,7 @@ class RunStatusOut(BaseModel):
     running_items: int = 0
     succeeded_items: int = 0
     failed_items: int = 0
+    needs_attention_items: int = 0
     estimated_ai_cost_total: Decimal = Decimal("0")
     estimated_ai_cost_total_incomplete: bool = False
     graph_spec_snapshot_json: str | None = None
@@ -949,12 +951,14 @@ def _processed_items_page_for_run(
     offset: int,
     sort: str,
     direction: Literal["asc", "desc"],
+    status: str | None = None,
 ) -> ProcessedItemsPageOut:
+    filters = [AgateProcessedItem.run_id == run_id]
+    if status:
+        filters.append(AgateProcessedItem.status == status)
     total = int(
         session.exec(
-            select(func.count()).select_from(AgateProcessedItem).where(
-                AgateProcessedItem.run_id == run_id
-            )
+            select(func.count()).select_from(AgateProcessedItem).where(*filters)
         ).one()
         or 0
     )
@@ -989,7 +993,7 @@ def _processed_items_page_for_run(
         AgateProcessedItem.created_at,
         AgateProcessedItem.updated_at,
         AgateProcessedItem.started_at,
-    ).where(AgateProcessedItem.run_id == run_id)
+    ).where(*filters)
     if cost_rows is not None:
         stmt = stmt.outerjoin(cost_rows, cost_rows.c.processed_item_id == AgateProcessedItem.id)
     rows = session.exec(
@@ -1055,12 +1059,13 @@ def _processed_items_page_for_run(
 
 def _count_processed_items(
     processed_items: list[ProcessedItemOut],
-) -> tuple[int, int, int, int, int]:
+) -> tuple[int, int, int, int, int, int]:
     total = len(processed_items)
     pending = 0
     running = 0
     succeeded = 0
     failed = 0
+    needs_attention = 0
     for item in processed_items:
         if item.status == "pending":
             pending += 1
@@ -1068,31 +1073,37 @@ def _count_processed_items(
             running += 1
         elif item.status == "succeeded":
             succeeded += 1
+        elif item.status == "needs_attention":
+            needs_attention += 1
         elif item.status in ("failed", "timed_out"):
             failed += 1
-    return total, pending, running, succeeded, failed
+    return total, pending, running, succeeded, failed, needs_attention
 
 
-def _synthetic_whole_run_counts(session: Session, run: AgateRun) -> tuple[int, int, int, int, int]:
+def _synthetic_whole_run_counts(
+    session: Session, run: AgateRun
+) -> tuple[int, int, int, int, int, int]:
     graph = session.get(AgateGraph, run.graph_id)
     if graph is None or graph_spec_json_contains_s3_input(graph.spec_json):
-        return 0, 0, 0, 0, 0
+        return 0, 0, 0, 0, 0, 0
     if run.status == "pending":
-        return 1, 1, 0, 0, 0
+        return 1, 1, 0, 0, 0, 0
     if run.status == "running":
-        return 1, 0, 1, 0, 0
+        return 1, 0, 1, 0, 0, 0
     if run.status == "succeeded":
-        return 1, 0, 0, 1, 0
+        return 1, 0, 0, 1, 0, 0
     if run.status == "failed":
-        return 1, 0, 0, 0, 1
-    return 0, 0, 0, 0, 0
+        return 1, 0, 0, 0, 1, 0
+    if run.status == "needs_attention":
+        return 1, 0, 0, 0, 0, 1
+    return 0, 0, 0, 0, 0, 0
 
 
 def _run_item_counts(
     session: Session,
     run: AgateRun,
     processed_items: list[ProcessedItemOut],
-) -> tuple[int, int, int, int, int]:
+) -> tuple[int, int, int, int, int, int]:
     if processed_items:
         return _count_processed_items(processed_items)
     return _synthetic_whole_run_counts(session, run)
@@ -1101,7 +1112,7 @@ def _run_item_counts(
 def _processed_item_counts_for_run_ids(
     session: Session,
     run_ids: list[str],
-) -> dict[str, tuple[int, int, int, int, int]]:
+) -> dict[str, tuple[int, int, int, int, int, int]]:
     if not run_ids:
         return {}
     rows = session.exec(
@@ -1115,7 +1126,7 @@ def _processed_item_counts_for_run_ids(
     ).all()
     counts: dict[str, list[int]] = {}
     for run_id, item_status, n in rows:
-        bucket = counts.setdefault(run_id, [0, 0, 0, 0, 0])
+        bucket = counts.setdefault(run_id, [0, 0, 0, 0, 0, 0])
         count = int(n)
         bucket[0] += count
         if item_status == "pending":
@@ -1126,7 +1137,12 @@ def _processed_item_counts_for_run_ids(
             bucket[3] += count
         elif item_status in ("failed", "timed_out"):
             bucket[4] += count
-    return {run_id: tuple(bucket) for run_id, bucket in counts.items()}
+        elif item_status == "needs_attention":
+            bucket[5] += count
+    return {
+        run_id: (bucket[0], bucket[1], bucket[2], bucket[3], bucket[4], bucket[5])
+        for run_id, bucket in counts.items()
+    }
 
 
 @router.post("", response_model=RunOut)
@@ -1173,15 +1189,31 @@ def create_run(
                 duration_ms=_processed_item_processing_duration_ms(item),
             )
         ]
-        total_items, pending_items, running_items, succeeded_items, failed_items = (
+        (
+            total_items,
+            pending_items,
+            running_items,
+            succeeded_items,
+            failed_items,
+            needs_attention_items,
+        ) = (
             1,
             1,
+            0,
             0,
             0,
             0,
         )
     else:
-        total_items, pending_items, running_items, succeeded_items, failed_items = (
+        (
+            total_items,
+            pending_items,
+            running_items,
+            succeeded_items,
+            failed_items,
+            needs_attention_items,
+        ) = (
+            0,
             0,
             0,
             0,
@@ -1204,6 +1236,7 @@ def create_run(
         running_items=running_items,
         succeeded_items=succeeded_items,
         failed_items=failed_items,
+        needs_attention_items=needs_attention_items,
         processed_items=processed_items_out,
         graph_spec_snapshot_json=snapshot_json,
         flow_changed_since_run=flow_changed,
@@ -1343,7 +1376,14 @@ def list_runs(
         total_est, total_inc, cur = cost_map.get(
             r.id, (Decimal("0"), False, DEFAULT_AI_COST_CURRENCY)
         )
-        total_items, pending_items, running_items, succeeded_items, failed_items = (
+        (
+            total_items,
+            pending_items,
+            running_items,
+            succeeded_items,
+            failed_items,
+            needs_attention_items,
+        ) = (
             item_count_map.get(r.id) or _synthetic_whole_run_counts(session, r)
         )
         snapshot_json = (
@@ -1364,6 +1404,7 @@ def list_runs(
                 running_items=running_items,
                 succeeded_items=succeeded_items,
                 failed_items=failed_items,
+        needs_attention_items=needs_attention_items,
                 whole_run_ai_cost_currency=cur,
                 estimated_ai_cost_total=total_est,
                 estimated_ai_cost_total_incomplete=total_inc,
@@ -1568,7 +1609,7 @@ def _maybe_detail_whole_graph_run(
             output_obj = None
 
     st = run.status
-    if st not in ("pending", "running", "succeeded", "failed", "skipped"):
+    if st not in ("pending", "running", "succeeded", "failed", "skipped", "needs_attention"):
         st = "failed"
 
     err: str | None = run.error_message if st == "failed" else None
@@ -2480,7 +2521,7 @@ def rerun_run_processed_item(
 
     if _is_synthetic_whole_graph_item_view(session, run_id, item_id):
         snapshot = _run_graph_spec_snapshot_json(r)
-        if r.status in ("succeeded", "failed", "timed_out"):
+        if r.status in ("succeeded", "failed", "timed_out", "needs_attention"):
             # Explicit rerun of a terminal run starts a new execution attempt.
             r.execution_attempt = int(r.execution_attempt or 1) + 1
         r.status = "pending"
@@ -2506,7 +2547,7 @@ def rerun_run_processed_item(
         raise HTTPException(404, "Processed item not found")
 
     if r.status != "running":
-        if r.status in ("succeeded", "failed", "timed_out"):
+        if r.status in ("succeeded", "failed", "timed_out", "needs_attention"):
             # Explicit rerun of a terminal run starts a new execution attempt.
             r.execution_attempt = int(r.execution_attempt or 1) + 1
         r.status = "running"
@@ -2607,9 +2648,14 @@ def _serialize_run(session: Session, r: AgateRun) -> RunOut:
         session, r.id, cost_by_item=by_item, currency=wr_currency
     )
     total_est, total_inc = _total_ai_cost_from_rollup(by_item, null_b)
-    total_items, pending_items, running_items, succeeded_items, failed_items = _run_item_counts(
-        session, r, processed
-    )
+    (
+        total_items,
+        pending_items,
+        running_items,
+        succeeded_items,
+        failed_items,
+        needs_attention_items,
+    ) = _run_item_counts(session, r, processed)
     snapshot_json, flow_changed = _run_configuration_fields(
         session, r, include_flow_changed=True
     )
@@ -2627,6 +2673,7 @@ def _serialize_run(session: Session, r: AgateRun) -> RunOut:
         running_items=running_items,
         succeeded_items=succeeded_items,
         failed_items=failed_items,
+        needs_attention_items=needs_attention_items,
         processed_items=processed,
         whole_run_ai_cost_estimate=null_cost,
         whole_run_ai_cost_incomplete=null_incomplete,
@@ -2640,10 +2687,16 @@ def _serialize_run(session: Session, r: AgateRun) -> RunOut:
 
 def _serialize_run_status(session: Session, r: AgateRun) -> RunStatusOut:
     pid = _graph_project_id(session, r.graph_id)
-    total_items, pending_items, running_items, succeeded_items, failed_items = (
-        _processed_item_counts_for_run_ids(session, [r.id]).get(r.id)
-        or _synthetic_whole_run_counts(session, r)
-    )
+    (
+        total_items,
+        pending_items,
+        running_items,
+        succeeded_items,
+        failed_items,
+        needs_attention_items,
+    ) = _processed_item_counts_for_run_ids(session, [r.id]).get(
+        r.id
+    ) or _synthetic_whole_run_counts(session, r)
     cost_map = _rollup_ai_cost_totals_for_run_ids(session, [r.id])
     total_est, total_inc, _currency = cost_map.get(
         r.id, (Decimal("0"), False, DEFAULT_AI_COST_CURRENCY)
@@ -2664,6 +2717,7 @@ def _serialize_run_status(session: Session, r: AgateRun) -> RunStatusOut:
         running_items=running_items,
         succeeded_items=succeeded_items,
         failed_items=failed_items,
+        needs_attention_items=needs_attention_items,
         estimated_ai_cost_total=total_est,
         estimated_ai_cost_total_incomplete=total_inc,
         graph_spec_snapshot_json=snapshot_json,
@@ -2782,6 +2836,7 @@ def list_run_processed_items(
     offset: int = 0,
     sort: str = "id",
     direction: Literal["asc", "desc"] = "asc",
+    status: str | None = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ):
@@ -2797,6 +2852,17 @@ def list_run_processed_items(
         raise HTTPException(400, "offset must be non-negative")
     allowed_sorts = {"id", "source", "status", "duration", "estimated_cost", "created_at"}
     sort_key = sort if sort in allowed_sorts else "id"
+    allowed_statuses = {
+        "pending",
+        "running",
+        "succeeded",
+        "failed",
+        "timed_out",
+        "skipped",
+        "needs_attention",
+    }
+    if status is not None and status not in allowed_statuses:
+        raise HTTPException(400, "status is not a recognized item status")
     return _processed_items_page_for_run(
         session,
         run_id,
@@ -2804,6 +2870,7 @@ def list_run_processed_items(
         offset=offset,
         sort=sort_key,
         direction=direction,
+        status=status,
     )
 
 

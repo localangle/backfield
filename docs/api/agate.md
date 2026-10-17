@@ -94,6 +94,16 @@ Deleting a flow removes its run-control records and detaches durable article row
 
 For active runs, poll `GET /runs/{run_id}/status` and page summaries through `GET /runs/{run_id}/items`. Full `GET /runs/{run_id}` remains supported for callers that need the complete run response.
 
+Run and item status `needs_attention` is terminal. It means a Processing Guard
+limit was exceeded, later steps did not run, and `error_message` is empty. Guard
+findings stay on the item result under `processing_guard`. Run responses include
+`needs_attention_items`. Batch status is `failed` when any item failed, otherwise
+`needs_attention` when any item was held, otherwise `succeeded`.
+`GET /runs/{run_id}/items?status=` accepts `pending`, `running`, `succeeded`,
+`failed`, `skipped`, and `needs_attention` (unknown values return 400). Replay and
+item rerun still accept held items; they run the guard again and are not an
+override.
+
 `GET /runs/{run_id}/estimated-ai-cost` returns run totals and node-level attribution. Project statistics and project cost routes aggregate the same tracked call records at project scope.
 
 ### Processed items

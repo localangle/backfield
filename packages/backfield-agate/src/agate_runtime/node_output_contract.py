@@ -35,6 +35,7 @@ NODE_CONTRIBUTION_KEYS: dict[str, frozenset[str]] = {
     "EmbedImages": frozenset({"image_embeddings"}),
     "EmbedText": frozenset({"article_embedding"}),
     "PlaceExtract": frozenset({"locations", "extraction_diagnostics"}),
+    "ProcessingGuard": frozenset({"processing_guard"}),
     "PersonExtract": frozenset({"people", "extraction_diagnostics"}),
     "PersonEnrich": frozenset({"people", "warnings"}),
     "OrganizationExtract": frozenset({"organizations", "extraction_diagnostics"}),

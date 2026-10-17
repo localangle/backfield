@@ -64,7 +64,7 @@ def test_validate_graph_invariants_rejects_bypass_branch() -> None:
             Edge(source="pe", target="out"),
         ],
     )
-    with pytest.raises(GraphInvariantError, match="every step after the content source"):
+    with pytest.raises(GraphInvariantError, match="every following step"):
         validate_graph_invariants(spec)
 
 
@@ -151,4 +151,59 @@ def test_validate_graph_invariants_rejects_geocode_on_sibling_branch_without_pla
         ],
     )
     with pytest.raises(GraphInvariantError, match="Geocode Agent must follow Place Extract"):
+        validate_graph_invariants(spec)
+
+
+def test_processing_guard_must_be_the_only_first_hop() -> None:
+    spec = _spec(
+        [
+            NodeConfig(id="in", type="TextInput"),
+            NodeConfig(id="guard", type="ProcessingGuard"),
+            NodeConfig(id="pe", type="PlaceExtract"),
+            NodeConfig(id="out", type="Output"),
+        ],
+        [
+            Edge(source="in", target="guard"),
+            Edge(source="in", target="pe"),
+            Edge(source="guard", target="out"),
+            Edge(source="pe", target="out"),
+        ],
+    )
+    with pytest.raises(GraphInvariantError, match="Processing Guard"):
+        validate_graph_invariants(spec)
+
+
+def test_processing_guard_then_document_chunker_is_valid() -> None:
+    spec = _spec(
+        [
+            NodeConfig(id="in", type="JSONInput"),
+            NodeConfig(id="guard", type="ProcessingGuard"),
+            NodeConfig(id="chunk", type="DocumentChunker"),
+            NodeConfig(id="out", type="Output"),
+        ],
+        [
+            Edge(source="in", target="guard"),
+            Edge(source="guard", target="chunk"),
+            Edge(source="chunk", target="out"),
+        ],
+    )
+    validate_graph_invariants(spec)
+
+
+def test_document_chunker_cannot_bypass_processing_guard() -> None:
+    spec = _spec(
+        [
+            NodeConfig(id="in", type="TextInput"),
+            NodeConfig(id="guard", type="ProcessingGuard"),
+            NodeConfig(id="chunk", type="DocumentChunker"),
+            NodeConfig(id="out", type="Output"),
+        ],
+        [
+            Edge(source="in", target="guard"),
+            Edge(source="in", target="chunk"),
+            Edge(source="guard", target="out"),
+            Edge(source="chunk", target="out"),
+        ],
+    )
+    with pytest.raises(GraphInvariantError, match="Processing Guard"):
         validate_graph_invariants(spec)

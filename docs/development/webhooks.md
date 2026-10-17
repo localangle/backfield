@@ -20,7 +20,7 @@ depends on them.
 
 | Type | Scope | Recorded when |
 | --- | --- | --- |
-| `agate.run.completed` | flow | A run attempt reaches a terminal state (succeeded, failed, cancelled, timed out), from every trigger source. Supports the outcome filter (`succeeded` / `failed`). |
+| `agate.run.completed` | flow | A run attempt reaches a terminal state (succeeded, failed, needs attention, cancelled, timed out), from every trigger source. Supports the outcome filter (`succeeded` / `failed` / `needs_attention`). An empty filter receives every outcome. |
 | `agate.article.created` | flow | DBOutput persists an article for the first time. |
 | `agate.article.updated` | flow | An existing article is re-persisted by a run (`change: "reprocessed"`, with `content_changed`) or its review metadata changes through the Agate API (`change: "metadata"`). Coalesced per article per transaction. |
 | `stylebook.canonical.created` | project-wide | A canonical entity (location, person, organization) is created — standalone, materialized from a candidate, or accepted in review. |
@@ -91,7 +91,7 @@ Webhook bodies and feed items share one versioned envelope
     "outcome": "succeeded",
     "completion_reason": "completed",
     "failure_category": null,
-    "counts": {"total": 3, "succeeded": 3, "failed": 0},
+    "counts": {"total": 3, "succeeded": 3, "failed": 0, "needs_attention": 0},
     "article_count": 2
   },
   "links": {"run": "...", "articles": ".../articles?attempt=1"}
@@ -100,9 +100,10 @@ Webhook bodies and feed items share one versioned envelope
 
 `data` payloads per type (all typed in `backfield_events.contracts`):
 
-- `agate.run.completed` — `outcome` (`succeeded` / `failed`),
-  `completion_reason` (`completed` / `error` / `cancelled`), normalized
-  `failure_category`, item `counts`, `article_count`.
+- `agate.run.completed` — `outcome` (`succeeded` / `failed` / `needs_attention`),
+  `completion_reason` (`completed` / `error` / `cancelled` / `needs_attention`),
+  normalized `failure_category` (null for needs attention), item `counts`
+  (`needs_attention` defaults to 0), `article_count`. Schema version stays 1.
 - `agate.article.created` — `headline`.
 - `agate.article.updated` — `headline`, `change` (`reprocessed` / `metadata`),
   `content_changed` (for reprocessed articles).

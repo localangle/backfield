@@ -15,15 +15,15 @@ def run_item_counts(
     *,
     run: AgateRun,
     graph: AgateGraph | None,
-) -> tuple[int, int, int, int, int]:
-    """Return (total, pending, running, succeeded, failed) for a run."""
+) -> tuple[int, int, int, int, int, int]:
+    """Return (total, pending, running, succeeded, failed, needs_attention) for a run."""
     rows = session.exec(
         select(AgateProcessedItem.status, func.count())
         .where(AgateProcessedItem.run_id == run.id)
         .group_by(AgateProcessedItem.status)
     ).all()
     if rows:
-        total = pending = running = succeeded = failed = 0
+        total = pending = running = succeeded = failed = needs_attention = 0
         for status, count in rows:
             n = int(count)
             total += n
@@ -33,23 +33,27 @@ def run_item_counts(
                 running += n
             elif status == "succeeded":
                 succeeded += n
+            elif status == "needs_attention":
+                needs_attention += n
             elif status in ("failed", "timed_out"):
                 failed += n
-        return total, pending, running, succeeded, failed
+        return total, pending, running, succeeded, failed, needs_attention
 
     if graph is None:
-        return 0, 0, 0, 0, 0
+        return 0, 0, 0, 0, 0, 0
     if graph_spec_json_contains_s3_input(graph.spec_json):
-        return 0, 0, 0, 0, 0
+        return 0, 0, 0, 0, 0, 0
     if run.status == "pending":
-        return 1, 1, 0, 0, 0
+        return 1, 1, 0, 0, 0, 0
     if run.status == "running":
-        return 1, 0, 1, 0, 0
+        return 1, 0, 1, 0, 0, 0
     if run.status == "succeeded":
-        return 1, 0, 0, 1, 0
+        return 1, 0, 0, 1, 0, 0
     if run.status == "failed":
-        return 1, 0, 0, 0, 1
-    return 0, 0, 0, 0, 0
+        return 1, 0, 0, 0, 1, 0
+    if run.status == "needs_attention":
+        return 1, 0, 0, 0, 0, 1
+    return 0, 0, 0, 0, 0, 0
 
 
 def public_run_snapshot(
@@ -58,7 +62,9 @@ def public_run_snapshot(
     run: AgateRun,
     graph: AgateGraph | None,
 ) -> PublicRunOut:
-    total, pending, running, succeeded, failed = run_item_counts(session, run=run, graph=graph)
+    total, pending, running, succeeded, failed, needs_attention = run_item_counts(
+        session, run=run, graph=graph
+    )
     return PublicRunOut(
         run_id=run.id,
         status=run.status,
@@ -68,6 +74,7 @@ def public_run_snapshot(
             running=running,
             succeeded=succeeded,
             failed=failed,
+            needs_attention=needs_attention,
         ),
         created_at=run.created_at,
         updated_at=run.updated_at,

@@ -164,6 +164,8 @@ export default function RunsList() {
         return 'bg-orange-100 text-orange-800 border-orange-200'
       case 'pending':
         return 'bg-gray-100 text-gray-800 border-gray-200'
+      case 'needs_attention':
+        return 'bg-amber-100 text-amber-900 border-amber-200'
       default:
         return 'bg-gray-100 text-gray-800 border-gray-200'
     }
@@ -179,6 +181,8 @@ export default function RunsList() {
         return <AlertTriangle className="h-4 w-4" />
       case 'pending':
         return <Clock className="h-4 w-4" />
+      case 'needs_attention':
+        return <AlertTriangle className="h-4 w-4" />
       default:
         return <Clock className="h-4 w-4" />
     }
@@ -222,7 +226,13 @@ export default function RunsList() {
     })
     .sort((a, b) => {
       // Sort by status priority first: running at top, then pending
-      const statusOrder = { 'running': 0, 'pending': 1, 'completed': 2, 'completed_with_errors': 3 }
+      const statusOrder = {
+        running: 0,
+        pending: 1,
+        needs_attention: 2,
+        completed: 3,
+        completed_with_errors: 4,
+      }
       const aOrder = statusOrder[a.status as keyof typeof statusOrder] ?? 4
       const bOrder = statusOrder[b.status as keyof typeof statusOrder] ?? 4
       
@@ -308,6 +318,7 @@ export default function RunsList() {
               <SelectItem value="running">Running</SelectItem>
               <SelectItem value="succeeded">Succeeded</SelectItem>
               <SelectItem value="failed">Failed</SelectItem>
+              <SelectItem value="needs_attention">Needs attention</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -362,7 +373,9 @@ export default function RunsList() {
                     <td className="p-4">
                       <Badge variant="outline" className={getStatusColor(run.status)}>
                         {getStatusIcon(run.status)}
-                        <span className="ml-1 capitalize">{run.status.replace(/_/g, ' ')}</span>
+                        <span className="ml-1 capitalize">
+                          {run.status === 'needs_attention' ? 'Needs attention' : run.status.replace(/_/g, ' ')}
+                        </span>
                       </Badge>
                       <div className="text-xs text-muted-foreground mt-1">
                         {run.succeeded_items}/{run.total_items} completed

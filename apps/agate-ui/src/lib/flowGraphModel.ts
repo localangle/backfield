@@ -7,6 +7,7 @@ import {
 } from '@/lib/flowBuilderLayout'
 import {
   DOCUMENT_CHUNKER_TYPE,
+  PROCESSING_GUARD_TYPE,
   resolveEdgeHandles,
   SAME_TYPE_CHAIN_EXEMPT_NODE_TYPES,
   SYNC_BARRIER_NODE_TYPES,
@@ -118,14 +119,34 @@ export function getBranchTipIds(model: FlowGraphModel): string[] {
   return allIds.filter((id) => getMiddleSuccessors(model, id).length === 0)
 }
 
-function inputFirstHopChildIds(model: FlowGraphModel): string[] {
-  const inputId = model.inputNode.id
-  const kids = [...(model.branchChildren[inputId] ?? [])]
-  const serial = model.serialLinks[inputId]
-  if (serial && !kids.includes(serial)) {
-    kids.push(serial)
+function parentIdOf(model: FlowGraphModel, childId: string): string | null {
+  return findSerialParentId(model, childId) ?? findBranchParentId(model, childId)
+}
+
+function isSoleChild(model: FlowGraphModel, parentId: string, childId: string): boolean {
+  const children = getMiddleSuccessors(model, parentId)
+  return children.length > 0 && children.every((id) => id === childId)
+}
+
+function markInvalidProcessingGuardPlacement(model: FlowGraphModel, invalid: Set<string>): void {
+  const guards = model.middleNodes.filter((node) => node.type === PROCESSING_GUARD_TYPE)
+  if (guards.length === 0) return
+  if (guards.length > 1) {
+    for (const guard of guards) invalid.add(guard.id)
+    return
   }
-  return kids
+
+  const guard = guards[0]
+  const parentId = parentIdOf(model, guard.id)
+  const parent = parentId ? getNodeById(model, parentId) : null
+  if (
+    !parentId ||
+    !parent?.type ||
+    !isInputBookendType(parent.type) ||
+    !isSoleChild(model, parentId, guard.id)
+  ) {
+    invalid.add(guard.id)
+  }
 }
 
 function markInvalidDocumentChunkerPlacement(model: FlowGraphModel, invalid: Set<string>): void {
@@ -140,11 +161,12 @@ function markInvalidDocumentChunkerPlacement(model: FlowGraphModel, invalid: Set
   }
 
   const chunker = chunkers[0]
-  const firstHop = inputFirstHopChildIds(model)
-  const directlyAfterInput = firstHop.includes(chunker.id)
-  const hasBypass = firstHop.some((id) => id !== chunker.id)
-
-  if (!directlyAfterInput || hasBypass) {
+  const parentId = parentIdOf(model, chunker.id)
+  const parent = parentId ? getNodeById(model, parentId) : null
+  const parentAllowed =
+    parent?.type != null &&
+    (isInputBookendType(parent.type) || parent.type === PROCESSING_GUARD_TYPE)
+  if (!parentId || !parentAllowed || !isSoleChild(model, parentId, chunker.id)) {
     invalid.add(chunker.id)
   }
 }
@@ -178,6 +200,7 @@ export function getInvalidFlowNodeIds(model: FlowGraphModel): Set<string> {
     }
   }
 
+  markInvalidProcessingGuardPlacement(model, invalid)
   markInvalidDocumentChunkerPlacement(model, invalid)
 
   return invalid
@@ -332,14 +355,18 @@ export function insertAfter(
 }
 
 /**
- * Insert a node directly after the content source, rewiring every current first-hop
- * child to hang off the new node (Document Chunker placement).
+ * Insert a node directly after `parentId`, rewiring that parent's current children
+ * to hang off the new node.
  */
-export function insertInputAdjacentNode(
+export function insertRewiringAfter(
   model: FlowGraphModel,
+  parentId: string,
   newNode: FlowGraphNode,
 ): FlowGraphModel {
-  const inputId = model.inputNode.id
+  if (getNodeById(model, parentId) == null) {
+    throw new Error(`Unknown node: ${parentId}`)
+  }
+  const inputId = parentId
   const existingBranchChildren = [...(model.branchChildren[inputId] ?? [])]
   const existingSerial = model.serialLinks[inputId]
   const firstHopIds: string[] = []
@@ -400,6 +427,17 @@ export function insertInputAdjacentNode(
     branchChildren,
     serialLinks,
   })
+}
+
+/**
+ * Insert a node directly after the content source, rewiring every current first-hop
+ * child to hang off the new node (Processing Guard and Document Chunker placement).
+ */
+export function insertInputAdjacentNode(
+  model: FlowGraphModel,
+  newNode: FlowGraphNode,
+): FlowGraphModel {
+  return insertRewiringAfter(model, model.inputNode.id, newNode)
 }
 
 /** Insert a sync-barrier node before output, wiring every branch tip into it. */

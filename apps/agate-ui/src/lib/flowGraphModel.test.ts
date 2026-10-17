@@ -19,6 +19,7 @@ import {
   insertBetween,
   insertConvergingBeforeOutput,
   insertInputAdjacentNode,
+  insertRewiringAfter,
   isMiddleNodeId,
   LAYOUT_NODE_WIDTH,
   TIDY_LAYOUT_X_STEP,
@@ -234,6 +235,19 @@ describe('flowGraphModel serial chain', () => {
     model = insertAfter(model, 'place-1', chunker)
 
     expect(getInvalidFlowNodeIds(model).has('chunk-1')).toBe(true)
+  })
+
+  it('keeps Processing Guard then Document Chunker valid', () => {
+    const guard: FlowGraphNode = { id: 'guard-1', type: 'ProcessingGuard', data: {} }
+    const chunker: FlowGraphNode = { id: 'chunk-1', type: 'DocumentChunker', data: {} }
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    let model = insertInputAdjacentNode(bookends(), guard)
+    model = insertRewiringAfter(model, 'guard-1', chunker)
+    model = addSiblingBranch(model, 'chunk-1', place)
+
+    expect(model.branchChildren['input-1']).toEqual(['guard-1'])
+    expect(model.branchChildren['guard-1']).toEqual(['chunk-1'])
+    expect(getInvalidFlowNodeIds(model)).toEqual(new Set())
   })
 
   it('marks Document Chunker invalid when a bypass branch skips it', () => {

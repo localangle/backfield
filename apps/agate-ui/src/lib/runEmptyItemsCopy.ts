@@ -16,7 +16,9 @@ export function s3BatchAlreadyProcessedCount(
 export function runEmptyItemsCopy(run: Pick<Run, 'status' | 's3_batch'>): RunEmptyItemsCopy {
   const alreadyProcessed = s3BatchAlreadyProcessedCount(run.s3_batch)
   const finished =
-    run.status === 'completed' || run.status === 'completed_with_errors'
+    run.status === 'completed' ||
+    run.status === 'completed_with_errors' ||
+    run.status === 'needs_attention'
 
   if (finished && alreadyProcessed > 0) {
     return {

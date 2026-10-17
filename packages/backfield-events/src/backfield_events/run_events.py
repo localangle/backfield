@@ -32,7 +32,7 @@ from backfield_events.recording import RecordedEvent
 #: Shared cancellation marker (see worker terminal_transitions and Agate API cancel).
 RUN_CANCELLED_MESSAGE = "Run cancelled by user"
 
-TERMINAL_RUN_STATUSES = ("succeeded", "failed", "timed_out")
+TERMINAL_RUN_STATUSES = ("succeeded", "failed", "timed_out", "needs_attention")
 
 
 class RunCompleted(DomainEvent):
@@ -184,7 +184,7 @@ def record_run_terminal_event(session: Session, run: AgateRun) -> RecordedEvent 
 
 def _failure_category(*, status: str, completion_reason: str) -> str | None:
     """Normalized safe category; never raw status or provider error text."""
-    if completion_reason == "completed":
+    if completion_reason in ("completed", "needs_attention"):
         return None
     if completion_reason == "cancelled":
         return "cancelled"
@@ -201,16 +201,25 @@ def _run_counts(session: Session, run: AgateRun) -> RunCompletedCounts:
         .group_by(AgateProcessedItem.status)
     ).all()
     if rows:
-        total = succeeded = failed = 0
+        total = succeeded = failed = needs_attention = 0
         for status, count in rows:
             n = int(count)
             total += n
             if status == "succeeded":
                 succeeded += n
+            elif status == "needs_attention":
+                needs_attention += n
             elif status in ("failed", "timed_out"):
                 failed += n
-        return RunCompletedCounts(total=total, succeeded=succeeded, failed=failed)
+        return RunCompletedCounts(
+            total=total,
+            succeeded=succeeded,
+            failed=failed,
+            needs_attention=needs_attention,
+        )
 
     if run.status == "succeeded":
         return RunCompletedCounts(total=1, succeeded=1, failed=0)
+    if run.status == "needs_attention":
+        return RunCompletedCounts(total=1, succeeded=0, failed=0, needs_attention=1)
     return RunCompletedCounts(total=1, succeeded=0, failed=1)

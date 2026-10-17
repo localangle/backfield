@@ -143,7 +143,7 @@ export interface ProcessedItemSummary {
   synthetic?: boolean
   source_file: string | null
   input_preview?: string | null
-  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'skipped'
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'skipped' | 'needs_attention'
   error: string | null
   created_at: string
   updated_at: string
@@ -180,7 +180,7 @@ export interface ProcessedItem {
   output: Record<string, unknown> | null
   node_outputs: Record<string, unknown> | null
   node_logs: Record<string, string[]> | null
-  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'skipped'
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'skipped' | 'needs_attention'
   error: string | null
   created_at: string
   updated_at: string
@@ -236,7 +236,7 @@ export interface Run {
   id: string
   graph_id: string
   project_id: number
-  status: 'pending' | 'running' | 'completed' | 'completed_with_errors'
+  status: 'pending' | 'running' | 'completed' | 'completed_with_errors' | 'needs_attention'
   created_at: string
   updated_at: string
   total_items: number
@@ -244,6 +244,7 @@ export interface Run {
   running_items: number
   succeeded_items: number
   failed_items: number
+  needs_attention_items: number
   /** Run-level failure message from the API (``error_message``), when present. */
   error?: string | null
   items?: ProcessedItemSummary[] | null
@@ -345,6 +346,7 @@ export interface ListProcessedItemsOptions {
   offset?: number
   sort?: 'id' | 'source' | 'status' | 'duration' | 'estimated_cost' | 'created_at'
   direction?: 'asc' | 'desc'
+  status?: ProcessedItemSummary['status']
 }
 
 interface RawProcessedItem {
@@ -377,6 +379,7 @@ interface RawRun {
   running_items?: number
   succeeded_items?: number
   failed_items?: number
+  needs_attention_items?: number
   processed_items?: RawProcessedItem[] | null
   whole_run_ai_cost_estimate?: string | number | null
   whole_run_ai_cost_incomplete?: boolean
@@ -408,6 +411,7 @@ interface RawRunStatus {
   running_items: number
   succeeded_items: number
   failed_items: number
+  needs_attention_items?: number
   estimated_ai_cost_total?: string | number | null
   estimated_ai_cost_total_incomplete?: boolean
   graph_spec_snapshot_json?: string | null
@@ -495,10 +499,11 @@ function normalizeGraph(raw: RawGraph): Graph {
 
 function mapRunStatus(
   s: string
-): 'pending' | 'running' | 'completed' | 'completed_with_errors' {
+): 'pending' | 'running' | 'completed' | 'completed_with_errors' | 'needs_attention' {
   if (s === 'pending') return 'pending'
   if (s === 'running') return 'running'
   if (s === 'succeeded') return 'completed'
+  if (s === 'needs_attention') return 'needs_attention'
   if (s === 'failed') return 'completed_with_errors'
   return 'completed_with_errors'
 }
@@ -512,7 +517,8 @@ function _mapDbProcessedItem(row: RawProcessedItem): ProcessedItemSummary {
           st === 'running' ||
           st === 'succeeded' ||
           st === 'failed' ||
-          st === 'timed_out'
+          st === 'timed_out' ||
+          st === 'needs_attention'
         ? st
         : 'pending'
   const cur = _currencyFromRaw(row.estimated_ai_cost_currency, 'USD')
@@ -615,6 +621,14 @@ function normalizeRun(raw: RawRun): Run {
         estimated_ai_cost_currency: wrCur,
       }),
     ]
+  } else if (st === 'needs_attention') {
+    items = [
+      _syntheticWholeRunItem(raw, 'needs_attention', {
+        estimated_ai_cost: wrEst,
+        estimated_ai_cost_incomplete: wrInc,
+        estimated_ai_cost_currency: wrCur,
+      }),
+    ]
   } else if (st === 'completed_with_errors') {
     items = [
       _syntheticWholeRunItem(raw, 'failed', {
@@ -627,6 +641,7 @@ function normalizeRun(raw: RawRun): Run {
 
   const succeeded = items.filter((i) => i.status === 'succeeded').length
   const failed = items.filter((i) => i.status === 'failed' || i.status === 'timed_out').length
+  const needsAttention = items.filter((i) => i.status === 'needs_attention').length
   const pending_items = items.filter((i) => i.status === 'pending').length
   const running_items = items.filter((i) => i.status === 'running').length
   const hasServerItemCounts =
@@ -658,6 +673,8 @@ function normalizeRun(raw: RawRun): Run {
     running_items: hasServerItemCounts ? (raw.running_items ?? 0) : running_items,
     succeeded_items: hasServerItemCounts ? (raw.succeeded_items ?? 0) : succeeded,
     failed_items: hasServerItemCounts ? (raw.failed_items ?? 0) : failed,
+    needs_attention_items:
+      typeof raw.needs_attention_items === 'number' ? raw.needs_attention_items : needsAttention,
     error: raw.error_message ?? null,
     items,
     node_outputs: outputs,
@@ -693,6 +710,7 @@ function normalizeRunStatus(raw: RawRunStatus): Run {
     running_items: raw.running_items,
     succeeded_items: raw.succeeded_items,
     failed_items: raw.failed_items,
+    needs_attention_items: raw.needs_attention_items ?? 0,
     error: raw.error_message ?? null,
     items: null,
     node_outputs: null,
@@ -873,6 +891,9 @@ export async function getRunProcessedItemsPage(
   }
   if (options.direction) {
     params.set('direction', options.direction)
+  }
+  if (options.status) {
+    params.set('status', options.status)
   }
   const query = params.toString()
   const raw = (await fetchAPI(
@@ -1058,7 +1079,8 @@ function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedIte
           st === 'running' ||
           st === 'succeeded' ||
           st === 'failed' ||
-          st === 'timed_out'
+          st === 'timed_out' ||
+          st === 'needs_attention'
         ? st
         : 'pending'
   const cur = _currencyFromRaw(raw.estimated_ai_cost_currency, 'USD')

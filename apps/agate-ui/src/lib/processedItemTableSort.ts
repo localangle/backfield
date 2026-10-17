@@ -18,6 +18,7 @@ const STATUS_SORT_ORDER: Record<ProcessedItemSummary['status'], number> = {
   failed: 3,
   timed_out: 4,
   skipped: 5,
+  needs_attention: 6,
 }
 
 export function processedItemSourceSortKey(

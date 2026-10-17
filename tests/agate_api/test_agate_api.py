@@ -828,6 +828,15 @@ def test_list_runs_includes_processed_item_counts(monkeypatch, tmp_path):
                     error_message="boom",
                 )
             )
+            s.add(
+                AgateProcessedItem(
+                    run_id=run["id"],
+                    source_file="c.json",
+                    input_json='{"text":"held"}',
+                    status="needs_attention",
+                    result_json='{"processing_guard":{"disposition":"needs_attention"}}',
+                )
+            )
             s.commit()
 
         response = tc.get("/runs")
@@ -836,11 +845,12 @@ def test_list_runs_includes_processed_item_counts(monkeypatch, tmp_path):
         body = response.json()
         assert len(body) == 1
         assert body[0]["id"] == run["id"]
-        assert body[0]["total_items"] == 2
+        assert body[0]["total_items"] == 3
         assert body[0]["pending_items"] == 0
         assert body[0]["running_items"] == 0
         assert body[0]["succeeded_items"] == 1
         assert body[0]["failed_items"] == 1
+        assert body[0]["needs_attention_items"] == 1
 
         detail = tc.get(f"/runs/{run['id']}")
         assert detail.status_code == 200
@@ -852,14 +862,23 @@ def test_list_runs_includes_processed_item_counts(monkeypatch, tmp_path):
         assert status.status_code == 200
         status_body = status.json()
         assert "processed_items" not in status_body
-        assert status_body["total_items"] == 2
+        assert status_body["total_items"] == 3
         assert status_body["succeeded_items"] == 1
         assert status_body["failed_items"] == 1
+        assert status_body["needs_attention_items"] == 1
 
         page = tc.get(f"/runs/{run['id']}/items?limit=1&offset=1")
         assert page.status_code == 200
         page_body = page.json()
-        assert page_body["total"] == 2
+        assert page_body["total"] == 3
+
+        held = tc.get(f"/runs/{run['id']}/items?status=needs_attention")
+        assert held.status_code == 200
+        held_body = held.json()
+        assert held_body["total"] == 1
+        assert held_body["items"][0]["source_file"] == "c.json"
+        assert held_body["items"][0]["status"] == "needs_attention"
+        assert tc.get(f"/runs/{run['id']}/items?status=nope").status_code == 400
         assert page_body["limit"] == 1
         assert page_body["offset"] == 1
         assert len(page_body["items"]) == 1

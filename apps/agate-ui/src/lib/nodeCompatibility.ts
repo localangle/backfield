@@ -28,10 +28,15 @@ export type CompatibleNodesOptions = {
   existingNodeTypes?: readonly string[]
   /** When true, Document Chunker is already in the graph. */
   hasDocumentChunker?: boolean
+  /** When true, Processing Guard is already in the graph. */
+  hasProcessingGuard?: boolean
 }
 
 /** Must sit directly after the content source; at most one per flow. */
 export const DOCUMENT_CHUNKER_TYPE = 'DocumentChunker'
+
+/** Must be the only first step after the content source; at most one per flow. */
+export const PROCESSING_GUARD_TYPE = 'ProcessingGuard'
 
 function requiredProjectModelCapabilities(meta: NodeMetadataEntry): string[] {
   const caps = (meta as { requiredProjectModelCapabilities?: string[] })
@@ -234,6 +239,30 @@ function graphHasDocumentChunker(options?: CompatibleNodesOptions): boolean {
   return (options?.existingNodeTypes ?? []).includes(DOCUMENT_CHUNKER_TYPE)
 }
 
+function graphHasProcessingGuard(options?: CompatibleNodesOptions): boolean {
+  if (options?.hasProcessingGuard === true) return true
+  return (options?.existingNodeTypes ?? []).includes(PROCESSING_GUARD_TYPE)
+}
+
+function processingGuardAvailability(
+  sourceType: string,
+  options?: CompatibleNodesOptions,
+): { ok: true } | { ok: false; reason: string } {
+  if (graphHasProcessingGuard(options)) {
+    return {
+      ok: false,
+      reason: 'This flow already has a Processing Guard.',
+    }
+  }
+  if (!isInputBookendType(sourceType)) {
+    return {
+      ok: false,
+      reason: 'Processing Guard must be placed directly after the content source.',
+    }
+  }
+  return { ok: true }
+}
+
 function documentChunkerAvailability(
   sourceType: string,
   options?: CompatibleNodesOptions,
@@ -243,6 +272,15 @@ function documentChunkerAvailability(
       ok: false,
       reason: 'This flow already has a Document Chunker.',
     }
+  }
+  if (graphHasProcessingGuard(options)) {
+    if (sourceType !== PROCESSING_GUARD_TYPE) {
+      return {
+        ok: false,
+        reason: 'Document Chunker must be placed directly after Processing Guard.',
+      }
+    }
+    return { ok: true }
   }
   if (!isInputBookendType(sourceType)) {
     return {
@@ -302,6 +340,14 @@ export function getCompatibleNextNodes(
     const ancestryWithParent = branchAncestryTypes.includes(parentType)
       ? branchAncestryTypes
       : [...branchAncestryTypes, parentType]
+
+    if (meta.type === PROCESSING_GUARD_TYPE) {
+      const guardCheck = processingGuardAvailability(parentType, options)
+      if (!guardCheck.ok) {
+        disabled.push(toEntry(meta, false, guardCheck.reason))
+        continue
+      }
+    }
 
     if (meta.type === DOCUMENT_CHUNKER_TYPE) {
       const chunkerCheck = documentChunkerAvailability(parentType, options)
@@ -363,6 +409,14 @@ export function getCompatibleInsertNodes(
   for (const meta of nodeMetadata) {
     if (isBookendType(meta.type)) continue
     if ((meta as { enabled?: boolean }).enabled === false) continue
+
+    if (meta.type === PROCESSING_GUARD_TYPE) {
+      const guardCheck = processingGuardAvailability(sourceType, options)
+      if (!guardCheck.ok) {
+        disabled.push(toEntry(meta, false, guardCheck.reason))
+        continue
+      }
+    }
 
     if (meta.type === DOCUMENT_CHUNKER_TYPE) {
       const chunkerCheck = documentChunkerAvailability(sourceType, options)

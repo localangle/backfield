@@ -42,8 +42,10 @@ Never use as dimensions: `Version`, `RunId`, `JobId`, URLs, emails, raw error st
 | `runs_active` | gauge | Client, Environment, Service=`worker` | Collector (DB count) | `agate_run.status IN ('pending','running')` |
 | `runs_completed_total` | counter | Client, Environment, Service | Worker / API terminal hooks | Transition to `succeeded` |
 | `runs_failed_total` | counter | Client, Environment, Service | Worker / API terminal hooks | Transition to `failed` |
+| `runs_needs_attention_total` | counter | Client, Environment, Service | Worker / API terminal hooks | Transition to `needs_attention`; not success or failure |
 | `items_completed_total` | counter | Client, Environment, Service | Worker / API terminal hooks | Transition to `succeeded`; exclude `skipped` |
 | `items_failed_total` | counter | Client, Environment, Service | Worker / API terminal hooks | Transition to `failed`; exclude claim→pending |
+| `items_needs_attention_total` | counter | Client, Environment, Service | Worker / API terminal hooks | Transition to `needs_attention`; duration still emitted |
 | `item_duration_seconds` | distribution | Client, Environment, Service | Same as item terminal | `terminal_at - started_at` (not `updated_at`) |
 | `worker_lost_total` | counter | Client, Environment, Service=`worker` | Best-effort in-app | Incomplete; cloud owns ECS stop/OOM/SIGKILL |
 | `external_request_failures_total` | counter | Client, Environment, Service, Operation | Transport wrappers | Transport/timeout/HTTP/malformed only; empty geocode ≠ failure |

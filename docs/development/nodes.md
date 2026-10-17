@@ -18,7 +18,7 @@ Use `.cursor/skills/add-agate-node/SKILL.md` for a new pipeline node.
 | Extract | Produce grounded structured records | `PlaceExtract`, `PersonExtract`, `OrganizationExtract`, `CustomExtract` | Entity tabs or Custom |
 | Enrich | Transform or resolve upstream values | `GeocodeAgent`, `ArticleMetadata` | Existing entity tab or Meta |
 | Embed | Produce semantic vectors | `EmbedText`, `EmbedImages` | Info/Images plus JSON |
-| Other | Gather or reshape graph data | `Gather`, `DocumentChunker` | Panel output and JSON |
+| Other | Gather, admit, or reshape graph data | `Gather`, `ProcessingGuard`, `DocumentChunker` | Panel output and JSON |
 
 The package currently contains these metadata-backed folders:
 
@@ -26,8 +26,8 @@ The package currently contains these metadata-backed folders:
 article_metadata  custom_extract  db_output       document_chunker
 embed_images      embed_text      gather          geocode_agent
 json_input        organization_extract            output
-person_extract    place_extract   s3_input        s3_output
-text_input
+person_extract    place_extract   processing_guard s3_input
+s3_output         text_input
 ```
 
 ## End-to-end layer map
@@ -49,10 +49,14 @@ text_input
 | Icons and colors | `apps/agate-ui/src/lib/nodeUtils.ts`, `nodeColors.ts` |
 | Processed-item review | `apps/agate-api/src/api/processed_item/`, `apps/agate-ui/src/lib/review/` |
 
-`DocumentChunker` is optional and input-adjacent: at most one per flow, placed
-directly after Text/JSON/S3 Input, with no bypass branches from the content source.
-The guided builder inserts it with `insertInputAdjacentNode`; save/run/execute paths
-enforce the same rules via `validate_graph_invariants`.
+Preparation order is Input, then optional `ProcessingGuard`, then optional
+`DocumentChunker`, then processing nodes. Each of those optional steps appears at
+most once. `ProcessingGuard` is the only first hop after Text/JSON/S3 Input.
+`DocumentChunker` sits directly after that guard, or directly after the input when
+no guard is present. Neither step may be bypassed. The guided builder inserts the
+guard with `insertInputAdjacentNode` and inserts the chunker after the guard when
+one exists. Save, run, and execute paths enforce the same rules via
+`validate_graph_invariants`.
 
 Most nodes emit JSON only. Durable entity writes normally flow through Backfield
 Output to `worker/substrate/orchestration.py`, which dispatches consolidated keys
@@ -285,12 +289,32 @@ The worker records node ID and type for AI usage. Agate resolves display names f
 the current graph and metadata label, with node type as a fallback, so every node
 needs a useful product label.
 
+### Processing Guard
+
+`ProcessingGuard` is an optional middle node and the only first hop after Text,
+JSON, or S3 Input. Empty criteria pass the story through. Each configured rule is
+evaluated. Current criterion types are `word_count` (`less_than` or `greater_than`,
+exclusive) and `estimated_entity_references` (a `greater_than` ceiling on total
+name-like spans, including repeats). The name estimate uses the versioned
+`name_span_v1` heuristic in the node package. It does not call a model. Findings
+are labeled as an estimate.
+
+When any rule triggers, the executor raises `NeedsAttention` with the guard
+findings. Descendants are not scheduled, and their hooks and side effects do not
+run. The processed item and, when every held item follows the batch rule below,
+the run end as `needs_attention` with an empty `error_message`. Batch rollup is:
+any `failed` item makes the run `failed`; otherwise any `needs_attention` item
+makes the run `needs_attention`; otherwise the run is `succeeded`.
+
+Rerun and replay stay available. They are not a bypass: the same guard runs again.
+This slice does not add a “process anyway” override or adaptive extraction.
+
 ### Document Chunker
 
 `DocumentChunker` is an optional middle node that must sit directly after the input
-bookend. At most one Chunker is allowed per flow, and every first-hop branch must go
-through it when present (enforced in guided UI, Agate API graph create/update, run
-trigger, and `execute_graph`).
+bookend or after `ProcessingGuard`. At most one Chunker is allowed per flow, and
+every following step must go through it when present (enforced in guided UI, Agate
+API graph create/update, run trigger, and `execute_graph`).
 
 `GeocodeAgent` must have `PlaceExtract` in its transitive branch ancestry (same rule as
 metadata `requiredUpstreamNodes`). Guided save, canvas invalid highlighting, Run, Agate
@@ -357,6 +381,7 @@ Tab IDs and labels are centralized in `src/lib/nodePanelTabs.ts`. Current routin
 | Geocode Agent | Settings, Models |
 | Embed Text, Embed Images | Settings, Info |
 | Gather | Settings, Info; Output when run output exists |
+| Processing Guard | Settings, Info; Output when run output exists |
 | Document Chunker | Settings, Info; Output when run output exists |
 | JSON Output | Output only when run output exists |
 | Backfield Output | Settings, Stylebook, Connections |

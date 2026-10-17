@@ -1,0 +1,34 @@
+{
+  "type": "ProcessingGuard",
+  "name": "ProcessingGuard",
+  "label": "Processing Guard",
+  "description": "Pause a story before later steps when it is outside the length or name limits you set.",
+  "category": "filter",
+  "icon": "Shield",
+  "color": "bg-orange-500",
+  "requiredUpstreamNodes": [],
+  "dependencyHelperText": "Place this directly after Text Input, JSON Input, or S3 Input. When a limit is exceeded, later steps do not run and the story is marked Needs attention.",
+  "inputs": [
+    {
+      "id": "text",
+      "label": "Text",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "outputs": [
+    {
+      "id": "text",
+      "label": "Text",
+      "type": "string"
+    },
+    {
+      "id": "processing_guard",
+      "label": "Guard findings",
+      "type": "object"
+    }
+  ],
+  "defaultParams": {
+    "criteria": []
+  }
+}

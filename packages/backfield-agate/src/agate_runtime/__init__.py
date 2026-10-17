@@ -1,7 +1,7 @@
 """Backfield Agate: graph types, executor, nodes, and runtime."""
 
 from agate_runtime.context import AgateEnvContext
-from agate_runtime.executor import build_execution_levels, execute_graph
+from agate_runtime.executor import NeedsAttention, build_execution_levels, execute_graph
 from agate_runtime.starter_flow import (
     ARTICLE_METADATA_SMOKE_DEMO_TEXT,
     ARTICLE_METADATA_STARTER_FLOW_GRAPH_DISPLAY_NAME,
@@ -37,6 +37,7 @@ __all__ = [
     "ORGANIZATIONS_STARTER_FLOW_GRAPH_DISPLAY_NAME",
     "PEOPLE_STARTER_FLOW_GRAPH_DISPLAY_NAME",
     "PEOPLE_SMOKE_DEMO_TEXT",
+    "NeedsAttention",
     "build_execution_levels",
     "execute_graph",
     "starter_article_metadata_flow_graph_spec",

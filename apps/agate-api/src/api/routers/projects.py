@@ -51,7 +51,9 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 _KEY_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 # Items still queued or executing are excluded from average-item duration.
-_ITEM_TERMINAL_STATUSES = frozenset({"succeeded", "failed", "timed_out", "skipped"})
+_ITEM_TERMINAL_STATUSES = frozenset(
+    {"succeeded", "failed", "timed_out", "skipped", "needs_attention"}
+)
 
 
 class ProjectEstimatedAiCostOut(BaseModel):
@@ -730,7 +732,9 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
             func.sum(
                 case(
                     (
-                        ~col(AgateRun.status).in_(["succeeded", "pending", "running", "failed"]),
+                        ~col(AgateRun.status).in_(
+                            ["succeeded", "pending", "running", "failed", "needs_attention"]
+                        ),
                         1,
                     ),
                     else_=0,

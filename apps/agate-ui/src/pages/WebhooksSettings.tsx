@@ -52,6 +52,7 @@ import {
 const OUTCOME_OPTIONS: { value: WebhookOutcome; label: string }[] = [
   { value: 'succeeded', label: 'Finished successfully' },
   { value: 'failed', label: 'Failed (including cancelled)' },
+  { value: 'needs_attention', label: 'Needs attention' },
 ]
 
 const RUN_COMPLETED_TYPE = 'agate.run.completed'
@@ -365,7 +366,9 @@ function EndpointFormFields({
               setForm({
                 ...form,
                 outcomes:
-                  value === 'succeeded' || value === 'failed' ? [value] : [],
+                  value === 'succeeded' || value === 'failed' || value === 'needs_attention'
+                    ? [value]
+                    : [],
               })
             }
           >

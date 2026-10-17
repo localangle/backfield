@@ -41,6 +41,7 @@ import {
   hydrateFromSpec,
   insertBetween,
   insertInputAdjacentNode,
+  insertRewiringAfter,
   modelToGraphSpec,
   TIDY_LAYOUT_X_STEP,
   updateMiddleNode,
@@ -60,6 +61,7 @@ import {
 import { isJsonInputInvalidNodeData } from '@/lib/jsonInputValidation'
 import {
   DOCUMENT_CHUNKER_TYPE,
+  PROCESSING_GUARD_TYPE,
   getCompatibleInsertNodes,
   getCompatibleNextNodes,
 } from '@/lib/nodeCompatibility'
@@ -1561,8 +1563,13 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       setScaffoldModel((model) => {
         if (!model) return model
         let next = model
-        if (type === DOCUMENT_CHUNKER_TYPE) {
+        if (type === PROCESSING_GUARD_TYPE) {
           next = insertInputAdjacentNode(model, newNode)
+        } else if (type === DOCUMENT_CHUNKER_TYPE) {
+          const guard = model.middleNodes.find((node) => node.type === PROCESSING_GUARD_TYPE)
+          next = guard
+            ? insertRewiringAfter(model, guard.id, newNode)
+            : insertInputAdjacentNode(model, newNode)
         } else if (addIntoEdge) {
           next = insertBetween(model, addIntoEdge.sourceId, addIntoEdge.targetId, newNode)
         } else if (addFromParentId) {

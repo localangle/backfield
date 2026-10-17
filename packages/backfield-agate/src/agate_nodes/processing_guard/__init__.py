@@ -1,0 +1,1 @@
+"""Processing Guard Agate node."""

@@ -10,6 +10,8 @@ from collections import defaultdict, deque
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from agate_nodes.processing_guard.node import guard_summary_needs_attention
+
 from agate_runtime.context import AgateEnvContext
 from agate_runtime.graph_validation import validate_graph_invariants
 from agate_runtime.node_output_contract import (
@@ -57,6 +59,30 @@ def _node_type_to_output_slug(node_type: str) -> str:
 
 class GraphExecutionError(Exception):
     pass
+
+
+class NeedsAttention(Exception):
+    """A Processing Guard held the story before later steps ran.
+
+    ``outputs`` contains only the nodes that finished. This is not a failure.
+    """
+
+    def __init__(self, outputs: dict[str, Any]) -> None:
+        self.outputs = outputs
+        super().__init__("Processing guard needs attention")
+
+
+def _raise_if_guard_holds(
+    node: NodeConfig,
+    output: dict[str, Any],
+    *,
+    by_id: dict[str, NodeConfig],
+    order: list[str],
+    node_outputs: dict[str, dict[str, Any]],
+) -> None:
+    if node.type != "ProcessingGuard" or not guard_summary_needs_attention(output):
+        return
+    raise NeedsAttention(_remap_outputs_for_json(by_id, order, node_outputs))
 
 
 def _parallel_levels_enabled() -> bool:
@@ -318,6 +344,8 @@ def _remap_outputs_for_json(
     id_to_public = _public_node_output_keys(by_id, order)
     out: dict[str, Any] = {}
     for node_id in order:
+        if node_id not in node_outputs:
+            continue
         public_key = id_to_public[node_id]
         raw_output = node_outputs[node_id]
         node_type = by_id[node_id].type
@@ -485,6 +513,13 @@ def _execute_graph_sequential(
                 node, inputs, runners, before_each_node, after_each_node
             )
             completed_ids.add(node.id)
+            _raise_if_guard_holds(
+                node,
+                node_outputs[node.id],
+                by_id=by_id,
+                order=order,
+                node_outputs=node_outputs,
+            )
 
     return _remap_outputs_for_json(by_id, order, node_outputs)
 
@@ -532,6 +567,17 @@ def _execute_graph_parallel_levels(
             )
         )
         node_outputs.update(level_results)
+        for node in level_nodes:
+            output = node_outputs.get(node.id)
+            if output is None:
+                continue
+            _raise_if_guard_holds(
+                node,
+                output,
+                by_id=by_id,
+                order=order,
+                node_outputs=node_outputs,
+            )
 
     return _remap_outputs_for_json(by_id, order, node_outputs)
 
@@ -595,6 +641,20 @@ async def _execute_graph_ready_parallel_async(
             node_outputs[node_id] = result
             completed_ids.add(node_id)
             del in_flight[node_id]
+            try:
+                _raise_if_guard_holds(
+                    by_id[node_id],
+                    result,
+                    by_id=by_id,
+                    order=order,
+                    node_outputs=node_outputs,
+                )
+            except NeedsAttention:
+                for pending_task in in_flight.values():
+                    pending_task.cancel()
+                if in_flight:
+                    await asyncio.gather(*in_flight.values(), return_exceptions=True)
+                raise
         _launch_ready()
         if not in_flight and pending_ids:
             raise GraphExecutionError("Deadlock: no nodes ready to execute")

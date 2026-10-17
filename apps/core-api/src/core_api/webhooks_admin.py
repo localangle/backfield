@@ -50,9 +50,9 @@ from sqlalchemy import delete, func
 from sqlmodel import Session, col, select
 
 MAX_ACTIVE_ENDPOINTS_PER_PROJECT = 10
-VALID_OUTCOMES = ("succeeded", "failed")
+VALID_OUTCOMES = ("succeeded", "failed", "needs_attention")
 
-WebhookOutcome = Literal["succeeded", "failed"]
+WebhookOutcome = Literal["succeeded", "failed", "needs_attention"]
 
 
 # ----- Response / request models -----

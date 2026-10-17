@@ -23,6 +23,7 @@ from sqlmodel import Session, select, update
 LEDGER_STATUS_PROCESSING = "processing"
 LEDGER_STATUS_SUCCEEDED = "succeeded"
 LEDGER_STATUS_FAILED = "failed"
+LEDGER_STATUS_NEEDS_ATTENTION = "needs_attention"
 
 
 @dataclass(frozen=True)
@@ -172,6 +173,8 @@ def claim_ledger_revision(
 
     if existing.status == LEDGER_STATUS_SUCCEEDED and not reclaim_succeeded:
         return None
+    if existing.status == LEDGER_STATUS_NEEDS_ATTENTION and not reclaim_succeeded:
+        return None
 
     lease = existing.lease_expires_at
     if lease is not None and lease.tzinfo is None:
@@ -182,7 +185,7 @@ def claim_ledger_revision(
     reclaimable_statuses = (
         LEDGER_STATUS_FAILED,
         LEDGER_STATUS_PROCESSING,
-        *((LEDGER_STATUS_SUCCEEDED,) if reclaim_succeeded else ()),
+        *((LEDGER_STATUS_SUCCEEDED, LEDGER_STATUS_NEEDS_ATTENTION) if reclaim_succeeded else ()),
     )
     if existing.status not in reclaimable_statuses:
         return None
@@ -263,6 +266,35 @@ def mark_ledger_succeeded(
         )
         .values(
             status=LEDGER_STATUS_SUCCEEDED,
+            completed_at=completed_at,
+            last_error=None,
+            processed_item_id=processed_item_id,
+            lease_expires_at=None,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    return int(result.rowcount or 0) == 1
+
+
+def mark_ledger_needs_attention(
+    session: Session,
+    *,
+    ledger_id: str,
+    claim_token: str,
+    processed_item_id: int,
+    now: datetime | None = None,
+) -> bool:
+    """Record a held revision so a later scan does not process it again."""
+    completed_at = now or datetime.now(UTC)
+    result = session.execute(
+        update(AgateS3IngestionLedger)
+        .where(
+            AgateS3IngestionLedger.id == ledger_id,
+            AgateS3IngestionLedger.claim_token == claim_token,
+            AgateS3IngestionLedger.status == LEDGER_STATUS_PROCESSING,
+        )
+        .values(
+            status=LEDGER_STATUS_NEEDS_ATTENTION,
             completed_at=completed_at,
             last_error=None,
             processed_item_id=processed_item_id,

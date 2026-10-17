@@ -4412,6 +4412,11 @@
             "title": "Failed",
             "type": "integer"
           },
+          "needs_attention": {
+            "default": 0,
+            "title": "Needs Attention",
+            "type": "integer"
+          },
           "pending": {
             "default": 0,
             "title": "Pending",

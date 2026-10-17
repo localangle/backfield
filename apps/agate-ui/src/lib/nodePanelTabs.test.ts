@@ -63,6 +63,15 @@ describe('getNodePanelTabs', () => {
     ])
   })
 
+  it('shows settings, info, and outputs for processing guard when a run exists', () => {
+    expect(getNodePanelTabs('ProcessingGuard')).toEqual(['settings', 'info'])
+    expect(getNodePanelTabs('ProcessingGuard', { hasRunOutput: true })).toEqual([
+      'settings',
+      'info',
+      'outputs',
+    ])
+  })
+
   it('shows settings, info, and outputs for document chunker when a run exists', () => {
     expect(getNodePanelTabs('DocumentChunker')).toEqual(['settings', 'info'])
     expect(getNodePanelTabs('DocumentChunker', { hasRunOutput: true })).toEqual([

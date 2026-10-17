@@ -33,7 +33,7 @@ import {
   semanticIndexingStatusLabel,
   shouldShowSemanticIndexingSummary,
 } from '@/lib/review/content/semanticIndexingDisplay'
-import { CheckCircle, Clock, ExternalLink, FileText, Loader2, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle, Clock, ExternalLink, FileText, Loader2, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 function getSemanticIndexingStatusColor(status: string) {
@@ -63,6 +63,8 @@ function getStatusColor(status: string) {
       return 'bg-blue-100 text-blue-800 border-blue-200'
     case 'pending':
       return 'bg-yellow-100 text-yellow-800 border-yellow-200'
+    case 'needs_attention':
+      return 'bg-amber-100 text-amber-900 border-amber-200'
     default:
       return 'bg-gray-100 text-gray-800 border-gray-200'
   }
@@ -78,6 +80,8 @@ function getStatusIcon(status: string) {
     case 'running':
     case 'pending':
       return <Clock className="h-4 w-4" />
+    case 'needs_attention':
+      return <AlertTriangle className="h-4 w-4" />
     default:
       return null
   }
@@ -299,7 +303,13 @@ export function ProcessedItemInformationCard({
           Item Information
           <Badge variant="outline" className={getStatusColor(item.status)}>
             {getStatusIcon(item.status)}
-            <span className="ml-1 capitalize">{item.status}</span>
+            <span className="ml-1">
+              {item.status === 'needs_attention'
+                ? 'Needs attention'
+                : item.status === 'timed_out'
+                  ? 'Timed out'
+                  : item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+            </span>
           </Badge>
           {saving ? (
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-label="Saving" />

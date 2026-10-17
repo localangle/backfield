@@ -180,6 +180,9 @@ project; only the catalog (canonical) scope changes.
    response is `202 Accepted` with `Location` and `Retry-After`.
 2. Poll `GET /public/v1/projects/{project_slug}/runs/{run_id}` until status and
    item counts settle. Pending and running responses include `Retry-After`.
+   `needs_attention` is a finished status: the story was held by a Processing
+   Guard, later steps did not run, and it is not a failure. Counts include
+   `needs_attention` (0 when none were held).
 
 Clients should send an `Idempotency-Key` of 1–128 URL-safe visible characters when
 they need durable create-or-replay semantics. For seven days, repeating the key with

@@ -699,7 +699,7 @@ export async function revokeProjectAccessKey(
 }
 
 /** Webhook endpoints (org admin): send updates to another application when things happen. */
-export type WebhookOutcome = 'succeeded' | 'failed'
+export type WebhookOutcome = 'succeeded' | 'failed' | 'needs_attention'
 
 export interface WebhookFlow {
   flow_id: string

@@ -8,7 +8,7 @@ from datetime import datetime
 from backfield_observability.identity import RuntimeIdentity, read_runtime_identity
 from backfield_observability.metrics import MetricKind, MetricUnit, log_metric
 
-_TERMINAL = frozenset({"succeeded", "failed"})
+_TERMINAL = frozenset({"succeeded", "failed", "needs_attention"})
 
 
 def worker_identity() -> RuntimeIdentity:
@@ -26,13 +26,18 @@ def emit_run_terminal(
     identity: RuntimeIdentity,
     correlation: Mapping[str, str] | None = None,
 ) -> bool:
-    """Emit run counter when status newly becomes succeeded or failed."""
+    """Emit run counter when status newly becomes succeeded, failed, or needs attention."""
     if new_status not in _TERMINAL or previous_status == new_status:
         return False
     if previous_status in _TERMINAL and previous_status != new_status:
         # Conflicting re-terminalization should not double-count.
         return False
-    name = "runs_completed_total" if new_status == "succeeded" else "runs_failed_total"
+    if new_status == "succeeded":
+        name = "runs_completed_total"
+    elif new_status == "needs_attention":
+        name = "runs_needs_attention_total"
+    else:
+        name = "runs_failed_total"
     return log_metric(
         name,
         1,
@@ -52,12 +57,17 @@ def emit_item_terminal(
     finished_at: datetime,
     correlation: Mapping[str, str] | None = None,
 ) -> bool:
-    """Emit item counter (+ duration) when status newly becomes succeeded or failed."""
+    """Emit an item counter and duration for succeeded, failed, or needs attention."""
     if new_status not in _TERMINAL or previous_status == new_status:
         return False
     if previous_status in ("skipped",) or previous_status in _TERMINAL:
         return False
-    name = "items_completed_total" if new_status == "succeeded" else "items_failed_total"
+    if new_status == "succeeded":
+        name = "items_completed_total"
+    elif new_status == "needs_attention":
+        name = "items_needs_attention_total"
+    else:
+        name = "items_failed_total"
     emitted = log_metric(
         name,
         1,

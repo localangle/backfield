@@ -347,8 +347,77 @@ export function validateInputConnections(graph: FlowGraph): FlowValidationResult
 }
 
 const DOCUMENT_CHUNKER_TYPE = 'DocumentChunker'
+const PROCESSING_GUARD_TYPE = 'ProcessingGuard'
+const PREPARATION_PARENT_TYPES = new Set(['TextInput', 'JSONInput', 'S3Input', PROCESSING_GUARD_TYPE])
 
-/** Document Chunker must sit directly after the content source with no bypass branches. */
+function incomingSources(graph: FlowGraph, nodeId: string): string[] {
+  const nodeIds = new Set(graph.nodes.map((node) => node.id))
+  return graph.edges
+    .filter((edge) => edge.target === nodeId && nodeIds.has(edge.source))
+    .map((edge) => edge.source)
+}
+
+function childIds(graph: FlowGraph, nodeId: string): string[] {
+  const nodeIds = new Set(graph.nodes.map((node) => node.id))
+  return graph.edges
+    .filter((edge) => edge.source === nodeId && nodeIds.has(edge.target))
+    .map((edge) => edge.target)
+}
+
+/** Processing Guard must be the only first step after the content source. */
+export function validateProcessingGuardPlacement(graph: FlowGraph): FlowValidationResult {
+  const guards = graph.nodes.filter((node) => node.type === PROCESSING_GUARD_TYPE)
+  if (guards.length === 0) {
+    return { ok: true }
+  }
+  if (guards.length > 1) {
+    return {
+      ok: false,
+      title: 'Too many Processing Guards',
+      description: 'Your flow can include only one Processing Guard.',
+      severity: 'error',
+    }
+  }
+
+  const guard = guards[0]
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]))
+  const incoming = incomingSources(graph, guard.id)
+  if (incoming.length !== 1) {
+    return {
+      ok: false,
+      title: 'Processing Guard placement',
+      description:
+        'Processing Guard must connect directly from the content source (Text Input, JSON Input, or S3 Input).',
+      severity: 'error',
+    }
+  }
+
+  const source = byId.get(incoming[0])
+  if (!source || !isInputBookendType(source.type)) {
+    return {
+      ok: false,
+      title: 'Processing Guard placement',
+      description:
+        'Processing Guard must be placed directly after Text Input, JSON Input, or S3 Input.',
+      severity: 'error',
+    }
+  }
+
+  const sourceChildren = childIds(graph, source.id)
+  if (sourceChildren.length === 0 || sourceChildren.some((childId) => childId !== guard.id)) {
+    return {
+      ok: false,
+      title: 'Processing Guard placement',
+      description:
+        'When a Processing Guard is present, every step after the content source must go through the Processing Guard.',
+      severity: 'error',
+    }
+  }
+
+  return { ok: true }
+}
+
+/** Document Chunker must sit directly after the content source or Processing Guard, with no bypass. */
 export function validateDocumentChunkerPlacement(graph: FlowGraph): FlowValidationResult {
   const chunkers = graph.nodes.filter((n) => n.type === DOCUMENT_CHUNKER_TYPE)
   if (chunkers.length === 0) {
@@ -364,49 +433,36 @@ export function validateDocumentChunkerPlacement(graph: FlowGraph): FlowValidati
   }
 
   const chunker = chunkers[0]
-  const nodeIds = new Set(graph.nodes.map((n) => n.id))
   const byId = new Map(graph.nodes.map((n) => [n.id, n]))
-  const incoming = graph.edges.filter(
-    (e) => e.target === chunker.id && nodeIds.has(e.source),
-  )
+  const incoming = incomingSources(graph, chunker.id)
   if (incoming.length !== 1) {
     return {
       ok: false,
       title: 'Document Chunker placement',
       description:
-        'Document Chunker must connect directly from the content source (Text Input, JSON Input, or S3 Input).',
+        'Document Chunker must connect directly from the content source (Text Input, JSON Input, or S3 Input) or from Processing Guard.',
       severity: 'error',
     }
   }
 
-  const source = byId.get(incoming[0].source)
-  if (!source || !isInputBookendType(source.type)) {
+  const source = byId.get(incoming[0])
+  if (!source || !PREPARATION_PARENT_TYPES.has(source.type ?? '')) {
     return {
       ok: false,
       title: 'Document Chunker placement',
       description:
-        'Document Chunker must be placed directly after Text Input, JSON Input, or S3 Input.',
+        'Document Chunker must be placed directly after Text Input, JSON Input, S3 Input, or Processing Guard.',
       severity: 'error',
     }
   }
 
-  const inputChildren = graph.edges
-    .filter((e) => e.source === source.id && nodeIds.has(e.target))
-    .map((e) => e.target)
-  if (inputChildren.length === 0) {
-    return {
-      ok: false,
-      title: 'Document Chunker placement',
-      description: 'Document Chunker must be connected from the content source.',
-      severity: 'error',
-    }
-  }
-  if (inputChildren.some((childId) => childId !== chunker.id)) {
+  const sourceChildren = childIds(graph, source.id)
+  if (sourceChildren.length === 0 || sourceChildren.some((childId) => childId !== chunker.id)) {
     return {
       ok: false,
       title: 'Document Chunker placement',
       description:
-        'When a Document Chunker is present, every step after the content source must go through the Document Chunker.',
+        'When a Document Chunker is present, every following step must go through the Document Chunker.',
       severity: 'error',
     }
   }
@@ -473,6 +529,7 @@ export function validateGraphForSave(graph: FlowGraph): FlowValidationResult {
     validateFlowInputOutputRules,
     validateNoOrphans,
     validateInputConnections,
+    validateProcessingGuardPlacement,
     validateDocumentChunkerPlacement,
     validateRequiredUpstreamNodes,
     validateCustomExtractRecordTypes,

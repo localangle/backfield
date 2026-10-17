@@ -8,6 +8,8 @@ from agate_runtime.types import GraphSpec
 
 INPUT_BOOKEND_TYPES = frozenset({"TextInput", "JSONInput", "S3Input"})
 DOCUMENT_CHUNKER_TYPE = "DocumentChunker"
+PROCESSING_GUARD_TYPE = "ProcessingGuard"
+PREPARATION_PARENT_TYPES = INPUT_BOOKEND_TYPES | frozenset({PROCESSING_GUARD_TYPE})
 
 # Mirrors metadata ``requiredUpstreamNodes`` (at least one type must appear in ancestry).
 REQUIRED_UPSTREAM_BY_TYPE: dict[str, frozenset[str]] = {
@@ -19,8 +21,68 @@ class GraphInvariantError(ValueError):
     """Raised when a graph violates product placement rules."""
 
 
+def _node_ids(spec: GraphSpec) -> set[str]:
+    return {node.id for node in spec.nodes}
+
+
+def _incoming_sources(spec: GraphSpec, node_id: str) -> list[str]:
+    node_ids = _node_ids(spec)
+    return [
+        edge.source
+        for edge in spec.edges
+        if edge.target == node_id and edge.source in node_ids
+    ]
+
+
+def _child_ids(spec: GraphSpec, node_id: str) -> list[str]:
+    node_ids = _node_ids(spec)
+    return [
+        edge.target
+        for edge in spec.edges
+        if edge.source == node_id and edge.target in node_ids
+    ]
+
+
+def _require_sole_child(spec: GraphSpec, parent_id: str, child_id: str, message: str) -> None:
+    children = _child_ids(spec, parent_id)
+    if not children:
+        raise GraphInvariantError(message)
+    if any(candidate != child_id for candidate in children):
+        raise GraphInvariantError(message)
+
+
+def validate_processing_guard_placement(spec: GraphSpec) -> None:
+    """Enforce at most one Processing Guard as the sole first hop after ingress."""
+    guards = [node for node in spec.nodes if node.type == PROCESSING_GUARD_TYPE]
+    if not guards:
+        return
+    if len(guards) > 1:
+        raise GraphInvariantError("A flow can include only one Processing Guard.")
+
+    guard = guards[0]
+    by_id = {node.id: node for node in spec.nodes}
+    incoming = _incoming_sources(spec, guard.id)
+    if len(incoming) != 1:
+        raise GraphInvariantError(
+            "Processing Guard must connect directly from the content source "
+            "(Text Input, JSON Input, or S3 Input)."
+        )
+    source = by_id.get(incoming[0])
+    if source is None or source.type not in INPUT_BOOKEND_TYPES:
+        raise GraphInvariantError(
+            "Processing Guard must be placed directly after Text Input, JSON Input, or S3 Input."
+        )
+    _require_sole_child(
+        spec,
+        source.id,
+        guard.id,
+        "When a Processing Guard is present, every step after the content source "
+        "must go through the Processing Guard.",
+    )
+
+
 def validate_document_chunker_placement(spec: GraphSpec) -> None:
-    """Enforce at most one input-adjacent Document Chunker with no bypass branches."""
+    """Enforce at most one Document Chunker immediately after ingress or Processing Guard."""
     chunkers = [node for node in spec.nodes if node.type == DOCUMENT_CHUNKER_TYPE]
     if not chunkers:
         return
@@ -30,41 +92,28 @@ def validate_document_chunker_placement(spec: GraphSpec) -> None:
         )
 
     chunker = chunkers[0]
-    node_ids = {node.id for node in spec.nodes}
     by_id = {node.id: node for node in spec.nodes}
-
-    incoming = [
-        edge
-        for edge in spec.edges
-        if edge.target == chunker.id and edge.source in node_ids
-    ]
+    incoming = _incoming_sources(spec, chunker.id)
     if len(incoming) != 1:
         raise GraphInvariantError(
             "Document Chunker must connect directly from the content source "
-            "(Text Input, JSON Input, or S3 Input)."
+            "(Text Input, JSON Input, or S3 Input) or from Processing Guard."
         )
 
-    source = by_id.get(incoming[0].source)
-    if source is None or source.type not in INPUT_BOOKEND_TYPES:
+    source = by_id.get(incoming[0])
+    if source is None or source.type not in PREPARATION_PARENT_TYPES:
         raise GraphInvariantError(
-            "Document Chunker must be placed directly after Text Input, JSON Input, or S3 Input."
+            "Document Chunker must be placed directly after Text Input, JSON Input, "
+            "S3 Input, or Processing Guard."
         )
 
-    # Every first-hop child of the input must be the chunker (no bypass branch).
-    input_children = [
-        edge.target
-        for edge in spec.edges
-        if edge.source == source.id and edge.target in node_ids
-    ]
-    if not input_children:
-        raise GraphInvariantError(
-            "Document Chunker must be connected from the content source."
-        )
-    if any(child_id != chunker.id for child_id in input_children):
-        raise GraphInvariantError(
-            "When a Document Chunker is present, every step after the content source "
-            "must go through the Document Chunker."
-        )
+    _require_sole_child(
+        spec,
+        source.id,
+        chunker.id,
+        "When a Document Chunker is present, every following step must go through "
+        "the Document Chunker.",
+    )
 
 
 def _ancestor_types(spec: GraphSpec, node_id: str) -> set[str]:
@@ -111,6 +160,7 @@ def validate_required_upstream_nodes(spec: GraphSpec) -> None:
 
 def validate_graph_invariants(spec: GraphSpec) -> None:
     """Run all product-level graph invariants."""
+    validate_processing_guard_placement(spec)
     validate_document_chunker_placement(spec)
     validate_required_upstream_nodes(spec)
     _assert_acyclic(spec)

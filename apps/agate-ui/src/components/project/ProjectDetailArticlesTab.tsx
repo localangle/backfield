@@ -39,6 +39,8 @@ function statusBadgeClass(status: string): string {
       return 'bg-red-100 text-red-800 border-red-200'
     case 'pending':
       return 'bg-gray-100 text-gray-800 border-gray-200'
+    case 'needs_attention':
+      return 'bg-amber-100 text-amber-900 border-amber-200'
     default:
       return 'bg-gray-100 text-gray-800 border-gray-200'
   }
@@ -75,7 +77,9 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <Badge variant="outline" className={`${statusBadgeClass(status)} w-fit`}>
       {statusIcon(status)}
-      <span className="ml-1 capitalize">{status.replace(/_/g, ' ')}</span>
+      <span className="ml-1">
+        {status === 'needs_attention' ? 'Needs attention' : status.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())}
+      </span>
     </Badge>
   )
 }

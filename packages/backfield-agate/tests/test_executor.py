@@ -912,3 +912,115 @@ def test_document_chunker_projects_summary_and_feeds_extract():
     loc = locations[0]["location"]
     full = loc["full"] if isinstance(loc, dict) else loc
     assert "Chicago" in full
+
+
+def test_processing_guard_stops_descendants_without_running_them():
+    from agate_runtime import NeedsAttention
+
+    called: list[str] = []
+
+    def _should_not_run(_params, _inputs):
+        called.append("place")
+        return {"locations": []}
+
+    spec = GraphSpec(
+        name="held",
+        nodes=[
+            NodeConfig(id="a", type="TextInput", params={"text": "Jane Doe spoke in Chicago."}),
+            NodeConfig(
+                id="g",
+                type="ProcessingGuard",
+                params={
+                    "criteria": [
+                        {
+                            "id": "names",
+                            "type": "estimated_entity_references",
+                            "threshold": 0,
+                        }
+                    ]
+                },
+            ),
+            NodeConfig(id="b", type="PlaceExtract", params={}),
+            NodeConfig(id="o", type="Output", params={}),
+        ],
+        edges=[
+            Edge(source="a", target="g"),
+            Edge(source="g", target="b"),
+            Edge(source="b", target="o"),
+        ],
+    )
+    seen: list[str] = []
+    with pytest.raises(NeedsAttention) as held:
+        execute_graph(
+            spec,
+            node_runners={"PlaceExtract": _should_not_run, "Output": _should_not_run},
+            before_each_node=lambda node_id, _node_type: seen.append(node_id),
+        )
+    assert called == []
+    assert seen == ["a", "g"]
+    assert "place_extract" not in held.value.outputs
+    guard_output = held.value.outputs["processing_guard"]["processing_guard"]
+    assert guard_output["disposition"] == "needs_attention"
+    assert held.value.outputs["text_input"]["text"] == "Jane Doe spoke in Chicago."
+
+
+def test_processing_guard_continue_runs_descendants():
+    spec = GraphSpec(
+        name="clear",
+        nodes=[
+            NodeConfig(id="a", type="TextInput", params={"text": "Jane Doe spoke."}),
+            NodeConfig(
+                id="g",
+                type="ProcessingGuard",
+                params={
+                    "criteria": [
+                        {"id": "names", "type": "estimated_entity_references", "threshold": 50}
+                    ]
+                },
+            ),
+            NodeConfig(id="b", type="PlaceExtract", params={}),
+        ],
+        edges=[
+            Edge(source="a", target="g"),
+            Edge(source="g", target="b"),
+        ],
+    )
+
+    def _place(_params, _inputs):
+        return {"locations": [{"location": "kept"}]}
+
+    out = execute_graph(spec, node_runners={"PlaceExtract": _place})
+    assert out["processing_guard"]["processing_guard"]["disposition"] == "continue"
+    assert out["place_extract"]["locations"][0]["location"] == "kept"
+
+
+def test_processing_guard_parallel_scheduler_does_not_run_descendants(monkeypatch):
+    from agate_runtime import NeedsAttention
+
+    monkeypatch.setenv("BACKFIELD_PARALLEL_GRAPH_LEVELS", "1")
+    called: list[str] = []
+
+    def _should_not_run(_params, _inputs):
+        called.append("ran")
+        return {"locations": []}
+
+    spec = GraphSpec(
+        name="held-parallel",
+        nodes=[
+            NodeConfig(id="a", type="TextInput", params={"text": "Jane Doe spoke."}),
+            NodeConfig(
+                id="g",
+                type="ProcessingGuard",
+                params={
+                    "criteria": [
+                        {"id": "names", "type": "estimated_entity_references", "threshold": 0}
+                    ]
+                },
+            ),
+            NodeConfig(id="b", type="PlaceExtract", params={}),
+        ],
+        edges=[Edge(source="a", target="g"), Edge(source="g", target="b")],
+    )
+    with pytest.raises(NeedsAttention):
+        execute_graph(spec, node_runners={"PlaceExtract": _should_not_run})
+    assert called == []

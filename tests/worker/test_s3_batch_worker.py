@@ -229,6 +229,26 @@ def test_finalization_preserves_metadata_and_is_idempotent(batch_engine):
         assert run.updated_at == first_updated_at
 
 
+def test_attention_rollup_yields_to_any_failure(batch_engine):
+    engine, graph_id = batch_engine
+    attention_run_id = _create_batch_run(engine, graph_id, ["succeeded", "needs_attention"])
+    mixed_run_id = _create_batch_run(engine, graph_id, ["needs_attention", "failed"])
+
+    with Session(engine) as session:
+        worker_tasks._finalize_s3_parent_run(session, attention_run_id)
+        worker_tasks._finalize_s3_parent_run(session, mixed_run_id)
+
+    with Session(engine) as session:
+        attention_run = session.get(AgateRun, attention_run_id)
+        mixed_run = session.get(AgateRun, mixed_run_id)
+        assert attention_run is not None
+        assert mixed_run is not None
+        assert attention_run.status == "needs_attention"
+        assert attention_run.error_message is None
+        assert mixed_run.status == "failed"
+        assert mixed_run.error_message == "1 of 2 file task(s) failed."
+
+
 def test_failed_and_stale_items_fail_parent(batch_engine):
     engine, graph_id = batch_engine
     failed_run_id = _create_batch_run(engine, graph_id, ["succeeded", "failed"])

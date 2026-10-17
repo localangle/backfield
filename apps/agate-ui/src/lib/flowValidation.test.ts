@@ -4,6 +4,7 @@ import {
   sanitizeNodeStylebookRef,
   validateCustomExtractRecordTypes,
   validateDocumentChunkerPlacement,
+  validateProcessingGuardPlacement,
   validateFlowInputOutputRules,
   validateGraphForSave,
   validateInputConnections,
@@ -347,8 +348,27 @@ describe('validateDocumentChunkerPlacement', () => {
       severity: 'error',
     })
     if (!result.ok) {
-      expect(result.description).toMatch(/every step after the content source/i)
+      expect(result.description).toMatch(/every following step/i)
     }
+  })
+
+  it('passes when Document Chunker follows Processing Guard', () => {
+    const result = validateDocumentChunkerPlacement(
+      graph({
+        nodes: [
+          { id: 'in', type: 'TextInput' },
+          { id: 'guard', type: 'ProcessingGuard' },
+          { id: 'chunk', type: 'DocumentChunker' },
+          { id: 'out', type: 'Output' },
+        ],
+        edges: [
+          { source: 'in', target: 'guard' },
+          { source: 'guard', target: 'chunk' },
+          { source: 'chunk', target: 'out' },
+        ],
+      }),
+    )
+    expect(result.ok).toBe(true)
   })
 
   it('rejects Document Chunker not connected from the content source', () => {
@@ -370,6 +390,51 @@ describe('validateDocumentChunkerPlacement', () => {
     expect(result).toMatchObject({
       ok: false,
       title: 'Document Chunker placement',
+      severity: 'error',
+    })
+  })
+})
+
+describe('validateProcessingGuardPlacement', () => {
+  it('passes when Processing Guard is the only first step', () => {
+    const result = validateProcessingGuardPlacement(
+      graph({
+        nodes: [
+          { id: 'in', type: 'TextInput' },
+          { id: 'guard', type: 'ProcessingGuard' },
+          { id: 'chunk', type: 'DocumentChunker' },
+          { id: 'out', type: 'Output' },
+        ],
+        edges: [
+          { source: 'in', target: 'guard' },
+          { source: 'guard', target: 'chunk' },
+          { source: 'chunk', target: 'out' },
+        ],
+      }),
+    )
+    expect(result.ok).toBe(true)
+  })
+
+  it('rejects a bypass around Processing Guard', () => {
+    const result = validateProcessingGuardPlacement(
+      graph({
+        nodes: [
+          { id: 'in', type: 'S3Input' },
+          { id: 'guard', type: 'ProcessingGuard' },
+          { id: 'pe', type: 'PlaceExtract' },
+          { id: 'out', type: 'Output' },
+        ],
+        edges: [
+          { source: 'in', target: 'guard' },
+          { source: 'in', target: 'pe' },
+          { source: 'guard', target: 'out' },
+          { source: 'pe', target: 'out' },
+        ],
+      }),
+    )
+    expect(result).toMatchObject({
+      ok: false,
+      title: 'Processing Guard placement',
       severity: 'error',
     })
   })

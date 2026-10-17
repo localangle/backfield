@@ -77,7 +77,7 @@ def wait_for_terminal_run(
     while time.time() < deadline:
         payload = assert_object(client.get(f"/runs/{run_id}"), f"run {run_id}")
         status = str(payload.get("status") or "")
-        if status in {"succeeded", "failed"}:
+        if status in {"succeeded", "failed", "needs_attention"}:
             return payload
         time.sleep(interval_s)
     raise RuntimeError(f"Timed out waiting for run {run_id} to finish")

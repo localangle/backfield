@@ -170,7 +170,9 @@ export default function RunGraph() {
       }
 
       const checkDone = (updated: Run | null) =>
-        updated?.status === 'completed' || updated?.status === 'completed_with_errors'
+        updated?.status === 'completed' ||
+        updated?.status === 'completed_with_errors' ||
+        updated?.status === 'needs_attention'
 
       pollTimeoutRef.current = window.setTimeout(async () => {
         pollTimeoutRef.current = null

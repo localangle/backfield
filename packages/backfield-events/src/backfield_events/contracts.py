@@ -24,8 +24,8 @@ CANONICAL_EVIDENCE_CHANGED_EVENT = "stylebook.canonical.evidence.changed"
 #: Synthetic verification event; delivery-only, never enters the public feed.
 WEBHOOK_TEST_EVENT = "backfield.webhook.test"
 
-RunOutcome = Literal["succeeded", "failed"]
-CompletionReason = Literal["completed", "error", "cancelled"]
+RunOutcome = Literal["succeeded", "failed", "needs_attention"]
+CompletionReason = Literal["completed", "error", "cancelled", "needs_attention"]
 
 #: Why an article.updated event fired.
 ArticleChange = Literal["reprocessed", "metadata"]
@@ -38,6 +38,7 @@ class RunCompletedCounts(BaseModel):
     total: int
     succeeded: int
     failed: int
+    needs_attention: int = 0
 
 
 class RunCompletedData(BaseModel):
@@ -148,6 +149,8 @@ def normalize_run_outcome(
     """Map an internal terminal run status to the public outcome contract."""
     if status == "succeeded":
         return "succeeded", "completed"
+    if status == "needs_attention":
+        return "needs_attention", "needs_attention"
     if cancelled:
         return "failed", "cancelled"
     return "failed", "error"

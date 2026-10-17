@@ -75,6 +75,7 @@ export default function RunDetail() {
   const [aiCost, setAiCost] = useState<RunEstimatedAiCost | null>(null)
   const [sortColumn, setSortColumn] = useState<ProcessedItemSortColumn>('id')
   const [sortDirection, setSortDirection] = useState<ProcessedItemSortDirection>('asc')
+  const [statusFilter, setStatusFilter] = useState<ProcessedItemSummary['status'] | ''>('')
   const processedItemsRef = useRef(processedItems)
   processedItemsRef.current = processedItems
 
@@ -85,6 +86,7 @@ export default function RunDetail() {
       setSelectedItems(new Set()) // Clear selection when run changes
       setSortColumn('id')
       setSortDirection('asc')
+      setStatusFilter('')
     }
   }, [runId])
 
@@ -107,6 +109,7 @@ export default function RunDetail() {
               page: currentPage,
               sortColumn,
               sortDirection,
+              status: statusFilter || undefined,
               background: true,
             }),
           ])
@@ -126,12 +129,12 @@ export default function RunDetail() {
     }
     // Return empty cleanup function if no interval was created
     return () => {}
-  }, [run?.status, runId, currentPage, sortColumn, sortDirection]) // Poll compact status and current page while active.
+  }, [run?.status, runId, currentPage, sortColumn, sortDirection, statusFilter]) // Poll compact status and current page while active.
 
   useEffect(() => {
     if (!runId || !run || loading) return
     void loadProcessedItemsPage()
-  }, [runId, currentPage, sortColumn, sortDirection])
+  }, [runId, currentPage, sortColumn, sortDirection, statusFilter])
 
   useEffect(() => {
     if (project?.workspace_id == null) {
@@ -157,6 +160,7 @@ export default function RunDetail() {
     page?: number
     sortColumn?: ProcessedItemSortColumn
     sortDirection?: ProcessedItemSortDirection
+    status?: ProcessedItemSummary['status']
     background?: boolean
   }) {
     if (!runId) return
@@ -176,6 +180,7 @@ export default function RunDetail() {
         offset,
         sort: pageSortColumn,
         direction: pageSortDirection,
+        status: options?.status ?? (statusFilter || undefined),
       })
       setProcessedItems((previous) =>
         processedItemsPageEqual(previous, pageData.items) ? previous : pageData.items,
@@ -389,6 +394,8 @@ export default function RunDetail() {
         return 'bg-orange-100 text-orange-800 border-orange-200'
       case 'skipped':
         return 'bg-slate-100 text-slate-700 border-slate-200'
+      case 'needs_attention':
+        return 'bg-amber-100 text-amber-900 border-amber-200'
       default:
         return 'bg-gray-100 text-gray-800 border-gray-200'
     }
@@ -405,6 +412,8 @@ export default function RunDetail() {
       case 'timed_out':
         return <AlertTriangle className="h-4 w-4" />
       case 'skipped':
+        return <AlertTriangle className="h-4 w-4" />
+      case 'needs_attention':
         return <AlertTriangle className="h-4 w-4" />
       default:
         return <Clock className="h-4 w-4" />
@@ -671,6 +680,12 @@ export default function RunDetail() {
                 <div className="text-xs text-muted-foreground mt-1">Failed</div>
               </div>
             )}
+            {run.needs_attention_items > 0 && (
+              <div className="text-center p-4 bg-amber-50 rounded-lg">
+                <div className="text-2xl font-bold text-amber-700">{run.needs_attention_items}</div>
+                <div className="text-xs text-muted-foreground mt-1">Needs attention</div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -815,6 +830,25 @@ export default function RunDetail() {
                 >
                   Select page
                 </Button>
+                <select
+                  aria-label="Filter stories by status"
+                  className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+                  value={statusFilter}
+                  onChange={(event) => {
+                    const next = event.target.value as ProcessedItemSummary['status'] | ''
+                    setStatusFilter(next)
+                    setCurrentPage(1)
+                    setSelectedItems(new Set())
+                  }}
+                >
+                  <option value="">All statuses</option>
+                  <option value="needs_attention">Needs attention</option>
+                  <option value="succeeded">Succeeded</option>
+                  <option value="failed">Failed</option>
+                  <option value="running">Running</option>
+                  <option value="pending">Pending</option>
+                  <option value="skipped">Skipped</option>
+                </select>
               </div>
             </div>
           </CardHeader>
@@ -980,7 +1014,13 @@ export default function RunDetail() {
                       <div className="flex flex-col gap-1">
                         <Badge variant="outline" className={`${getStatusColor(item.status)} w-fit`}>
                           {getStatusIcon(item.status)}
-                          <span className="ml-1 capitalize">{item.status}</span>
+                          <span className="ml-1">
+                            {item.status === 'needs_attention'
+                              ? 'Needs attention'
+                              : item.status === 'timed_out'
+                                ? 'Timed out'
+                                : item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+                          </span>
                         </Badge>
                         {item.status === 'running' && item.current_node_types && item.current_node_types.length > 0 && (
                           <span className="text-xs text-muted-foreground">

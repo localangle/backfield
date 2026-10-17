@@ -133,6 +133,28 @@ def test_outcome_filter_skips_non_matching_runs(
     assert len(session.exec(select(BackfieldEvent)).all()) == 1
 
 
+def test_needs_attention_reaches_unfiltered_endpoints_only(
+    session: Session,
+    tenancy: Tenancy,
+    webhooks_on: None,
+) -> None:
+    make_endpoint(session, tenancy.project, tenancy.graph, outcomes=["succeeded"])
+    make_endpoint(session, tenancy.project, tenancy.graph)
+    make_endpoint(session, tenancy.project, tenancy.graph, outcomes=["needs_attention"])
+    run = make_run(session, tenancy.graph)
+    run.status = "needs_attention"
+    record_run_terminal_event(session, run)
+    session.commit()
+    deliveries = session.exec(select(BackfieldWebhookDelivery)).all()
+    assert len(deliveries) == 2
+    event = session.exec(select(BackfieldEvent)).one()
+    payload = json.loads(event.payload_json)
+    assert payload["outcome"] == "needs_attention"
+    assert payload["completion_reason"] == "needs_attention"
+    assert payload["failure_category"] is None
+    assert payload["counts"]["needs_attention"] == 1
+
+
 def test_cancelled_run_normalizes_outcome(
     session: Session,
     tenancy: Tenancy,

@@ -171,6 +171,32 @@ describe('getCompatibleNextNodes', () => {
     const chunker = result.disabled.find((e) => e.type === 'DocumentChunker')
     expect(chunker?.reason).toMatch(/already has a Document Chunker/i)
   })
+
+  it('enables Processing Guard only from the content source', () => {
+    const fromInput = getCompatibleNextNodes('TextInput', ['TextInput'], {
+      existingNodeTypes: ['TextInput', 'Output'],
+    })
+    expect(fromInput.enabled.map((entry) => entry.type)).toContain('ProcessingGuard')
+
+    const fromMiddle = getCompatibleNextNodes('PlaceExtract', ['TextInput', 'PlaceExtract'], {
+      existingNodeTypes: ['TextInput', 'PlaceExtract', 'Output'],
+    })
+    expect(fromMiddle.enabled.map((entry) => entry.type)).not.toContain('ProcessingGuard')
+  })
+
+  it('places Document Chunker after Processing Guard when a guard is present', () => {
+    const fromGuard = getCompatibleNextNodes('ProcessingGuard', ['TextInput', 'ProcessingGuard'], {
+      existingNodeTypes: ['TextInput', 'ProcessingGuard', 'Output'],
+    })
+    expect(fromGuard.enabled.map((entry) => entry.type)).toContain('DocumentChunker')
+
+    const fromInput = getCompatibleNextNodes('TextInput', ['TextInput'], {
+      existingNodeTypes: ['TextInput', 'ProcessingGuard', 'Output'],
+    })
+    expect(fromInput.enabled.map((entry) => entry.type)).not.toContain('DocumentChunker')
+    const chunker = fromInput.disabled.find((entry) => entry.type === 'DocumentChunker')
+    expect(chunker?.reason).toMatch(/after Processing Guard/i)
+  })
 })
 
 describe('getCompatibleInsertNodes', () => {

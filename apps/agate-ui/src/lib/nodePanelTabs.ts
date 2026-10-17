@@ -47,6 +47,7 @@ export function getNodePanelTabs(
     case 'Gather':
       return hasRunOutput ? ['settings', 'info', 'outputs'] : ['settings', 'info']
     case 'DocumentChunker':
+    case 'ProcessingGuard':
       return hasRunOutput ? ['settings', 'info', 'outputs'] : ['settings', 'info']
     case 'ArticleMetadata':
       return ['settings', 'prompts', 'outputs', 'info']
