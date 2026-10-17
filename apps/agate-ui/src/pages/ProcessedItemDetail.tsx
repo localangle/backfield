@@ -65,18 +65,6 @@ const PROCESSED_ITEM_TAB_LABELS: Record<ProcessedItemDetailTab, string> = {
   json: 'JSON',
 }
 
-function guardAttentionMessages(output: Record<string, unknown> | null): string[] {
-  if (!output) return []
-  const nodeOutput = output.processing_guard
-  if (!nodeOutput || typeof nodeOutput !== 'object') return []
-  const nested = (nodeOutput as Record<string, unknown>).processing_guard
-  const summary =
-    nested && typeof nested === 'object' ? (nested as Record<string, unknown>) : (nodeOutput as Record<string, unknown>)
-  const messages = summary.messages
-  if (!Array.isArray(messages)) return []
-  return messages.filter((message): message is string => typeof message === 'string' && message.trim().length > 0)
-}
-
 export default function ProcessedItemDetail() {
   const { showError, showConfirm, showConfirmChoice, showMessage } = useAppMessage()
   const { runId, itemId } = useParams<{ runId: string; itemId: string }>()
@@ -781,11 +769,11 @@ export default function ProcessedItemDetail() {
                   Needs attention
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2 text-sm text-muted-foreground">
-                <p>Later steps did not run. Rerun will check the same limits again.</p>
-                {guardAttentionMessages(item.output).map((message) => (
-                  <p key={message}>{message}</p>
-                ))}
+              <CardContent className="text-sm text-muted-foreground">
+                <p>
+                  The Processing Guard stopped the processing of this item, based on the settings
+                  established on the node.
+                </p>
               </CardContent>
             </Card>
           ) : null}
@@ -1079,7 +1067,7 @@ export default function ProcessedItemDetail() {
                       <AlertTriangle className="h-12 w-12 text-amber-600 mx-auto mb-4" />
                       <h3 className="text-lg font-semibold mb-2">Needs attention</h3>
                       <p className="text-muted-foreground">
-                        This story was paused before later steps ran. Rerun will check the same limits again.
+                        The Processing Guard stopped the processing of this item, based on the settings established on the node.
                       </p>
                     </>
                   ) : (

@@ -88,7 +88,32 @@ def test_multiple_findings_can_trigger_together() -> None:
     name_finding = summary.criteria[1]
     assert name_finding.estimation is True
     assert name_finding.observed == 12
-    assert "more names" in name_finding.message
+    assert name_finding.message == (
+        "The Processing Guard stopped the processing of this item, based on the "
+        "settings established on the node."
+    )
+
+
+def test_duplicate_limit_types_rejected() -> None:
+    with pytest.raises(ValueError, match="each limit type only once"):
+        ProcessingGuardParams.model_validate(
+            {
+                "criteria": [
+                    {
+                        "id": "max-words",
+                        "type": "word_count",
+                        "operator": "greater_than",
+                        "threshold": 1,
+                    },
+                    {
+                        "id": "min-words",
+                        "type": "word_count",
+                        "operator": "less_than",
+                        "threshold": 1,
+                    },
+                ]
+            }
+        )
 
 
 def test_duplicate_criterion_ids_rejected() -> None:

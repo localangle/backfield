@@ -38,15 +38,22 @@ class ProcessingGuardParams(BaseModel):
     criteria: list[ProcessingGuardCriterion] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _unique_ids(self) -> ProcessingGuardParams:
-        seen: set[str] = set()
+    def _unique_criteria(self) -> ProcessingGuardParams:
+        seen_ids: set[str] = set()
+        seen_types: set[str] = set()
         for criterion in self.criteria:
-            if criterion.id in seen:
+            if criterion.id in seen_ids:
                 raise ValueError(
                     "Processing Guard criteria must have unique ids "
                     f"(duplicate {criterion.id!r})."
                 )
-            seen.add(criterion.id)
+            if criterion.type in seen_types:
+                raise ValueError(
+                    "Processing Guard allows each limit type only once "
+                    f"(duplicate {criterion.type!r})."
+                )
+            seen_ids.add(criterion.id)
+            seen_types.add(criterion.type)
         return self
 
 
@@ -82,7 +89,10 @@ def _word_count_message(*, operator: CriterionOperator, triggered: bool) -> str:
 
 def _entity_message(*, triggered: bool) -> str:
     if triggered:
-        return "This story may contain more names than this flow is set to process."
+        return (
+            "The Processing Guard stopped the processing of this item, based on the "
+            "settings established on the node."
+        )
     return "The estimated number of names is within the limit for this flow."
 
 

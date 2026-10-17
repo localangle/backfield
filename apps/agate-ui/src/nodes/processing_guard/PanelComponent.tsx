@@ -3,8 +3,8 @@ const nodeMetadata = {
   "type": "ProcessingGuard",
   "name": "ProcessingGuard",
   "label": "Processing Guard",
-  "description": "Pause a story before later steps when it is outside the length or name limits you set.",
-  "category": "filter",
+  "description": "Prevent further processing of a story when it meets selected conditions.",
+  "category": "other",
   "icon": "Shield",
   "color": "bg-orange-500",
   "requiredUpstreamNodes": [],
@@ -76,7 +76,7 @@ function asCriteria(raw: unknown): GuardCriterion[] {
   })
 }
 
-const DEFAULT_ESTIMATED_NAME_LIMIT = 50
+const DEFAULT_ENTITY_LIMIT = 50
 
 function newId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -108,6 +108,24 @@ export default function ProcessingGuardPanel({
     patchCriteria(criteria.map((criterion) => (criterion.id === id ? { ...criterion, ...patch } : criterion)))
   }
 
+  const addCriterion = (criterion: GuardCriterion) => {
+    if (!editMode || !setNodes) return
+    setNodes((nodes) =>
+      nodes.map((entry) => {
+        if (entry.id !== node.id) return entry
+        const current = asCriteria(entry.data?.criteria)
+        if (current.some((row) => row.type === criterion.type)) return entry
+        return {
+          ...entry,
+          data: { ...(entry.data || {}), criteria: [...current, criterion] },
+        }
+      }),
+    )
+  }
+
+  const hasLengthLimit = criteria.some((criterion) => criterion.type === 'word_count')
+  const hasEntityLimit = criteria.some((criterion) => criterion.type === 'estimated_entity_references')
+
   const nodeOutput = getNodeOutputById(
     currentRun?.node_outputs as Record<string, unknown> | undefined,
     node.id,
@@ -122,10 +140,6 @@ export default function ProcessingGuardPanel({
     <>
       <NodePanelTabGate tab="settings">
         <div className="space-y-4">
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            Set the limits that should pause a story before later steps run. A story that crosses any
-            limit is marked Needs attention, and the rest of the flow does not run for that story.
-          </p>
           {criteria.length === 0 ? (
             <p className="text-sm text-muted-foreground">No limits yet. Every story continues.</p>
           ) : (
@@ -134,7 +148,7 @@ export default function ProcessingGuardPanel({
                 <div key={criterion.id} className="space-y-2 rounded-md border p-3">
                   <div className="flex items-center justify-between gap-2">
                     <Label className="text-sm">
-                      {criterion.type === 'word_count' ? 'Story length' : 'Estimated names'}
+                      {criterion.type === 'word_count' ? 'Story length' : 'Entities'}
                     </Label>
                     <Button
                       type="button"
@@ -166,13 +180,12 @@ export default function ProcessingGuardPanel({
                     </div>
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      Counts name-like phrases in the story. Repeated names count again. This is an
-                      estimate, not a finished list of people or organizations.
+                      Estimates the number of distinct entities (people, places, organizations) in a story.
                     </p>
                   )}
                   <div className="space-y-2">
                     <FieldLabel htmlFor={`guard-threshold-${criterion.id}`} required>
-                      {criterion.type === 'word_count' ? 'Words' : 'Estimated names'}
+                      {criterion.type === 'word_count' ? 'Words' : 'Entity limit'}
                     </FieldLabel>
                     <Input
                       id={`guard-threshold-${criterion.id}`}
@@ -188,36 +201,45 @@ export default function ProcessingGuardPanel({
               ))}
             </div>
           )}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={!editMode}
-              onClick={() =>
-                patchCriteria([
-                  ...criteria,
-                  { id: newId(), type: 'word_count', operator: 'greater_than', threshold: 5000 },
-                ])
-              }
-            >
-              Add length limit
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={!editMode}
-              onClick={() =>
-                patchCriteria([
-                  ...criteria,
-                  { id: newId(), type: 'estimated_entity_references', threshold: DEFAULT_ESTIMATED_NAME_LIMIT },
-                ])
-              }
-            >
-              Add name limit
-            </Button>
-          </div>
+          {hasLengthLimit && hasEntityLimit ? null : (
+            <div className="flex flex-wrap gap-2">
+              {hasLengthLimit ? null : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!editMode}
+                  onClick={() =>
+                    addCriterion({
+                      id: newId(),
+                      type: 'word_count',
+                      operator: 'greater_than',
+                      threshold: 5000,
+                    })
+                  }
+                >
+                  Add length limit
+                </Button>
+              )}
+              {hasEntityLimit ? null : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!editMode}
+                  onClick={() =>
+                    addCriterion({
+                      id: newId(),
+                      type: 'estimated_entity_references',
+                      threshold: DEFAULT_ENTITY_LIMIT,
+                    })
+                  }
+                >
+                  Add entity limit
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       </NodePanelTabGate>
 

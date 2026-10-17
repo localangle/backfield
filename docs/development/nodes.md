@@ -292,9 +292,10 @@ needs a useful product label.
 ### Processing Guard
 
 `ProcessingGuard` is an optional middle node and the only first hop after Text,
-JSON, or S3 Input. Empty criteria pass the story through. Each configured rule is
-evaluated. Current criterion types are `word_count` (`less_than` or `greater_than`,
-exclusive) and `estimated_entity_references` (a `greater_than` ceiling on total
+JSON, or S3 Input. Empty criteria pass the story through. Each limit type can
+appear once. Every configured rule is evaluated. Current criterion types are
+`word_count` (`less_than` or `greater_than`, exclusive) and
+`estimated_entity_references` (a `greater_than` ceiling on total
 name-like spans, including repeats). The name estimate uses the versioned
 `name_span_v1` heuristic in the node package. It does not call a model. Findings
 are labeled as an estimate.
