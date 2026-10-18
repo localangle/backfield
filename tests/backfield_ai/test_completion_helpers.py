@@ -51,6 +51,32 @@ def test_litellm_completion_temperature(model: str, temperature: float | None, e
     assert _litellm_completion_temperature(model, temperature) == expected
 
 
+@pytest.mark.parametrize(
+    ("model", "temperature", "reasoning_effort", "expected"),
+    [
+        ("gpt-6-luna", 0.0, None, None),
+        ("openai/gpt-6-luna", 0.0, None, None),
+        ("gpt-6-luna", 0.0, "none", 0.0),
+        ("gpt-6-luna", 1, None, 1),
+        ("gpt-6", 0.2, "low", None),
+    ],
+)
+def test_gpt6_temperature_depends_on_reasoning(
+    model: str,
+    temperature: float,
+    reasoning_effort: str | None,
+    expected: float | None,
+) -> None:
+    assert (
+        _litellm_completion_temperature(
+            model,
+            temperature,
+            reasoning_effort=reasoning_effort,
+        )
+        == expected
+    )
+
+
 def test_completion_text_sync_omits_temperature_for_gpt5(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -87,6 +113,50 @@ def test_completion_text_sync_omits_temperature_for_gpt5(
 
     assert "temperature" not in captured
     assert captured.get("reasoning_effort") == "minimal"
+
+
+@pytest.mark.parametrize(
+    ("temperature", "reasoning_effort", "expected_temperature"),
+    [
+        (0.0, None, None),
+        (0.0, "none", 0.0),
+        (1, None, 1),
+    ],
+)
+def test_completion_text_sync_gpt6_temperature(
+    monkeypatch: pytest.MonkeyPatch,
+    temperature: float,
+    reasoning_effort: str | None,
+    expected_temperature: float | None,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_completion(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return _ok_resp("ok")
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm, "completion_cost", lambda **_kw: 0.0)
+
+    completion_text_sync(
+        litellm_model="gpt-6-luna",
+        messages=[{"role": "user", "content": "hi"}],
+        api_key="sk-test",
+        max_tokens=32,
+        temperature=temperature,
+        timeout=30.0,
+        force_json_response=False,
+        reasoning_effort=reasoning_effort,
+    )
+
+    if expected_temperature is None:
+        assert "temperature" not in captured
+    else:
+        assert captured.get("temperature") == expected_temperature
+    if reasoning_effort is None:
+        assert "reasoning_effort" not in captured
+    else:
+        assert captured.get("reasoning_effort") == reasoning_effort
 
 
 @pytest.mark.parametrize(

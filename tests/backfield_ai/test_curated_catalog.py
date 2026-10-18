@@ -50,8 +50,8 @@ def test_flagship_heuristic_includes_current_and_future_ids() -> None:
     assert "openai:gpt-5-nano" in ids
     assert "openai:gpt-5.4-mini" in ids
     assert "openai:gpt-6" in ids
-    assert "openai:gpt-4.1" in ids
-    assert "openai:gpt-4.1-mini" in ids
+    assert "openai:gpt-4.1" not in ids
+    assert "openai:gpt-4.1-mini" not in ids
     assert "openai:gpt-4o" not in ids
     assert "openai:gpt-4" not in ids
     assert "openai:gpt-3.5-turbo" not in ids

@@ -178,19 +178,42 @@ def _provider_model_id_from_litellm(litellm_model: str) -> str:
     return m.lower()
 
 
+def _gpt_major_version(model_id: str) -> int | None:
+    """Major version from a bare id such as ``gpt-6-luna``, or None."""
+    if not model_id.startswith("gpt-"):
+        return None
+    digits = ""
+    for char in model_id[4:]:
+        if not char.isdigit():
+            break
+        digits += char
+    if not digits:
+        return None
+    return int(digits)
+
+
 def _litellm_completion_temperature(
     litellm_model: str,
     temperature: float | None,
+    *,
+    reasoning_effort: str | None = None,
 ) -> float | None:
     """Return temperature to pass to LiteLLM, or None to use provider defaults.
 
     GPT-5 family models reject non-default temperature values (LiteLLM raises
     ``UnsupportedParamsError`` for e.g. ``temperature=0.2``).
+
+    GPT-6 and later reject any temperature other than ``1`` while reasoning is
+    on. An unset effort leaves the provider default, which is reasoning on.
+    ``reasoning_effort="none"`` may still send the caller's temperature.
     """
     if temperature is None:
         return None
     model_id = _provider_model_id_from_litellm(litellm_model)
     if model_id.startswith("gpt-5"):
+        return None
+    major = _gpt_major_version(model_id)
+    if major is not None and major >= 6 and reasoning_effort != "none" and temperature != 1:
         return None
     return temperature
 
@@ -318,13 +341,18 @@ def completion_text_sync(
         kwargs["api_key"] = api_key
     if api_base and str(api_base).strip():
         kwargs["api_base"] = str(api_base).strip()
-    effective_temperature = _litellm_completion_temperature(litellm_model, temperature)
-    if effective_temperature is not None:
-        kwargs["temperature"] = effective_temperature
     if reasoning_effort:
         # An explicit caller choice wins over the "lowest supported" default below.
         kwargs["reasoning_effort"] = reasoning_effort
     _apply_gpt5_litellm_kwargs(litellm_model, kwargs)
+    resolved_effort = kwargs.get("reasoning_effort")
+    effective_temperature = _litellm_completion_temperature(
+        litellm_model,
+        temperature,
+        reasoning_effort=resolved_effort if isinstance(resolved_effort, str) else None,
+    )
+    if effective_temperature is not None:
+        kwargs["temperature"] = effective_temperature
     if force_json_response and _litellm_json_object_response_format_supported(litellm_model):
         kwargs["response_format"] = {"type": "json_object"}
 

@@ -347,7 +347,9 @@ does not support it. Place, Person, and Organization Extract send
 `reasoning_effort=low` to the original GPT-5 family (`gpt-5`, `gpt-5-mini`,
 `gpt-5-nano`): at `minimal`, nano answers the extract prompt with an empty list for
 articles full of entities. Other GPT-5 calls still pick the lowest LiteLLM-supported
-effort (`none`, then `minimal`).
+effort (`none`, then `minimal`). GPT-6 and later omit temperature while reasoning
+is on, including when no effort is set. `reasoning_effort=none` may still send
+the caller's temperature. There is no GPT-6 effort default.
 
 ## Canvas components
 
