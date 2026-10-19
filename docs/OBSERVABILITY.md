@@ -78,7 +78,8 @@ Never log: secrets, auth headers, raw DB/Redis URLs, passwords, or customer cont
 
 Pelias HTTP calls retry on 429/502/503/504 (honoring `Retry-After` when present) and never retry
 401/403. Auth and rate-limit counts for the geocode pass are attached to GeocodeAgent output as
-`geocoder_provider_health` and surfaced on the run estimated-cost panel when degraded.
+`geocoder_provider_health`. The run estimated-cost panel shows that health when it is stored on
+the run result.
 
 ## Collector (cloud handoff)
 

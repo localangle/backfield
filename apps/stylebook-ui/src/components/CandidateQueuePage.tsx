@@ -91,6 +91,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
   const page = useCandidateQueuePage(config)
   const {
     projectSlug,
+    reviewProjectSlug,
     stylebookSlug,
     projects,
     projectsLoading,
@@ -147,13 +148,13 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     refreshListQuiet,
   } = page
 
-  const aiReviewEnabled = Boolean(config.aiReviewEntityType && stylebookSlug && projectSlug)
-  const aiReviewProjectSelected = canStartCandidateAiReview(projectSlug)
+  const aiReviewEnabled = Boolean(config.aiReviewEntityType && stylebookSlug && reviewProjectSlug)
+  const aiReviewProjectSelected = canStartCandidateAiReview(reviewProjectSlug)
   const [aiReviewDialogOpen, setAiReviewDialogOpen] = useState(false)
   const [stoppingAiReview, setStoppingAiReview] = useState(false)
   const candidateAiReview = useCandidateAiReviewPolling({
     stylebookSlug,
-    projectSlug,
+    projectSlug: reviewProjectSlug,
     entityType: config.aiReviewEntityType ?? "person",
     enabled: aiReviewEnabled,
     onReviewTerminal: () => void refreshListQuiet(),
@@ -881,7 +882,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
           open={aiReviewDialogOpen}
           onOpenChange={setAiReviewDialogOpen}
           stylebookSlug={stylebookSlug}
-          projectSlug={projectSlug}
+          projectSlug={reviewProjectSlug}
           entityType={config.aiReviewEntityType}
           onReviewStarted={(reviewId) => void candidateAiReview.startTracking(reviewId)}
         />

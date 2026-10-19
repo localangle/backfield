@@ -78,9 +78,11 @@ export default function RunDetail() {
   const [statusFilter, setStatusFilter] = useState<ProcessedItemSummary['status'] | ''>('')
   const processedItemsRef = useRef(processedItems)
   processedItemsRef.current = processedItems
+  const costRequestRunId = useRef<string | null>(null)
 
   useEffect(() => {
     if (runId) {
+      setAiCost(null)
       loadRunData()
       setCurrentPage(1) // Reset to first page when run changes
       setSelectedItems(new Set()) // Clear selection when run changes
@@ -195,6 +197,17 @@ export default function RunDetail() {
     }
   }
 
+  async function loadEstimatedAiCost(forRunId: string) {
+    costRequestRunId.current = forRunId
+    try {
+      const cost = await getRunEstimatedAiCost(forRunId)
+      if (costRequestRunId.current !== forRunId) return
+      setAiCost(cost)
+    } catch {
+      if (costRequestRunId.current === forRunId) setAiCost(null)
+    }
+  }
+
   async function loadRunData() {
     if (!runId) return
 
@@ -209,12 +222,7 @@ export default function RunDetail() {
       setRun(runData)
       setGraph(graphData)
       setProject(projectData)
-      try {
-        const cost = await getRunEstimatedAiCost(runId)
-        setAiCost(cost)
-      } catch {
-        setAiCost(null)
-      }
+      void loadEstimatedAiCost(runId)
     } catch (error) {
       console.error('Failed to load run data:', error)
     } finally {

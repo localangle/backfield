@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import { candidateReviewProjectSlug } from "@/lib/stylebook-api/stylebookCandidates"
 import { pickCreateLinkNudge, candidateQueueNameKey, duplicateCreateNewSummary } from "@/lib/candidateQueueSimilarity"
 import { suggestedRowAction, candidatesWithSuggestedAction } from "@/lib/candidateQueueSuggestions"
 import { useCandidateQueueToasts } from "@/lib/useCandidateQueueToasts"
@@ -28,11 +29,15 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
     Array<{ project_id: number; project_slug: string; project_name: string; count: number }>
   >([])
   const [projectsLoading, setProjectsLoading] = useState(false)
+  const reviewProjectSlug = useMemo(
+    () => candidateReviewProjectSlug(projectSlug, projects),
+    [projectSlug, projects],
+  )
   const projectDisplayName = useMemo(() => {
-    const row = projects.find((p) => p.project_slug === projectSlug)
+    const row = projects.find((p) => p.project_slug === reviewProjectSlug)
     const name = row?.project_name?.trim()
     return name || "All accessible projects"
-  }, [projects, projectSlug])
+  }, [projects, reviewProjectSlug])
 
   const [loading, setLoading] = useState(false)
   const [listTotal, setListTotal] = useState(0)
@@ -730,6 +735,7 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
 
   return {
     projectSlug,
+    reviewProjectSlug,
     stylebookSlug,
     projects,
     projectsLoading,
