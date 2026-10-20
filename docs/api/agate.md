@@ -107,7 +107,7 @@ item rerun still accept held items and run the guard again. Item rerun with
 `continue_past_processing_guard` keeps the findings, sets `continued_anyway`, and
 runs later steps for that attempt only.
 
-`GET /runs/{run_id}/estimated-ai-cost` returns run totals and node-level attribution. Project statistics and project cost routes aggregate the same tracked call records at project scope.
+`GET /runs/{run_id}/estimated-ai-cost` returns run totals and node-level attribution aggregated from tracked call records. Geocoder provider health on that response is read from the run result. Processed-item results are not scanned. Project statistics and project cost routes aggregate the same tracked call records at project scope.
 
 ### Processed items
 
