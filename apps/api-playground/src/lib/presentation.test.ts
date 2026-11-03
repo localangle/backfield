@@ -220,8 +220,10 @@ describe("endpoint presentation contract", () => {
     expect(detailInclude.options).toEqual([
       { value: "counts", label: "Mention counts" },
       { value: "text", label: "Full article text" },
+      { value: "embedding", label: "Article embedding vector" },
     ])
     expect(detailInclude.helperText).toMatch(/already includes up to 10 images/)
+    expect(detailInclude.helperText).toMatch(/embedding includes the stored vector/)
 
     const personArticles = operations.find(
       (operation) => operation.displayPath === "/people/{person_id}/articles",

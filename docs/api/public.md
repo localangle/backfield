@@ -156,6 +156,10 @@ organization, and location article-list endpoints, accept repeatable
 `include=counts` (mention and entity totals, image count, custom records, and
 the embedded flag) and `include=images` (up to 10 attached images with url,
 caption, and image_id; the full set remains on the article images route).
+Article detail also accepts `include=text` (full body) and `include=embedding`
+(stored vector with `model`, `dimensions`, and `vector`); when embedding is
+requested but missing, the field is `null`. List and search routes reject those
+detail-only tokens.
 Canonical article-list endpoints also accept the same repeatable `meta` grammar
 plus `author` and `external_source`. Article-scoped people, organizations, and locations share
 repeatable `nature` (OR) and `quote` filters; location lists additionally accept
