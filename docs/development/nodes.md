@@ -349,7 +349,9 @@ does not support it. Place, Person, and Organization Extract send
 articles full of entities. Other GPT-5 calls still pick the lowest LiteLLM-supported
 effort (`none`, then `minimal`). GPT-6 and later omit temperature while reasoning
 is on, including when no effort is set. `reasoning_effort=none` may still send
-the caller's temperature. There is no GPT-6 effort default.
+the caller's temperature. There is no GPT-6 effort default. Stylebook candidate and
+cleanup AI review calls go through the same completion helper when they invoke
+`call_llm` without an Agate run id.
 
 ## Canvas components
 

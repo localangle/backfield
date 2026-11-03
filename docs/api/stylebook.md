@@ -74,7 +74,7 @@ recommendation clearing, acceptance into a new or existing canonical, and type f
 project-specific candidate routes remain compatibility contracts during rolling deployments.
 Location clustering is available in addition to the flat location queue.
 
-Stylebook-scoped candidate AI review can evaluate open locations, people, or organizations. Starting a review queues work; status and cancellation routes expose cooperative progress. Recommendations do not mutate canonical links until accepted.
+Stylebook-scoped candidate AI review can evaluate open locations, people, or organizations. Starting a review queues work; status and cancellation routes expose cooperative progress. Recommendations do not mutate canonical links until accepted. Worker LLM calls use the same LiteLLM completion boundary as Agate nodes (including GPT-5/GPT-6 temperature handling), even when no Agate run id is set.
 
 ## Connections and metadata
 
