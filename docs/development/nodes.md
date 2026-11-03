@@ -325,9 +325,11 @@ API create/update, run trigger, and `execute_graph` all reject Geocode without P
 Extract on that branch.
 
 Defaults are approximately 4,000-token pieces with 250-token overlap. Splitting prefers
-paragraph boundaries, then sentence boundaries, then a hard cut. Short documents emit
-one chunk with `split_required=false`. Flows reject documents that would exceed 50
-chunks.
+paragraph boundaries, then sentence boundaries, then a hard cut. Sentence breaks are
+abbreviation-aware (shared with PlaceExtract mention reconstruction and auto-connection
+evidence windows) so tokens like `St. Paul`, `Dr.`, and `U.S.` do not force a cut.
+Short documents emit one chunk with `split_required=false`. Flows reject documents that
+would exceed 50 chunks.
 
 The Chunker preserves the original `text` and carries a reserved transient envelope
 (`__document_chunk_envelope`) for downstream extractors. Public run JSON only includes

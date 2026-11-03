@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
+from backfield_entities.text.sentences import iter_sentence_break_matches
 from pydantic import BaseModel, Field, model_validator
 
 CHUNKING_STRATEGY_VERSION = "paragraph_sentence_v1"
@@ -24,7 +25,6 @@ ARTICLE_METADATA_PROMPT_TOKENS = 4000
 # Approximate tokens ≈ ceil(chars / 4). Model-neutral and stable across providers.
 _CHARS_PER_TOKEN = 4
 
-_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"'(\[])")
 _WHITESPACE_RUN = re.compile(r"\s+")
 
 
@@ -148,7 +148,7 @@ def _best_boundary(window: str) -> int:
     if para >= max(1, len(window) // 4):
         return para
     sentence_end = 0
-    for match in _SENTENCE_BOUNDARY.finditer(window):
+    for match in iter_sentence_break_matches(window):
         sentence_end = match.start() + 1
     if sentence_end >= max(1, len(window) // 4):
         return sentence_end
