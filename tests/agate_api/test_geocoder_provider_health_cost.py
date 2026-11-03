@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from api.routers.runs import _geocoder_health_from_node_outputs, _merge_geocoder_health_maps
+import json
+
+from api.routers.runs import (
+    _geocoder_health_from_node_outputs,
+    _geocoder_provider_health_for_run,
+    _merge_geocoder_health_maps,
+)
 
 
 def test_merge_geocoder_health_maps_sums_counts() -> None:
@@ -31,3 +37,20 @@ def test_geocoder_health_from_node_outputs_reads_geocode_agent_contribution() ->
         }
     )
     assert from_outputs["pelias"]["auth_error"] == 5
+
+
+def test_geocoder_health_for_run_reads_the_run_result_only() -> None:
+    rows, degraded = _geocoder_provider_health_for_run(
+        json.dumps(
+            {
+                "geo": {
+                    "geocoder_provider_health": {
+                        "pelias": {"auth_error": 2, "rate_limit": 0, "http_error": 0}
+                    }
+                }
+            }
+        )
+    )
+    assert degraded is True
+    assert rows[0].provider == "pelias"
+    assert rows[0].auth_error == 2

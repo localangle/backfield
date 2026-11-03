@@ -2953,11 +2953,15 @@ def _geocoder_health_from_node_outputs(node_outputs: object) -> dict[str, dict[s
 
 
 def _geocoder_provider_health_for_run(
-    session: Session,
-    run: AgateRun,
+    result_json: str | None,
 ) -> tuple[list[GeocoderProviderHealthOut], bool]:
+    """Read provider health from the run result only.
+
+    Processed-item results are not scanned here. Those payloads are the full node
+    output for every item, and loading them makes the run page wait on run size.
+    """
     merged: dict[str, dict[str, int]] = {}
-    payload = parse_run_result_payload(run.result_json)
+    payload = parse_run_result_payload(result_json)
     _merge_geocoder_health_maps(merged, payload.get("geocoder_provider_health"))
     # Single-item runs store executor output on result_json; scan node contributions.
     for key, value in payload.items():
@@ -2965,19 +2969,6 @@ def _geocoder_provider_health_for_run(
             continue
         if isinstance(value, dict):
             _merge_geocoder_health_maps(merged, value.get("geocoder_provider_health"))
-
-    item_rows = session.exec(
-        select(AgateProcessedItem.result_json).where(AgateProcessedItem.run_id == run.id)
-    ).all()
-    for raw in item_rows:
-        if not raw:
-            continue
-        try:
-            parsed = json.loads(raw) if isinstance(raw, str) else raw
-        except (TypeError, json.JSONDecodeError):
-            continue
-        for provider, counts in _geocoder_health_from_node_outputs(parsed).items():
-            _merge_geocoder_health_maps(merged, {provider: counts})
 
     rows = [
         GeocoderProviderHealthOut(
@@ -3006,40 +2997,48 @@ def get_run_estimated_ai_cost(
     if pid:
         require_project_access(session, auth, pid)
 
-    stmt = select(BackfieldAiCallRecord).where(BackfieldAiCallRecord.run_id == run_id)
-    rows = list(session.exec(stmt).all())
+    grouped = session.exec(
+        select(
+            BackfieldAiCallRecord.node_id,
+            func.max(BackfieldAiCallRecord.node_type),
+            func.sum(func.coalesce(BackfieldAiCallRecord.estimated_cost, 0)),
+            _ai_cost_incomplete_aggregate(),
+            func.max(BackfieldAiCallRecord.currency),
+            func.count(),
+        )
+        .where(BackfieldAiCallRecord.run_id == run_id)
+        .group_by(BackfieldAiCallRecord.node_id)
+    ).all()
     total = Decimal("0")
     incomplete = False
-    by_node: dict[str | None, tuple[Decimal, str | None]] = {}
+    attempt_count = 0
     currency = "USD"
-    for row in rows:
-        currency = str(row.currency or "USD")
-        if row.estimated_cost is not None:
-            total += row.estimated_cost
-        else:
+    breakdown_rows: list[tuple[str | None, str | None, Decimal]] = []
+    for node_id, node_type, node_total, incomplete_flag, row_currency, call_count in grouped:
+        if row_currency:
+            currency = str(row_currency)
+        node_cost = Decimal(str(node_total)) if node_total is not None else Decimal("0")
+        total += node_cost
+        attempt_count += int(call_count or 0)
+        if incomplete_flag:
             incomplete = True
-        if row.cost_estimate_incomplete:
-            incomplete = True
-        nk = row.node_id
-        prev_cost, prev_type = by_node.get(nk, (Decimal("0"), None))
-        node_type = row.node_type or prev_type
-        by_node[nk] = (prev_cost + (row.estimated_cost or Decimal("0")), node_type)
+        breakdown_rows.append((node_id, str(node_type) if node_type else None, node_cost))
 
     breakdown = [
-        AiCostNodeBreakdown(node_id=k, node_type=node_type, estimated_total=cost)
-        for k, (cost, node_type) in sorted(
-            by_node.items(), key=lambda kv: (kv[0] is None, str(kv[0]))
+        AiCostNodeBreakdown(node_id=node_id, node_type=node_type, estimated_total=cost)
+        for node_id, node_type, cost in sorted(
+            breakdown_rows, key=lambda row: (row[0] is None, str(row[0]))
         )
     ]
 
-    health_rows, geocoder_degraded = _geocoder_provider_health_for_run(session, r)
+    health_rows, geocoder_degraded = _geocoder_provider_health_for_run(r.result_json)
 
     return RunEstimatedAiCostOut(
         run_id=run_id,
         currency=currency,
         estimated_total=total,
         incomplete_estimate=incomplete,
-        attempt_count=len(rows),
+        attempt_count=attempt_count,
         node_breakdown=breakdown,
         geocoder_provider_health=health_rows,
         geocoder_degraded=geocoder_degraded,

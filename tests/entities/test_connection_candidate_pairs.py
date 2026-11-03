@@ -185,6 +185,29 @@ def test_sentence_windows_preserve_common_name_abbreviations() -> None:
     assert candidate.evidence.snippets == (quote,)
 
 
+def test_sentence_windows_preserve_alderman_and_st_paul() -> None:
+    quote = (
+        "Ald. Jessie Fuentes met Dr. Smith in St. Paul before the vote. "
+        "Supporters cheered."
+    )
+    result = generate_connection_candidates(
+        people=(_person("fuentes", "Jessie Fuentes"),),
+        organizations=(),
+        locations=(_location("st-paul", "St. Paul"),),
+        article_text=quote,
+        limit=64,
+    )
+
+    candidate = next(
+        row
+        for row in result.candidates
+        if row.from_entity_type == "person" and row.to_entity_type == "location"
+    )
+    assert candidate.evidence.snippets == (
+        "Ald. Jessie Fuentes met Dr. Smith in St. Paul before the vote.",
+    )
+
+
 def test_rejects_pairs_without_text_or_metadata_evidence() -> None:
     result = generate_connection_candidates(
         people=(_person("jane", "Jane Doe"),),

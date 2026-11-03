@@ -325,9 +325,11 @@ API create/update, run trigger, and `execute_graph` all reject Geocode without P
 Extract on that branch.
 
 Defaults are approximately 4,000-token pieces with 250-token overlap. Splitting prefers
-paragraph boundaries, then sentence boundaries, then a hard cut. Short documents emit
-one chunk with `split_required=false`. Flows reject documents that would exceed 50
-chunks.
+paragraph boundaries, then sentence boundaries, then a hard cut. Sentence breaks are
+abbreviation-aware (shared with PlaceExtract mention reconstruction and auto-connection
+evidence windows) so tokens like `St. Paul`, `Dr.`, and `U.S.` do not force a cut.
+Short documents emit one chunk with `split_required=false`. Flows reject documents that
+would exceed 50 chunks.
 
 The Chunker preserves the original `text` and carries a reserved transient envelope
 (`__document_chunk_envelope`) for downstream extractors. Public run JSON only includes
@@ -349,7 +351,9 @@ does not support it. Place, Person, and Organization Extract send
 articles full of entities. Other GPT-5 calls still pick the lowest LiteLLM-supported
 effort (`none`, then `minimal`). GPT-6 and later omit temperature while reasoning
 is on, including when no effort is set. `reasoning_effort=none` may still send
-the caller's temperature. There is no GPT-6 effort default.
+the caller's temperature. There is no GPT-6 effort default. Stylebook candidate and
+cleanup AI review calls go through the same completion helper when they invoke
+`call_llm` without an Agate run id.
 
 ## Canvas components
 

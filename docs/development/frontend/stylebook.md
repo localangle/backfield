@@ -119,7 +119,8 @@ as type-specific pages while sharing their common shells and form classes.
 Candidate queues are Stylebook-wide inboxes across all accessible projects assigned to that
 Stylebook. “All accessible projects” is the default; when several projects contribute, the page
 shows each candidate's project and offers a project filter. The filter stays hidden when only one
-project contributes. Link and create actions use the candidate's own project. The shared shell
+project contributes. The page still opens as the combined inbox, and that project is the scope
+for the subtitle and for AI review. Link and create actions use the candidate's own project. The shared shell
 provides:
 
 - Open and deferred queues with server-side filtering and pagination.

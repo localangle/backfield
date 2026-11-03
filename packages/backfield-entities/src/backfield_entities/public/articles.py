@@ -9,6 +9,7 @@ from typing import Annotated
 
 from backfield_db import (
     SubstrateArticle,
+    SubstrateArticleEmbedding,
     SubstrateArticleMeta,
     SubstrateLocationMention,
     SubstrateOrganizationMention,
@@ -89,10 +90,19 @@ class PublicArticleOut(BaseModel):
     images: list[PublicArticleImageOut] | None = None
 
 
+class PublicArticleEmbeddingOut(BaseModel):
+    """Stored article embedding vector; only present when ``include=embedding``."""
+
+    model: str
+    dimensions: int
+    vector: list[float]
+
+
 class PublicArticleDetailOut(PublicArticleOut):
-    """Article detail response; ``text`` is populated only when ``include=text``."""
+    """Article detail response; ``text`` / ``embedding`` only when requested via ``include``."""
 
     text: str | None = None
+    embedding: PublicArticleEmbeddingOut | None = None
 
 
 @dataclass(frozen=True)
@@ -501,12 +511,37 @@ def search_public_articles(
     return items, total
 
 
+def _article_embedding_for_public(
+    session: Session,
+    *,
+    article_id: int,
+) -> PublicArticleEmbeddingOut | None:
+    from backfield_entities.ingest.semantic_indexing.search import _coerce_embedding_vector
+
+    row = session.exec(
+        select(SubstrateArticleEmbedding).where(
+            SubstrateArticleEmbedding.article_id == article_id,
+        )
+    ).first()
+    if row is None:
+        return None
+    vector = _coerce_embedding_vector(getattr(row, "embedding", None))
+    if vector is None:
+        return None
+    return PublicArticleEmbeddingOut(
+        model=str(row.embedding_model),
+        dimensions=int(row.embedding_dimensions),
+        vector=vector,
+    )
+
+
 def get_public_article(
     session: Session,
     *,
     project_id: int,
     article_id: int,
     include_text: bool = False,
+    include_embedding: bool = False,
 ) -> PublicArticleDetailOut | None:
     article = session.exec(
         select(SubstrateArticle).where(
@@ -525,4 +560,9 @@ def get_public_article(
     detail = PublicArticleDetailOut.model_validate(base.model_dump())
     if include_text:
         detail.text = article.text
+    if include_embedding:
+        detail.embedding = _article_embedding_for_public(
+            session,
+            article_id=int(article.id),
+        )
     return detail

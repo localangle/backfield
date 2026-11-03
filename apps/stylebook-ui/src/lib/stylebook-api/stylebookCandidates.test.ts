@@ -3,6 +3,7 @@ import {
   canStartCandidateAiReview,
   candidateProjectFilterState,
   candidateProjectOptions,
+  candidateReviewProjectSlug,
 } from "@/lib/stylebook-api/stylebookCandidates"
 
 describe("candidate project filter", () => {
@@ -41,5 +42,31 @@ describe("candidate project filter", () => {
   it("requires a selected project for AI review", () => {
     expect(canStartCandidateAiReview("")).toBe(false)
     expect(canStartCandidateAiReview("news")).toBe(true)
+  })
+
+  it("uses the only contributing project as the review scope", () => {
+    expect(
+      candidateReviewProjectSlug("", [
+        { project_id: 1, project_slug: "news", project_name: "News", count: 2 },
+        { project_id: 2, project_slug: "sports", project_name: "Sports", count: 0 },
+      ]),
+    ).toBe("news")
+  })
+
+  it("leaves the review scope empty when several projects contribute", () => {
+    expect(
+      candidateReviewProjectSlug("", [
+        { project_id: 1, project_slug: "news", project_name: "News", count: 2 },
+        { project_id: 2, project_slug: "sports", project_name: "Sports", count: 1 },
+      ]),
+    ).toBe("")
+  })
+
+  it("keeps an explicit project as the review scope", () => {
+    expect(
+      candidateReviewProjectSlug("sports", [
+        { project_id: 1, project_slug: "news", project_name: "News", count: 2 },
+      ]),
+    ).toBe("sports")
   })
 })

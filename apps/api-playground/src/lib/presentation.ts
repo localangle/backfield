@@ -173,6 +173,7 @@ function includeOptions(operation: PlaygroundOperation): SelectOption[] {
   }
   if (isArticleDetailPath(operation.displayPath)) {
     options.push({ value: "text", label: "Full article text" })
+    options.push({ value: "embedding", label: "Article embedding vector" })
   }
   return options
 }
@@ -210,7 +211,11 @@ function helperTextForField(
       )
     }
     if (isArticleDetailPath(operation.displayPath)) {
-      return "counts adds mention totals; text includes the article body. Detail already includes up to 10 images."
+      return (
+        "counts adds mention totals; text includes the article body; " +
+        "embedding includes the stored vector with model and dimensions. " +
+        "Detail already includes up to 10 images."
+      )
     }
     return "counts adds mention totals; images includes up to 10 attached images."
   }

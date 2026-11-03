@@ -314,7 +314,7 @@
         "type": "object"
       },
       "PublicArticleDetailOut": {
-        "description": "Article detail response; ``text`` is populated only when ``include=text``.",
+        "description": "Article detail response; ``text`` / ``embedding`` only when requested via ``include``.",
         "properties": {
           "author": {
             "anyOf": [
@@ -347,6 +347,16 @@
               }
             ],
             "title": "Embedded"
+          },
+          "embedding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublicArticleEmbeddingOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "headline": {
             "title": "Headline",
@@ -462,6 +472,33 @@
           "headline"
         ],
         "title": "PublicArticleDetailOut",
+        "type": "object"
+      },
+      "PublicArticleEmbeddingOut": {
+        "description": "Stored article embedding vector; only present when ``include=embedding``.",
+        "properties": {
+          "dimensions": {
+            "title": "Dimensions",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "vector": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Vector",
+            "type": "array"
+          }
+        },
+        "required": [
+          "model",
+          "dimensions",
+          "vector"
+        ],
+        "title": "PublicArticleEmbeddingOut",
         "type": "object"
       },
       "PublicArticleFacetsOut": {
@@ -7294,7 +7331,7 @@
     },
     "/public/v1/projects/{project_slug}/articles/{article_id}": {
       "get": {
-        "description": "Return one article by id (preview by default; optional full body via include=text).",
+        "description": "Return one article by id (preview by default; optional body/embedding via include).",
         "operationId": "get_project_article_public_v1_projects__project_slug__articles__article_id__get",
         "parameters": [
           {
@@ -7316,13 +7353,13 @@
             }
           },
           {
-            "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); text (full article body in addition to preview). Article detail always includes up to 10 images.",
+            "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); text (full article body in addition to preview); embedding (stored article vector with model and dimensions). Article detail always includes up to 10 images.",
             "in": "query",
             "name": "include",
             "required": false,
             "schema": {
               "default": [],
-              "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); text (full article body in addition to preview). Article detail always includes up to 10 images.",
+              "description": "Repeatable include token for optional article extras. Supported: counts (mention and canonical entity totals, image count, custom records, embedded flag); text (full article body in addition to preview); embedding (stored article vector with model and dimensions). Article detail always includes up to 10 images.",
               "items": {
                 "type": "string"
               },

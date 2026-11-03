@@ -128,8 +128,13 @@ def call_llm_tracked_sync(
             "Azure OpenAI needs a resource endpoint URL in organization AI integrations."
         )
 
-    is_gpt5 = lm_model.startswith("gpt-5")
-    temp_arg: float | None = None if is_gpt5 else float(temperature)
+    from backfield_ai.completion import _litellm_completion_temperature
+
+    temp_arg = _litellm_completion_temperature(
+        lm_model,
+        float(temperature),
+        reasoning_effort=reasoning_effort,
+    )
 
     sys_chars = len(system_message or "")
     prompt_chars = len(prompt)

@@ -38,7 +38,7 @@ META_PARAM_DESCRIPTION = (
 )
 
 ALLOWED_ARTICLE_LIST_INCLUDES = frozenset({"counts", "images"})
-ALLOWED_ARTICLE_DETAIL_INCLUDES = frozenset({"counts", "text"})
+ALLOWED_ARTICLE_DETAIL_INCLUDES = frozenset({"counts", "text", "embedding"})
 
 INCLUDE_PARAM_DESCRIPTION = (
     "Repeatable include token for optional article extras. "
@@ -50,7 +50,8 @@ INCLUDE_PARAM_DESCRIPTION = (
 INCLUDE_DETAIL_PARAM_DESCRIPTION = (
     "Repeatable include token for optional article extras. "
     "Supported: counts (mention and canonical entity totals, image count, "
-    "custom records, embedded flag); text (full article body in addition to preview). "
+    "custom records, embedded flag); text (full article body in addition to preview); "
+    "embedding (stored article vector with model and dimensions). "
     "Article detail always includes up to 10 images."
 )
 

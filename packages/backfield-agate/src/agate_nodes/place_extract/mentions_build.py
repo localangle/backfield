@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from backfield_entities.text.sentences import sentence_containing
+
 from agate_nodes.place_extract.location_utils import split_location_parts
 
 MAX_MENTIONS_PER_LOCATION = 8
@@ -14,7 +16,6 @@ _SPAN_QUOTE_SENTINEL = "\ue000"
 _TRAILING_SPAN_ARTIFACT_CHARS = frozenset(
     '.,;:!?)]}"\'…\u201d\u2019\u201c'
 )
-_SENTENCE_BREAK_RE = re.compile(r"(?<=[.!?])\s+")
 
 
 def _rstrip_trailing_span_artifacts(fragment: str) -> str:
@@ -133,19 +134,26 @@ def find_mention_span(
         if idx >= 0:
             return search_from + idx, search_from + idx + len(candidate)
 
-    collapsed_hay = _WS_RE.sub(" ", haystack).strip()
     for candidate in _mention_text_span_variants(needle):
         if not candidate:
             continue
         collapsed_needle = _WS_RE.sub(" ", candidate).strip()
         if not collapsed_needle:
             continue
-        if collapsed_hay.find(collapsed_needle) >= 0:
-            first_token = collapsed_needle.split(" ")[0]
-            if first_token:
-                idx3 = haystack.find(first_token, search_from)
-                if idx3 >= 0:
-                    return idx3, idx3 + len(candidate)
+        # Walk first-token hits from search_from, but only accept slices whose
+        # whitespace-collapsed form still equals the full needle. Otherwise a
+        # later "St." (as in "Downing St.") can claim an earlier "St. Paul".
+        first_token = collapsed_needle.split(" ")[0]
+        if not first_token:
+            continue
+        idx3 = haystack.find(first_token, search_from)
+        while idx3 >= 0:
+            end3 = idx3 + len(candidate)
+            if end3 <= len(haystack):
+                collapsed_slice = _WS_RE.sub(" ", haystack[idx3:end3]).strip()
+                if collapsed_slice.casefold() == collapsed_needle.casefold():
+                    return idx3, end3
+            idx3 = haystack.find(first_token, idx3 + 1)
 
     for candidate in _mention_text_span_variants(needle):
         span = _longest_needle_substring_span(haystack=haystack[search_from:], needle=candidate)
@@ -195,17 +203,7 @@ def sentence_containing_span(text: str, start: int, end: int) -> str:
     """Return the sentence (or clause block) that contains ``text[start:end]``."""
     if not text or start < 0 or end <= start or end > len(text):
         return text[start:end].strip() if 0 <= start < end <= len(text) else ""
-
-    sent_start = 0
-    for match in _SENTENCE_BREAK_RE.finditer(text[:start]):
-        sent_start = match.end()
-
-    sent_end = len(text)
-    for match in _SENTENCE_BREAK_RE.finditer(text[end:]):
-        sent_end = end + match.start() + 1
-        break
-
-    return text[sent_start:sent_end].strip()
+    return sentence_containing(text, start, end)
 
 
 def mention_context_containing_span(text: str, start: int, end: int) -> str:
