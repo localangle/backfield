@@ -14,6 +14,8 @@ import litellm
 from backfield_ai.cost_estimate import litellm_estimated_cost_from_response
 from backfield_ai.json_clean import clean_json_response_text
 
+litellm.drop_params = True
+
 logger = logging.getLogger(__name__)
 
 # Upper bound when bumping an explicit ``max_tokens`` after empty JSON + finish_reason=length.
