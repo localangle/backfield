@@ -1266,6 +1266,7 @@ def test_public_article_detail(public_client: TestClient) -> None:
     assert body["published"] is None
     assert body["updated"] is None
     assert "text" not in body
+    assert "embedding" not in body
     assert body["preview"]
     assert body["metadata"][0]["category"] == "local_government_politics"
     assert "processing" not in body
@@ -1303,6 +1304,61 @@ def test_public_article_search_rejects_include_text(public_client: TestClient) -
         "/public/v1/projects/general/articles/search",
         headers=headers,
         params={"include": "text"},
+    )
+    assert r.status_code == 400
+
+
+def test_public_article_detail_include_embedding(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    article_id = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"q": "budget"},
+    ).json()["items"][0]["id"]
+    r = public_client.get(
+        f"/public/v1/projects/general/articles/{article_id}",
+        headers=headers,
+        params={"include": "embedding"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["embedding"] == {
+        "model": "text-embedding-3-small",
+        "dimensions": 2,
+        "vector": [1.0, 0.0],
+    }
+    assert "text" not in body
+
+
+def test_public_article_detail_include_embedding_null_when_missing(
+    public_client: TestClient,
+) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    article_id = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"q": "Other"},
+    ).json()["items"][0]["id"]
+    r = public_client.get(
+        f"/public/v1/projects/general/articles/{article_id}",
+        headers=headers,
+        params={"include": "embedding"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert "embedding" in body
+    assert body["embedding"] is None
+
+
+def test_public_article_search_rejects_include_embedding(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"include": "embedding"},
     )
     assert r.status_code == 400
 

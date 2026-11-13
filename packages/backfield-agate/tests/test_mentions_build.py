@@ -83,3 +83,34 @@ def test_mention_context_prefers_sentence_within_paragraph() -> None:
     assert "Powderhorn" in mentions[0]["text"]
     assert "Midtown Greenway" in mentions[0]["text"]
     assert "MINNEAPOLIS" not in mentions[0]["text"]
+
+
+def test_mention_context_preserves_abbreviation_periods() -> None:
+    article = (
+        "Dr. Smith spoke in St. Paul yesterday evening. "
+        "U.S. officials left Monday."
+    )
+    mentions = build_mentions(article, "St. Paul, MN", "city")
+    assert mentions == [
+        {"text": "Dr. Smith spoke in St. Paul yesterday evening."},
+    ]
+
+
+def test_mention_context_does_not_reuse_st_from_street_suffix() -> None:
+    article = (
+        "Dr. Smith spoke in St. Paul yesterday. "
+        "Ald. Jessie Fuentes joined later near 10 Downing St. Neighbors watched."
+    )
+    mentions = build_mentions(article, "St. Paul, MN", "city")
+    assert mentions == [
+        {"text": "Dr. Smith spoke in St. Paul yesterday."},
+    ]
+
+
+def test_evidence_anchor_preserves_abbreviation_sentence() -> None:
+    article = (
+        "Organizers honored leaders, including Ald. Jessie Fuentes (26th), "
+        "who walked near St. Paul Avenue after the parade."
+    )
+    mentions = build_mentions_for_evidence_anchor(article, "Ald. Jessie Fuentes (26th)")
+    assert mentions == [{"text": article}]

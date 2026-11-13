@@ -19,6 +19,7 @@ from backfield_entities.connections.types import (
     PairEvidencePacket,
 )
 from backfield_entities.entities.organization.types import normalize_organization_text
+from backfield_entities.text.sentences import split_sentences
 
 AUTO_CONNECTION_FAMILIES: tuple[tuple[str, str], ...] = (
     ("person", "organization"),
@@ -28,10 +29,7 @@ AUTO_CONNECTION_FAMILIES: tuple[tuple[str, str], ...] = (
     ("organization", "organization"),
 )
 
-_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])(?:[\"”’)]*)\s+(?=[A-Z0-9“\"'])")
 _SPACE = re.compile(r"\s+")
-_ABBREVIATIONS = ("Mr.", "Mrs.", "Ms.", "Dr.", "St.", "U.S.", "No.")
-_PROTECTED_PERIOD = "\u2024"
 _TEAM_SUFFIXES = (
     " high school boys football team",
     " high school girls football team",
@@ -107,22 +105,8 @@ def _contains_alias(text: str, aliases: tuple[str, ...]) -> bool:
 
 
 def split_article_sentences(article_text: str) -> tuple[str, ...]:
-    text = _clean(article_text)
-    if not text:
-        return ()
-    protected = text
-    for abbreviation in _ABBREVIATIONS:
-        protected = re.sub(
-            re.escape(abbreviation),
-            abbreviation.replace(".", _PROTECTED_PERIOD),
-            protected,
-            flags=re.IGNORECASE,
-        )
-    return tuple(
-        part.replace(_PROTECTED_PERIOD, ".").strip()
-        for part in _SENTENCE_BOUNDARY.split(protected)
-        if part.strip()
-    )
+    """Split article text into sentences (abbreviation-aware)."""
+    return split_sentences(article_text)
 
 
 def _snippet_sentence_indexes(

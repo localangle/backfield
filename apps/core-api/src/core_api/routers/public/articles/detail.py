@@ -33,13 +33,14 @@ def get_project_article(
     session: Session = Depends(get_session),
     include: list[str] = Query(default=[], description=INCLUDE_DETAIL_PARAM_DESCRIPTION),
 ) -> PublicArticleDetailOut:
-    """Return one article by id (preview by default; optional full body via include=text)."""
+    """Return one article by id (preview by default; optional body/embedding via include)."""
     includes = parse_article_includes(include, allowed=ALLOWED_ARTICLE_DETAIL_INCLUDES)
     article = get_public_article(
         session,
         project_id=int(project.id),  # type: ignore[arg-type]
         article_id=article_id,
         include_text="text" in includes,
+        include_embedding="embedding" in includes,
     )
     if article is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")

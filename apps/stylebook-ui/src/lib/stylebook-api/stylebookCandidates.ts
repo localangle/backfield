@@ -14,6 +14,12 @@ export type CandidateCountResponse = {
   projects: CandidateProjectCount[]
 }
 
+function contributingCandidateProjects(
+  projects: CandidateProjectCount[],
+): CandidateProjectCount[] {
+  return projects.filter((project) => project.count > 0)
+}
+
 export function candidateProjectFilterState(
   projectSlug: string,
   projects: CandidateProjectCount[],
@@ -22,8 +28,20 @@ export function candidateProjectFilterState(
     value: projectSlug || "all",
     visible:
       projectSlug.trim().length > 0 ||
-      projects.filter((project) => project.count > 0).length > 1,
+      contributingCandidateProjects(projects).length > 1,
   }
+}
+
+/** Selected project, or the only project that currently has candidates. */
+export function candidateReviewProjectSlug(
+  projectSlug: string,
+  projects: CandidateProjectCount[],
+): string {
+  const selected = projectSlug.trim()
+  if (selected.length > 0) return selected
+  const contributing = contributingCandidateProjects(projects)
+  if (contributing.length === 1) return contributing[0].project_slug
+  return ""
 }
 
 export function candidateProjectOptions(

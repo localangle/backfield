@@ -69,6 +69,16 @@ def test_truncate_prefers_paragraph_boundary() -> None:
     assert approximate_token_count(truncated) <= 40
 
 
+def test_truncate_does_not_cut_on_st_paul_abbreviation() -> None:
+    # Force a sentence-boundary choice inside a window that contains "St. Paul".
+    prefix = "Word " * 30
+    text = prefix + "They met in St. Paul after dark and kept walking toward downtown for hours."
+    truncated, was = truncate_text_to_tokens(text, max_tokens=approximate_token_count(prefix) + 8)
+    assert was is True
+    assert "St." not in truncated or truncated.count("St. Paul") == truncated.count("St.")
+    assert not truncated.rstrip().endswith("St.")
+
+
 def test_single_chunk_envelope() -> None:
     envelope = single_chunk_envelope("Hello world")
     assert len(envelope.chunks) == 1

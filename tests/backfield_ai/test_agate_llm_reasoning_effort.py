@@ -50,3 +50,53 @@ def test_call_llm_forwards_reasoning_effort_to_litellm(
 
     assert captured["model"] == "gpt-5-nano"
     assert captured.get("reasoning_effort") == expected
+
+
+def test_call_llm_without_run_id_omits_gpt6_temperature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stylebook reviews call ``call_llm`` without ``BACKFIELD_RUN_ID``."""
+    monkeypatch.delenv("BACKFIELD_RUN_ID", raising=False)
+    captured: dict[str, object] = {}
+
+    def fake_completion(**kwargs: object) -> _Resp:
+        captured.update(kwargs)
+        return _Resp()
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm, "completion_cost", lambda **_kw: 0.0)
+
+    call_llm(
+        prompt="Recommend a canonical link.",
+        model="gpt-6-luna",
+        openai_api_key="sk-test",
+        temperature=0.0,
+    )
+
+    assert captured["model"] == "openai/gpt-6-luna"
+    assert "temperature" not in captured
+
+
+def test_call_llm_without_run_id_omits_gpt5_temperature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("BACKFIELD_RUN_ID", raising=False)
+    captured: dict[str, object] = {}
+
+    def fake_completion(**kwargs: object) -> _Resp:
+        captured.update(kwargs)
+        return _Resp()
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm, "completion_cost", lambda **_kw: 0.0)
+
+    call_llm(
+        prompt="Recommend a canonical link.",
+        model="gpt-5-nano",
+        openai_api_key="sk-test",
+        temperature=0.0,
+    )
+
+    assert captured["model"] == "openai/gpt-5-nano"
+    assert "temperature" not in captured
+    assert captured.get("reasoning_effort") == "minimal"

@@ -194,43 +194,50 @@ def call_llm(
         force_json=force_json,
     )
 
-    # Determine which client to use based on model name
-    if model.startswith('gpt'):
-        # OpenAI model
-        client = _get_openai_client(openai_api_key, timeout=timeout)
-        
-        # GPT-5 models only support the default temperature (1.0); any other value returns 400.
-        # For GPT-5 models, omit temperature so the API uses the default.
-        is_gpt5 = model.startswith('gpt-5')
-        should_skip_temperature = is_gpt5
-        
+    # Determine which client to use based on model name.
+    # OpenAI GPT ids (including Stylebook review, which has no BACKFIELD_RUN_ID) go through
+    # completion_text_sync so GPT-5/GPT-6 temperature and reasoning rules stay in one place.
+    if model.startswith("gpt") or model.strip().lower().startswith("openai/"):
+        from backfield_ai.completion import completion_text_sync
+
+        key = openai_api_key or os.getenv("OPENAI_API_KEY")
+        if not key:
+            raise ValueError(
+                "OPENAI_API_KEY must be provided for OpenAI models "
+                "(configure in organization AI integrations or project keys)"
+            )
+        lm_raw = model.strip()
+        lm_model = lm_raw if "/" in lm_raw else f"openai/{lm_raw}"
+        messages = [
+            {"role": "system", "content": system_message or ""},
+            {"role": "user", "content": prompt},
+        ]
         for attempt in range(max_retries):
             try:
-                # Build the request parameters
-                request_params = {
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": system_message},
-                        {"role": "user", "content": prompt}
-                    ]
-                }
-                
-                # Only add temperature if it's not a GPT-5 model with temperature=0.0
-                if not should_skip_temperature:
-                    request_params["temperature"] = temperature
-                
-                response = client.chat.completions.create(**request_params)
-                response_text = response.choices[0].message.content.strip()
+                result = completion_text_sync(
+                    litellm_model=lm_model,
+                    messages=messages,
+                    api_key=key,
+                    max_tokens=max_tokens,
+                    temperature=float(temperature),
+                    timeout=float(timeout),
+                    force_json_response=bool(force_json),
+                    allow_max_tokens_bump=allow_max_tokens_bump,
+                    reasoning_effort=reasoning_effort,
+                )
+                response_text = result.text.strip()
                 return _clean_json_response(response_text) if force_json else response_text
             except Exception as e:
                 if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    wait_time = 2**attempt
                     print(f"OpenAI API call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
                     print(f"Retrying in {wait_time} seconds...")
                     time.sleep(wait_time)
                 else:
-                    raise Exception(f"OpenAI API call failed after {max_retries} attempts: {str(e)}")
-        
+                    raise Exception(
+                        f"OpenAI API call failed after {max_retries} attempts: {str(e)}"
+                    ) from e
+
     elif model.startswith(('claude-', 'claude')):
         # Anthropic model
         client = _get_anthropic_client(anthropic_api_key, timeout=timeout)
@@ -380,41 +387,47 @@ def call_llm(
                     ) from e
 
     else:
-        # Default to OpenAI for unknown models
-        client = _get_openai_client(openai_api_key, timeout=timeout)
-        
-        # GPT-5 models only support the default temperature (1.0); any other value returns 400.
-        # For GPT-5 models, omit temperature so the API uses the default.
-        is_gpt5 = model.startswith('gpt-5')
-        should_skip_temperature = is_gpt5
-        
+        # Unknown provider id: still use the shared OpenAI/LiteLLM completion boundary.
+        from backfield_ai.completion import completion_text_sync
+
+        key = openai_api_key or os.getenv("OPENAI_API_KEY")
+        if not key:
+            raise ValueError(
+                "OPENAI_API_KEY must be provided for OpenAI models "
+                "(configure in organization AI integrations or project keys)"
+            )
+        lm_raw = model.strip()
+        lm_model = lm_raw if "/" in lm_raw else f"openai/{lm_raw}"
+        messages = [
+            {"role": "system", "content": system_message or ""},
+            {"role": "user", "content": prompt},
+        ]
         for attempt in range(max_retries):
             try:
-                # Build the request parameters
-                request_params = {
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": system_message},
-                        {"role": "user", "content": prompt}
-                    ]
-                }
-                
-                # Only add temperature if it's not a GPT-5 model with temperature=0.0
-                if not should_skip_temperature:
-                    request_params["temperature"] = temperature
-                
-                response = client.chat.completions.create(**request_params)
-                response_text = response.choices[0].message.content.strip()
+                result = completion_text_sync(
+                    litellm_model=lm_model,
+                    messages=messages,
+                    api_key=key,
+                    max_tokens=max_tokens,
+                    temperature=float(temperature),
+                    timeout=float(timeout),
+                    force_json_response=bool(force_json),
+                    allow_max_tokens_bump=allow_max_tokens_bump,
+                    reasoning_effort=reasoning_effort,
+                )
+                response_text = result.text.strip()
                 return _clean_json_response(response_text) if force_json else response_text
             except Exception as e:
                 if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    wait_time = 2**attempt
                     print(f"OpenAI API call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
                     print(f"Retrying in {wait_time} seconds...")
                     time.sleep(wait_time)
                 else:
-                    raise Exception(f"OpenAI API call failed after {max_retries} attempts: {str(e)}")
-    
+                    raise Exception(
+                        f"OpenAI API call failed after {max_retries} attempts: {str(e)}"
+                    ) from e
+
     # Should never reach here, but for type safety
     raise Exception("Unexpected error in call_llm")
 
