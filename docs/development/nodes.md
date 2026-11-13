@@ -353,7 +353,9 @@ effort (`none`, then `minimal`). GPT-6 and later omit temperature while reasonin
 is on, including when no effort is set. `reasoning_effort=none` may still send
 the caller's temperature. There is no GPT-6 effort default. Stylebook candidate and
 cleanup AI review calls go through the same completion helper when they invoke
-`call_llm` without an Agate run id.
+`call_llm` without an Agate run id. Models that LiteLLM's model map flags `supports_sampling_params: false`, such as
+Claude Opus 5.5, Sonnet 5.5 and Haiku 5.5, also omit temperature, because
+Anthropic's API rejects the parameter for them.
 
 ## Canvas components
 
