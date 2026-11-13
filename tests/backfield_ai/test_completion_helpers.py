@@ -44,11 +44,47 @@ def test_litellm_json_mode_flag(model: str, expected: bool) -> None:
         ("openai/gpt-5-mini", 0.2, None),
         ("gpt-4o-mini", 0.2, 0.2),
         ("anthropic/claude-sonnet-4-5-20250929", 0.2, 0.2),
+        ("anthropic/claude-opus-5-5", 0.0, None),
+        ("claude-opus-5-5", 0.2, None),
         ("gpt-5-nano", None, None),
     ],
 )
 def test_litellm_completion_temperature(model: str, temperature: float | None, expected) -> None:
     assert _litellm_completion_temperature(model, temperature) == expected
+
+
+def test_completion_text_sync_omits_temperature_for_claude_opus_55(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LiteLLM raised UnsupportedParamsError for Claude Opus 5.5 with temperature=0.0.
+
+    ``mock_response`` skips the network call but still runs LiteLLM's param validation.
+    """
+    captured: dict[str, object] = {}
+    real_completion = litellm.completion
+
+    def mock_completion(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return real_completion(**kwargs, mock_response="OK")
+
+    monkeypatch.setattr(litellm, "completion", mock_completion)
+    monkeypatch.setattr(litellm, "completion_cost", lambda **_kw: 0.0)
+
+    result = completion_text_sync(
+        litellm_model="anthropic/claude-opus-5-5",
+        messages=[
+            {"role": "system", "content": "Reply with exactly OK."},
+            {"role": "user", "content": "ping"},
+        ],
+        api_key="sk-ant-test",
+        max_tokens=8,
+        temperature=0.0,
+        timeout=30.0,
+        force_json_response=False,
+    )
+
+    assert result.text == "OK"
+    assert "temperature" not in captured
 
 
 @pytest.mark.parametrize(
