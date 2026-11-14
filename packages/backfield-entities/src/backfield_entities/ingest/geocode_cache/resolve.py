@@ -69,7 +69,7 @@ def _canonical_to_stylebook_match_dict(canon: StylebookLocationCanonical) -> dic
     """Match dict shape for ``stylebook_match_to_geocoding_result`` in agate_utils."""
     gj = canon.geometry_json if isinstance(canon.geometry_json, dict) else None
     boundaries: list[dict[str, Any]] = [dict(gj)] if gj else []
-    gt = (canon.geometry_type or (gj.get("type") if gj else None) or "Point")
+    gt = canon.geometry_type or (gj.get("type") if gj else None) or "Point"
     cid = str(canon.id)
     return {
         "id": cid,
@@ -103,58 +103,61 @@ def _substrate_cache_row_to_cache_match_dict(row: SubstrateLocationCache) -> dic
     }
 
 
-def _alias_map_for_canonicals(
-    session: Session, canonical_ids: list[str]
-) -> dict[str, tuple[str, ...]]:
-    """Alias norms used for tier-1 exact geocode hits (excludes ``substrate_ingest``)."""
-    if not canonical_ids:
-        return {}
-    rows = session.exec(
-        select(StylebookLocationAlias).where(
-            col(StylebookLocationAlias.location_canonical_id).in_(canonical_ids),
-            col(StylebookLocationAlias.suppressed).is_(False),
-            StylebookLocationAlias.provenance != "substrate_ingest",
-        )
-    ).all()
-    acc: dict[str, list[str]] = {cid: [] for cid in canonical_ids}
-    for a in rows:
-        cid = str(a.location_canonical_id)
-        if cid not in acc:
-            continue
-        norm = (a.normalized_alias or "").strip().lower()
-        if norm:
-            acc[cid].append(norm)
-    return {cid: tuple(sorted(set(strings))) for cid, strings in acc.items()}
+def _text_matches_query_keys(text: str, query_keys: set[str]) -> bool:
+    """True when the normalized or match-folded form of ``text`` equals a query key."""
+    return bool(query_keys & {normalize_substrate_cache_query(text), match_fold_key(text)})
 
 
-def _canonical_matches_normalized_query(
-    c: StylebookLocationCanonical,
-    *,
+def _tier1_matching_canonical_ids(
+    session: Session,
+    stylebook_id: int,
     normalized_query: str,
-    alias_map: dict[str, tuple[str, ...]],
-) -> bool:
-    """True when normalized query equals normalized label or any normalized alias string."""
-    if c.id is None:
-        return False
-    cid = str(c.id)
+) -> list[str]:
+    """Ids of active canonicals whose label or trusted alias equals the normalized query.
+
+    Only ids, labels and alias strings are read here (a few MB even for a large stylebook).
+    Loading every canonical row, with its geometry, for each lookup cost hundreds of MB per
+    worker process; callers load full rows for the few matches only.
+    """
     query_keys = {
         normalize_substrate_cache_query(normalized_query),
         match_fold_key(normalized_query),
     }
-    label_keys = {
-        normalize_substrate_cache_query(str(c.label)),
-        match_fold_key(str(c.label)),
-    }
-    if query_keys & label_keys:
-        return True
-    for raw_alias in alias_map.get(cid, ()):
-        alias_keys = {
-            normalize_substrate_cache_query(raw_alias),
-            match_fold_key(raw_alias),
-        }
-        if query_keys & alias_keys:
-            return True
-    return False
+    active_in_stylebook = (
+        col(StylebookLocationCanonical.stylebook_id) == stylebook_id,
+        col(StylebookLocationCanonical.status) == "active",
+    )
+    matched: set[str] = set()
+
+    label_rows = session.exec(
+        select(StylebookLocationCanonical.id, StylebookLocationCanonical.label).where(
+            *active_in_stylebook
+        )
+    ).all()
+    for canonical_id, label in label_rows:
+        if canonical_id is not None and _text_matches_query_keys(str(label), query_keys):
+            matched.add(str(canonical_id))
+
+    # Alias norms used for tier-1 exact hits exclude ``substrate_ingest`` provenance.
+    alias_rows = session.exec(
+        select(
+            StylebookLocationAlias.location_canonical_id, StylebookLocationAlias.normalized_alias
+        )
+        .join(
+            StylebookLocationCanonical,
+            col(StylebookLocationCanonical.id) == col(StylebookLocationAlias.location_canonical_id),
+        )
+        .where(
+            *active_in_stylebook,
+            col(StylebookLocationAlias.suppressed).is_(False),
+            StylebookLocationAlias.provenance != "substrate_ingest",
+        )
+    ).all()
+    for canonical_id, normalized_alias in alias_rows:
+        alias = (normalized_alias or "").strip().lower()
+        if alias and _text_matches_query_keys(alias, query_keys):
+            matched.add(str(canonical_id))
+    return sorted(matched)
 
 
 def _tier1_exact_winners(
@@ -162,24 +165,15 @@ def _tier1_exact_winners(
     stylebook_id: int,
     normalized_query: str,
 ) -> list[StylebookLocationCanonical]:
-    canons = list(
-        session.exec(
-            select(StylebookLocationCanonical).where(
-                col(StylebookLocationCanonical.stylebook_id) == stylebook_id,
-                col(StylebookLocationCanonical.status) == "active",
-            )
-        ).all()
-    )
-    ids = [str(c.id) for c in canons if c.id is not None]
-    alias_map = _alias_map_for_canonicals(session, ids)
-    winners: list[StylebookLocationCanonical] = []
-    for c in canons:
-        if not _canonical_matches_normalized_query(
-            c, normalized_query=normalized_query, alias_map=alias_map
-        ):
-            continue
-        winners.append(c)
-    return winners
+    matched_ids = _tier1_matching_canonical_ids(session, stylebook_id, normalized_query)
+    if not matched_ids:
+        return []
+    winners = session.exec(
+        select(StylebookLocationCanonical).where(
+            col(StylebookLocationCanonical.id).in_(matched_ids)
+        )
+    ).all()
+    return sorted(winners, key=lambda canonical: str(canonical.id))
 
 
 def _strict_type_pair_allowed(substrate_lt: str | None, canonical_lt: str | None) -> bool:
@@ -296,9 +290,7 @@ def resolve_geocode_cache_strict_with_outcome(
         return GeocodeCacheStrictOutcome(None, False, False)
 
     winners = (
-        _tier1_exact_winners(session, stylebook_id, normalized)
-        if stylebook_id is not None
-        else []
+        _tier1_exact_winners(session, stylebook_id, normalized) if stylebook_id is not None else []
     )
 
     surviving_winners = [

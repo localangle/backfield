@@ -12,9 +12,20 @@ from agate_utils.geocoding import overpass as overpass_module
 
 @pytest.fixture(autouse=True)
 def _reset_overpass_semaphore() -> None:
-    overpass_module._overpass_semaphore = None
+    overpass_module._overpass_semaphore_instance = None
     yield
-    overpass_module._overpass_semaphore = None
+    overpass_module._overpass_semaphore_instance = None
+
+
+def test_overpass_request_slot_acquires_and_releases_semaphore(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OVERPASS_MAX_CONCURRENT", "1")
+    semaphore = overpass_module._overpass_semaphore()
+    with overpass_module._overpass_request_slot():
+        assert not semaphore.acquire(blocking=False)
+    assert semaphore.acquire(blocking=False)
+    semaphore.release()
 
 
 def test_overpass_endpoint_urls_dedupes_primary_and_mirrors(
