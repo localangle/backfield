@@ -1215,6 +1215,10 @@ def _import_connection_row(
     )
     session.add(conn)
     session.flush()
+    # Bundles do not transfer substrate articles or processed items. Keep narrative
+    # evidence fields but drop source-environment FKs so import cannot violate
+    # ``fk_stylebook_conn_evidence_article`` (or leave dangling processed_item ids).
+    # Longer-term: omit connection evidence from export entirely.
     evidence_rows = row.get("evidence")
     if isinstance(evidence_rows, list) and evidence_rows:
         for item in evidence_rows:
@@ -1223,7 +1227,7 @@ def _import_connection_row(
             session.add(
                 StylebookConnectionEvidence(
                     connection_id=int(conn.id),  # type: ignore[arg-type]
-                    article_id=item.get("article_id"),
+                    article_id=None,
                     description=item.get("description"),
                     quote=item.get("quote"),
                     reason=item.get("reason"),
@@ -1231,7 +1235,7 @@ def _import_connection_row(
                     source=item.get("source") or "bundle_import",
                     prompt_version=item.get("prompt_version"),
                     run_id=item.get("run_id"),
-                    processed_item_id=item.get("processed_item_id"),
+                    processed_item_id=None,
                     match_basis=item.get("match_basis"),
                 )
             )
@@ -1246,11 +1250,7 @@ def _import_connection_row(
             session.add(
                 StylebookConnectionEvidence(
                     connection_id=int(conn.id),  # type: ignore[arg-type]
-                    article_id=(
-                        int(evidence_json["article_id"])
-                        if evidence_json and evidence_json.get("article_id") is not None
-                        else None
-                    ),
+                    article_id=None,
                     description=description,
                     quote=quote or description,
                     reason=(
@@ -1283,6 +1283,7 @@ def _import_connection_row(
                         if evidence_json and evidence_json.get("match_basis") is not None
                         else None
                     ),
+                    processed_item_id=None,
                 )
             )
     stats["connections"] += 1

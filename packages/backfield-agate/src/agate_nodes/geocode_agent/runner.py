@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from collections.abc import Callable
 from typing import Any
 
@@ -11,6 +12,19 @@ from agate_runtime.context import AgateEnvContext
 from agate_runtime.runners import default_context, run_geocode_agent_runtime
 
 logger = logging.getLogger(__name__)
+
+
+def _geocode_db_max_concurrent() -> int:
+    """Max simultaneous cache lookups per article (default 1).
+
+    Worker processes have a tiny database pool shared with other nodes, so the per-article
+    location fan-out must not all hold pooled connections at once.
+    """
+    raw = os.getenv("GEOCODE_DB_MAX_CONCURRENT", "1")
+    try:
+        return max(1, int(raw.strip()))
+    except ValueError:
+        return 1
 
 
 def _build_geocode_cache_bundle(
@@ -27,13 +41,16 @@ def _build_geocode_cache_bundle(
     )
     from sqlmodel import Session
 
+    # Shared by all three lookups below; waiting here does not consume a pooled connection.
+    db_slots = threading.BoundedSemaphore(_geocode_db_max_concurrent())
+
     def strict_resolve_with_outcome(
         location_text: str,
         location_type: str,
         components: dict[str, Any],
     ) -> dict[str, Any]:
         comps = components if isinstance(components, dict) else None
-        with Session(get_engine()) as session:
+        with db_slots, Session(get_engine()) as session:
             outcome = resolve_geocode_cache_strict_with_outcome(
                 session,
                 project_id=project_id,
@@ -56,7 +73,7 @@ def _build_geocode_cache_bundle(
         if stylebook_id is None:
             return []
         comps = components if isinstance(components, dict) else None
-        with Session(get_engine()) as session:
+        with db_slots, Session(get_engine()) as session:
             return build_geocode_cache_adjudication_candidates(
                 session,
                 stylebook_id=stylebook_id,
@@ -73,7 +90,7 @@ def _build_geocode_cache_bundle(
     ) -> dict[str, Any] | None:
         if stylebook_id is None:
             return None
-        with Session(get_engine()) as session:
+        with db_slots, Session(get_engine()) as session:
             return materialize_canonical_match_dict(
                 session,
                 stylebook_id=stylebook_id,

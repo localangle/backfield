@@ -148,28 +148,26 @@ def _strong_identity_canonical_ids(
                 seen.add(cid)
                 matches.append(cid)
 
-    label_stmt = select(StylebookOrganizationCanonical).where(
+    # A label match requires literal-label identity compatibility with some name plus a matching
+    # organization type; the other label checks this loop used to run are implied by that.
+    # Load only the columns the rule reads instead of every canonical row in the stylebook.
+    organization_type_norm = normalize_organization_type(organization.organization_type)
+    label_stmt = select(
+        StylebookOrganizationCanonical.id,
+        StylebookOrganizationCanonical.label,
+        StylebookOrganizationCanonical.status,
+        StylebookOrganizationCanonical.organization_type,
+    ).where(
         StylebookOrganizationCanonical.stylebook_id == stylebook_id,
     )
-    for canon in session.exec(label_stmt).all():
-        if canon.id is None:
+    for canon_id, label, status, canon_type in session.exec(label_stmt).all():
+        if canon_id is None:
             continue
-        if (canon.status or "").strip().lower() != "active":
+        if (status or "").strip().lower() != "active":
             continue
-        label_norm = normalize_organization_text(canon.label)
-        label_hit = (
-            label_norm in name_norms
-            or organization_strong_identity_matches_canonical(organization, canon)
-            or any(
-                organization_literal_label_identity_compatible(
-                    substrate_norm=name_norm,
-                    canonical_label_norm=label_norm,
-                )
-                for name_norm in name_norms
-            )
-        )
-        if not label_hit:
+        if normalize_organization_type(canon_type) != organization_type_norm:
             continue
+        label_norm = normalize_organization_text(label)
         if not any(
             organization_literal_label_identity_compatible(
                 substrate_norm=name_norm,
@@ -178,9 +176,7 @@ def _strong_identity_canonical_ids(
             for name_norm in name_norms
         ):
             continue
-        if not organization_type_matches_canonical(organization, canon):
-            continue
-        cid = str(canon.id)
+        cid = str(canon_id)
         if cid not in seen:
             seen.add(cid)
             matches.append(cid)

@@ -36,6 +36,10 @@ from worker.substrate.canonical.parallel_llm import (
     commit_session_before_session_free_llm,
     run_callables_parallel,
 )
+from worker.substrate.entities.lock_order import (
+    lock_organization_rows,
+    lock_rows_in_id_order,
+)
 from worker.substrate.entities.organization.adjudication import (
     OrganizationAdjudicationPrepared,
     llm_suggest_organization_name_variants,
@@ -51,6 +55,7 @@ from worker.substrate.entities.organization.mentions import (
 from worker.substrate.entities.organization.upsert import (
     _iter_organizations_entries,
     _upsert_organization,
+    organization_fingerprint_for_entry,
 )
 from worker.substrate.entities.registry import (
     DomainReconciliationSummary,
@@ -227,6 +232,15 @@ class OrganizationPersistHandler:
         adj_model = (ctx.settings.adjudication_model or "").strip() or "gpt-5-nano"
         ai_assisted = ctx.settings.canonicalization_mode == "ai_assisted"
 
+        lock_organization_rows(
+            session,
+            project_id=ctx.project_id,
+            fingerprints=[
+                fingerprint
+                for _bucket, entry in _iter_organizations_entries(organizations)
+                if (fingerprint := organization_fingerprint_for_entry(entry))
+            ],
+        )
         for idx, (bucket, entry) in enumerate(_iter_organizations_entries(organizations)):
             anchor = entry.get("id") or entry.get("mention_id")
             if not (isinstance(anchor, str) and str(anchor).strip()):
@@ -439,7 +453,16 @@ class OrganizationPersistHandler:
                 ],
                 max_workers=max_workers,
             )
-            for spec, variants in zip(variant_specs, variant_results, strict=True):
+            # The commit above released this item's row locks; take them again in id order.
+            variant_applied = sorted(
+                zip(variant_specs, variant_results, strict=True), key=lambda pair: pair[0][4]
+            )
+            lock_rows_in_id_order(
+                session,
+                col(SubstrateOrganization.id),
+                (spec[4] for spec, _variants in variant_applied),
+            )
+            for spec, variants in variant_applied:
                 item = spec[0]
                 organization_id = spec[4]
                 organization = session.get(SubstrateOrganization, organization_id)
@@ -492,7 +515,17 @@ class OrganizationPersistHandler:
                 ],
                 max_workers=max_workers,
             )
-            for item, llm_data in zip(pending_adjudication, llm_results, strict=True):
+            # The commit above released this item's row locks; take them again in id order.
+            applied = sorted(
+                zip(pending_adjudication, llm_results, strict=True),
+                key=lambda pair: int(pair[0].organization.id),  # type: ignore[arg-type]
+            )
+            lock_rows_in_id_order(
+                session,
+                col(SubstrateOrganization.id),
+                (int(item.organization.id) for item, _llm_data in applied),  # type: ignore[arg-type]
+            )
+            for item, llm_data in applied:
                 organization_id = int(item.organization.id)  # type: ignore[arg-type]
                 organization = session.get(SubstrateOrganization, organization_id)
                 if organization is None:

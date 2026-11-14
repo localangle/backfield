@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import json
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -173,7 +174,9 @@ def _create_batch_run(
 
 
 @pytest.mark.parametrize("blocking_status", ["pending", "running"])
-def test_finalization_returns_while_items_are_unfinished(batch_engine, blocking_status):
+def test_finalization_returns_while_items_are_unfinished(
+    batch_engine, blocking_status, monkeypatch
+):
     engine, graph_id = batch_engine
     run_id = _create_batch_run(
         engine,
@@ -181,6 +184,9 @@ def test_finalization_returns_while_items_are_unfinished(batch_engine, blocking_
         ["succeeded", blocking_status],
         started_at=datetime.now(UTC),
     )
+    # Avoid eager Celery executing replenished pending items during this gate test.
+    monkeypatch.setattr(worker_tasks, "_enqueue_processed_item", lambda _item_id: True)
+    monkeypatch.setattr(worker_tasks, "_pop_batch_pending_id", lambda _run_id: None)
 
     with Session(engine) as session:
         worker_tasks._finalize_s3_parent_run(session, run_id)
@@ -304,11 +310,15 @@ def test_finalization_does_not_overwrite_cancelled_parent(batch_engine):
         assert run.updated_at == cancelled_at.replace(tzinfo=None)
 
 
-def test_repeated_active_finalization_uses_bounded_narrow_queries(batch_engine):
+def test_repeated_active_finalization_uses_bounded_narrow_queries(
+    batch_engine, monkeypatch
+):
     engine, graph_id = batch_engine
     item_count = 1000
     run_id = _create_batch_run(engine, graph_id, ["pending"] * item_count)
     statements: list[str] = []
+    # Replenish is covered elsewhere; keep this test focused on unfinished-gate query shape.
+    monkeypatch.setattr(worker_tasks, "_replenish_batch_window", lambda *_a, **_k: 0)
 
     def capture_sql(_conn, _cursor, statement, _parameters, _context, _executemany):
         statements.append(str(statement).lower())
@@ -362,6 +372,201 @@ def test_repeated_active_finalization_uses_bounded_narrow_queries(batch_engine):
         "reviewed_output_json",
     ):
         assert forbidden not in summary_selects[0]
+
+
+def test_order_batch_item_ids_interleaves_longest_and_shortest() -> None:
+    pending = [
+        (1, 100),
+        (2, 50),
+        (3, 200),
+        (4, 10),
+        (5, 150),
+    ]
+    assert worker_tasks.order_batch_item_ids_by_text_length(pending) == [3, 4, 5, 2, 1]
+    assert worker_tasks.order_batch_item_ids_by_text_length([]) == []
+    assert worker_tasks.order_batch_item_ids_by_text_length([(9, 1)]) == [9]
+
+
+def test_batch_max_inflight_defaults_to_100(monkeypatch) -> None:
+    monkeypatch.delenv("S3_BATCH_MAX_INFLIGHT", raising=False)
+    assert worker_tasks.batch_max_inflight() == 100
+    monkeypatch.setenv("S3_BATCH_MAX_INFLIGHT", "0")
+    assert worker_tasks.batch_max_inflight() == 0
+
+
+def test_queue_execute_processed_item_chord_uses_sliding_window(monkeypatch) -> None:
+    group_calls: list[object] = []
+    chord_calls: list[object] = []
+    stored: list[tuple[str, list[int]]] = []
+
+    class _FakeGroup:
+        def __init__(self, tasks: object) -> None:
+            self.tasks = list(tasks)  # type: ignore[arg-type]
+            group_calls.append(self.tasks)
+
+        def apply_async(self, **_kwargs: object) -> None:
+            return None
+
+    class _FakeChord:
+        def __init__(self, header: object, body: object) -> None:
+            chord_calls.append(body)
+
+        def apply_async(self, **_kwargs: object) -> None:
+            return None
+
+    monkeypatch.setenv("S3_BATCH_MAX_INFLIGHT", "2")
+    monkeypatch.setattr(worker_tasks, "group", _FakeGroup)
+    monkeypatch.setattr(worker_tasks, "chord", _FakeChord)
+    monkeypatch.setattr(
+        worker_tasks,
+        "execute_processed_item",
+        SimpleNamespace(s=lambda item_id: ("exec", item_id)),
+    )
+    monkeypatch.setattr(
+        worker_tasks,
+        "finalize_s3_parent_run",
+        SimpleNamespace(s=lambda run_id: ("finalize", run_id)),
+    )
+    monkeypatch.setattr(
+        worker_tasks,
+        "_store_batch_pending_ids",
+        lambda run_id, ids: stored.append((run_id, list(ids))) or True,
+    )
+
+    worker_tasks.queue_execute_processed_item_chord("run-1", [1, 2, 3, 4])
+    assert stored == [("run-1", [3, 4])]
+    assert group_calls == [[("exec", 1), ("exec", 2)]]
+    assert chord_calls == []
+
+    group_calls.clear()
+    stored.clear()
+    monkeypatch.setenv("S3_BATCH_MAX_INFLIGHT", "0")
+    worker_tasks.queue_execute_processed_item_chord("run-1", [1, 2, 3])
+    assert stored == []
+    assert len(chord_calls) == 1
+    assert chord_calls[0] == ("finalize", "run-1")
+
+
+def test_dispatch_next_batch_item_applies_async(monkeypatch) -> None:
+    applied: list[object] = []
+    monkeypatch.setattr(worker_tasks, "_pop_batch_pending_id", lambda _run_id: 99)
+    monkeypatch.setattr(
+        worker_tasks,
+        "execute_processed_item",
+        SimpleNamespace(
+            apply_async=lambda **kwargs: applied.append(kwargs)  # type: ignore[misc]
+        ),
+    )
+    worker_tasks._dispatch_next_batch_item("run-1")
+    assert applied == [{"args": [99], "queue": "agate"}]
+
+
+def test_dispatch_next_batch_item_requeues_on_enqueue_failure(monkeypatch) -> None:
+    requeued: list[tuple[str, int]] = []
+
+    def _fail_enqueue(_item_id: int) -> bool:
+        return False
+
+    monkeypatch.setattr(worker_tasks, "_pop_batch_pending_id", lambda _run_id: 42)
+    monkeypatch.setattr(worker_tasks, "_enqueue_processed_item", _fail_enqueue)
+    monkeypatch.setattr(
+        worker_tasks,
+        "_requeue_batch_pending_id",
+        lambda run_id, item_id: requeued.append((run_id, item_id)),
+    )
+    worker_tasks._dispatch_next_batch_item("run-1")
+    assert requeued == [("run-1", 42)]
+
+
+def test_replenish_batch_window_stranded_prefers_redis_then_db(
+    batch_engine, monkeypatch
+) -> None:
+    engine, graph_id = batch_engine
+    run_id = _create_batch_run(
+        engine,
+        graph_id,
+        ["pending", "pending", "pending"],
+    )
+    popped = {"n": 0}
+    enqueued: list[int] = []
+
+    def _pop(_run_id: str) -> int | None:
+        popped["n"] += 1
+        if popped["n"] == 1:
+            return 9001
+        return None
+
+    monkeypatch.setenv("S3_BATCH_MAX_INFLIGHT", "2")
+    monkeypatch.setattr(worker_tasks, "_pop_batch_pending_id", _pop)
+    monkeypatch.setattr(
+        worker_tasks,
+        "_enqueue_processed_item",
+        lambda item_id: enqueued.append(item_id) or True,
+    )
+
+    with Session(engine) as session:
+        count = worker_tasks._replenish_batch_window(session, run_id)
+
+    assert count == 2
+    assert enqueued[0] == 9001
+    # Second slot filled from oldest DB pending (first created item).
+    assert len(enqueued) == 2
+    assert enqueued[1] != 9001
+
+
+def test_replenish_batch_window_noop_while_items_running(
+    batch_engine, monkeypatch
+) -> None:
+    engine, graph_id = batch_engine
+    run_id = _create_batch_run(
+        engine,
+        graph_id,
+        ["running", "pending", "pending"],
+        started_at=datetime.now(UTC),
+    )
+    enqueued: list[int] = []
+    monkeypatch.setenv("S3_BATCH_MAX_INFLIGHT", "2")
+    monkeypatch.setattr(
+        worker_tasks,
+        "_pop_batch_pending_id",
+        lambda _run_id: 9001,
+    )
+    monkeypatch.setattr(
+        worker_tasks,
+        "_enqueue_processed_item",
+        lambda item_id: enqueued.append(item_id) or True,
+    )
+
+    with Session(engine) as session:
+        count = worker_tasks._replenish_batch_window(session, run_id)
+
+    assert count == 0
+    assert enqueued == []
+
+
+def test_finalize_replenishes_when_items_still_pending(batch_engine, monkeypatch) -> None:
+    engine, graph_id = batch_engine
+    run_id = _create_batch_run(
+        engine,
+        graph_id,
+        ["succeeded", "pending"],
+    )
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        worker_tasks,
+        "_replenish_batch_window",
+        lambda session, rid: calls.append(rid) or 1,
+    )
+
+    with Session(engine) as session:
+        worker_tasks._finalize_s3_parent_run(session, run_id)
+
+    assert calls == [run_id]
+    with Session(engine) as session:
+        run = session.get(AgateRun, run_id)
+        assert run is not None
+        assert run.status == "running"
 
 
 def test_execute_s3_batch_setup_fanout_and_finalize(batch_engine, monkeypatch):

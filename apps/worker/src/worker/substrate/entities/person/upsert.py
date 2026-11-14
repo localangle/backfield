@@ -56,6 +56,20 @@ def _person_type_from_entry(entry: dict[str, Any]) -> str | None:
     return normalize_person_type(_optional_text(entry.get("type")))
 
 
+def person_fingerprint_for_entry(entry: dict[str, Any]) -> str | None:
+    """Identity fingerprint the upsert would use for this entry, or None when it has no name.
+
+    Shared with the ordered row pre-lock so both always agree on which row an entry maps to.
+    """
+    normalized = _normalize_name(_display_name_for_person_entry(entry))
+    if not normalized:
+        return None
+    return person_identity_fingerprint(
+        normalized_name=normalized,
+        affiliation=_optional_text(entry.get("affiliation")),
+    )
+
+
 def _iter_people_entries(people: list[Any]) -> Iterable[tuple[str, dict[str, Any]]]:
     for item in people:
         if isinstance(item, dict):
@@ -133,10 +147,9 @@ def _upsert_person(
     public_figure = bool(entry.get("public_figure"))
     person_type = _person_type_from_entry(entry)
     sort_key = _sort_key_from_entry(entry, display_name)
-    fingerprint = person_identity_fingerprint(
-        normalized_name=normalized,
-        affiliation=affiliation,
-    )
+    fingerprint = person_fingerprint_for_entry(entry)
+    if fingerprint is None:
+        return None
 
     status = "needs_review" if bucket == "needs_review" else "provisional"
     review_fields = finalize_review_fields_from_entry(entry)

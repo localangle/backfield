@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm.exc import StaleDataError
 from sqlmodel import Session
 
 from backfield_entities.ingest.semantic_indexing.contracts import SemanticBuilderEntityType
@@ -13,6 +15,9 @@ from backfield_entities.ingest.semantic_indexing.sync import sync_semantic_docum
 from backfield_entities.ingest.semantic_indexing.sync_contract import SemanticSyncResult
 
 logger = logging.getLogger(__name__)
+
+# Concurrent persists can race on shared semantic rows; one refresh+retry clears most cases.
+_SEMANTIC_SYNC_STALE_ATTEMPTS = 2
 
 CONSOLIDATED_DOMAIN_TO_SEMANTIC_ENTITY_TYPE: dict[str, SemanticBuilderEntityType] = {
     "people": "person",
@@ -40,16 +45,39 @@ def sync_semantic_documents_after_db_output(
     article_id: int,
     consolidated_domain_keys: tuple[str, ...],
 ) -> SemanticSyncResult:
-    """Synchronize semantic documents for domains persisted by Backfield Output."""
+    """Synchronize semantic documents for domains persisted by Backfield Output.
+
+    Runs inside a SAVEPOINT so a sync failure does not poison the outer persist
+    transaction. Retries once after ``StaleDataError`` (concurrent update/delete).
+    """
     entity_types = semantic_entity_types_for_consolidated_domains(consolidated_domain_keys)
     if not entity_types:
         return SemanticSyncResult(summaries=())
-    return sync_semantic_documents_for_article(
-        session,
-        project_id=project_id,
-        article_id=article_id,
-        entity_types=entity_types,
-    )
+
+    last_stale: StaleDataError | None = None
+    for attempt in range(1, _SEMANTIC_SYNC_STALE_ATTEMPTS + 1):
+        try:
+            with session.begin_nested():
+                return sync_semantic_documents_for_article(
+                    session,
+                    project_id=project_id,
+                    article_id=article_id,
+                    entity_types=entity_types,
+                )
+        except StaleDataError as exc:
+            last_stale = exc
+            logger.warning(
+                "Semantic document sync stale data project_id=%s article_id=%s "
+                "attempt=%s/%s",
+                project_id,
+                article_id,
+                attempt,
+                _SEMANTIC_SYNC_STALE_ATTEMPTS,
+                exc_info=True,
+            )
+            session.expire_all()
+    assert last_stale is not None
+    raise last_stale
 
 
 def build_semantic_indexing_summary(
@@ -80,14 +108,15 @@ def build_semantic_indexing_summary(
             out["embedding"] = embedding.as_dict()
         else:
             out["embedding"] = embedding
-        out["status"] = _combined_semantic_indexing_status(out["status"], out["embedding"])
+        out["status"] = combined_semantic_indexing_status(out["status"], out["embedding"])
     return out
 
 
-def _combined_semantic_indexing_status(
+def combined_semantic_indexing_status(
     sync_status: str,
     embedding_summary: dict[str, Any],
 ) -> str:
+    """Combine sync and embedding outcomes into one Backfield Output status."""
     if sync_status == "failed":
         return "failed"
     emb_status = str(embedding_summary.get("status") or "")
@@ -113,6 +142,9 @@ def run_semantic_indexing_for_db_output(
             consolidated_domain_keys=consolidated_domain_keys,
         )
     except Exception as exc:
+        # SAVEPOINT isolates sync; expire so later outer-session work is clean.
+        if isinstance(exc, SQLAlchemyError):
+            session.expire_all()
         logger.warning(
             "Semantic indexing failed for project_id=%s article_id=%s: %s",
             project_id,

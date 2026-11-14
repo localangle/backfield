@@ -12,6 +12,7 @@ from backfield_db import (
     BackfieldProject,
     Stylebook,
     StylebookConnection,
+    StylebookConnectionEvidence,
     StylebookLocationAlias,
     StylebookLocationCanonical,
     StylebookLocationMeta,
@@ -468,11 +469,12 @@ def test_export_import_roundtrip_includes_aliases_meta_connections(tmp_path: Pat
         )
         session.commit()
         conn = session.exec(select(StylebookConnection)).one()
-        from backfield_db import StylebookConnectionEvidence
-
         session.add(
             StylebookConnectionEvidence(
                 connection_id=int(conn.id),  # type: ignore[arg-type]
+                # Source article ids are not in the bundle; import must drop them.
+                article_id=6636,
+                processed_item_id=10193,
                 description="Jane Doe works at City Hall.",
                 quote="Jane Doe works at City Hall.",
                 source="manual",
@@ -544,3 +546,13 @@ def test_export_import_roundtrip_includes_aliases_meta_connections(tmp_path: Pat
         assert len(connections) == 1
         assert connections[0].from_entity_id == str(imported_person.id)
         assert connections[0].to_entity_id == str(imported_loc.id)
+
+        evidence = session.exec(
+            select(StylebookConnectionEvidence).where(
+                StylebookConnectionEvidence.connection_id == int(connections[0].id),
+            )
+        ).all()
+        assert len(evidence) == 1
+        assert evidence[0].article_id is None
+        assert evidence[0].processed_item_id is None
+        assert evidence[0].quote == "Jane Doe works at City Hall."

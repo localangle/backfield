@@ -41,6 +41,7 @@ from agate_nodes.article_metadata.presets import (
     resolve_meta_type,
 )
 from agate_nodes.extraction.prompt_text import truncate_flattened_for_prompt
+from agate_nodes.extraction.shared_llm import llm_attempt_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -229,7 +230,7 @@ class ArticleMetadataNode:
                     system_message=_ARTICLE_METADATA_SYSTEM_MESSAGE,
                     force_json=True,
                     temperature=0.0,
-                    timeout=effective_timeout,
+                    timeout=llm_attempt_timeout(effective_timeout),
                     openai_api_key=ctx.get_api_key("OPENAI_API_KEY"),
                     anthropic_api_key=ctx.get_api_key("ANTHROPIC_API_KEY"),
                     gemini_api_key=ctx.get_api_key("GEMINI_API_KEY"),

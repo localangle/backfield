@@ -184,6 +184,57 @@ def test_run_db_output_calls_embedding_after_sync(mock_embed: MagicMock) -> None
     mock_embed.assert_called_once()
 
 
+def test_run_db_output_survives_semantic_stale_data_error() -> None:
+    """Semantic StaleDataError must not poison the outer persist transaction."""
+    from sqlalchemy.orm.exc import StaleDataError
+
+    engine = _engine()
+    env = {
+        "BACKFIELD_PROJECT_ID": "1",
+        "BACKFIELD_GRAPH_ID": "graph-sem-stale",
+        "BACKFIELD_RUN_ID": "run-sem-stale",
+    }
+    consolidated = {
+        "text": "Mayor Jane Smith announced a new policy today.",
+        "url": "https://example.com/sem-stale",
+        "places": _empty_places(),
+        "people": [_sample_person_entry()],
+    }
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session, org_slug="org-sem-stale", project_slug="proj-sem-stale"
+        )
+        session.add(AgateRun(id="run-sem-stale", graph_id="graph-sem-stale", status="pending"))
+        session.commit()
+        env["BACKFIELD_PROJECT_ID"] = str(project_id)
+
+    def _always_stale(*_a, **_k):
+        raise StaleDataError(
+            "UPDATE statement on table 'substrate_location_semantic_document' "
+            "expected to update 7 row(s); 6 were matched."
+        )
+
+    with patch.dict(os.environ, env, clear=False):
+        with patch("backfield_db.session.get_engine", return_value=engine):
+            with patch(
+                "worker.nodes.db_output.sync_semantic_documents_after_db_output",
+                side_effect=_always_stale,
+            ):
+                out = run_db_output(
+                    {
+                        "semantic_indexing_enabled": True,
+                        "stylebook_matching_enabled": False,
+                    },
+                    {"data": consolidated},
+                )
+
+    assert out["success"] is True
+    assert out["article_id"] is not None
+    assert out["semantic_indexing"]["status"] == "failed"
+    assert "expected to update" in out["semantic_indexing"]["error"]
+
+
 def test_run_db_output_default_semantic_indexing_disabled() -> None:
     engine = _engine()
     env = {

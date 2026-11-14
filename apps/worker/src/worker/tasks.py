@@ -358,6 +358,277 @@ def _ensure_processed_item_active(
         raise RuntimeError("Processed item claim is no longer active")
 
 
+def order_batch_item_ids_by_text_length(pending: list[tuple[int, int]]) -> list[int]:
+    """Return processed-item ids interleaved longest/shortest by article text length.
+
+    Avoids front-loading only the heaviest articles into the initial in-flight window, which
+    stacks fleet geocoder/persist contention and synchronizes soft-timeouts.
+    """
+    if not pending:
+        return []
+    by_len = sorted(pending, key=lambda row: row[1], reverse=True)
+    ordered: list[int] = []
+    left = 0
+    right = len(by_len) - 1
+    take_long = True
+    while left <= right:
+        if take_long:
+            ordered.append(by_len[left][0])
+            left += 1
+        else:
+            ordered.append(by_len[right][0])
+            right -= 1
+        take_long = not take_long
+    return ordered
+
+
+def batch_max_inflight() -> int:
+    """Max concurrent processed-item tasks for a batch (0 = unlimited)."""
+    raw = os.getenv("S3_BATCH_MAX_INFLIGHT", "100")
+    try:
+        return max(0, int(raw.strip()))
+    except ValueError:
+        return 100
+
+
+def _batch_pending_redis_key(run_id: str) -> str:
+    return f"backfield:batch:{run_id}:pending"
+
+
+def _redis_client_or_none() -> Any | None:
+    try:
+        import redis
+
+        return redis.from_url(
+            os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+            socket_connect_timeout=2,
+            socket_timeout=2,
+        )
+    except Exception:
+        logger.warning("Batch inflight Redis client unavailable", exc_info=True)
+        return None
+
+
+def _store_batch_pending_ids(run_id: str, item_ids: list[int]) -> bool:
+    """Persist remaining item ids for sliding-window dispatch. False = caller should not cap."""
+    client = _redis_client_or_none()
+    if client is None:
+        return False
+    key = _batch_pending_redis_key(run_id)
+    try:
+        pipe = client.pipeline()
+        pipe.delete(key)
+        if item_ids:
+            pipe.rpush(key, *[str(item_id) for item_id in item_ids])
+            pipe.expire(key, 60 * 60 * 24)
+        pipe.execute()
+        return True
+    except Exception:
+        logger.warning(
+            "Failed to store batch pending ids run_id=%s count=%d",
+            run_id,
+            len(item_ids),
+            exc_info=True,
+        )
+        return False
+
+
+def _pop_batch_pending_id(run_id: str) -> int | None:
+    client = _redis_client_or_none()
+    if client is None:
+        return None
+    try:
+        raw = client.lpop(_batch_pending_redis_key(run_id))
+    except Exception:
+        logger.warning(
+            "Failed to pop batch pending id run_id=%s",
+            run_id,
+            exc_info=True,
+        )
+        return None
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _requeue_batch_pending_id(run_id: str, item_id: int) -> None:
+    """Put an id back on the Redis tail after a failed Celery enqueue."""
+    client = _redis_client_or_none()
+    if client is None:
+        logger.error(
+            "Cannot requeue batch pending id run_id=%s item_id=%s; Redis unavailable",
+            run_id,
+            item_id,
+        )
+        return
+    try:
+        key = _batch_pending_redis_key(run_id)
+        client.rpush(key, str(item_id))
+        client.expire(key, 60 * 60 * 24)
+    except Exception:
+        logger.error(
+            "Failed to requeue batch pending id run_id=%s item_id=%s",
+            run_id,
+            item_id,
+            exc_info=True,
+        )
+
+
+def _clear_batch_pending_ids(run_id: str) -> None:
+    client = _redis_client_or_none()
+    if client is None:
+        return
+    try:
+        client.delete(_batch_pending_redis_key(run_id))
+    except Exception:
+        logger.debug("Failed to clear batch pending ids run_id=%s", run_id, exc_info=True)
+
+
+def _enqueue_processed_item(item_id: int) -> bool:
+    """Queue ``execute_processed_item``. Returns False if Celery enqueue failed."""
+    queue = os.environ.get("CELERY_QUEUE", "agate")
+    try:
+        execute_processed_item.apply_async(args=[item_id], queue=queue)
+        return True
+    except Exception:
+        logger.error(
+            "Failed to enqueue execute_processed_item item_id=%s",
+            item_id,
+            exc_info=True,
+        )
+        return False
+
+
+def _dispatch_next_batch_item(run_id: str) -> None:
+    """Start the next queued item so in-flight stays near ``S3_BATCH_MAX_INFLIGHT``."""
+    next_id = _pop_batch_pending_id(run_id)
+    if next_id is None:
+        return
+    if not _enqueue_processed_item(next_id):
+        _requeue_batch_pending_id(run_id, next_id)
+
+
+def _count_items_by_status(session: Session, run_id: str, status: str) -> int:
+    raw = session.exec(
+        select(func.count())
+        .select_from(AgateProcessedItem)
+        .where(
+            AgateProcessedItem.run_id == run_id,
+            AgateProcessedItem.status == status,
+        )
+    ).one()
+    return int(raw or 0)
+
+
+def _pending_item_ids_for_run(session: Session, run_id: str, *, limit: int) -> list[int]:
+    if limit <= 0:
+        return []
+    rows = session.exec(
+        select(AgateProcessedItem.id)
+        .where(
+            AgateProcessedItem.run_id == run_id,
+            AgateProcessedItem.status == "pending",
+        )
+        .order_by(AgateProcessedItem.id)
+        .limit(limit)
+    ).all()
+    return [int(item_id) for item_id in rows]
+
+
+def _replenish_batch_window(session: Session, run_id: str) -> int:
+    """Recover stranded ``pending`` items when nothing is in flight.
+
+    Normal sliding-window refill is 1:1 via ``_dispatch_next_batch_item`` on each
+    completion. Filling ``max_inflight - running`` here raced with that path and
+    overshot the cap (queued-but-unclaimed items still count as ``pending``).
+
+    Only when ``running == 0`` and work remains do we refill from Redis then DB.
+    Claim remains the race guard if a duplicate task arrives.
+    """
+    max_inflight = batch_max_inflight()
+    if max_inflight <= 0:
+        return 0
+    if _parent_run_status(session, run_id) != "running":
+        return 0
+
+    running = _count_items_by_status(session, run_id, "running")
+    if running > 0:
+        return 0
+
+    pending = _count_items_by_status(session, run_id, "pending")
+    if pending <= 0:
+        return 0
+
+    slots = min(max_inflight, pending)
+    enqueued = 0
+    for _ in range(slots):
+        next_id = _pop_batch_pending_id(run_id)
+        if next_id is None:
+            break
+        if _enqueue_processed_item(next_id):
+            enqueued += 1
+        else:
+            _requeue_batch_pending_id(run_id, next_id)
+            break
+
+    remaining_slots = slots - enqueued
+    if remaining_slots > 0:
+        for item_id in _pending_item_ids_for_run(session, run_id, limit=remaining_slots):
+            if _enqueue_processed_item(item_id):
+                enqueued += 1
+            else:
+                break
+
+    if enqueued:
+        logger.info(
+            "Batch window replenished (stranded) run_id=%s enqueued=%d pending=%d "
+            "max_inflight=%d",
+            run_id,
+            enqueued,
+            pending,
+            max_inflight,
+        )
+    return enqueued
+
+
+def queue_execute_processed_item_chord(run_id: str, ordered_ids: list[int]) -> None:
+    """Queue execute_processed_item work with a sliding ``S3_BATCH_MAX_INFLIGHT`` window.
+
+    When the cap is set, only that many tasks are queued initially; each finished item
+    pops the next id from Redis so replacements start immediately. Parent finalize still
+    runs from ``execute_processed_item`` via ``_finalize_s3_parent_run``. Unlimited mode
+    (cap ``0``) keeps a single chord over all ids for the same finalize guarantee.
+    """
+    if not ordered_ids:
+        return
+    queue = os.environ.get("CELERY_QUEUE", "agate")
+    max_inflight = batch_max_inflight()
+    if max_inflight <= 0 or len(ordered_ids) <= max_inflight:
+        header = group(execute_processed_item.s(item_id) for item_id in ordered_ids)
+        chord(header, finalize_s3_parent_run.s(run_id)).apply_async(queue=queue)
+        return
+
+    initial = ordered_ids[:max_inflight]
+    remaining = ordered_ids[max_inflight:]
+    if not _store_batch_pending_ids(run_id, remaining):
+        # Redis unavailable: fall back to unlimited chord rather than stalling the tail.
+        header = group(execute_processed_item.s(item_id) for item_id in ordered_ids)
+        chord(header, finalize_s3_parent_run.s(run_id)).apply_async(queue=queue)
+        return
+
+    logger.info(
+        "Batch sliding window run_id=%s inflight=%d queued=%d max_inflight=%d",
+        run_id,
+        len(initial),
+        len(remaining),
+        max_inflight,
+    )
+    group(execute_processed_item.s(item_id) for item_id in initial).apply_async(queue=queue)
+
+
 def _log_node_wall_clock_summary(
     *,
     run_id: str,
@@ -655,8 +926,11 @@ def _update_processed_item_outcome_if_active(
     now: datetime,
 ) -> bool:
     """Store a terminal item outcome only while both parent and item remain active."""
+    # FOR NO KEY UPDATE (key_share=True), not FOR UPDATE: item persists insert rows with a run_id
+    # foreign key and hold a KEY SHARE lock on this run row until they commit. A plain FOR UPDATE
+    # queues every item completion behind those long persists (and pins PgBouncer connections).
     parent_status = session.exec(
-        select(AgateRun.status).where(AgateRun.id == run_id).with_for_update()
+        select(AgateRun.status).where(AgateRun.id == run_id).with_for_update(key_share=True)
     ).first()
     if parent_status != "running":
         return False
@@ -682,14 +956,20 @@ def _update_processed_item_outcome_if_active(
 
 def _finalize_s3_parent_run(session: Session, run_id: str) -> None:
     if _parent_run_status(session, run_id) != "running":
+        _clear_batch_pending_ids(run_id)
         return
 
     reaped = _reap_stale_running_items_for_run(session, run_id)
     if reaped:
         # Keep stale recovery durable and release item locks before taking the parent lock.
         session.commit()
+        # 1:1 replace for each reaped slot (same as a normal completion dispatch).
+        for _ in range(reaped):
+            _dispatch_next_batch_item(run_id)
 
     if _run_has_unfinished_items(session, run_id):
+        # Stranded recovery only (running == 0); normal refill is dispatch-on-complete.
+        _replenish_batch_window(session, run_id)
         return
 
     run = session.exec(
@@ -699,8 +979,10 @@ def _finalize_s3_parent_run(session: Session, run_id: str) -> None:
         .execution_options(populate_existing=True)
     ).first()
     if run is None or run.status != "running":
+        _clear_batch_pending_ids(run_id)
         return
     if _run_has_unfinished_items(session, run_id):
+        _replenish_batch_window(session, run_id)
         return
 
     items = list(
@@ -741,6 +1023,7 @@ def _finalize_s3_parent_run(session: Session, run_id: str) -> None:
     session.add(run)
     record_run_terminal_event(session, run)
     session.commit()
+    _clear_batch_pending_ids(run_id)
     emit_run_terminal(
         previous_status=previous_status,
         new_status=run.status,
@@ -1023,11 +1306,8 @@ def execute_json_input_batch_setup(run_id: str) -> None:
                 len(pending),
                 run_id,
             )
-            pending_sorted = sorted(pending, key=lambda row: row[1], reverse=True)
-            ordered_ids = [item_id for item_id, _ in pending_sorted]
-            header = group(execute_processed_item.s(item_id) for item_id in ordered_ids)
-            _queue = os.environ.get("CELERY_QUEUE", "agate")
-            chord(header, finalize_s3_parent_run.s(run_id)).apply_async(queue=_queue)
+            ordered_ids = order_batch_item_ids_by_text_length(pending)
+            queue_execute_processed_item_chord(run_id, ordered_ids)
         except Exception as e:
             logger.exception("JSON Input batch setup failed for run %s", run_id)
             # Unpooled Session: the enclosing `with Session(engine)` above is still
@@ -1365,19 +1645,16 @@ def execute_s3_batch_setup(run_id: str) -> None:
             # ``group().get()`` inside this task, that does not pin a worker slot while children
             # are waiting to start (avoids deadlock at concurrency=1).
             logger.info(
-                "execute_s3_batch_setup: queueing chord of %d execute_processed_item task(s) "
-                "for run %s",
+                "execute_s3_batch_setup: queueing %d execute_processed_item task(s) "
+                "for run %s (sliding window)",
                 len(pending),
                 run_id,
             )
-            pending_sorted = sorted(pending, key=lambda row: row[1], reverse=True)
-            ordered_ids = [item_id for item_id, _ in pending_sorted]
-            header = group(execute_processed_item.s(item_id) for item_id in ordered_ids)
-            _queue = os.environ.get("CELERY_QUEUE", "agate")
-            # Use the two-argument ``chord(header, body)`` primitive + ``apply_async()`` so the
-            # group is published to the broker in production. The ``header(body)`` callable form
-            # can return an eager result object (no ``apply_async``) when ``task_always_eager``.
-            chord(header, finalize_s3_parent_run.s(run_id)).apply_async(queue=_queue)
+            ordered_ids = order_batch_item_ids_by_text_length(pending)
+            # Sliding window via ``queue_execute_processed_item_chord`` (initial
+            # ``S3_BATCH_MAX_INFLIGHT``, then dispatch-on-complete). Falls back to a
+            # single chord when uncapped or when the batch fits in one window.
+            queue_execute_processed_item_chord(run_id, ordered_ids)
         except Exception as e:
             logger.exception("S3 batch setup failed for run %s", run_id)
             # Unpooled Session: the enclosing `with Session(engine)` above is still
@@ -1495,9 +1772,7 @@ def execute_run_replay_setup(source_run_id: str, new_run_id: str) -> None:
             new_run_id,
             source_run_id,
         )
-        _queue = os.environ.get("CELERY_QUEUE", "agate")
-        header = group(execute_processed_item.s(item_id) for item_id in pending_ids)
-        chord(header, finalize_s3_parent_run.s(new_run_id)).apply_async(queue=_queue)
+        queue_execute_processed_item_chord(new_run_id, pending_ids)
 
 
 @celery_app.task(
@@ -1750,6 +2025,7 @@ def _execute_processed_item_impl(
                     finished_at=finished_at,
                     correlation={"run_id": str(item_run_id), "item_id": str(item_id)},
                 )
+                _dispatch_next_batch_item(str(item_run_id))
                 _finalize_s3_parent_run(session, item_run_id)
             else:
                 session.rollback()
@@ -1858,6 +2134,7 @@ def _execute_processed_item_impl(
             finished_at=finished_at,
             correlation={"run_id": run_id_str, "item_id": str(item_id)},
         )
+        _dispatch_next_batch_item(run_id_str)
         _finalize_s3_parent_run(session, run_id_str)
 
 

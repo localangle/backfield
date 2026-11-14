@@ -158,16 +158,28 @@ def _strong_identity_canonical_ids(
                 seen.add(cid)
                 matches.append(cid)
 
-    label_stmt = select(StylebookPersonCanonical).where(
+    # Same rule as ``person_strong_identity_matches_canonical`` (name + affiliation), but the
+    # name check is cheap to skip first and only label/affiliation columns are loaded.
+    person_name = str(person.normalized_name or person.name or "")
+    if not person_match_key(person_name):
+        return matches
+    person_affiliation = normalize_person_text(person.affiliation)
+    label_stmt = select(
+        StylebookPersonCanonical.id,
+        StylebookPersonCanonical.label,
+        StylebookPersonCanonical.affiliation,
+    ).where(
         StylebookPersonCanonical.stylebook_id == stylebook_id,
         StylebookPersonCanonical.status == "active",
     )
-    for canon in session.exec(label_stmt).all():
-        if canon.id is None:
+    for canon_id, label, affiliation in session.exec(label_stmt).all():
+        if canon_id is None:
             continue
-        if not person_strong_identity_matches_canonical(person, canon):
+        if normalize_person_text(affiliation) != person_affiliation:
             continue
-        cid = str(canon.id)
+        if not person_names_match(person_name, str(label)):
+            continue
+        cid = str(canon_id)
         if cid not in seen:
             seen.add(cid)
             matches.append(cid)

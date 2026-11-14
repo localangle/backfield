@@ -60,9 +60,15 @@ psql postgresql://postgres:postgres@localhost:6432/pgbouncer -c 'SHOW POOLS;'
 psql postgresql://postgres:postgres@localhost:6432/pgbouncer -c 'SHOW STATS;'
 ```
 
-If PostgreSQL reports too many clients, remember that every Celery child has its own SQLAlchemy pool. Reduce worker pool size/overflow, lower `DBOUTPUT_MAX_CONCURRENT_PERSISTS`, reduce `CELERY_WORKER_CONCURRENCY`, tune PgBouncer capacity, or raise PostgreSQL capacity in the deployment. Long-lived processes should use the shared `get_engine()` rather than creating extra engines.
+If PostgreSQL reports too many clients, remember that every Celery child has its own SQLAlchemy pool. Reduce worker pool size/overflow, lower `DBOUTPUT_MAX_CONCURRENT_PERSISTS` / `CANONICAL_ADJUDICATION_MAX_CONCURRENT`, reduce `CELERY_WORKER_CONCURRENCY`, tune PgBouncer capacity, or raise PostgreSQL capacity in the deployment. Local Compose defaults the worker pool to size 2 with overflow 1 so nested checkout during post-persist embedding auth does not hit QueuePool timeouts; raising persist or adjudication caps increases write fan-in and is not a reason to grow the pool further. Long-lived processes should use the shared `get_engine()` rather than creating extra engines; use `null_pool_session()` for short nested writes while an outer pooled Session is held.
 
-If Backfield Output repeatedly reports deadlocks, workers may be updating the same shared entity row. The worker retries PostgreSQL deadlocks with backoff. Lower `CELERY_WORKER_CONCURRENCY` temporarily if retries remain exhausted.
+If Backfield Output repeatedly reports deadlocks, workers may be updating the same shared entity row (locations, people, organizations). Persist locks the existing shared rows an article touches up front, in ascending id order, using `FOR NO KEY UPDATE` so foreign-key checks from mention rows do not block on them; after a model call it re-locks in the same order. Remaining deadlocks are retried up to 10 times with a 0.5s–8s jittered exponential backoff (long enough for the competing persist to commit). Lower `CELERY_WORKER_CONCURRENCY` or `DBOUTPUT_MAX_CONCURRENT_PERSISTS` temporarily if retries remain exhausted. Concurrent first-time geocode lookups of the same query are handled by a savepoint fallback, so a duplicate-cache insert no longer fails the item.
+
+If items fail with `PendingRollbackError` / “transaction has been rolled back” and the original
+cause mentions `substrate_*_semantic_document` “expected to update N row(s)”, that is concurrent
+semantic-doc sync (`StaleDataError`). Sync now runs in a SAVEPOINT with one stale-data retry; a
+remaining failure marks semantic indexing failed without failing the whole article persist. Restart
+workers after deploying that fix. Lower `DBOUTPUT_MAX_CONCURRENT_PERSISTS` if stale races stay frequent.
 
 ## Worker children exit with signal 9
 
@@ -74,7 +80,18 @@ After SIGKILL/OOM, `acks_late` redelivers tasks while DB claims may still be `ru
 
 ## Worker timeouts
 
-Compare `TASK_SOFT_TIME_LIMIT` and `TASK_HARD_TIME_LIMIT` with node-level LLM timeouts and `AGATE_NODE_TIMEOUT_S`. Local Compose uses 15/18 minutes for processed items, while code fallbacks outside Compose are longer. Do not reduce the soft limit without preserving the node timeout and worker execution buffer.
+Compare `TASK_SOFT_TIME_LIMIT` and `TASK_HARD_TIME_LIMIT` with node-level LLM timeouts and `AGATE_NODE_TIMEOUT_S`. Local Compose uses 25/30 minutes for processed items (1500/1800s) with a 20-minute async node budget (`AGATE_NODE_TIMEOUT_S=1200`), while code fallbacks outside Compose are longer. Do not reduce the soft limit without preserving the node timeout and worker execution buffer. A node that fails after about 600 s with an "LLM call exceeded timeout" message hit a stalled model request; extract nodes retry such requests after `EXTRACT_LLM_ATTEMPT_TIMEOUT_S` (default 120 s) instead of waiting out the full node budget.
+
+Wide batches that stay `running` until soft-timeout often indicate geocoder stampede or a long
+Backfield Output persist wait—not LLM stretch. Check worker logs for
+`geocode_pelias_ticket_wait` (Pelias queue wait) / `geocode_request_gate_acquired` /
+`persist_slot_wait_ms` / `persist_slot_hold_ms`, and Stylebook
+geocoder health for elevated `rate_limit` on Pelias, Nominatim, or Geocodio. Keep fleet gates
+(`GEOCODE_PELIAS_MAX_RPS` / `GEOCODE_PELIAS_MAX_CONCURRENT`, Nominatim/Geocodio concurrent
+caps) and `S3_BATCH_MAX_INFLIGHT` before raising `TASK_SOFT_TIME_LIMIT`. Persist hold should
+be seconds-scale after semantic embedding and entity-matching model calls moved outside the Redis
+persist slot (`dboutput_persist_slot_released hold_ms` is logged each time the slot is handed back,
+so one item can log it more than once).
 
 ## Parallel graph execution fails during imports
 

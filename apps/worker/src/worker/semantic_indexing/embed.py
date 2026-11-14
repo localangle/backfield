@@ -65,8 +65,10 @@ def embed_pending_semantic_documents(
 
     for batch in batches:
         try:
+            # Pass the caller's session so auth does not open a nested QueuePool
+            # checkout while this Session still holds the worker's pooled connection.
             result = embed_texts_for_model_config(
-                None,
+                session,
                 project_id=project_id,
                 model_config_id=model_config_id,
                 texts=batch.texts(),

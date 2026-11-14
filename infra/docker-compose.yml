@@ -45,7 +45,9 @@ services:
       DB_NAME: backfield
       POOL_MODE: transaction
       MAX_CLIENT_CONN: 1000
-      DEFAULT_POOL_SIZE: 20
+      # Server connections per db/user. 20 starved API reads behind worker persists at ~75
+      # in-flight items; 32 keeps headroom under Postgres max_connections (100).
+      DEFAULT_POOL_SIZE: ${PGBOUNCER_DEFAULT_POOL_SIZE:-32}
       MAX_DB_CONNECTIONS: 80
       # Postgres 16 uses SCRAM; md5/any break pgbouncer -> server auth.
       AUTH_TYPE: scram-sha-256
@@ -214,9 +216,13 @@ services:
       REDIS_URL: redis://redis:6379/0
       # One SQLAlchemy pool per Celery child process; keep defaults small so many workers
       # do not exhaust Postgres max_connections alongside agate-api / core-api / stylebook-api.
-      BACKFIELD_SQLALCHEMY_POOL_SIZE: ${WORKER_BACKFIELD_SQLALCHEMY_POOL_SIZE:-1}
-      BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${WORKER_BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-0}
-      CANONICAL_ADJUDICATION_MAX_CONCURRENT: ${CANONICAL_ADJUDICATION_MAX_CONCURRENT:-8}
+      # pool 2 / overflow 1 gives headroom for nested checkout during post-persist embedding auth.
+      BACKFIELD_SQLALCHEMY_POOL_SIZE: ${WORKER_BACKFIELD_SQLALCHEMY_POOL_SIZE:-2}
+      BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${WORKER_BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-1}
+      CANONICAL_ADJUDICATION_MAX_CONCURRENT: ${CANONICAL_ADJUDICATION_MAX_CONCURRENT:-12}
+      DBOUTPUT_MAX_CONCURRENT_PERSISTS: ${DBOUTPUT_MAX_CONCURRENT_PERSISTS:-12}
+      S3_BATCH_MAX_INFLIGHT: ${S3_BATCH_MAX_INFLIGHT:-100}
+      AGATE_NODE_TIMEOUT_S: ${AGATE_NODE_TIMEOUT_S:-1200}
       STYLEBOOK_API_URL: http://stylebook-api:8003
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
       # STYLEBOOK_BUNDLE_* from env_file (../.env); avoid empty compose override (see stylebook-api).
@@ -226,8 +232,14 @@ services:
       BACKFIELD_PARALLEL_GRAPH_LEVELS: ${BACKFIELD_PARALLEL_GRAPH_LEVELS:-1}
       OVERPASS_MAX_CONCURRENT: ${OVERPASS_MAX_CONCURRENT:-4}
       OVERPASS_QUERY_STAGGER_S: ${OVERPASS_QUERY_STAGGER_S:-0.5}
-      TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-900}
-      TASK_HARD_TIME_LIMIT: ${TASK_HARD_TIME_LIMIT:-1080}
+      # Concurrent Pelias HTTP slots (RPS stays at Geocode Earth's ~10/s).
+      GEOCODE_PELIAS_MAX_CONCURRENT: ${GEOCODE_PELIAS_MAX_CONCURRENT:-20}
+      GEOCODE_PELIAS_MAX_RPS: ${GEOCODE_PELIAS_MAX_RPS:-10}
+      # Per-article location fan-out; the Pelias ticket gate keeps the fleet at the RPS cap.
+      GEOCODE_MAX_CONCURRENT: ${GEOCODE_MAX_CONCURRENT:-10}
+      # Soft/hard must stay above AGATE_NODE_TIMEOUT_S with buffer for DBOutput.
+      TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-1500}
+      TASK_HARD_TIME_LIMIT: ${TASK_HARD_TIME_LIMIT:-1800}
     depends_on:
       migrate:
         condition: service_completed_successfully

@@ -188,9 +188,12 @@ transaction pooling mode. Migration and database-administration commands prefer
 `backfield_db.session.get_engine()` provides one process-wide engine. Postgres connections disable
 psycopg server-side prepared statements for transaction-pool compatibility. Optional pool size
 and overflow come from `BACKFIELD_SQLALCHEMY_POOL_SIZE` and
-`BACKFIELD_SQLALCHEMY_MAX_OVERFLOW`. API statement and lock limits are applied with `SET LOCAL`
-per transaction. Short nested worker writes can use `null_pool_session`; normal request and task
-code uses the shared engine and releases sessions around long graph or model execution.
+`BACKFIELD_SQLALCHEMY_MAX_OVERFLOW`. Local Compose maps worker-specific
+`WORKER_BACKFIELD_SQLALCHEMY_*` vars onto those settings with defaults **2** / **1** so a nested
+checkout during post-persist embedding auth does not exhaust a single-connection pool. API
+statement and lock limits are applied with `SET LOCAL` per transaction. Short nested worker
+writes can use `null_pool_session`; normal request and task code uses the shared engine and
+releases sessions around long graph or model execution.
 
 ## Secrets
 

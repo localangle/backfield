@@ -33,3 +33,32 @@ def test_is_postgres_deadlock_by_message() -> None:
 def test_is_postgres_deadlock_false_for_other_errors() -> None:
     exc = OperationalError("stmt", {}, _FakeOrig(sqlstate="23505", message="unique violation"))
     assert is_postgres_deadlock(exc) is False
+
+
+def test_is_missing_canonical_link_for_canonical_fk_violation() -> None:
+    from backfield_db.deadlock import is_missing_canonical_link
+    from sqlalchemy.exc import IntegrityError
+
+    message = (
+        'insert or update on table "substrate_person" violates foreign key constraint '
+        '"substrate_person_stylebook_person_canonical_id_fkey"'
+    )
+    exc = IntegrityError("stmt", {}, _FakeOrig(sqlstate="23503", message=message))
+    assert is_missing_canonical_link(exc) is True
+
+
+def test_is_missing_canonical_link_false_for_other_foreign_keys_and_errors() -> None:
+    from backfield_db.deadlock import is_missing_canonical_link
+    from sqlalchemy.exc import IntegrityError
+
+    other_fk = IntegrityError(
+        "stmt",
+        {},
+        _FakeOrig(
+            sqlstate="23503",
+            message='violates foreign key constraint "substrate_person_project_id_fkey"',
+        ),
+    )
+    unique = IntegrityError("stmt", {}, _FakeOrig(sqlstate="23505", message="unique violation"))
+    assert is_missing_canonical_link(other_fk) is False
+    assert is_missing_canonical_link(unique) is False

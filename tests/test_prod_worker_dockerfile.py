@@ -57,11 +57,11 @@ def test_compose_worker_uses_dev_target_and_entrypoint() -> None:
     assert "target: dev" in worker_block
     assert "command:" not in worker_block
     assert (
-        "BACKFIELD_SQLALCHEMY_POOL_SIZE: ${WORKER_BACKFIELD_SQLALCHEMY_POOL_SIZE:-1}"
+        "BACKFIELD_SQLALCHEMY_POOL_SIZE: ${WORKER_BACKFIELD_SQLALCHEMY_POOL_SIZE:-2}"
         in worker_block
     )
     assert (
-        "BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${WORKER_BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-0}"
+        "BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${WORKER_BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-1}"
         in worker_block
     )
 

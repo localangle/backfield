@@ -30,6 +30,7 @@ from agate_nodes.extraction.prompt_text import (
 )
 from agate_nodes.extraction.shared_llm import (
     extract_reasoning_effort,
+    llm_attempt_timeout,
     model_config_id_from_params,
     node_deadline_monotonic,
 )
@@ -99,7 +100,7 @@ async def extract_entities_over_chunks(
                     system_message=system_message,
                     force_json=True,
                     temperature=0.0,
-                    timeout=timeout,
+                    timeout=llm_attempt_timeout(timeout),
                     openai_api_key=ctx.get_api_key("OPENAI_API_KEY"),
                     anthropic_api_key=ctx.get_api_key("ANTHROPIC_API_KEY"),
                     gemini_api_key=ctx.get_api_key("GEMINI_API_KEY"),

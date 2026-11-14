@@ -38,7 +38,15 @@ from worker.substrate.entities.location.mentions import (
     dispose_orphan_substrates_after_retired_mentions,
     retire_stale_article_mentions_for_rerun,
 )
-from worker.substrate.entities.location.upsert import _iter_place_entries, _upsert_location
+from worker.substrate.entities.location.upsert import (
+    _iter_place_entries,
+    _upsert_location,
+    location_identities_for_entries,
+)
+from worker.substrate.entities.lock_order import (
+    lock_location_rows,
+    lock_rows_in_id_order,
+)
 from worker.substrate.entities.registry import (
     DomainReconciliationSummary,
     HandlerPersistResult,
@@ -159,6 +167,15 @@ class LocationPersistHandler:
         adj_model = (ctx.settings.adjudication_model or "").strip() or "gpt-5-nano"
         ai_assisted = ctx.settings.canonicalization_mode == "ai_assisted"
 
+        fingerprints, external_identities = location_identities_for_entries(
+            project_id=ctx.project_id, entries=_iter_place_entries(places)
+        )
+        lock_location_rows(
+            session,
+            project_id=ctx.project_id,
+            fingerprints=fingerprints,
+            external_identities=external_identities,
+        )
         for bucket, entry in _iter_place_entries(places):
             upserted = _upsert_location(
                 session,
@@ -306,11 +323,21 @@ class LocationPersistHandler:
                 ],
                 max_workers=max_workers,
             )
-            for item, llm_data in zip(pending_adjudication, llm_results, strict=True):
+            # The commit above released this item's row locks; take them again in id order.
+            applied = sorted(
+                zip(pending_adjudication, llm_results, strict=True),
+                key=lambda pair: pair[0].location_id,
+            )
+            lock_rows_in_id_order(
+                session,
+                col(SubstrateLocation.id),
+                (item.location_id for item, _llm_data in applied),
+            )
+            for item, llm_data in applied:
                 loc = session.exec(
                     select(SubstrateLocation)
                     .where(SubstrateLocation.id == item.location_id)
-                    .with_for_update()
+                    .with_for_update(key_share=True)
                 ).first()
                 if loc is None:
                     logger.warning(
