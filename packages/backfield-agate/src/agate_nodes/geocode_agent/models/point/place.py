@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -399,7 +400,9 @@ class Place(Address):
                 api_key=pelias_api_key,
                 size=5,
             )
-            selected = self._select_from_candidates(structured, full_address, openai_api_key)
+            selected = await asyncio.to_thread(
+                self._select_from_candidates, structured, full_address, openai_api_key
+            )
             if selected is not None:
                 logger.info("Pelias structured decisive success for place %s", self.name)
                 self.geocoding_result = selected
@@ -423,7 +426,9 @@ class Place(Address):
                     size=5,
                     **pelias_bias,
                 )
-                selected = self._select_from_candidates(candidates, full_address, openai_api_key)
+                selected = await asyncio.to_thread(
+                    self._select_from_candidates, candidates, full_address, openai_api_key
+                )
                 if selected is not None:
                     logger.info("Pelias search decisive success for place %s", self.name)
                     self.geocoding_result = selected
@@ -474,7 +479,9 @@ class Place(Address):
             logger.warning("Pelias venue probe failed for place %s: %s", self.name, exc)
             return None
 
-        selected = self._select_from_candidates(candidates, text, openai_api_key)
+        selected = await asyncio.to_thread(
+            self._select_from_candidates, candidates, text, openai_api_key
+        )
         if selected is None:
             return None
         logger.info("Pelias venue decisive success for place %s", self.name)
@@ -530,20 +537,24 @@ class Place(Address):
         if is_fallback:
             self._web_search_fallback_used = True
 
-        query = self._generate_search_query(self._original_text or "", openai_api_key)
+        query = await asyncio.to_thread(
+            self._generate_search_query, self._original_text or "", openai_api_key
+        )
         location_parts = [part for part in (self.city, self.state_abbr, self.country) if part]
         location_hint = " ".join(location_parts).strip() or None
 
         if brave_search_api_key:
             try:
-                web_response = brave_web_search(
+                web_response = await asyncio.to_thread(
+                    brave_web_search,
                     brave_search_api_key,
                     q=query,
                     count=10,
                     country=self._country_code_for_search(),
                     search_lang="en",
                 )
-                if self._consider_address_search_response(
+                if await asyncio.to_thread(
+                    self._consider_address_search_response,
                     provider="brave_web",
                     response=web_response,
                     openai_api_key=openai_api_key,
@@ -554,13 +565,15 @@ class Place(Address):
                 self._record_address_search_attempt("brave_web", None, "error")
 
             try:
-                place_response = brave_place_search(
+                place_response = await asyncio.to_thread(
+                    brave_place_search,
                     brave_search_api_key,
                     q=query,
                     location=location_hint,
                     count=10,
                 )
-                if self._consider_address_search_response(
+                if await asyncio.to_thread(
+                    self._consider_address_search_response,
                     provider="brave_place",
                     response=place_response,
                     openai_api_key=openai_api_key,
@@ -571,8 +584,11 @@ class Place(Address):
                 self._record_address_search_attempt("brave_place", None, "error")
 
         try:
-            ddg_response = search_web_duckduckgo(query, max_results=10, timeout=15.0)
-            return self._consider_address_search_response(
+            ddg_response = await asyncio.to_thread(
+                search_web_duckduckgo, query, max_results=10, timeout=15.0
+            )
+            return await asyncio.to_thread(
+                self._consider_address_search_response,
                 provider="duckduckgo",
                 response=ddg_response,
                 openai_api_key=openai_api_key,
@@ -611,7 +627,7 @@ class Place(Address):
         if self._input_addressability is not None:
             addressability = "addressable" if self._input_addressability else "not addressable"
         else:
-            addressability = self._check_if_addressable(openai_key)
+            addressability = await asyncio.to_thread(self._check_if_addressable, openai_key)
 
         if addressability == "not addressable":
             # Still attempt Pelias/venue resolution for type=place destinations.
@@ -623,7 +639,8 @@ class Place(Address):
 
         if addressability == "has address":
             mock_results = SearchResponse(success=True, results=[], query=self.name)
-            address_data = self._extract_and_parse_address(
+            address_data = await asyncio.to_thread(
+                self._extract_and_parse_address,
                 self.name,
                 mock_results,
                 openai_key,
@@ -694,7 +711,9 @@ class Place(Address):
 
         if geocodio_api_key:
             try:
-                result = geocodio_search(query=full_address, api_key=geocodio_api_key)
+                result = await asyncio.to_thread(
+                    geocodio_search, query=full_address, api_key=geocodio_api_key
+                )
                 conf = (
                     result.result.confidence
                     if result and result.result is not None

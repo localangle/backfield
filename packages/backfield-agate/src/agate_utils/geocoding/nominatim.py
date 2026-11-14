@@ -61,19 +61,22 @@ class NominatimGeocoder:
         self.user_agent = user_agent
         self.timeout = timeout
         self._lock = threading.Lock()
+        self._rate_limit_lock = threading.Lock()
         self._geocoder: Nominatim | None = None
         self.rate_limit = rate_limit
         self.last_request_time = 0.0
         
     def _enforce_rate_limit(self) -> None:
         """Enforce rate limiting between requests."""
-        current_time = time.time()
-        elapsed = current_time - self.last_request_time
-        if elapsed < self.rate_limit:
-            sleep_time = self.rate_limit - elapsed
-            logger.debug("Nominatim rate limit: sleeping %.2f seconds", sleep_time)
-            time.sleep(sleep_time)
-        self.last_request_time = time.time()
+        # Geocode calls run in worker threads, so serialize the check-and-sleep.
+        with self._rate_limit_lock:
+            current_time = time.time()
+            elapsed = current_time - self.last_request_time
+            if elapsed < self.rate_limit:
+                sleep_time = self.rate_limit - elapsed
+                logger.debug("Nominatim rate limit: sleeping %.2f seconds", sleep_time)
+                time.sleep(sleep_time)
+            self.last_request_time = time.time()
 
     def _get_geocoder(self) -> Nominatim:
         with self._lock:

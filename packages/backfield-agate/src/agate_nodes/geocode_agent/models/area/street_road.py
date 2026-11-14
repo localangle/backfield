@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -354,7 +355,8 @@ class StreetRoad(Area):
                 raw_nominatim_data=raw_json,
             )
 
-            response = call_llm(
+            response = await asyncio.to_thread(
+                call_llm,
                 prompt=prompt,
                 model=self._geographic_estimation_litellm_model(),
                 openai_api_key=openai_api_key,

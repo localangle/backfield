@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -505,11 +506,13 @@ async def estimate_overpass_parameters(
         
         prompt = prompt_template.format(address_text=address_text)
         
-        response = call_llm(
+        # call_llm blocks; run it off the event loop so sibling places keep making progress.
+        response = await asyncio.to_thread(
+            call_llm,
             prompt=prompt,
             model="gpt-5-mini",
             openai_api_key=openai_api_key,
-            force_json=True
+            force_json=True,
         )
         
         result = json.loads(response)
@@ -650,11 +653,18 @@ async def find_intersection_coordinates(
         logger.warning(f"No radius provided and no original text, using default: {radius}m")
     
     # Generate queries for both roads
-    query1 = generate_single_road_query_with_llm(
-        road_1, lat, lon, openai_api_key, radius, alternates=alt_map.get(road_1, [])
-    )
-    query2 = generate_single_road_query_with_llm(
-        road_2, lat, lon, openai_api_key, radius, alternates=alt_map.get(road_2, [])
+    # The two road queries are independent blocking LLM calls; run them off the loop, in parallel.
+    query1, query2 = await asyncio.gather(
+        asyncio.to_thread(
+            generate_single_road_query_with_llm,
+            road_1, lat, lon, openai_api_key, radius,
+            alternates=alt_map.get(road_1, []),
+        ),
+        asyncio.to_thread(
+            generate_single_road_query_with_llm,
+            road_2, lat, lon, openai_api_key, radius,
+            alternates=alt_map.get(road_2, []),
+        ),
     )
 
     logger.info("Generated Overpass queries for two roads")
@@ -664,11 +674,11 @@ async def find_intersection_coordinates(
 
     # Execute queries (stagger the second request to reduce 429s on public mirrors)
     logger.info("Executing Overpass queries...")
-    result1 = run_query_with_overpy(query1)
+    result1 = await asyncio.to_thread(run_query_with_overpy, query1)
     stagger_s = _overpass_query_stagger_s()
     if stagger_s > 0:
-        time.sleep(stagger_s)
-    result2 = run_query_with_overpy(query2)
+        await asyncio.sleep(stagger_s)
+    result2 = await asyncio.to_thread(run_query_with_overpy, query2)
     
     if not result1 or not result2:
         logger.error("Failed to retrieve road data from Overpass")
@@ -677,7 +687,7 @@ async def find_intersection_coordinates(
         return [], []
 
     # Find geometric intersections
-    intersections = find_geometric_intersections(result1, result2)
+    intersections = await asyncio.to_thread(find_geometric_intersections, result1, result2)
 
     if not intersections:
         logger.warning("No geometric intersections found")
@@ -690,7 +700,9 @@ async def find_intersection_coordinates(
     
     # Select most plausible intersection if original text provided
     if orig_text:
-        best = choose_most_plausible_intersection(orig_text, intersections, openai_api_key)
+        best = await asyncio.to_thread(
+            choose_most_plausible_intersection, orig_text, intersections, openai_api_key
+        )
         if best:
             logger.info(f"Most plausible intersection: lat={best.y}, lon={best.x}")
             results.append({
@@ -728,7 +740,9 @@ async def find_intersection_coordinates_from_text(
     logger.info(f"Starting intersection finder for: {intersection_text}")
     
     # Parse the intersection description
-    parsed = parse_intersection_description(intersection_text, openai_api_key)
+    parsed = await asyncio.to_thread(
+        parse_intersection_description, intersection_text, openai_api_key
+    )
     if not parsed:
         logger.error("Failed to parse intersection description")
         return [], []

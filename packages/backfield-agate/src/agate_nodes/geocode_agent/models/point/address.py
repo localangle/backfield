@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -292,7 +293,8 @@ class Address(Point):
                 )
                 pelias_candidates_considered = bool(candidates)
                 if len(candidates) > 1:
-                    picked = self._pick_pelias_candidate_with_llm(
+                    picked = await asyncio.to_thread(
+                        self._pick_pelias_candidate_with_llm,
                         candidates,
                         full_address,
                         openai_api_key,
@@ -325,7 +327,9 @@ class Address(Point):
         # Geocodio
         if geocodio_api_key:
             try:
-                result = geocodio_search(query=full_address, api_key=geocodio_api_key)
+                result = await asyncio.to_thread(
+                    geocodio_search, query=full_address, api_key=geocodio_api_key
+                )
                 conf = (
                     result.result.confidence
                     if result and result.result is not None

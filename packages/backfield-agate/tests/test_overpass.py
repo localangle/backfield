@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
+import time
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -156,3 +158,33 @@ def test_run_query_falls_back_to_mirror(monkeypatch: pytest.MonkeyPatch) -> None
     assert result is not None
     urls_called = [call.args[0] for call in mock_client.post.call_args_list]
     assert "https://mirror.test/api/interpreter" in urls_called
+
+
+def test_estimate_overpass_parameters_does_not_block_event_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def slow_llm(**_: object) -> str:
+        time.sleep(0.3)
+        return '{"latitude": 41.8, "longitude": -87.6, "radius": 1000}'
+
+    monkeypatch.setattr(overpass_module, "call_llm", slow_llm)
+    async def run() -> tuple[tuple[float, float, int] | None, int]:
+        ticks = 0
+
+        async def ticker() -> None:
+            nonlocal ticks
+            while True:
+                await asyncio.sleep(0.02)
+                ticks += 1
+
+        ticker_task = asyncio.create_task(ticker())
+        try:
+            params = await overpass_module.estimate_overpass_parameters("Wells St, Chicago", "key")
+        finally:
+            ticker_task.cancel()
+        return params, ticks
+
+    params, ticks = asyncio.run(run())
+    assert params == (41.8, -87.6, 1000)
+    # A blocked loop would have let the ticker run at most once while the LLM call slept.
+    assert ticks >= 5

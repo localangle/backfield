@@ -1,3 +1,4 @@
+import asyncio
 import json, logging, os
 from typing import Optional
 from pydantic import Field
@@ -73,7 +74,8 @@ class Region(Area):
         prompt = self._build_prompt()
 
         try:
-            response_text = call_llm(
+            response_text = await asyncio.to_thread(
+                call_llm,
                 prompt=prompt,
                 model=self._geographic_estimation_litellm_model(),
                 force_json=True,
