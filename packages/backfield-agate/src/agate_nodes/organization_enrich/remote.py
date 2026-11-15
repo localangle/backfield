@@ -12,6 +12,7 @@ from urllib.parse import quote
 import httpx
 from agate_utils.llm import merge_system_messages
 from backfield_ai.constants import AI_MODEL_KIND_DECISION
+from backfield_ai.cost_estimate import litellm_estimated_cost_from_tokens
 from backfield_ai.tracking_context import persist_llm_attempt
 
 logger = logging.getLogger(__name__)
@@ -299,6 +300,11 @@ def _record_decision_attempt(
     total = None
     if prompt_tokens is not None or completion_tokens is not None:
         total = (prompt_tokens or 0) + (completion_tokens or 0)
+    estimated_cost, cost_incomplete, cost_source, currency = litellm_estimated_cost_from_tokens(
+        f"typesafe/{provider_model_id}",
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+    )
     try:
         persist_llm_attempt(
             provider="typesafe",
@@ -313,14 +319,14 @@ def _record_decision_attempt(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=total,
-            estimated_cost=None,
-            currency="USD",
-            cost_estimate_incomplete=True,
+            estimated_cost=estimated_cost,
+            currency=currency,
+            cost_estimate_incomplete=cost_incomplete,
             latency_ms=latency_ms,
             provider_request_id=None,
             error_type=error_type,
             error_message=error_message,
-            cost_estimate_source=None,
+            cost_estimate_source=cost_source,
             model_kind=AI_MODEL_KIND_DECISION,
         )
     except Exception:
