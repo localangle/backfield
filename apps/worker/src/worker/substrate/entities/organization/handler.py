@@ -38,7 +38,7 @@ from worker.substrate.canonical.parallel_llm import (
 )
 from worker.substrate.entities.lock_order import (
     lock_organization_rows,
-    lock_rows_in_id_order,
+    relock_in_id_order,
 )
 from worker.substrate.entities.organization.adjudication import (
     OrganizationAdjudicationPrepared,
@@ -78,6 +78,17 @@ class _OrgCanonicalWork:
 @dataclass
 class _PendingOrgAdjudication(_OrgCanonicalWork):
     prepared: OrganizationAdjudicationPrepared
+
+
+@dataclass(frozen=True)
+class _VariantRecallSpec:
+    """Organization fields captured before the commit that precedes the variant-recall LLM batch."""
+
+    item: _OrgCanonicalWork
+    name: str
+    normalized_name: str
+    organization_type: str | None
+    organization_id: int
 
 
 def _active_mention_for_article_organization(
@@ -429,12 +440,12 @@ class OrganizationPersistHandler:
 
         if pending_variant_recall and ai_assisted:
             variant_specs = [
-                (
-                    item,
-                    str(item.organization.name),
-                    str(item.organization.normalized_name),
-                    item.organization.organization_type,
-                    int(item.organization.id),  # type: ignore[arg-type]
+                _VariantRecallSpec(
+                    item=item,
+                    name=str(item.organization.name),
+                    normalized_name=str(item.organization.normalized_name),
+                    organization_type=item.organization.organization_type,
+                    organization_id=int(item.organization.id),  # type: ignore[arg-type]
                 )
                 for item in pending_variant_recall
             ]
@@ -443,9 +454,9 @@ class OrganizationPersistHandler:
             variant_results = run_callables_parallel(
                 [
                     lambda spec=spec: llm_suggest_organization_name_variants(
-                        name=spec[1],
-                        normalized_name=spec[2],
-                        organization_type=spec[3],
+                        name=spec.name,
+                        normalized_name=spec.normalized_name,
+                        organization_type=spec.organization_type,
                         model=adj_model,
                         model_config_id=ctx.settings.adjudication_ai_model_config_id,
                     )
@@ -453,18 +464,15 @@ class OrganizationPersistHandler:
                 ],
                 max_workers=max_workers,
             )
-            # The commit above released this item's row locks; take them again in id order.
-            variant_applied = sorted(
-                zip(variant_specs, variant_results, strict=True), key=lambda pair: pair[0][4]
-            )
-            lock_rows_in_id_order(
+            variant_applied = relock_in_id_order(
                 session,
                 col(SubstrateOrganization.id),
-                (spec[4] for spec, _variants in variant_applied),
+                list(zip(variant_specs, variant_results, strict=True)),
+                row_id=lambda spec: spec.organization_id,
             )
             for spec, variants in variant_applied:
-                item = spec[0]
-                organization_id = spec[4]
+                item = spec.item
+                organization_id = spec.organization_id
                 organization = session.get(SubstrateOrganization, organization_id)
                 if organization is None:
                     logger.warning(
@@ -515,15 +523,11 @@ class OrganizationPersistHandler:
                 ],
                 max_workers=max_workers,
             )
-            # The commit above released this item's row locks; take them again in id order.
-            applied = sorted(
-                zip(pending_adjudication, llm_results, strict=True),
-                key=lambda pair: int(pair[0].organization.id),  # type: ignore[arg-type]
-            )
-            lock_rows_in_id_order(
+            applied = relock_in_id_order(
                 session,
                 col(SubstrateOrganization.id),
-                (int(item.organization.id) for item, _llm_data in applied),  # type: ignore[arg-type]
+                list(zip(pending_adjudication, llm_results, strict=True)),
+                row_id=lambda item: int(item.organization.id),  # type: ignore[arg-type]
             )
             for item, llm_data in applied:
                 organization_id = int(item.organization.id)  # type: ignore[arg-type]

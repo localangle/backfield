@@ -14,13 +14,16 @@ unique-violation fallbacks in the upserts.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from typing import Any
+from collections.abc import Callable, Iterable, Sequence
+from typing import Any, TypeVar
 
 from backfield_db import SubstrateLocation, SubstrateOrganization, SubstratePerson
 from sqlalchemy import ColumnElement, and_, or_
 from sqlalchemy.sql import Select
 from sqlmodel import Session, col, select
+
+_Work = TypeVar("_Work")
+_LlmResult = TypeVar("_LlmResult")
 
 
 def _ordered_lock_statement(
@@ -39,6 +42,23 @@ def lock_rows_in_id_order(session: Session, id_column: Any, ids: Iterable[int]) 
     if not wanted:
         return
     _lock_rows(session, id_column, id_column.in_(wanted))
+
+
+def relock_in_id_order(
+    session: Session,
+    id_column: Any,
+    work_and_results: Sequence[tuple[_Work, _LlmResult]],
+    *,
+    row_id: Callable[[_Work], int],
+) -> list[tuple[_Work, _LlmResult]]:
+    """Take row locks again after a session-free LLM batch and return the pairs in id order.
+
+    The commit before that batch released this item's row locks, so apply results in ascending id
+    order under fresh locks, the same order every other item uses.
+    """
+    ordered = sorted(work_and_results, key=lambda pair: row_id(pair[0]))
+    lock_rows_in_id_order(session, id_column, (row_id(work) for work, _result in ordered))
+    return ordered
 
 
 def lock_person_rows(session: Session, *, project_id: int, fingerprints: Iterable[str]) -> None:

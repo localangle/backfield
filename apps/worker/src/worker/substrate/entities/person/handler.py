@@ -31,7 +31,7 @@ from worker.substrate.canonical.parallel_llm import (
 )
 from worker.substrate.entities.lock_order import (
     lock_person_rows,
-    lock_rows_in_id_order,
+    relock_in_id_order,
 )
 from worker.substrate.entities.person.adjudication import (
     PersonAdjudicationPrepared,
@@ -335,15 +335,11 @@ class PersonPersistHandler:
                 for item in pending_adjudication
             ]
             llm_results = run_callables_parallel(llm_tasks, max_workers=max_workers)
-            # The commit above released this item's row locks; take them again in id order.
-            applied = sorted(
-                zip(pending_adjudication, llm_results, strict=True),
-                key=lambda pair: int(pair[0].person.id),  # type: ignore[arg-type]
-            )
-            lock_rows_in_id_order(
+            applied = relock_in_id_order(
                 session,
                 col(SubstratePerson.id),
-                (int(item.person.id) for item, _llm_data in applied),  # type: ignore[arg-type]
+                list(zip(pending_adjudication, llm_results, strict=True)),
+                row_id=lambda item: int(item.person.id),  # type: ignore[arg-type]
             )
             for item, llm_data in applied:
                 person_id = int(item.person.id)  # type: ignore[arg-type]

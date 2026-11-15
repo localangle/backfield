@@ -363,12 +363,13 @@ def test_parallel_person_adjudication_faster_than_serial(monkeypatch) -> None:
 
 
 def test_person_persist_prelocks_then_relocks_adjudication_rows_in_id_order(monkeypatch) -> None:
+    import worker.substrate.entities.lock_order as lock_order
     import worker.substrate.entities.person.handler as person_handler
 
     prelocked: list[list[str]] = []
     relocked: list[list[int]] = []
     real_prelock = person_handler.lock_person_rows
-    real_relock = person_handler.lock_rows_in_id_order
+    real_relock = lock_order.lock_rows_in_id_order
 
     def _record_prelock(session: Session, *, project_id: int, fingerprints: Any) -> None:
         wanted = list(fingerprints)
@@ -381,7 +382,7 @@ def test_person_persist_prelocks_then_relocks_adjudication_rows_in_id_order(monk
         real_relock(session, id_column, wanted)
 
     monkeypatch.setattr(person_handler, "lock_person_rows", _record_prelock)
-    monkeypatch.setattr(person_handler, "lock_rows_in_id_order", _record_relock)
+    monkeypatch.setattr(lock_order, "lock_rows_in_id_order", _record_relock)
 
     def _reject(prompt: str, **_kwargs: Any) -> str:
         if "Candidates" not in prompt:

@@ -59,6 +59,15 @@ def test_is_missing_canonical_link_false_for_other_foreign_keys_and_errors() -> 
             message='violates foreign key constraint "substrate_person_project_id_fkey"',
         ),
     )
+    other_canonical_column = IntegrityError(
+        "stmt",
+        {},
+        _FakeOrig(
+            sqlstate="23503",
+            message='violates foreign key constraint "stylebook_alias_canonical_id_fkey"',
+        ),
+    )
     unique = IntegrityError("stmt", {}, _FakeOrig(sqlstate="23505", message="unique violation"))
+    assert is_missing_canonical_link(other_canonical_column) is False
     assert is_missing_canonical_link(other_fk) is False
     assert is_missing_canonical_link(unique) is False

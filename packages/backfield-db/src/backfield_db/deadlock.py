@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from sqlalchemy.exc import DBAPIError, OperationalError
 
 DEADLOCK_SQLSTATE = "40P01"
@@ -31,6 +33,12 @@ def is_postgres_deadlock(exc: BaseException) -> bool:
 
 FOREIGN_KEY_VIOLATION_SQLSTATE = "23503"
 
+# Constraint name of a substrate row's Stylebook link, e.g.
+# ``substrate_person_stylebook_person_canonical_id_fkey``.
+_CANONICAL_LINK_CONSTRAINT = re.compile(
+    r"substrate_(person|organization|location)_stylebook_\1_canonical_id_fkey"
+)
+
 
 def _orig_indicates_missing_canonical_link(orig: object | None) -> bool:
     if orig is None:
@@ -38,7 +46,7 @@ def _orig_indicates_missing_canonical_link(orig: object | None) -> bool:
     sqlstate = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
     message = str(orig).lower()
     is_fk_violation = sqlstate == FOREIGN_KEY_VIOLATION_SQLSTATE or "foreign key" in message
-    return is_fk_violation and "canonical_id" in message
+    return is_fk_violation and _CANONICAL_LINK_CONSTRAINT.search(message) is not None
 
 
 def is_missing_canonical_link(exc: BaseException) -> bool:

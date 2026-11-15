@@ -81,11 +81,8 @@ def test_persist_slot_logs_only_slow_waits(monkeypatch, caplog) -> None:
     assert messages == ["dboutput_persist_slot_acquired wait_ms=2000.0"]
 
 
-def test_run_db_output_releases_persist_slot_before_connection_inference(
-    monkeypatch,
-) -> None:
-    events: list[str] = []
-    llm_kwargs: list[dict[str, object]] = []
+def _recording_persist_slot(events: list[str]):
+    """A persist-slot replacement that records when the slot is entered and released."""
 
     @contextmanager
     def fake_slot():
@@ -94,6 +91,12 @@ def test_run_db_output_releases_persist_slot_before_connection_inference(
             yield
         finally:
             events.append("gate_exit")
+
+    return fake_slot
+
+
+def _recording_session_class(events: list[str]) -> type:
+    """A session stand-in that only records commits."""
 
     class FakeSession:
         def __init__(self, _engine: object) -> None:
@@ -107,6 +110,16 @@ def test_run_db_output_releases_persist_slot_before_connection_inference(
 
         def commit(self) -> None:
             events.append("commit")
+
+    return FakeSession
+
+
+def test_run_db_output_releases_persist_slot_before_connection_inference(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    fake_slot = _recording_persist_slot(events)
+    llm_kwargs: list[dict[str, object]] = []
 
     def fake_persist(*_args: object, **kwargs: object) -> dict[str, object]:
         assert kwargs["infer_connections"] is False
@@ -144,7 +157,7 @@ def test_run_db_output_releases_persist_slot_before_connection_inference(
     monkeypatch.setattr(db_output, "_persist_db_output_in_session", fake_persist)
     monkeypatch.setattr(db_output, "run_auto_connections_for_db_output", fake_inference)
     monkeypatch.setattr(db_output, "call_llm", fake_call_llm)
-    monkeypatch.setattr(db_output, "Session", FakeSession)
+    monkeypatch.setattr(db_output, "Session", _recording_session_class(events))
     monkeypatch.setattr(db_output, "_kick_webhook_dispatch_after_commit", lambda _session: None)
     monkeypatch.setattr("backfield_db.session.get_engine", lambda: object())
 
@@ -159,27 +172,7 @@ def test_run_db_output_releases_persist_slot_before_semantic_embedding(
     monkeypatch,
 ) -> None:
     events: list[str] = []
-
-    @contextmanager
-    def fake_slot():
-        events.append("gate_enter")
-        try:
-            yield
-        finally:
-            events.append("gate_exit")
-
-    class FakeSession:
-        def __init__(self, _engine: object) -> None:
-            pass
-
-        def __enter__(self) -> FakeSession:
-            return self
-
-        def __exit__(self, *_args: object) -> None:
-            return None
-
-        def commit(self) -> None:
-            events.append("commit")
+    fake_slot = _recording_persist_slot(events)
 
     class FakeSettings:
         semantic_indexing_enabled = True
@@ -213,12 +206,10 @@ def test_run_db_output_releases_persist_slot_before_semantic_embedding(
     monkeypatch.setenv("BACKFIELD_RUN_ID", "run-1")
     monkeypatch.setattr(db_output, "_dboutput_persist_slot", fake_slot)
     monkeypatch.setattr(db_output, "_persist_db_output_in_session", fake_persist)
-    monkeypatch.setattr(
-        db_output, "embed_pending_semantic_documents_for_db_output", fake_embed
-    )
+    monkeypatch.setattr(db_output, "embed_pending_semantic_documents_for_db_output", fake_embed)
     monkeypatch.setattr(db_output, "run_auto_connections_for_db_output", fake_inference)
     monkeypatch.setattr(db_output, "DbOutputCanonicalSettings", FakeSettings)
-    monkeypatch.setattr(db_output, "Session", FakeSession)
+    monkeypatch.setattr(db_output, "Session", _recording_session_class(events))
     monkeypatch.setattr(db_output, "_kick_webhook_dispatch_after_commit", lambda _session: None)
     monkeypatch.setattr("backfield_db.session.get_engine", lambda: object())
 

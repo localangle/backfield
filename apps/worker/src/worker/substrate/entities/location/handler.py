@@ -45,7 +45,7 @@ from worker.substrate.entities.location.upsert import (
 )
 from worker.substrate.entities.lock_order import (
     lock_location_rows,
-    lock_rows_in_id_order,
+    relock_in_id_order,
 )
 from worker.substrate.entities.registry import (
     DomainReconciliationSummary,
@@ -323,15 +323,11 @@ class LocationPersistHandler:
                 ],
                 max_workers=max_workers,
             )
-            # The commit above released this item's row locks; take them again in id order.
-            applied = sorted(
-                zip(pending_adjudication, llm_results, strict=True),
-                key=lambda pair: pair[0].location_id,
-            )
-            lock_rows_in_id_order(
+            applied = relock_in_id_order(
                 session,
                 col(SubstrateLocation.id),
-                (item.location_id for item, _llm_data in applied),
+                list(zip(pending_adjudication, llm_results, strict=True)),
+                row_id=lambda item: item.location_id,
             )
             for item, llm_data in applied:
                 loc = session.exec(

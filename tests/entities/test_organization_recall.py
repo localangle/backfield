@@ -15,6 +15,9 @@ from backfield_entities.entities.organization import (
     retrieve_organization_canonical_candidates,
     upsert_alias_for_canonical_text,
 )
+from backfield_entities.entities.organization.policy import (
+    strong_identity_organization_canonical_ids,
+)
 from sqlmodel import Session, SQLModel, create_engine
 
 from tests.project_helpers import project_ownership_fields
@@ -68,6 +71,44 @@ def test_organization_strong_identity_requires_matching_type() -> None:
             organization_type="company",
         )
         assert not organization_strong_identity_matches_canonical(organization, canon)
+
+
+def test_strong_identity_label_scan_requires_active_status_and_matching_type() -> None:
+    """Label matches are limited to active canonicals of the same organization type."""
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed(session)
+        canonicals = {
+            "active_match": ("Chicago Police Department", "law_enforcement", "active"),
+            "wrong_type": ("Chicago Police Department Foundation", "nonprofit", "active"),
+            "inactive": ("Chicago Police Department Archive", "law_enforcement", "inactive"),
+            "other_name": ("Springfield Fire Department", "law_enforcement", "active"),
+        }
+        ids: dict[str, str] = {}
+        for key, (label, org_type, status) in canonicals.items():
+            canon = StylebookOrganizationCanonical(
+                stylebook_id=sb_id,
+                label=label,
+                slug=label.lower().replace(" ", "-"),
+                organization_type=org_type,
+                status=status,
+            )
+            session.add(canon)
+            session.commit()
+            session.refresh(canon)
+            ids[key] = str(canon.id)
+        organization = SubstrateOrganization(
+            project_id=pid,
+            name="Chicago Police Department",
+            normalized_name="chicago police department",
+            organization_type="law_enforcement",
+        )
+
+        matches = strong_identity_organization_canonical_ids(
+            session, stylebook_id=sb_id, organization=organization
+        )
+
+        assert matches == [ids["active_match"]]
 
 
 def test_recall_caps_at_default_limit() -> None:
