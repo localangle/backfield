@@ -421,44 +421,70 @@ async def acquire_geocode_request_slot_async(
             await asyncio.shield(_release_slot_lock_async(lock, provider))
 
 
-########## OVERPASS COOL-DOWN ##########
+########## PROVIDER COOL-DOWNS ##########
 
-_OVERPASS_COOLDOWN_KEY = "backfield:geocode:overpass:cooldown"
+# Seconds every worker skips a provider after a lookup fails or runs out of budget.
+_COOLDOWN_ENV: dict[GeocodeProvider, str] = {
+    "overpass": "OVERPASS_COOLDOWN_S",
+    "nominatim": "NOMINATIM_COOLDOWN_S",
+}
+_DEFAULT_COOLDOWN_S = 60
 
 
-def overpass_cooldown_s() -> int:
-    """Seconds the whole fleet skips Overpass after it fails (0 disables the cool-down)."""
-    raw = os.getenv("OVERPASS_COOLDOWN_S", "60")
+def geocode_redis_client() -> object | None:
+    """Redis client shared by the geocode gates and caches, or ``None`` when unavailable."""
+    return _connect_gate_redis()
+
+
+def _cooldown_key(provider: GeocodeProvider) -> str:
+    return f"backfield:geocode:{provider}:cooldown"
+
+
+def provider_cooldown_s(provider: GeocodeProvider) -> int:
+    """Seconds the whole fleet skips ``provider`` after it fails (0 disables the cool-down)."""
+    raw = os.getenv(_COOLDOWN_ENV[provider], str(_DEFAULT_COOLDOWN_S))
     try:
         return max(0, int(raw.strip()))
     except ValueError:
-        return 60
+        return _DEFAULT_COOLDOWN_S
 
 
-def overpass_cooldown_active() -> bool:
-    """True while a recent Overpass failure asks every worker to skip Overpass. Fails open."""
-    if overpass_cooldown_s() <= 0:
+def provider_cooldown_active(provider: GeocodeProvider) -> bool:
+    """True while a recent failure asks every worker to skip ``provider``. Fails open."""
+    if provider_cooldown_s(provider) <= 0:
         return False
     client = _connect_gate_redis()
     if client is None:
         return False
     try:
-        return bool(client.exists(_OVERPASS_COOLDOWN_KEY))  # type: ignore[attr-defined]
+        return bool(client.exists(_cooldown_key(provider)))  # type: ignore[attr-defined]
     except Exception:
-        logger.debug("Overpass cool-down check failed", exc_info=True)
+        logger.debug("%s cool-down check failed", provider, exc_info=True)
         return False
 
 
-def start_overpass_cooldown(reason: str) -> None:
-    """Ask every worker to skip Overpass for ``OVERPASS_COOLDOWN_S`` seconds."""
-    cooldown_s = overpass_cooldown_s()
+def start_provider_cooldown(provider: GeocodeProvider, reason: str) -> None:
+    """Ask every worker to skip ``provider`` for its cool-down period."""
+    cooldown_s = provider_cooldown_s(provider)
     if cooldown_s <= 0:
         return
     client = _connect_gate_redis()
     if client is None:
         return
     try:
-        client.set(_OVERPASS_COOLDOWN_KEY, reason[:200], ex=cooldown_s)  # type: ignore[attr-defined]
-        logger.warning("overpass_cooldown_started seconds=%d reason=%s", cooldown_s, reason)
+        client.set(_cooldown_key(provider), reason[:200], ex=cooldown_s)  # type: ignore[attr-defined]
+        logger.warning("%s_cooldown_started seconds=%d reason=%s", provider, cooldown_s, reason)
     except Exception:
-        logger.debug("Overpass cool-down start failed", exc_info=True)
+        logger.debug("%s cool-down start failed", provider, exc_info=True)
+
+
+def overpass_cooldown_s() -> int:
+    return provider_cooldown_s("overpass")
+
+
+def overpass_cooldown_active() -> bool:
+    return provider_cooldown_active("overpass")
+
+
+def start_overpass_cooldown(reason: str) -> None:
+    start_provider_cooldown("overpass", reason)

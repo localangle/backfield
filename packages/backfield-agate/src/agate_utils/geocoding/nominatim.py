@@ -7,6 +7,7 @@ that uses OpenStreetMap data.
 """
 
 import logging
+import os
 import threading
 import time
 from typing import Any
@@ -16,8 +17,18 @@ from geopy.exc import GeocoderQuotaExceeded, GeocoderServiceError, GeocoderTimed
 from geopy.geocoders import Nominatim
 from geopy.location import Location
 
+from agate_utils.geocoding.nominatim_cache import (
+    get_cached_search,
+    search_cache_key,
+    store_cached_search,
+)
 from agate_utils.geocoding.provider_health import record_geocoder_http_status
-from agate_utils.geocoding.request_gate import acquire_geocode_request_slot
+from agate_utils.geocoding.request_gate import (
+    GateWaitTimeout,
+    acquire_geocode_request_slot,
+    provider_cooldown_active,
+    start_provider_cooldown,
+)
 
 from .geocoding_types import (
     GeocodingResult,
@@ -30,9 +41,36 @@ from .geocoding_types import (
 _NOMINATIM_MAX_HTTP_RETRIES = 4
 _NOMINATIM_RATE_LIMIT_FLOOR_S = 8.0
 _NOMINATIM_MAX_RETRY_DELAY_S = 30.0
+_DEFAULT_LOOKUP_BUDGET_S = 60.0
 
 # Logging uses the process root JSON formatter; do not call basicConfig here.
 logger = logging.getLogger(__name__)
+
+
+def nominatim_lookup_budget_s() -> float:
+    """Hard time budget for one lookup: gate wait, requests, and retry pauses together."""
+    raw = os.getenv("NOMINATIM_LOOKUP_BUDGET_S", "").strip()
+    try:
+        return max(1.0, float(raw)) if raw else _DEFAULT_LOOKUP_BUDGET_S
+    except ValueError:
+        return _DEFAULT_LOOKUP_BUDGET_S
+
+
+def _remaining_s(deadline: float) -> float:
+    return max(0.0, deadline - time.monotonic())
+
+
+def _sleep_within_deadline(delay_s: float, deadline: float) -> bool:
+    """Sleep ``delay_s`` if the budget allows it; False means the budget would run out first."""
+    if delay_s >= _remaining_s(deadline):
+        return False
+    time.sleep(delay_s)
+    return True
+
+
+def _start_cooldown(reason: str) -> None:
+    """Make every worker skip Nominatim briefly after a lookup it could not complete."""
+    start_provider_cooldown("nominatim", f"Nominatim {reason}")
 
 
 class NominatimGeocoder:
@@ -193,11 +231,17 @@ class NominatimGeocoder:
             geocode_params["viewbox"] = viewbox
             geocode_params["bounded"] = bounded
 
+        if provider_cooldown_active("nominatim"):
+            logger.info("Nominatim cooling down after recent failures; skipping geocode")
+            return None
+        deadline = time.monotonic() + nominatim_lookup_budget_s()
         geocoder = self._get_geocoder()
         for attempt in range(1, _NOMINATIM_MAX_HTTP_RETRIES + 1):
             try:
                 logger.info("Nominatim geocode request")
-                with acquire_geocode_request_slot("nominatim"):
+                with acquire_geocode_request_slot(
+                    "nominatim", max_wait_s=_remaining_s(deadline)
+                ):
                     results = geocoder.geocode(query, **geocode_params)
 
                 if not results:
@@ -211,6 +255,9 @@ class NominatimGeocoder:
                     for location in results
                 ]
 
+            except GateWaitTimeout:
+                logger.warning("Nominatim geocode gave up waiting for a request slot")
+                return None
             except GeocoderTimedOut:
                 logger.error("Nominatim geocode timeout")
                 return None
@@ -218,6 +265,7 @@ class NominatimGeocoder:
                 record_geocoder_http_status("nominatim", 429)
                 logger.error("Nominatim geocode quota exceeded")
                 if attempt >= _NOMINATIM_MAX_HTTP_RETRIES:
+                    _start_cooldown("rate limited")
                     return None
                 delay = min(
                     _NOMINATIM_RATE_LIMIT_FLOOR_S * (2 ** (attempt - 1)),
@@ -229,13 +277,16 @@ class NominatimGeocoder:
                     attempt,
                     _NOMINATIM_MAX_HTTP_RETRIES,
                 )
-                time.sleep(delay)
+                if not _sleep_within_deadline(delay, deadline):
+                    _start_cooldown("rate limited and out of time")
+                    return None
             except GeocoderServiceError as e:
                 message = str(e).lower()
                 if "429" in message or "rate" in message:
                     record_geocoder_http_status("nominatim", 429)
                     if attempt >= _NOMINATIM_MAX_HTTP_RETRIES:
                         logger.error("Nominatim geocode rate limited")
+                        _start_cooldown("rate limited")
                         return None
                     delay = min(
                         _NOMINATIM_RATE_LIMIT_FLOOR_S * (2 ** (attempt - 1)),
@@ -247,7 +298,9 @@ class NominatimGeocoder:
                         attempt,
                         _NOMINATIM_MAX_HTTP_RETRIES,
                     )
-                    time.sleep(delay)
+                    if not _sleep_within_deadline(delay, deadline):
+                        _start_cooldown("rate limited and out of time")
+                        return None
                     continue
                 record_geocoder_http_status("nominatim", 502)
                 logger.error("Nominatim geocode service error: %s", type(e).__name__)
@@ -297,21 +350,39 @@ class NominatimGeocoder:
         if dedupe is not None:
             params["dedupe"] = str(dedupe)
 
+        cache_key = search_cache_key(params)
+        cached = get_cached_search(cache_key)
+        if cached is not None:
+            logger.info("Nominatim search answered from the shared cache")
+            return cached
+        if provider_cooldown_active("nominatim"):
+            logger.info("Nominatim cooling down after recent failures; skipping search")
+            return []
+        deadline = time.monotonic() + nominatim_lookup_budget_s()
+
         for attempt in range(1, _NOMINATIM_MAX_HTTP_RETRIES + 1):
             try:
                 logger.info("Nominatim search request")
-                with acquire_geocode_request_slot("nominatim"):
+                with acquire_geocode_request_slot(
+                    "nominatim", max_wait_s=_remaining_s(deadline)
+                ):
+                    # Another worker may have fetched this query while we waited for the slot.
+                    cached = get_cached_search(cache_key)
+                    if cached is not None:
+                        logger.info("Nominatim search answered from the shared cache")
+                        return cached
                     response = requests.get(
                         "https://nominatim.openstreetmap.org/search",
                         params=params,
                         headers={"User-Agent": self.user_agent},
-                        timeout=self.timeout,
+                        timeout=min(self.timeout, max(1.0, _remaining_s(deadline))),
                     )
                 if response.status_code >= 400:
                     record_geocoder_http_status("nominatim", response.status_code)
                 if response.status_code == 429:
                     if attempt >= _NOMINATIM_MAX_HTTP_RETRIES:
                         logger.error("Nominatim search rate limited")
+                        _start_cooldown("rate limited")
                         return []
                     retry_after = response.headers.get("Retry-After", "").strip()
                     if retry_after.isdigit():
@@ -327,7 +398,10 @@ class NominatimGeocoder:
                         attempt,
                         _NOMINATIM_MAX_HTTP_RETRIES,
                     )
-                    time.sleep(delay)
+                    if not _sleep_within_deadline(delay, deadline):
+                        logger.error("Nominatim search rate limited and out of time")
+                        _start_cooldown("rate limited and out of time")
+                        return []
                     continue
                 response.raise_for_status()
                 results = response.json()
@@ -335,7 +409,11 @@ class NominatimGeocoder:
                     logger.warning("Unexpected Nominatim response format")
                     return []
                 logger.info("Nominatim search returned %d raw result(s)", len(results))
+                store_cached_search(cache_key, results)
                 return results
+            except GateWaitTimeout:
+                logger.warning("Nominatim search gave up waiting for a request slot")
+                return []
             except requests.Timeout:
                 logger.error("Nominatim search timeout")
                 return []

@@ -458,7 +458,7 @@ def test_nominatim_geocode_acquires_fleet_gate(monkeypatch) -> None:
     acquired: list[str] = []
 
     @contextmanager
-    def fake_gate(provider: str):
+    def fake_gate(provider: str, max_wait_s: float | None = None):
         acquired.append(provider)
         yield
 
@@ -488,7 +488,7 @@ def test_geocodio_search_acquires_fleet_gate(monkeypatch) -> None:
     acquired: list[str] = []
 
     @contextmanager
-    def fake_gate(provider: str):
+    def fake_gate(provider: str, max_wait_s: float | None = None):
         acquired.append(provider)
         yield
 

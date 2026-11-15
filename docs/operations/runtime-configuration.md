@@ -154,7 +154,18 @@ Fleet-wide geocoder HTTP concurrency (Redis slots; `0` disables that provider's 
   retries) reserves the next free time slot, spaced `1 / RPS` apart, and sleeps until it arrives
   before taking a concurrency slot. Calls are smoothed evenly rather than released in
   per-second bursts. `0` disables the gate. Keep this at 10 even when raising concurrent.
-- `GEOCODE_NOMINATIM_MAX_CONCURRENT`: Nominatim; defaults to 1.
+- `GEOCODE_NOMINATIM_MAX_CONCURRENT`: Nominatim; defaults to 1. Public Nominatim allows about one
+  request per second, so every worker shares this one slot.
+- `NOMINATIM_LOOKUP_BUDGET_S`: hard time budget for one Nominatim lookup (waiting for the slot,
+  the request, and pauses between rate-limit retries); defaults to 60. When it runs out the lookup
+  returns no result, and natural places use the language-model estimate.
+- `NOMINATIM_COOLDOWN_S`: after a lookup stays rate-limited until its budget or retries run out,
+  every worker skips Nominatim for this many seconds (Redis-backed); defaults to 60, `0` disables.
+  Waiting for a busy slot alone does not start a cool-down.
+- `NOMINATIM_SEARCH_CACHE_TTL_S`: workers share non-empty Nominatim search answers through Redis
+  for this many seconds, so a batch that names the same river or lake in many articles asks the
+  public server once; defaults to 21600 (6 hours), `0` disables. Empty answers and failures are
+  never cached.
 - `GEOCODE_GEOCODIO_MAX_CONCURRENT`: Geocodio; defaults to 8.
 - `GEOCODE_OVERPASS_MAX_CONCURRENT`: Overpass across all workers; defaults to 3.
 - `GEOCODE_REQUEST_GATE_TTL_S`: lock TTL for a single gated request; defaults to 120 seconds.
