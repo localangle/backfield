@@ -448,7 +448,8 @@ class OrganizationExtractNode:
             )
         except TimeoutError as exc:
             raise TimeoutError(
-                f"OrganizationExtract LLM call exceeded timeout of {effective_timeout}s"
+                f"OrganizationExtract LLM call exceeded its total time budget "
+                f"of {effective_timeout}s"
             ) from exc
 
         try:

@@ -262,7 +262,7 @@ class CustomExtractNode:
             )
         except TimeoutError as exc:
             raise TimeoutError(
-                f"Custom Extract LLM call exceeded timeout of {effective_timeout}s"
+                f"Custom Extract LLM call exceeded its total time budget of {effective_timeout}s"
             ) from exc
 
         try:

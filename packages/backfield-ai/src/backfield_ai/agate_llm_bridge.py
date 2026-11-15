@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from backfield_ai.catalog_runtime import resolve_llm_auth_for_model_config
 from backfield_ai.completion import LiteLLMCompletionRejectedError, completion_text_sync
-from backfield_ai.constants import COST_ESTIMATE_SOURCE_NO_RESPONSE
+from backfield_ai.constants import COST_ESTIMATE_SOURCE_NO_RESPONSE, DEFAULT_AI_CURRENCY
 from backfield_ai.json_clean import clean_json_response_text
 from backfield_ai.tracking_context import current_llm_tracking_context, persist_llm_attempt
 
@@ -262,7 +262,7 @@ def call_llm_tracked_sync(
                 total_tokens=None,
                 # No response came back, so there was nothing to bill or price.
                 estimated_cost=Decimal(0),
-                currency="USD",
+                currency=DEFAULT_AI_CURRENCY,
                 cost_estimate_incomplete=False,
                 latency_ms=None,
                 provider_request_id=None,

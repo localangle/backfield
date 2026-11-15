@@ -410,7 +410,7 @@ class PersonExtractNode:
             )
         except TimeoutError as exc:
             raise TimeoutError(
-                f"PersonExtract LLM call exceeded timeout of {effective_timeout}s"
+                f"PersonExtract LLM call exceeded its total time budget of {effective_timeout}s"
             ) from exc
 
         try:

@@ -248,7 +248,8 @@ class ArticleMetadataNode:
             response_text = await call_metadata_llm(current_prompt)
         except TimeoutError as exc:
             raise TimeoutError(
-                f"Article Metadata LLM call exceeded timeout of {effective_timeout}s"
+                f"Article Metadata LLM call exceeded its total time budget "
+                f"of {effective_timeout}s"
             ) from exc
 
         try:
@@ -286,7 +287,8 @@ class ArticleMetadataNode:
                 response_text = await call_metadata_llm(current_prompt)
             except TimeoutError as retry_exc:
                 raise TimeoutError(
-                    f"Article Metadata LLM call exceeded timeout of {effective_timeout}s"
+                    f"Article Metadata LLM call exceeded its total time budget "
+                    f"of {effective_timeout}s"
                 ) from retry_exc
             try:
                 response_data = normalize_llm_json_payload(json.loads(response_text))

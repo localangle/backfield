@@ -581,7 +581,7 @@ class PlaceExtractNode:
         except TimeoutError as exc:
             elapsed = time.time() - start_time
             raise TimeoutError(
-                f"PlaceExtract LLM call exceeded timeout of {effective_timeout}s "
+                f"PlaceExtract LLM call exceeded its total time budget of {effective_timeout}s "
                 f"(elapsed: {elapsed:.1f}s). The text may be too long or the LLM may be slow."
             ) from exc
 

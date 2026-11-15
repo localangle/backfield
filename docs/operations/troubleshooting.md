@@ -80,7 +80,7 @@ After SIGKILL/OOM, `acks_late` redelivers tasks while DB claims may still be `ru
 
 ## Worker timeouts
 
-Compare `TASK_SOFT_TIME_LIMIT` and `TASK_HARD_TIME_LIMIT` with node-level LLM timeouts and `AGATE_NODE_TIMEOUT_S`. Local Compose uses 25/30 minutes for processed items (1500/1800s) with a 20-minute async node budget (`AGATE_NODE_TIMEOUT_S=1200`), while code fallbacks outside Compose are longer. Do not reduce the soft limit without preserving the node timeout and worker execution buffer. A node that fails after about 600 s with an "LLM call exceeded timeout" message hit a stalled model request; extract nodes retry such requests after `EXTRACT_LLM_ATTEMPT_TIMEOUT_S` (default 120 s) instead of waiting out the full node budget.
+Compare `TASK_SOFT_TIME_LIMIT` and `TASK_HARD_TIME_LIMIT` with node-level LLM timeouts and `AGATE_NODE_TIMEOUT_S` (values in [runtime configuration](runtime-configuration.md)). Do not reduce the soft limit below a node's LLM timeout plus the worker execution buffer. A node that fails with an "LLM call exceeded its total time budget" message used its whole `llmTimeout` (default 600 s) across retries. Extract nodes cap each model request at `EXTRACT_LLM_ATTEMPT_TIMEOUT_S` (default 120 s) and retry, so one stalled request no longer uses the full budget.
 
 Wide batches that stay `running` until soft-timeout often indicate geocoder stampede or a long
 Backfield Output persist wait—not LLM stretch. Check worker logs for

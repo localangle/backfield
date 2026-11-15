@@ -69,14 +69,14 @@ def test_timeout_raised_inside_a_node_is_not_reported_as_the_node_limit(
     monkeypatch.setenv("AGATE_NODE_TIMEOUT_S", "1200")
 
     async def model_call_timed_out(*_args: Any) -> dict[str, Any]:
-        raise TimeoutError("OrganizationExtract LLM call exceeded timeout of 600.0s")
+        raise TimeoutError("OrganizationExtract LLM call exceeded its total time budget of 600.0s")
 
     with pytest.raises(GraphExecutionError) as excinfo:
         _run_with_async_runner(model_call_timed_out)
 
     message = str(excinfo.value)
     assert "wall-clock limit" not in message
-    assert "OrganizationExtract LLM call exceeded timeout of 600.0s" in message
+    assert "OrganizationExtract LLM call exceeded its total time budget of 600.0s" in message
 
 
 def test_inner_timeout_is_reported_when_node_limit_is_disabled(

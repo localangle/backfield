@@ -6,8 +6,13 @@ from decimal import Decimal
 
 import litellm
 import pytest
-from backfield_ai.constants import COST_ESTIMATE_SOURCE_LITELLM, COST_ESTIMATE_SOURCE_UNAVAILABLE
+from backfield_ai.constants import (
+    COST_ESTIMATE_SOURCE_LITELLM,
+    COST_ESTIMATE_SOURCE_NO_RESPONSE,
+    COST_ESTIMATE_SOURCE_UNAVAILABLE,
+)
 from backfield_ai.cost_estimate import (
+    decision_attempt_cost,
     litellm_estimated_cost_from_response,
     litellm_estimated_cost_from_tokens,
 )
@@ -73,3 +78,34 @@ def test_cost_from_tokens_stays_incomplete_for_unpriced_model() -> None:
     assert est is None
     assert incomplete is True
     assert source == COST_ESTIMATE_SOURCE_UNAVAILABLE
+
+
+def test_decision_attempt_cost_is_zero_for_failed_attempt_without_usage() -> None:
+    est, incomplete, source, currency = decision_attempt_cost(
+        "typesafe/jev-1.13.0", status="failed", prompt_tokens=None, completion_tokens=None
+    )
+    assert est == Decimal(0)
+    assert incomplete is False
+    assert source == COST_ESTIMATE_SOURCE_NO_RESPONSE
+    assert currency == "USD"
+
+
+def test_decision_attempt_cost_stays_incomplete_for_success_without_usage() -> None:
+    est, incomplete, source, _currency = decision_attempt_cost(
+        "typesafe/jev-1.13.0", status="succeeded", prompt_tokens=None, completion_tokens=None
+    )
+    assert est is None
+    assert incomplete is True
+    assert source == COST_ESTIMATE_SOURCE_UNAVAILABLE
+
+
+def test_decision_attempt_cost_prices_failed_attempt_that_reported_usage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(litellm, "cost_per_token", lambda **_kw: (0.5, 0.25))
+    est, incomplete, source, _currency = decision_attempt_cost(
+        "typesafe/jev-1.13.0", status="failed", prompt_tokens=10, completion_tokens=2
+    )
+    assert est == Decimal("0.75")
+    assert incomplete is False
+    assert source == COST_ESTIMATE_SOURCE_LITELLM

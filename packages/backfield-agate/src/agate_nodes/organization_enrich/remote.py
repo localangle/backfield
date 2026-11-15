@@ -11,9 +11,7 @@ from urllib.parse import quote
 
 import httpx
 from agate_utils.llm import merge_system_messages
-from backfield_ai.constants import AI_MODEL_KIND_DECISION
-from backfield_ai.cost_estimate import decision_attempt_cost
-from backfield_ai.tracking_context import persist_llm_attempt
+from backfield_ai.decision_usage import record_decision_attempt
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +120,7 @@ def choose_wikidata_match(
         payload = response.json()
         if not isinstance(payload, dict):
             raise RuntimeError("Decision model returned an unexpected response")
-        _record_decision_attempt(
+        record_decision_attempt(
             payload,
             requested_model=model_name,
             model_config_id=model_config_id,
@@ -133,7 +131,7 @@ def choose_wikidata_match(
         )
     except Exception as exc:
         latency_ms = int((time.perf_counter() - started) * 1000)
-        _record_decision_attempt(
+        record_decision_attempt(
             {},
             requested_model=model_name,
             model_config_id=model_config_id,
@@ -279,61 +277,6 @@ def _english_url(entity: object) -> str | None:
     return f"https://en.wikipedia.org/wiki/{slug}"
 
 
-def _record_decision_attempt(
-    payload: dict[str, Any],
-    *,
-    requested_model: str,
-    model_config_id: str | None,
-    latency_ms: int,
-    status: str,
-    error_type: str | None,
-    error_message: str | None,
-) -> None:
-    reported = payload.get("model")
-    if isinstance(reported, str) and reported.strip():
-        provider_model_id = reported.strip()
-    else:
-        provider_model_id = requested_model
-    usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
-    prompt_tokens = _as_int(usage.get("input_tokens"))
-    completion_tokens = _as_int(usage.get("output_tokens"))
-    total = None
-    if prompt_tokens is not None or completion_tokens is not None:
-        total = (prompt_tokens or 0) + (completion_tokens or 0)
-    estimated_cost, cost_incomplete, cost_source, currency = decision_attempt_cost(
-        f"typesafe/{provider_model_id}",
-        status=status,
-        prompt_tokens=prompt_tokens,
-        completion_tokens=completion_tokens,
-    )
-    try:
-        persist_llm_attempt(
-            provider="typesafe",
-            provider_model_id=provider_model_id,
-            status=status,
-            attempt_number=1,
-            model_config_id=model_config_id,
-            model_config_snapshot_json={
-                "provider": "typesafe",
-                "provider_model_id": provider_model_id,
-            },
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total,
-            estimated_cost=estimated_cost,
-            currency=currency,
-            cost_estimate_incomplete=cost_incomplete,
-            latency_ms=latency_ms,
-            provider_request_id=None,
-            error_type=error_type,
-            error_message=error_message,
-            cost_estimate_source=cost_source,
-            model_kind=AI_MODEL_KIND_DECISION,
-        )
-    except Exception:
-        logger.warning("Could not record decision model usage", exc_info=True)
-
-
 def _is_qid(value: str) -> bool:
     return value.startswith("Q") and value[1:].isdigit()
 
@@ -356,8 +299,3 @@ def _as_float(value: object) -> float | None:
             return None
     return None
 
-
-def _as_int(value: object) -> int | None:
-    if isinstance(value, bool) or not isinstance(value, int):
-        return None
-    return value

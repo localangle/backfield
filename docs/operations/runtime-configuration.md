@@ -180,8 +180,7 @@ Fleet-wide geocoder HTTP concurrency (Redis slots; `0` disables that provider's 
   out and falling back to an external geocode.
 
 Tune database-write concurrency before reducing extraction concurrency when worker writes affect API
-latency. Do not lower the processed-item soft limit below a node's configured LLM timeout plus its
-execution buffer.
+latency.
 
 S3 (and JSON Input) batch setup uses a **sliding window** of in-flight processed items.
 Dispatch order **interleaves longest and shortest** article bodies so the opening window is

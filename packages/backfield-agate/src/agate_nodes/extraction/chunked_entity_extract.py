@@ -115,8 +115,8 @@ async def extract_entities_over_chunks(
             )
         except TimeoutError as exc:
             raise TimeoutError(
-                f"{log_label} chunk {chunk.index + 1}/{chunk_count} exceeded timeout "
-                f"of {timeout:.0f}s"
+                f"{log_label} chunk {chunk.index + 1}/{chunk_count} exceeded its total "
+                f"time budget of {timeout:.0f}s"
             ) from exc
 
         try:
