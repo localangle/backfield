@@ -33,7 +33,10 @@ Celery chord—the same completion path as S3 (`finalize_s3_parent_run`). S3Inpu
    stores claimed documents as `agate_processed_item` rows linked by `ingestion_ledger_id`.
    Invalid JSON / get failures do not create ledger or item rows; `max_files` limits new
    claims per scan.
-5. Dispatches claimed items as a Celery chord on the `agate` queue.
+5. Dispatches claimed items as a Celery chord on the `agate` queue. Steps 2–5 repeat per
+   chunk for large prefixes: each chunk is read in parallel, committed, and queued while later
+   chunks load, and `s3_batch.intake_complete` blocks parent finalization until the last chunk
+   is committed (see [runtime configuration](../operations/runtime-configuration.md)).
 6. Marks each ledger revision `succeeded` or `failed` when that item finishes (not when the
    parent run finishes). `finalize_s3_parent_run` aggregates child statuses onto the parent
    `agate_run`. A scan with objects but zero new claims succeeds as caught up. The S3 Input

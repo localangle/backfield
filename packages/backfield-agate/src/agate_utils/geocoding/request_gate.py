@@ -1,6 +1,6 @@
 """Fleet-wide Redis gates for outbound geocoder HTTP calls.
 
-Caps concurrent Pelias / Nominatim / Geocodio requests across Celery workers so
+Caps concurrent Pelias / Nominatim / Geocodio / Overpass requests across Celery workers so
 per-article ``GEOCODE_MAX_CONCURRENT`` cannot stampede provider limits. Pelias
 also gets a first-come, first-served ticket gate aligned to Geocode Earth's
 ~10 req/s cap: each request reserves the next free time slot (spaced
@@ -20,7 +20,7 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from typing import Literal
 
-GeocodeProvider = Literal["pelias", "nominatim", "geocodio"]
+GeocodeProvider = Literal["pelias", "nominatim", "geocodio", "overpass"]
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +29,20 @@ _DEFAULT_MAX: dict[GeocodeProvider, int] = {
     "pelias": 10,
     "nominatim": 1,
     "geocodio": 8,
+    # Public Overpass servers answer "at capacity" quickly; keep the whole fleet small.
+    "overpass": 3,
 }
 
 _ENV_MAX: dict[GeocodeProvider, str] = {
     "pelias": "GEOCODE_PELIAS_MAX_CONCURRENT",
     "nominatim": "GEOCODE_NOMINATIM_MAX_CONCURRENT",
     "geocodio": "GEOCODE_GEOCODIO_MAX_CONCURRENT",
+    "overpass": "GEOCODE_OVERPASS_MAX_CONCURRENT",
 }
+
+
+class GateWaitTimeout(TimeoutError):
+    """Raised when a gate caller gave up waiting for a concurrency slot."""
 
 
 def geocode_request_gate_ttl_s() -> int:
@@ -205,8 +212,13 @@ def _release_slot_lock(lock: object, provider: GeocodeProvider) -> None:
 
 
 @contextmanager
-def acquire_geocode_request_slot(provider: GeocodeProvider) -> Iterator[None]:
+def acquire_geocode_request_slot(
+    provider: GeocodeProvider, *, max_wait_s: float | None = None
+) -> Iterator[None]:
     """Block until the Pelias ticket time and a provider concurrency slot allow an HTTP call.
+
+    ``max_wait_s`` bounds the wait for a concurrency slot; ``GateWaitTimeout`` is raised
+    (not swallowed by the fail-open handling) when it elapses.
 
     The Pelias ticket is taken (and slept on) before the concurrency slot so waiting callers
     never hold a slot. Async callers use :func:`acquire_geocode_request_slot_async`.
@@ -235,7 +247,13 @@ def acquire_geocode_request_slot(provider: GeocodeProvider) -> Iterator[None]:
             while lock is None:
                 lock = _try_acquire_any_slot(client, provider, max_concurrent)
                 if lock is None:
+                    if max_wait_s is not None and time.perf_counter() - wait_started >= max_wait_s:
+                        raise GateWaitTimeout(
+                            f"No {provider} request slot free after {max_wait_s:.1f}s"
+                        )
                     time.sleep(0.05)
+    except GateWaitTimeout:
+        raise
     except Exception:
         logger.warning(
             "Geocode request gate acquire failed for %s; continuing without concurrency cap",
@@ -401,3 +419,46 @@ async def acquire_geocode_request_slot_async(
         if lock is not None:
             # Shielded so a cancelled caller still frees its slot.
             await asyncio.shield(_release_slot_lock_async(lock, provider))
+
+
+########## OVERPASS COOL-DOWN ##########
+
+_OVERPASS_COOLDOWN_KEY = "backfield:geocode:overpass:cooldown"
+
+
+def overpass_cooldown_s() -> int:
+    """Seconds the whole fleet skips Overpass after it fails (0 disables the cool-down)."""
+    raw = os.getenv("OVERPASS_COOLDOWN_S", "60")
+    try:
+        return max(0, int(raw.strip()))
+    except ValueError:
+        return 60
+
+
+def overpass_cooldown_active() -> bool:
+    """True while a recent Overpass failure asks every worker to skip Overpass. Fails open."""
+    if overpass_cooldown_s() <= 0:
+        return False
+    client = _connect_gate_redis()
+    if client is None:
+        return False
+    try:
+        return bool(client.exists(_OVERPASS_COOLDOWN_KEY))  # type: ignore[attr-defined]
+    except Exception:
+        logger.debug("Overpass cool-down check failed", exc_info=True)
+        return False
+
+
+def start_overpass_cooldown(reason: str) -> None:
+    """Ask every worker to skip Overpass for ``OVERPASS_COOLDOWN_S`` seconds."""
+    cooldown_s = overpass_cooldown_s()
+    if cooldown_s <= 0:
+        return
+    client = _connect_gate_redis()
+    if client is None:
+        return
+    try:
+        client.set(_OVERPASS_COOLDOWN_KEY, reason[:200], ex=cooldown_s)  # type: ignore[attr-defined]
+        logger.warning("overpass_cooldown_started seconds=%d reason=%s", cooldown_s, reason)
+    except Exception:
+        logger.debug("Overpass cool-down start failed", exc_info=True)

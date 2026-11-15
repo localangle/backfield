@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -18,7 +19,7 @@ from backfield_entities.ingest.article_external_identity import (
     S3_INGESTION_EXTERNAL_SOURCE as S3_INGESTION_EXTERNAL_SOURCE,
 )
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, select, update
+from sqlmodel import Session, col, select, update
 
 LEDGER_STATUS_PROCESSING = "processing"
 LEDGER_STATUS_SUCCEEDED = "succeeded"
@@ -93,6 +94,39 @@ def find_succeeded_matching_metadata(
         ):
             return row
     return None
+
+
+def unchanged_object_keys(
+    session: Session,
+    *,
+    project_id: int,
+    source_id: str,
+    bucket: str,
+    listings: Sequence[S3ObjectListing],
+) -> set[str]:
+    """Keys whose current revision already succeeded (same check as one-by-one, in one query)."""
+    item_ids = {logical_item_id(bucket=bucket, key=listing.key): listing for listing in listings}
+    if not item_ids:
+        return set()
+    rows = session.exec(
+        select(AgateS3IngestionLedger).where(
+            AgateS3IngestionLedger.project_id == project_id,
+            AgateS3IngestionLedger.source_id == source_id,
+            col(AgateS3IngestionLedger.logical_item_id).in_(list(item_ids)),
+            AgateS3IngestionLedger.status == LEDGER_STATUS_SUCCEEDED,
+        )
+    ).all()
+    unchanged: set[str] = set()
+    for row in rows:
+        listing = item_ids.get(row.logical_item_id)
+        if listing is not None and listing_metadata_matches_succeeded(
+            listing=listing,
+            stored_etag=row.etag,
+            stored_size_bytes=row.size_bytes,
+            stored_last_modified=row.last_modified,
+        ):
+            unchanged.add(listing.key)
+    return unchanged
 
 
 def find_row_for_fingerprint(

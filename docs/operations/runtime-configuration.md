@@ -156,6 +156,7 @@ Fleet-wide geocoder HTTP concurrency (Redis slots; `0` disables that provider's 
   per-second bursts. `0` disables the gate. Keep this at 10 even when raising concurrent.
 - `GEOCODE_NOMINATIM_MAX_CONCURRENT`: Nominatim; defaults to 1.
 - `GEOCODE_GEOCODIO_MAX_CONCURRENT`: Geocodio; defaults to 8.
+- `GEOCODE_OVERPASS_MAX_CONCURRENT`: Overpass across all workers; defaults to 3.
 - `GEOCODE_REQUEST_GATE_TTL_S`: lock TTL for a single gated request; defaults to 120 seconds.
 - `GEOCODE_MAX_CONCURRENT`: per-article location fan-out inside GeocodeAgent only (code default 5,
   local Compose default **10**: high enough that the last few articles in a batch can keep Pelias busy,
@@ -180,6 +181,20 @@ finalize **replenishes only when nothing is running** (Redis first, then DB `pen
 stranded items cannot sit forever after a lost Celery message—without racing the 1:1 path and
 overshooting the cap. Failed Celery enqueues re-push the id onto Redis. The parent run stores a
 graph-spec snapshot so edits made after dispatch do not change in-flight children.
+
+**S3 intake streams.** When a prefix holds more objects than `S3_BATCH_INTAKE_CHUNK_SIZE`
+(default **50**) and the window cap is on, setup loads it in chunks instead of one pass: each
+chunk reads its objects from S3 in parallel (`S3_BATCH_FETCH_WORKERS`, default **16**), skips
+already-succeeded objects with one ledger query, commits its items, and queues them up to the
+window cap while later chunks are still loading. Items therefore appear in the run and start
+within seconds. The run's `s3_batch.intake_complete` flag stays `false` until the last chunk is
+committed, and parent finalization waits for it so a fast first chunk cannot finish the run
+early. Without Redis, with `S3_BATCH_MAX_INFLIGHT=0`, or for a prefix that fits one chunk, setup
+keeps the single-pass behavior (no flag). `S3_BATCH_RAMP_SECONDS` (default **60**) staggers the
+first window's starts evenly over that many seconds so items do not hit database persist and
+provider calls in lockstep; refills after the first window start immediately. The worker logs
+`s3_batch_intake_timing` with listing, S3 read, database, and queueing seconds. A worker crash
+during intake leaves `intake_complete` false, so cancel and re-run the run.
 
 ## Model, geocoding, and search providers
 
@@ -208,11 +223,21 @@ Overpass controls:
 - `OVERPASS_MIRROR_URLS`: comma-separated fallbacks
 - `OVERPASS_USER_AGENT`: descriptive request identity
 - `OVERPASS_MAX_CONCURRENT`: per-process request cap; code default 1, local Compose default 4
+  (the fleet-wide `GEOCODE_OVERPASS_MAX_CONCURRENT` also applies)
+- `OVERPASS_LOOKUP_BUDGET_S`: hard time budget for one intersection lookup (slot waits, both
+  queries, retries and backoff); defaults to 45. When it runs out the lookup fails and the
+  intersection falls back to the language-model estimate.
+- `OVERPASS_REQUEST_TIMEOUT_S`: per-request cap, also limited by the remaining budget; defaults to 30.
+- `OVERPASS_ATTEMPTS_PER_ENDPOINT`: tries per interpreter for transient errors; defaults to 2.
+- `OVERPASS_COOLDOWN_S`: after a lookup fails because the servers look overloaded, every worker
+  skips Overpass for this many seconds (Redis-backed); defaults to 60, `0` disables.
 - `OVERPASS_QUERY_STAGGER_S`: delay between related queries; code default 1.0, local Compose
   default 0.5
 
-Public Overpass instances rate-limit parallel workloads. The client honors `Retry-After`, retries
-transient overload responses, validates JSON responses, and falls back across mirrors.
+Public Overpass instances rate-limit parallel workloads. The client validates JSON responses and
+falls back across mirrors. Capacity errors (HTTP 429, HTML "busy" pages) move straight to the next
+mirror instead of retrying the same server, other transient errors retry within the budget, and
+`Retry-After` is honored only when it fits the remaining budget.
 
 GeocodeAgent location fan-out (`GEOCODE_MAX_CONCURRENT`) is per article. Geocode Earth
 enforces ~10 HTTP req/s, which the Pelias ticket gate holds fleet-wide regardless of fan-out;

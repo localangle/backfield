@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager, contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from agate_utils.geocoding import request_gate
 
 
@@ -63,6 +64,64 @@ def test_acquire_geocode_request_slot_acquires_and_releases(monkeypatch) -> None
         "inside",
         "release",
     ]
+
+
+def test_acquire_geocode_request_slot_raises_when_wait_budget_ends(monkeypatch) -> None:
+    class BusyLock:
+        def acquire(self, *, blocking: bool) -> bool:
+            return False
+
+    class BusyRedis:
+        def lock(self, name: str, *, timeout: int, blocking_timeout: int) -> BusyLock:
+            return BusyLock()
+
+    monkeypatch.setenv("GEOCODE_OVERPASS_MAX_CONCURRENT", "1")
+    monkeypatch.setitem(
+        sys.modules,
+        "redis",
+        SimpleNamespace(from_url=lambda *_args, **_kwargs: BusyRedis()),
+    )
+
+    with pytest.raises(request_gate.GateWaitTimeout):
+        with request_gate.acquire_geocode_request_slot("overpass", max_wait_s=0.1):
+            pass
+
+
+def test_overpass_cooldown_round_trip(monkeypatch) -> None:
+    store: dict[str, str] = {}
+
+    class FakeRedis:
+        def exists(self, key: str) -> int:
+            return int(key in store)
+
+        def set(self, key: str, value: str, *, ex: int) -> None:
+            assert ex == 45
+            store[key] = value
+
+    monkeypatch.setenv("OVERPASS_COOLDOWN_S", "45")
+    monkeypatch.setitem(
+        sys.modules,
+        "redis",
+        SimpleNamespace(from_url=lambda *_args, **_kwargs: FakeRedis()),
+    )
+
+    assert request_gate.overpass_cooldown_active() is False
+    request_gate.start_overpass_cooldown("test")
+    assert request_gate.overpass_cooldown_active() is True
+
+
+def test_overpass_cooldown_disabled_and_fails_open(monkeypatch) -> None:
+    monkeypatch.setenv("OVERPASS_COOLDOWN_S", "0")
+    assert request_gate.overpass_cooldown_active() is False
+
+    monkeypatch.setenv("OVERPASS_COOLDOWN_S", "30")
+
+    def boom(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("no redis")
+
+    monkeypatch.setitem(sys.modules, "redis", SimpleNamespace(from_url=boom))
+    assert request_gate.overpass_cooldown_active() is False
+    request_gate.start_overpass_cooldown("ignored")
 
 
 def test_acquire_geocode_request_slot_skips_when_disabled(monkeypatch) -> None:

@@ -145,7 +145,7 @@ For a non-AWS object store, ensure `AWS_S3_ENDPOINT_URL` or `AWS_ENDPOINT_URL` i
 
 ## Overpass returns 429, 5xx, or HTML
 
-Public interpreters are rate-limited. Lower `OVERPASS_MAX_CONCURRENT`, increase `OVERPASS_QUERY_STAGGER_S`, reduce worker concurrency, or use a dedicated `OVERPASS_API_URL`. Keep a descriptive `OVERPASS_USER_AGENT`. The client retries transient errors and rotates mirrors, but sustained overload still requires less traffic or more capacity.
+Public interpreters are rate-limited. Each lookup has a hard time budget (`OVERPASS_LOOKUP_BUDGET_S`, default 45 s), capacity errors move straight to the next mirror, and after an overloaded failure every worker skips Overpass for `OVERPASS_COOLDOWN_S` (log line `overpass_cooldown_started`; skipped queries log "Overpass cooling down"). Intersections then use the language-model estimate. If many lookups still fail, lower `GEOCODE_OVERPASS_MAX_CONCURRENT` or `OVERPASS_MAX_CONCURRENT`, increase `OVERPASS_QUERY_STAGGER_S`, or use a dedicated `OVERPASS_API_URL`. Keep a descriptive `OVERPASS_USER_AGENT`.
 
 ## UI dependencies are missing
 
