@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -14,7 +15,7 @@ from backfield_entities.entities.location.geometry_apply import (
     clear_geometry_editorial_override,
     substrate_has_editorial_geometry_override,
 )
-from backfield_entities.geo.geometry_bind import geometry_bind_value
+from backfield_entities.geo.geometry_bind import geometry_bind_value, geometry_is_geography_safe
 from backfield_entities.geo.h3_index import derive_h3_index
 from backfield_entities.ingest.geocode_cache.fingerprint import (
     substrate_location_cache_query_fingerprint,
@@ -23,6 +24,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
 from worker.substrate.common import _normalize_name, _sha256_hex, _utcnow
+
+logger = logging.getLogger(__name__)
 
 # Consolidated place payload key from GeocodeAgent (ignored by geometry/canonical logic).
 _AGATE_GEOCODE_ROUTER_AUDIT_KEY = "agate_geocode_router_audit"
@@ -57,8 +60,7 @@ _ADMIN_LOCATION_TYPES_DISAMBIGUATE_BY_NAME = frozenset(
     }
 )
 _STYLEBOOK_LOCATION_TYPES_DISAMBIGUATE_BY_NAME = (
-    _FINE_GRAINED_LOCATION_TYPES_DISAMBIGUATE_BY_NAME
-    | _ADMIN_LOCATION_TYPES_DISAMBIGUATE_BY_NAME
+    _FINE_GRAINED_LOCATION_TYPES_DISAMBIGUATE_BY_NAME | _ADMIN_LOCATION_TYPES_DISAMBIGUATE_BY_NAME
 )
 
 
@@ -463,7 +465,7 @@ def _h3_parts_from_geometry(
     return derived.h3_cell, derived.h3_resolution
 
 
-def _geometry_json_from_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
+def _raw_geometry_json_from_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
     geocode = entry.get("geocode") if isinstance(entry.get("geocode"), dict) else None
     result = geocode.get("result") if geocode and isinstance(geocode.get("result"), dict) else None
     if result and isinstance(result.get("geometry"), dict):
@@ -471,6 +473,18 @@ def _geometry_json_from_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
     if isinstance(entry.get("geometry"), dict):
         return dict(entry["geometry"])
     return None
+
+
+def _geometry_json_from_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
+    """Entry geometry, or None when it cannot be stored (e.g. a world-sized bounding box)."""
+    geometry_json = _raw_geometry_json_from_entry(entry)
+    if geometry_json is not None and not geometry_is_geography_safe(geometry_json):
+        logger.warning(
+            "Dropping geometry too wide to store for place %r",
+            _display_name_for_place_entry(entry),
+        )
+        return None
+    return geometry_json
 
 
 def _formatted_address_from_entry(entry: dict[str, Any]) -> str | None:

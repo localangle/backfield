@@ -15,7 +15,7 @@ from sqlmodel import Session
 
 from backfield_ai.constants import (
     AI_MODEL_KIND_EMBEDDING,
-    COST_ESTIMATE_SOURCE_UNAVAILABLE,
+    COST_ESTIMATE_SOURCE_NO_RESPONSE,
     DEFAULT_AI_CURRENCY,
 )
 from backfield_ai.cost_estimate import litellm_estimated_cost_from_response
@@ -253,10 +253,11 @@ def embed_texts_sync(
             ],
             prompt_tokens=None,
             total_tokens=None,
-            estimated_cost=None,
+            # No response came back, so there was nothing to bill or price.
+            estimated_cost=Decimal(0),
             currency=DEFAULT_AI_CURRENCY,
-            cost_estimate_incomplete=True,
-            cost_estimate_source=COST_ESTIMATE_SOURCE_UNAVAILABLE,
+            cost_estimate_incomplete=False,
+            cost_estimate_source=COST_ESTIMATE_SOURCE_NO_RESPONSE,
             latency_ms=latency_ms,
             batch_error=msg,
         )

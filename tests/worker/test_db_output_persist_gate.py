@@ -54,6 +54,33 @@ def test_dboutput_persist_slot_acquires_and_releases_redis_lock(monkeypatch) -> 
     ]
 
 
+def test_persist_slot_log_lines_name_the_item_and_segment(monkeypatch, caplog) -> None:
+    class FakeLock:
+        def acquire(self, *, blocking: bool) -> bool:
+            return True
+
+        def release(self) -> None:
+            return None
+
+    class FakeRedis:
+        def lock(self, name: str, *, timeout: int, blocking_timeout: int) -> FakeLock:
+            return FakeLock()
+
+    monkeypatch.setenv("BACKFIELD_PROCESSED_ITEM_ID", "4321")
+    monkeypatch.setattr(db_output.time, "perf_counter", iter(range(0, 1000, 1)).__next__)
+    lease = db_output._PersistSlotLease(FakeRedis(), 1)
+
+    with caplog.at_level("INFO", logger=db_output.logger.name):
+        lease.acquire()
+        lease.release()
+        lease.acquire()
+        lease.release()
+
+    released = [r.getMessage() for r in caplog.records if "slot_released" in r.getMessage()]
+    assert released and "item_id=4321 segment=1" in released[0]
+    assert "item_id=4321 segment=2" in released[1]
+
+
 def test_run_db_output_releases_persist_slot_before_connection_inference(
     monkeypatch,
 ) -> None:

@@ -238,10 +238,14 @@ class PersonExtractNode:
                 if is_skippable_compact_row_error(msg):
                     continue
                 parse_errors.append(msg)
-        if not people and parse_errors:
-            detail = parse_errors[0] if len(parse_errors) == 1 else "; ".join(parse_errors[:5])
-            raise ValueError(
-                f"Failed to parse LLM response as people data: no valid people. {detail}"
+        if parse_errors:
+            # Malformed entries are dropped so one bad row cannot fail the whole item.
+            logger.warning(
+                "[PersonExtract] skipped %d malformed person entr%s (kept %d): %s",
+                len(parse_errors),
+                "y" if len(parse_errors) == 1 else "ies",
+                len(people),
+                "; ".join(parse_errors[:5]),
             )
         return people
 

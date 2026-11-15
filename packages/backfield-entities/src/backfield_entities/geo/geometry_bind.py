@@ -145,12 +145,45 @@ def geojson_to_wkt(geometry_json: dict[str, Any]) -> str | None:
     return None
 
 
+# PostGIS geography edges are great-circle arcs, so an edge spanning half the globe (for example
+# a whole-world bounding box) is ambiguous and makes the geography index reject the insert.
+_MAX_GEOGRAPHY_EDGE_DEGREES = 180.0
+
+
+def _is_position(value: Any) -> bool:
+    return (
+        isinstance(value, (list, tuple))
+        and len(value) >= 2
+        and all(isinstance(n, (int, float)) for n in value[:2])
+    )
+
+
+def _has_antipodal_edge(coords: Any) -> bool:
+    """True when any consecutive vertex pair spans 180 degrees or more of longitude."""
+    if not isinstance(coords, (list, tuple)):
+        return False
+    if coords and all(_is_position(item) for item in coords):
+        return any(
+            abs(float(a[0]) - float(b[0])) >= _MAX_GEOGRAPHY_EDGE_DEGREES
+            or abs(float(a[1]) - float(b[1])) >= _MAX_GEOGRAPHY_EDGE_DEGREES
+            for a, b in zip(coords, coords[1:])
+        )
+    return any(_has_antipodal_edge(item) for item in coords)
+
+
+def geometry_is_geography_safe(geometry_json: dict[str, Any]) -> bool:
+    """False for shapes with an edge too long for PostGIS geography (e.g. a world-sized box)."""
+    return not _has_antipodal_edge(geometry_json.get("coordinates"))
+
+
 def geometry_bind_value(session: Session, geometry_json: dict[str, Any]) -> object | None:
     """Return a dialect-appropriate bind value for a location ``geometry`` column.
 
     SQLite tests store ``geometry`` as plain text and cannot bind GeoAlchemy elements.
     Postgres uses true PostGIS geometry via GeoAlchemy's ``WKTElement``.
     """
+    if not geometry_is_geography_safe(geometry_json):
+        return None
     wkt = geojson_to_wkt(geometry_json)
     if not wkt:
         return None

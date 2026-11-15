@@ -12,7 +12,7 @@ from urllib.parse import quote
 import httpx
 from agate_utils.llm import merge_system_messages
 from backfield_ai.constants import AI_MODEL_KIND_DECISION
-from backfield_ai.cost_estimate import litellm_estimated_cost_from_tokens
+from backfield_ai.cost_estimate import decision_attempt_cost
 from backfield_ai.tracking_context import persist_llm_attempt
 from backfield_entities.entities.person.types import person_display_name_core
 
@@ -292,8 +292,9 @@ def _record_decision_attempt(
     total = None
     if prompt_tokens is not None or completion_tokens is not None:
         total = (prompt_tokens or 0) + (completion_tokens or 0)
-    estimated_cost, cost_incomplete, cost_source, currency = litellm_estimated_cost_from_tokens(
+    estimated_cost, cost_incomplete, cost_source, currency = decision_attempt_cost(
         f"typesafe/{provider_model_id}",
+        status=status,
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
     )

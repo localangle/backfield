@@ -541,6 +541,9 @@ class NaturalPlace(Area):
             return False
         if min_lat >= max_lat or min_lon >= max_lon:
             return False
+        # A box half the globe wide cannot be stored as a place boundary (e.g. "the Moon").
+        if max_lon - min_lon >= 180 or max_lat - min_lat >= 180:
+            return False
         return True
 
     def _build_fallback_id(self) -> str:

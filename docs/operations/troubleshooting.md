@@ -91,7 +91,13 @@ geocoder health for elevated `rate_limit` on Pelias, Nominatim, or Geocodio. Kee
 caps) and `S3_BATCH_MAX_INFLIGHT` before raising `TASK_SOFT_TIME_LIMIT`. Persist hold should
 be seconds-scale after semantic embedding and entity-matching model calls moved outside the Redis
 persist slot (`dboutput_persist_slot_released hold_ms` is logged each time the slot is handed back,
-so one item can log it more than once).
+so one item can log it more than once; each line carries `item_id` and `segment`).
+
+If persists still stall for minutes inside the slot, local Compose starts Postgres with
+`log_lock_waits=on` and `deadlock_timeout=1s`, so `docker compose logs postgres` shows each
+statement that waited longer than a second ("process N still waiting for ... lock"), what it was
+waiting on (relation and row), and the process holding it. Match a stalled `dboutput_persist_slot_released`
+line to Postgres by timestamp: the wait appears inside the hold window.
 
 ## Parallel graph execution fails during imports
 
@@ -121,6 +127,18 @@ tokens) even for articles full of entities. Those three nodes now send `low` to 
 `gpt-5-mini`, and `gpt-5-nano`. If you still see it, check the per-call completion tokens: a
 constant, tiny count across articles of different lengths means the model is answering
 "none" rather than extracting.
+
+PersonExtract skips malformed entries (a missing name or a badly shaped mention list) and
+logs `skipped N malformed person entries` instead of failing the item, so a response made
+only of malformed entries yields an empty people list. Search worker logs for that line when
+an article seems to be missing people.
+
+## DBOutput fails with "Antipodal (180 degrees long) edge detected"
+
+PostGIS geography rejects shapes with an edge half the globe wide, such as an LLM-estimated
+natural place covering the whole world (for example "the Moon"). Saved places now drop such
+geometry and keep the place without a boundary (logged as `Dropping geometry too wide to
+store`), and the natural-place estimate rejects boxes 180 degrees or wider.
 
 ## Provider or secret errors
 

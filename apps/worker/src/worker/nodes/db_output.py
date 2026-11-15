@@ -79,6 +79,10 @@ class _PersistSlotLease:
         self._max_concurrent = max_concurrent
         self._lock: Any | None = None
         self._hold_started = 0.0
+        # Which time this item has taken a slot; with the item id it lets a long hold be matched
+        # to database lock-wait lines logged by Postgres.
+        self._segment = 0
+        self._item_id = os.getenv("BACKFIELD_PROCESSED_ITEM_ID", "unknown")
 
     def acquire(self) -> None:
         """Wait for a slot. Fails open (no slot held) when Redis misbehaves."""
@@ -104,8 +108,14 @@ class _PersistSlotLease:
             return
         self._lock = lock
         wait_ms = (time.perf_counter() - wait_started) * 1000.0
+        self._segment += 1
         if wait_ms >= 50.0:
-            logger.info("dboutput_persist_slot_acquired wait_ms=%.1f", wait_ms)
+            logger.info(
+                "dboutput_persist_slot_acquired wait_ms=%.1f item_id=%s segment=%d",
+                wait_ms,
+                self._item_id,
+                self._segment,
+            )
         self._hold_started = time.perf_counter()
 
     def release(self) -> None:
@@ -114,7 +124,12 @@ class _PersistSlotLease:
             return
         hold_ms = (time.perf_counter() - self._hold_started) * 1000.0
         if hold_ms >= 100.0:
-            logger.info("dboutput_persist_slot_released hold_ms=%.1f", hold_ms)
+            logger.info(
+                "dboutput_persist_slot_released hold_ms=%.1f item_id=%s segment=%d",
+                hold_ms,
+                self._item_id,
+                self._segment,
+            )
         try:
             lock.release()
         except Exception:

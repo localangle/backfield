@@ -34,6 +34,26 @@ CHICAGO_POINT = {"type": "Point", "coordinates": [-87.6298, 41.8781]}
 WGP_POINT = {"type": "Point", "coordinates": [-87.703, 41.914]}
 
 
+def test_place_entry_with_world_sized_geometry_drops_geometry_but_keeps_place() -> None:
+    from worker.substrate.entities.location.upsert import _location_fields_for_entry
+
+    entry = {
+        "location": "Moon",
+        "type": "natural",
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+                [[-180.0, -90.0], [180.0, -90.0], [180.0, 90.0], [-180.0, 90.0], [-180.0, -90.0]]
+            ],
+        },
+    }
+    fields = _location_fields_for_entry(project_id=1, bucket="resolved", entry=entry)
+    assert fields is not None
+    assert fields.display_name == "Moon"
+    assert fields.geometry_json is None
+    assert fields.h3_cell is None
+
+
 def test_find_mention_span_strips_trailing_punctuation_not_in_article() -> None:
     haystack = (
         "Violet Harris, a 15-year-old student, was killed after a vehicle crashed into "

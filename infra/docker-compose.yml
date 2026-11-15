@@ -21,6 +21,8 @@ services:
       context: .
       dockerfile: postgres/Dockerfile
     image: backfield-postgres:16-3.4-pgvector
+    # Log any statement that waits on a lock longer than deadlock_timeout, with the lock holder.
+    command: ["postgres", "-c", "log_lock_waits=on", "-c", "deadlock_timeout=1s"]
     environment:
       POSTGRES_DB: backfield
       POSTGRES_USER: postgres
