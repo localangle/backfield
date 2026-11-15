@@ -43,6 +43,10 @@ Celery chord—the same completion path as S3 (`finalize_s3_parent_run`). S3Inpu
    **Reprocess completed files** (`reprocess_unchanged`) setting reclaims previously succeeded
    revisions so unchanged objects can be claimed again.
 
+In `apps/worker`, `tasks.py` holds the Celery tasks; chunked intake lives in
+`s3_batch_setup_intake.py` and the sliding-window dispatch (Redis pending list, chord queueing)
+in `s3_batch_dispatch.py`.
+
 Run replay clones replayable processed-item inputs and executes them against the graph snapshot
 carried by the replay run (the source pin, or the current saved flow when `use_current_flow` is
 true); it does not consult the S3 ingestion ledger.
