@@ -7,6 +7,10 @@ import time
 from collections.abc import Callable
 from typing import Any, TypeVar
 
+from backfield_observability.external import sanitize_error_message
+from geopy.exc import GeocoderQuotaExceeded, GeocoderServiceError, GeocoderTimedOut
+from geopy.geocoders import Geocodio
+
 from agate_utils.geocoding.geocoding_types import (
     GeocodingResult,
     GeocodingResultData,
@@ -14,9 +18,6 @@ from agate_utils.geocoding.geocoding_types import (
 )
 from agate_utils.geocoding.provider_health import record_geocoder_http_status
 from agate_utils.geocoding.request_gate import acquire_geocode_request_slot
-from backfield_observability.external import sanitize_error_message
-from geopy.exc import GeocoderQuotaExceeded, GeocoderServiceError, GeocoderTimedOut
-from geopy.geocoders import Geocodio
 
 logger = logging.getLogger(__name__)
 
@@ -51,16 +52,16 @@ _ACCEPTABLE_ACCURACY_TYPES: frozenset[str] = frozenset(
 def is_valid_intersection_result(raw_data: dict) -> bool:
     """
     Check if a Geocodio result is a valid intersection.
-
+    
     Args:
         raw_data: Raw data from Geocodio response
-
+        
     Returns:
         bool: True if it's a valid intersection result
     """
     accuracy_type = raw_data.get("accuracy_type", "")
     accuracy_score = raw_data.get("accuracy", 0)
-
+    
     # Valid ONLY if it's an intersection (not street_center)
     return accuracy_type == "intersection" and accuracy_score >= 0.8
 
@@ -128,62 +129,65 @@ def geocode_search(
     query: str,
     api_key: str,
     timeout: int = 10,
-    placetype: str | None = None,
+    placetype: str | None = None
 ) -> GeocodingResult | None:
     """
     Geocode a location using Geocodio with a free-text query.
-
+    
     Args:
         query: Location text to geocode
         api_key: Geocodio API key
         timeout: Request timeout in seconds
-        placetype: Optional place-type hint for logging
-
+        pelias_api_key: Pelias API key
+        geo_type: Type of geography being geocoded
+        
     Returns:
         GeocodingResult if successful, None otherwise
     """
     try:
         geolocator = Geocodio(api_key=api_key, timeout=timeout)
-
+        
         logger.info("Geocodio search geocoding request")
         logger.debug("Geocodio search placetype hint present=%s", bool(placetype))
 
         location = _call_geocodio_with_gate(lambda: geolocator.geocode(query))
-
+        
         if not location:
             logger.warning("No Geocodio search results")
             return None
-
+        
         # Store raw data for validation purposes
-        raw_data = location.raw if hasattr(location, "raw") else {}
-
+        raw_data = location.raw if hasattr(location, 'raw') else {}
+        
         # Build result
         result_data = GeocodingResultData(
             id=_geocodio_result_id(raw_data),
             processed_str=raw_data.get("formatted_address", location.address),
             geometry=GeometryPoint(
                 type="Point",
-                coordinates=[location.longitude, location.latitude],
+                coordinates=[location.longitude, location.latitude]
             ),
             confidence=raw_data,  # Store raw data in confidence for later validation
         )
-
+        
         return GeocodingResult(
             geocoder="geocodio_search",
             input_str=query,
-            result=result_data,
+            result=result_data
         )
-
+        
     except GeocoderTimedOut:
         logger.error("Geocodio geocoding timed out")
         return None
     except GeocoderServiceError as e:
+        from backfield_observability.external import sanitize_error_message
+
         logger.error("Geocodio service error: %s", sanitize_error_message(str(e)))
         return None
     except Exception as e:
-        logger.error(
-            "Error in Geocodio search geocoding: %s", sanitize_error_message(str(e))
-        )
+        from backfield_observability.external import sanitize_error_message
+
+        logger.error("Error in Geocodio search geocoding: %s", sanitize_error_message(str(e)))
         return None
 
 
@@ -195,11 +199,11 @@ def geocode_structured(
     country: str | None = None,
     api_key: str = None,
     timeout: int = 10,
-    placetype: str | None = None,
+    placetype: str | None = None
 ) -> GeocodingResult | None:
     """
     Geocode using Geocodio with structured address components.
-
+    
     Args:
         street: Street address (e.g., "100 Main St")
         city: City/town name
@@ -208,17 +212,17 @@ def geocode_structured(
         country: Country name or code (optional, defaults to US)
         api_key: Geocodio API key
         timeout: Request timeout in seconds
-
+        
     Returns:
         GeocodingResult if successful, None otherwise
     """
     if not api_key:
         logger.error("Geocodio API key is required")
         return None
-
+    
     try:
         geolocator = Geocodio(api_key=api_key, timeout=timeout)
-
+        
         # Build structured query dictionary
         query_dict = {}
         if street:
@@ -231,20 +235,20 @@ def geocode_structured(
             query_dict["postal_code"] = postal_code
         if country:
             query_dict["country"] = country
-
+        
         if not query_dict:
             logger.error("At least one address component must be provided")
             return None
-
+        
         logger.info("Geocodio structured geocoding request")
         logger.debug("Geocodio structured placetype hint: %r", placetype)
 
         location = _call_geocodio_with_gate(lambda: geolocator.geocode(query_dict))
-
+        
         if not location:
             logger.warning("No Geocodio structured results")
             return None
-
+        
         # Build input string from components for display
         input_parts = [p for p in [street, city, state, postal_code, country] if p]
         input_str = ", ".join(input_parts)
@@ -257,17 +261,17 @@ def geocode_structured(
             processed_str=raw_data.get("formatted_address", location.address),
             geometry=GeometryPoint(
                 type="Point",
-                coordinates=[location.longitude, location.latitude],
+                coordinates=[location.longitude, location.latitude]
             ),
             confidence=raw_data,
         )
-
+        
         return GeocodingResult(
             geocoder="geocodio_structured",
             input_str=input_str,
-            result=result_data,
+            result=result_data
         )
-
+        
     except GeocoderTimedOut:
         logger.error("Geocodio structured geocoding timed out")
         return None
@@ -275,9 +279,7 @@ def geocode_structured(
         logger.error("Geocodio service error: %s", sanitize_error_message(str(e)))
         return None
     except Exception as e:
-        logger.error(
-            "Error in Geocodio structured geocoding: %s", sanitize_error_message(str(e))
-        )
+        logger.error("Error in Geocodio structured geocoding: %s", sanitize_error_message(str(e)))
         return None
 
 
@@ -285,31 +287,31 @@ def reverse_geocode(
     lat: float,
     lon: float,
     api_key: str,
-    timeout: int = 10,
+    timeout: int = 10
 ) -> GeocodingResult | None:
     """
     Reverse geocode coordinates using Geocodio.
-
+    
     Args:
         lat: Latitude
         lon: Longitude
         api_key: Geocodio API key
         timeout: Request timeout in seconds
-
+        
     Returns:
         GeocodingResult if successful, None otherwise
     """
     if not api_key:
         logger.error("Geocodio API key is required")
         return None
-
+    
     try:
         geolocator = Geocodio(api_key=api_key, timeout=timeout)
-
+        
         logger.info("Geocodio reverse geocoding request")
-
+        
         location = _call_geocodio_with_gate(lambda: geolocator.reverse((lat, lon)))
-
+        
         if not location:
             logger.warning("No Geocodio reverse results")
             return None
@@ -322,17 +324,17 @@ def reverse_geocode(
             processed_str=location.address,
             geometry=GeometryPoint(
                 type="Point",
-                coordinates=[location.longitude, location.latitude],
+                coordinates=[location.longitude, location.latitude]
             ),
             confidence=raw_data,
         )
-
+        
         return GeocodingResult(
             geocoder="geocodio_reverse",
             input_str=f"{lat}, {lon}",
-            result=result_data,
+            result=result_data
         )
-
+        
     except GeocoderTimedOut:
         logger.error("Geocodio reverse geocoding timed out")
         return None
@@ -340,7 +342,6 @@ def reverse_geocode(
         logger.error("Geocodio service error: %s", sanitize_error_message(str(e)))
         return None
     except Exception as e:
-        logger.error(
-            "Error in Geocodio reverse geocoding: %s", sanitize_error_message(str(e))
-        )
+        logger.error("Error in Geocodio reverse geocoding: %s", sanitize_error_message(str(e)))
         return None
+

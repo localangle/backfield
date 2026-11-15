@@ -73,7 +73,6 @@ def sync_semantic_documents_after_db_output(
                 article_id,
                 attempt,
                 _SEMANTIC_SYNC_STALE_ATTEMPTS,
-                exc_info=True,
             )
             session.expire_all()
     assert last_stale is not None

@@ -85,19 +85,17 @@ Compare `TASK_SOFT_TIME_LIMIT` and `TASK_HARD_TIME_LIMIT` with node-level LLM ti
 Wide batches that stay `running` until soft-timeout often indicate geocoder stampede or a long
 Backfield Output persist wait—not LLM stretch. Check worker logs for
 `geocode_pelias_ticket_wait` (Pelias queue wait) / `geocode_request_gate_acquired` /
-`persist_slot_wait_ms` / `persist_slot_hold_ms`, and Stylebook
+`dboutput_persist_slot_acquired` (logged when a persist waited over a second for a slot), and Stylebook
 geocoder health for elevated `rate_limit` on Pelias, Nominatim, or Geocodio. Keep fleet gates
 (`GEOCODE_PELIAS_MAX_RPS` / `GEOCODE_PELIAS_MAX_CONCURRENT`, Nominatim/Geocodio concurrent
 caps) and `S3_BATCH_MAX_INFLIGHT` before raising `TASK_SOFT_TIME_LIMIT`. Persist hold should
 be seconds-scale after semantic embedding and entity-matching model calls moved outside the Redis
-persist slot (`dboutput_persist_slot_released hold_ms` is logged each time the slot is handed back,
-so one item can log it more than once; each line carries `item_id` and `segment`).
+persist slot.
 
 If persists still stall for minutes inside the slot, local Compose starts Postgres with
 `log_lock_waits=on` and `deadlock_timeout=1s`, so `docker compose logs postgres` shows each
 statement that waited longer than a second ("process N still waiting for ... lock"), what it was
-waiting on (relation and row), and the process holding it. Match a stalled `dboutput_persist_slot_released`
-line to Postgres by timestamp: the wait appears inside the hold window.
+waiting on (relation and row), and the process holding it.
 
 ## Parallel graph execution fails during imports
 
@@ -168,7 +166,7 @@ Public interpreters are rate-limited. Each lookup has a hard time budget (`OVERP
 ## Natural places time out or Nominatim returns 429
 
 Every worker shares one Nominatim request slot (`GEOCODE_NOMINATIM_MAX_CONCURRENT`, default 1), so a
-busy batch queues behind it (`geocode_request_gate_acquired provider=nominatim wait_ms=...`). Each
+busy batch queues behind it (`geocode_request_gate_acquired provider=nominatim wait_ms=...`, logged for waits over a second). Each
 lookup has a hard budget (`NOMINATIM_LOOKUP_BUDGET_S`, default 60 s) so a location no longer waits
 out the 300 s per-location limit; rivers, lakes, and regions then use the language-model estimate.
 Successful searches are shared between workers for `NOMINATIM_SEARCH_CACHE_TTL_S`, so repeated names

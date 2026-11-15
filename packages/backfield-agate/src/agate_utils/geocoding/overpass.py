@@ -345,7 +345,7 @@ def run_query_with_overpy(
         Optional[overpy.Result]: Query result or None if failed
     """
     if overpass_cooldown_active():
-        logger.info("Overpass cooling down after recent failures; skipping query")
+        logger.debug("Overpass cooling down; skipping query")
         return None
     if deadline is None:
         deadline = new_overpass_deadline()
@@ -370,7 +370,7 @@ def _sleep_within_deadline(delay_s: float, deadline: float) -> bool:
     """Sleep ``delay_s`` if it fits before ``deadline``; False means out of budget."""
     if time.monotonic() + delay_s >= deadline:
         return False
-    logger.info("Retrying in %.1f seconds...", delay_s)
+    logger.debug("Retrying in %.1f seconds...", delay_s)
     time.sleep(delay_s)
     return True
 
@@ -398,7 +398,7 @@ def _query_endpoints_until_deadline(
                     logger.error("Overpass lookup budget exhausted; giving up")
                     return None, True
                 timeout = httpx.Timeout(min(remaining_s, request_timeout_s))
-                logger.info(
+                logger.debug(
                     "Executing Overpass query (endpoint %s/%s, attempt %s/%s)",
                     url_index + 1,
                     len(urls),

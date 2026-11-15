@@ -419,7 +419,7 @@ def _redis_client_or_none() -> Any | None:
             socket_timeout=2,
         )
     except Exception:
-        logger.warning("Batch inflight Redis client unavailable", exc_info=True)
+        logger.warning("Batch inflight Redis client unavailable")
         return None
 
 
@@ -1521,7 +1521,7 @@ def _add_processed_item_for_object(
     item_logical_id = logical_item_id(bucket=bucket, key=key)
     if fetched.error is not None or fetched.raw_bytes is None:
         counters.skipped_invalid += 1
-        logger.info(
+        logger.debug(
             "S3 batch skip get failure run_id=%s key=%s err=%s",
             run_id,
             key,
@@ -1910,12 +1910,6 @@ def execute_s3_batch_setup(run_id: str) -> None:
                 return
 
             if streaming:
-                logger.info(
-                    "execute_s3_batch_setup: streamed %d execute_processed_item task(s) "
-                    "for run %s (sliding window)",
-                    counters.valid,
-                    run_id,
-                )
                 # Every item may already have finished while the last chunks were loading. Skip
                 # otherwise: queued items still waiting to start would look stranded.
                 if not _run_has_unfinished_items(session, run_id):
@@ -1927,8 +1921,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
             # ``group().get()`` inside this task, that does not pin a worker slot while children
             # are waiting to start (avoids deadlock at concurrency=1).
             logger.info(
-                "execute_s3_batch_setup: queueing %d execute_processed_item task(s) "
-                "for run %s (sliding window)",
+                "execute_s3_batch_setup: queueing %d execute_processed_item task(s) for run %s",
                 counters.valid,
                 run_id,
             )

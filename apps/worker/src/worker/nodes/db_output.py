@@ -71,6 +71,10 @@ def _dboutput_max_concurrent_persists() -> int:
         return 12
 
 
+# Slot waits shorter than this are normal under load and not worth a log line.
+_SLOW_PERSIST_SLOT_WAIT_MS = 1000.0
+
+
 class _PersistSlotLease:
     """A Redis persist slot that can be handed back while session-free LLM calls run."""
 
@@ -78,11 +82,6 @@ class _PersistSlotLease:
         self._client = client
         self._max_concurrent = max_concurrent
         self._lock: Any | None = None
-        self._hold_started = 0.0
-        # Which time this item has taken a slot; with the item id it lets a long hold be matched
-        # to database lock-wait lines logged by Postgres.
-        self._segment = 0
-        self._item_id = os.getenv("BACKFIELD_PROCESSED_ITEM_ID", "unknown")
 
     def acquire(self) -> None:
         """Wait for a slot. Fails open (no slot held) when Redis misbehaves."""
@@ -108,28 +107,13 @@ class _PersistSlotLease:
             return
         self._lock = lock
         wait_ms = (time.perf_counter() - wait_started) * 1000.0
-        self._segment += 1
-        if wait_ms >= 50.0:
-            logger.info(
-                "dboutput_persist_slot_acquired wait_ms=%.1f item_id=%s segment=%d",
-                wait_ms,
-                self._item_id,
-                self._segment,
-            )
-        self._hold_started = time.perf_counter()
+        if wait_ms >= _SLOW_PERSIST_SLOT_WAIT_MS:
+            logger.info("dboutput_persist_slot_acquired wait_ms=%.1f", wait_ms)
 
     def release(self) -> None:
         lock, self._lock = self._lock, None
         if lock is None:
             return
-        hold_ms = (time.perf_counter() - self._hold_started) * 1000.0
-        if hold_ms >= 100.0:
-            logger.info(
-                "dboutput_persist_slot_released hold_ms=%.1f item_id=%s segment=%d",
-                hold_ms,
-                self._item_id,
-                self._segment,
-            )
         try:
             lock.release()
         except Exception:
@@ -456,7 +440,7 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
                 delay_s = _deadlock_retry_delay_s(attempt)
                 reason = "deadlock" if is_postgres_deadlock(exc) else "canonical removed"
                 logger.warning(
-                    "DBOutput deadlock on attempt %s/%s for run_id=%s; retrying in %.2fs (%s)",
+                    "DBOutput persist retry on attempt %s/%s for run_id=%s; retrying in %.2fs (%s)",
                     attempt + 1,
                     _DBOUTPUT_DEADLOCK_MAX_ATTEMPTS,
                     run_id,

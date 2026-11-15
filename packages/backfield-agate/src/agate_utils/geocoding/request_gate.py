@@ -24,6 +24,9 @@ GeocodeProvider = Literal["pelias", "nominatim", "geocodio", "overpass"]
 
 logger = logging.getLogger(__name__)
 
+# Slot waits and holds shorter than this are normal under load and not worth a log line.
+_SLOW_GATE_LOG_MS = 1000.0
+
 _DEFAULT_MAX: dict[GeocodeProvider, int] = {
     # Align with ~10 req/s Geocode Earth cap; RPS limiter is the hard throttle.
     "pelias": 10,
@@ -269,7 +272,7 @@ def acquire_geocode_request_slot(
         return
 
     wait_ms = (time.perf_counter() - wait_started) * 1000.0
-    if wait_ms >= 50.0:
+    if wait_ms >= _SLOW_GATE_LOG_MS:
         logger.info(
             "geocode_request_gate_acquired provider=%s wait_ms=%.1f",
             provider,
@@ -281,7 +284,7 @@ def acquire_geocode_request_slot(
         yield
     finally:
         hold_ms = (time.perf_counter() - hold_started) * 1000.0
-        if hold_ms >= 1000.0:
+        if hold_ms >= _SLOW_GATE_LOG_MS:
             logger.info(
                 "geocode_request_gate_released provider=%s hold_ms=%.1f",
                 provider,
@@ -398,7 +401,7 @@ async def acquire_geocode_request_slot_async(
         return
 
     wait_ms = (time.perf_counter() - wait_started) * 1000.0
-    if wait_ms >= 50.0:
+    if wait_ms >= _SLOW_GATE_LOG_MS:
         logger.info(
             "geocode_request_gate_acquired provider=%s wait_ms=%.1f",
             provider,
@@ -410,7 +413,7 @@ async def acquire_geocode_request_slot_async(
         yield
     finally:
         hold_ms = (time.perf_counter() - hold_started) * 1000.0
-        if hold_ms >= 1000.0:
+        if hold_ms >= _SLOW_GATE_LOG_MS:
             logger.info(
                 "geocode_request_gate_released provider=%s hold_ms=%.1f",
                 provider,
