@@ -109,6 +109,8 @@ runs later steps for that attempt only.
 
 `GET /runs/{run_id}/estimated-ai-cost` returns run totals and node-level attribution aggregated from tracked call records. Geocoder provider health on that response is read from the run result. Processed-item results are not scanned. Project statistics and project cost routes aggregate the same tracked call records at project scope.
 
+A cost total is flagged incomplete when any call record has no price. Language-model and embedding calls are priced from LiteLLM's response; Jev decision-model calls are priced from the token counts in the Jev usage block at LiteLLM's rates. Attempts that failed before any response (timeouts, server errors) have nothing to price, so they are recorded as zero cost (`cost_estimate_source` `no_response`) and do not set the flag.
+
 ### Processed items
 
 Project-scoped discovery (list/search without knowing a run) is

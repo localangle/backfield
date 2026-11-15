@@ -16,11 +16,13 @@ from backfield_entities.ingest.geocode_cache.fingerprint import (
     substrate_location_cache_query_fingerprint,
 )
 from backfield_entities.ingest.geocode_cache.resolve import (
+    _tier1_exact_winners,
     build_geocode_cache_adjudication_candidates,
     materialize_canonical_match_dict,
     resolve_geocode_cache_strict_with_outcome,
     try_resolve_geocode_cache,
 )
+from sqlalchemy import event
 from sqlmodel import Session, SQLModel, create_engine
 
 from tests.project_helpers import project_ownership_fields
@@ -911,3 +913,71 @@ def test_tier1_allows_editorial_alias_for_neighborhood() -> None:
     conf = hit.get("confidence")
     assert isinstance(conf, dict)
     assert conf.get("canonical_id") == cid
+
+
+def _canonical(stylebook_id: int, label: str, slug: str, **overrides) -> StylebookLocationCanonical:
+    values = {
+        "stylebook_id": stylebook_id,
+        "label": label,
+        "slug": slug,
+        "location_type": "city",
+        "status": "active",
+        "geometry_json": {"type": "Point", "coordinates": [-87.0, 41.0]},
+        "geometry_type": "Point",
+    }
+    return StylebookLocationCanonical(**(values | overrides))
+
+
+def test_tier1_matches_label_and_alias_but_not_inactive_or_suppressed() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        _pid, sb_id, _ = _seed_org_sb_project(session)
+        by_label = _canonical(sb_id, "Chicago, IL", "chicago-il")
+        by_alias = _canonical(sb_id, "Windy City", "windy-city")
+        inactive = _canonical(sb_id, "Chicago, IL", "chicago-il-old", status="inactive")
+        suppressed = _canonical(sb_id, "Other Town", "other-town")
+        session.add_all([by_label, by_alias, inactive, suppressed])
+        session.commit()
+        for canonical, alias_text, is_suppressed in (
+            (by_alias, "Chicago, IL", False),
+            (suppressed, "Chicago, IL", True),
+        ):
+            session.add(
+                StylebookLocationAlias(
+                    location_canonical_id=str(canonical.id),
+                    alias_text=alias_text,
+                    normalized_alias=alias_text.lower(),
+                    provenance="test",
+                    suppressed=is_suppressed,
+                )
+            )
+        session.commit()
+
+        winners = _tier1_exact_winners(session, sb_id, "chicago, il")
+
+    assert {winner.slug for winner in winners} == {"chicago-il", "windy-city"}
+
+
+def test_tier1_lookup_loads_full_canonical_rows_only_for_matches() -> None:
+    engine = _engine()
+    statements: list[str] = []
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def _capture(_conn, _cursor, statement, *_args) -> None:
+        statements.append(statement)
+
+    with Session(engine) as session:
+        _pid, sb_id, _ = _seed_org_sb_project(session)
+        session.add_all(
+            [_canonical(sb_id, f"Town {n}, IL", f"town-{n}") for n in range(25)]
+            + [_canonical(sb_id, "Chicago, IL", "chicago-il")]
+        )
+        session.commit()
+        statements.clear()
+
+        winners = _tier1_exact_winners(session, sb_id, "chicago, il")
+
+    assert [winner.slug for winner in winners] == ["chicago-il"]
+    row_loads = [sql for sql in statements if "stylebook_location_canonical.geometry_json" in sql]
+    assert len(row_loads) == 1
+    assert " IN (" in row_loads[0]

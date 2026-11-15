@@ -129,3 +129,76 @@ def test_sync_semantic_documents_after_db_output_unknown_domain() -> None:
         consolidated_domain_keys=("works",),
     )
     assert result.summaries == ()
+
+
+def test_sync_semantic_documents_after_db_output_retries_stale_data(monkeypatch) -> None:
+    from unittest.mock import MagicMock
+
+    from backfield_entities.ingest.semantic_indexing import db_output as sem_db
+    from sqlalchemy.orm.exc import StaleDataError
+
+    attempts = {"n": 0}
+    expected = SemanticSyncResult(
+        summaries=(SemanticSyncSummary(entity_type="location", created=1, pending=1),)
+    )
+
+    def _fake_sync(session, *, project_id, article_id, entity_types):  # noqa: ARG001
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise StaleDataError(
+                "UPDATE statement on table 'substrate_location_semantic_document' "
+                "expected to update 7 row(s); 6 were matched."
+            )
+        return expected
+
+    nested = MagicMock()
+    nested.__enter__ = MagicMock(return_value=None)
+    nested.__exit__ = MagicMock(return_value=False)
+    session = MagicMock()
+    session.begin_nested = MagicMock(return_value=nested)
+    session.expire_all = MagicMock()
+
+    monkeypatch.setattr(sem_db, "sync_semantic_documents_for_article", _fake_sync)
+
+    result = sync_semantic_documents_after_db_output(
+        session,
+        project_id=1,
+        article_id=9,
+        consolidated_domain_keys=("places",),
+    )
+    assert result is expected
+    assert attempts["n"] == 2
+    session.expire_all.assert_called_once()
+
+
+def test_sync_semantic_documents_after_db_output_raises_after_stale_retries(
+    monkeypatch,
+) -> None:
+    from unittest.mock import MagicMock
+
+    from backfield_entities.ingest.semantic_indexing import db_output as sem_db
+    from sqlalchemy.orm.exc import StaleDataError
+
+    def _always_stale(session, **_kwargs):  # noqa: ARG001
+        raise StaleDataError("expected to update 4 row(s); 3 were matched.")
+
+    nested = MagicMock()
+    nested.__enter__ = MagicMock(return_value=None)
+    nested.__exit__ = MagicMock(return_value=False)
+    session = MagicMock()
+    session.begin_nested = MagicMock(return_value=nested)
+
+    monkeypatch.setattr(sem_db, "sync_semantic_documents_for_article", _always_stale)
+
+    try:
+        sync_semantic_documents_after_db_output(
+            session,
+            project_id=1,
+            article_id=9,
+            consolidated_domain_keys=("places",),
+        )
+        raise AssertionError("expected StaleDataError")
+    except StaleDataError:
+        pass
+    assert session.begin_nested.call_count == 2
+    assert session.expire_all.call_count == 2

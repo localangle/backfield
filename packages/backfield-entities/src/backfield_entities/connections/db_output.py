@@ -7,6 +7,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session
 
 from backfield_entities.connections.affiliation_links import (
@@ -428,6 +429,15 @@ def run_auto_connections_for_db_output(
         summary["dry_run"] = dry_run
         return summary
     except Exception as exc:
+        # Avoid PendingRollbackError on the caller's subsequent commit().
+        if isinstance(exc, SQLAlchemyError):
+            try:
+                session.rollback()
+            except Exception:
+                logger.debug(
+                    "Session rollback after auto-connection failure failed",
+                    exc_info=True,
+                )
         logger.warning(
             "Auto-connection inference failed for project_id=%s article_id=%s: %s",
             project_id,

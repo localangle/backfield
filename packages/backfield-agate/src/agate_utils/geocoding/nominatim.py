@@ -7,6 +7,7 @@ that uses OpenStreetMap data.
 """
 
 import logging
+import os
 import threading
 import time
 from typing import Any
@@ -16,6 +17,25 @@ from geopy.exc import GeocoderQuotaExceeded, GeocoderServiceError, GeocoderTimed
 from geopy.geocoders import Nominatim
 from geopy.location import Location
 
+from agate_utils.geocoding.nominatim_cache import (
+    get_cached_search,
+    search_cache_key,
+    store_cached_search,
+)
+from agate_utils.geocoding.lookup_budget import (
+    new_deadline,
+    remaining_s,
+    retry_delay_seconds,
+    sleep_before_deadline,
+)
+from agate_utils.geocoding.provider_health import record_geocoder_http_status
+from agate_utils.geocoding.request_gate import (
+    GateWaitTimeout,
+    acquire_geocode_request_slot,
+    provider_cooldown_active,
+    start_provider_cooldown,
+)
+
 from .geocoding_types import (
     GeocodingResult,
     GeocodingResultData,
@@ -24,8 +44,54 @@ from .geocoding_types import (
     bbox_west_south_east_north_to_polygon_coordinates,
 )
 
+_NOMINATIM_MAX_HTTP_RETRIES = 4
+_NOMINATIM_RATE_LIMIT_FLOOR_S = 8.0
+_NOMINATIM_MAX_RETRY_DELAY_S = 30.0
+_DEFAULT_LOOKUP_BUDGET_S = 60.0
+
 # Logging uses the process root JSON formatter; do not call basicConfig here.
 logger = logging.getLogger(__name__)
+
+
+def nominatim_lookup_budget_s() -> float:
+    """Hard time budget for one lookup: gate wait, requests, and retry pauses together."""
+    raw = os.getenv("NOMINATIM_LOOKUP_BUDGET_S", "").strip()
+    try:
+        return max(1.0, float(raw)) if raw else _DEFAULT_LOOKUP_BUDGET_S
+    except ValueError:
+        return _DEFAULT_LOOKUP_BUDGET_S
+
+
+def _start_cooldown(reason: str) -> None:
+    """Make every worker skip Nominatim briefly after a lookup it could not complete."""
+    start_provider_cooldown("nominatim", f"Nominatim {reason}")
+
+
+def _wait_to_retry_rate_limited(
+    attempt: int, deadline: float, response: requests.Response | None = None
+) -> bool:
+    """Back off after a rate-limit answer. False means give up (and start the fleet cool-down)."""
+    if attempt >= _NOMINATIM_MAX_HTTP_RETRIES:
+        logger.error("Nominatim rate limited; giving up")
+        _start_cooldown("rate limited")
+        return False
+    delay = retry_delay_seconds(
+        response,
+        attempt=attempt,
+        base_delay_s=_NOMINATIM_RATE_LIMIT_FLOOR_S,
+        max_delay_s=_NOMINATIM_MAX_RETRY_DELAY_S,
+    )
+    logger.warning(
+        "Nominatim rate limited, retrying in %.1fs (attempt %s/%s)",
+        delay,
+        attempt,
+        _NOMINATIM_MAX_HTTP_RETRIES,
+    )
+    if not sleep_before_deadline(delay, deadline):
+        logger.error("Nominatim rate limited and out of time")
+        _start_cooldown("rate limited and out of time")
+        return False
+    return True
 
 
 class NominatimGeocoder:
@@ -54,19 +120,22 @@ class NominatimGeocoder:
         self.user_agent = user_agent
         self.timeout = timeout
         self._lock = threading.Lock()
+        self._rate_limit_lock = threading.Lock()
         self._geocoder: Nominatim | None = None
         self.rate_limit = rate_limit
         self.last_request_time = 0.0
         
     def _enforce_rate_limit(self) -> None:
         """Enforce rate limiting between requests."""
-        current_time = time.time()
-        elapsed = current_time - self.last_request_time
-        if elapsed < self.rate_limit:
-            sleep_time = self.rate_limit - elapsed
-            logger.debug("Nominatim rate limit: sleeping %.2f seconds", sleep_time)
-            time.sleep(sleep_time)
-        self.last_request_time = time.time()
+        # Geocode calls run in worker threads, so serialize the check-and-sleep.
+        with self._rate_limit_lock:
+            current_time = time.time()
+            elapsed = current_time - self.last_request_time
+            if elapsed < self.rate_limit:
+                sleep_time = self.rate_limit - elapsed
+                logger.debug("Nominatim rate limit: sleeping %.2f seconds", sleep_time)
+                time.sleep(sleep_time)
+            self.last_request_time = time.time()
 
     def _get_geocoder(self) -> Nominatim:
         with self._lock:
@@ -173,48 +242,63 @@ class NominatimGeocoder:
         """
         self._enforce_rate_limit()
         
-        try:
-            logger.info("Nominatim geocode request")
+        geocode_params = {
+            "exactly_one": exactly_one,
+            "language": "en",
+        }
+        if country_codes:
+            geocode_params["country_codes"] = ",".join(country_codes)
+        if viewbox:
+            geocode_params["viewbox"] = viewbox
+            geocode_params["bounded"] = bounded
             
-            # Prepare geocoding parameters
-            geocode_params = {
-                'exactly_one': exactly_one,
-                'language': 'en'
-            }
+        if provider_cooldown_active("nominatim"):
+            logger.debug("Nominatim cooling down; skipping geocode")
+            return None
+        deadline = new_deadline(nominatim_lookup_budget_s())
+        geocoder = self._get_geocoder()
+        for attempt in range(1, _NOMINATIM_MAX_HTTP_RETRIES + 1):
+            try:
+                with acquire_geocode_request_slot(
+                    "nominatim", max_wait_s=remaining_s(deadline)
+                ):
+                    results = geocoder.geocode(query, **geocode_params)
             
-            if country_codes:
-                geocode_params['country_codes'] = ','.join(country_codes)
+                if not results:
+                    logger.warning("No Nominatim results")
+                    return None
             
-            if viewbox:
-                geocode_params['viewbox'] = viewbox
-                geocode_params['bounded'] = bounded
+                if exactly_one:
+                    return self._location_to_result(results, query, placetype)
+                return [
+                    self._location_to_result(location, query, placetype)
+                    for location in results
+                ]
             
-            # Perform geocoding
-            geocoder = self._get_geocoder()
-            results = geocoder.geocode(query, **geocode_params)
-            
-            if not results:
-                logger.warning("No Nominatim results")
+            except GateWaitTimeout:
+                logger.warning("Nominatim geocode gave up waiting for a request slot")
                 return None
-            
-            # Convert results to standardized format
-            if exactly_one:
-                return self._location_to_result(results, query, placetype)
-            else:
-                return [self._location_to_result(location, query, placetype) for location in results]
-                
-        except GeocoderTimedOut:
-            logger.error("Nominatim geocode timeout")
-            return None
-        except GeocoderServiceError as e:
-            logger.error("Nominatim geocode service error: %s", type(e).__name__)
-            return None
-        except GeocoderQuotaExceeded:
-            logger.error("Nominatim geocode quota exceeded")
-            return None
-        except Exception as e:
-            logger.error("Unexpected Nominatim geocode error: %s", type(e).__name__)
-            return None
+            except GeocoderTimedOut:
+                logger.error("Nominatim geocode timeout")
+                return None
+            except GeocoderQuotaExceeded:
+                record_geocoder_http_status("nominatim", 429)
+                if not _wait_to_retry_rate_limited(attempt, deadline):
+                    return None
+            except GeocoderServiceError as e:
+                message = str(e).lower()
+                if "429" in message or "rate" in message:
+                    record_geocoder_http_status("nominatim", 429)
+                    if not _wait_to_retry_rate_limited(attempt, deadline):
+                        return None
+                    continue
+                record_geocoder_http_status("nominatim", 502)
+                logger.error("Nominatim geocode service error: %s", type(e).__name__)
+                return None
+            except Exception:
+                logger.error("Unexpected Nominatim geocode error", exc_info=True)
+                return None
+        return None
     
     def search_raw(
         self,
@@ -242,47 +326,75 @@ class NominatimGeocoder:
             List of raw result dictionaries (possibly empty)
         """
         self._enforce_rate_limit()
-        try:
-            logger.info("Nominatim search request")
-            params = {
-                "q": query,
-                "format": "jsonv2",
-                "limit": str(limit),
-                "addressdetails": "1" if addressdetails else "0",
-                "extratags": "1" if extratags else "0",
-                "namedetails": "1" if namedetails else "0",
-                "accept-language": language,
-            }
-            if layer is not None:
-                params["layer"] = layer
-            if dedupe is not None:
-                params["dedupe"] = str(dedupe)
+        params = {
+            "q": query,
+            "format": "jsonv2",
+            "limit": str(limit),
+            "addressdetails": "1" if addressdetails else "0",
+            "extratags": "1" if extratags else "0",
+            "namedetails": "1" if namedetails else "0",
+            "accept-language": language,
+        }
+        if layer is not None:
+            params["layer"] = layer
+        if dedupe is not None:
+            params["dedupe"] = str(dedupe)
 
-            response = requests.get(
-                "https://nominatim.openstreetmap.org/search",
-                params=params,
-                headers={"User-Agent": self.user_agent},
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-            results = response.json()
-            if not isinstance(results, list):
-                logger.warning("Unexpected Nominatim response format")
+        cache_key = search_cache_key(params)
+        cached = get_cached_search(cache_key)
+        if cached is not None:
+            logger.debug("Nominatim search answered from the shared cache")
+            return cached
+        if provider_cooldown_active("nominatim"):
+            logger.debug("Nominatim cooling down; skipping search")
+            return []
+        deadline = new_deadline(nominatim_lookup_budget_s())
+
+        for attempt in range(1, _NOMINATIM_MAX_HTTP_RETRIES + 1):
+            try:
+                with acquire_geocode_request_slot(
+                    "nominatim", max_wait_s=remaining_s(deadline)
+                ):
+                    # Another worker may have fetched this query while we waited for the slot.
+                    cached = get_cached_search(cache_key)
+                    if cached is not None:
+                        logger.debug("Nominatim search answered from the shared cache")
+                        return cached
+                    response = requests.get(
+                        "https://nominatim.openstreetmap.org/search",
+                        params=params,
+                        headers={"User-Agent": self.user_agent},
+                        timeout=min(self.timeout, max(1.0, remaining_s(deadline))),
+                    )
+                if response.status_code >= 400:
+                    record_geocoder_http_status("nominatim", response.status_code)
+                if response.status_code == 429:
+                    if not _wait_to_retry_rate_limited(attempt, deadline, response):
+                        return []
+                    continue
+                response.raise_for_status()
+                results = response.json()
+                if not isinstance(results, list):
+                    logger.warning("Unexpected Nominatim response format")
+                    return []
+                store_cached_search(cache_key, results)
+                return results
+            except GateWaitTimeout:
+                logger.warning("Nominatim search gave up waiting for a request slot")
                 return []
-            logger.info("Nominatim search returned %d raw result(s)", len(results))
-            return results
-        except requests.Timeout:
-            logger.error("Nominatim search timeout")
-            return []
-        except requests.HTTPError as e:
-            logger.error("Nominatim HTTP error: %s", type(e).__name__)
-            return []
-        except requests.RequestException as e:
-            logger.error("Nominatim request error: %s", type(e).__name__)
-            return []
-        except Exception as e:
-            logger.error("Unexpected Nominatim search error: %s", type(e).__name__)
-            return []
+            except requests.Timeout:
+                logger.error("Nominatim search timeout")
+                return []
+            except requests.HTTPError:
+                logger.error("Nominatim HTTP error")
+                return []
+            except requests.RequestException:
+                logger.error("Nominatim request error")
+                return []
+            except Exception:
+                logger.error("Unexpected Nominatim search error", exc_info=True)
+                return []
+        return []
     
 
 ########## CONVENIENCE FUNCTIONS ##########
@@ -345,36 +457,14 @@ def geocode_address_raw(
     Returns:
         JSON string containing raw Nominatim results or None if no results
     """
+    import json
+
     try:
-        from geopy.geocoders import Nominatim
-        
-        # Initialize Nominatim geocoder
-        geolocator = Nominatim(user_agent=user_agent, timeout=10)
-        
-        # Perform geocoding request
-        locations = geolocator.geocode(address, limit=limit, exactly_one=False)
-        
-        if not locations:
+        raw_results = search_places(query=address, user_agent=user_agent, limit=limit)
+        if not raw_results:
             logger.warning("No Nominatim results for address lookup")
             return None
-        
-        # Combine raw data from all results
-        raw_results = []
-        for location in locations:
-            if hasattr(location, 'raw'):
-                raw_results.append(location.raw)
-        
-        if not raw_results:
-            logger.warning("No raw data in Nominatim results")
-            return None
-        
-        # Convert to JSON string
-        import json
-        json_string = json.dumps(raw_results, indent=2)
-        
-        logger.info("Nominatim address lookup returned %d raw result(s)", len(raw_results))
-        return json_string
-        
-    except Exception as e:
-        logger.error("Error geocoding address: %s", type(e).__name__)
+        return json.dumps(raw_results, indent=2)
+    except Exception:
+        logger.error("Error geocoding address", exc_info=True)
         return None

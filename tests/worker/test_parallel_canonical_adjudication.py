@@ -34,9 +34,9 @@ from worker.substrate.canonical.parallel_llm import (
 from tests.worker.test_substrate_persistence import _bootstrap_project, _empty_places
 
 
-def test_canonical_adjudication_max_concurrent_defaults_to_eight(monkeypatch) -> None:
+def test_canonical_adjudication_max_concurrent_defaults_to_twelve(monkeypatch) -> None:
     monkeypatch.delenv("CANONICAL_ADJUDICATION_MAX_CONCURRENT", raising=False)
-    assert canonical_adjudication_max_concurrent() == 8
+    assert canonical_adjudication_max_concurrent() == 12
 
 
 def test_canonical_adjudication_max_concurrent_respects_env(monkeypatch) -> None:
@@ -360,3 +360,45 @@ def test_parallel_person_adjudication_faster_than_serial(monkeypatch) -> None:
 
     assert parallel_elapsed < serial_elapsed * 0.75
     assert peak >= 2
+
+
+def test_person_persist_prelocks_then_relocks_adjudication_rows_in_id_order(monkeypatch) -> None:
+    import worker.substrate.entities.lock_order as lock_order
+    import worker.substrate.entities.person.handler as person_handler
+
+    prelocked: list[list[str]] = []
+    relocked: list[list[int]] = []
+    real_prelock = person_handler.lock_person_rows
+    real_relock = lock_order.lock_rows_in_id_order
+
+    def _record_prelock(session: Session, *, project_id: int, fingerprints: Any) -> None:
+        wanted = list(fingerprints)
+        prelocked.append(wanted)
+        real_prelock(session, project_id=project_id, fingerprints=wanted)
+
+    def _record_relock(session: Session, id_column: Any, ids: Any) -> None:
+        wanted = list(ids)
+        relocked.append(wanted)
+        real_relock(session, id_column, wanted)
+
+    monkeypatch.setattr(person_handler, "lock_person_rows", _record_prelock)
+    monkeypatch.setattr(lock_order, "lock_rows_in_id_order", _record_relock)
+
+    def _reject(prompt: str, **_kwargs: Any) -> str:
+        if "Candidates" not in prompt:
+            return '{"variant_names": []}'
+        return (
+            '{"decision": "no_match", "canonical_id": null, "confidence": 0.2, '
+            '"same_identity": false, "conflicting_identity_evidence": true, '
+            '"rationale": "unsure"}'
+        )
+
+    _run_parallel_person_persist(
+        monkeypatch=monkeypatch, max_concurrent=4, llm_side_effect=_reject
+    )
+
+    assert len(prelocked) == 1
+    assert len(set(prelocked[0])) == 3
+    assert len(relocked) == 1
+    assert len(relocked[0]) == 3
+    assert relocked[0] == sorted(relocked[0])

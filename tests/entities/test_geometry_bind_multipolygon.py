@@ -15,6 +15,7 @@ from backfield_entities.geo.geometry_bind import (
     GeometryBindError,
     assign_geojson_geometry,
     geojson_to_wkt,
+    geometry_is_geography_safe,
     normalize_geojson_type,
 )
 from backfield_entities.geo.rebind_postgis import rebind_missing_location_postgis_geometry
@@ -221,3 +222,34 @@ def test_rebind_missing_postgis_from_geometry_json() -> None:
         assert str(loc.geometry).startswith("MULTIPOLYGON")
         assert canon.geometry is not None
         assert str(canon.geometry).startswith("MULTIPOLYGON")
+
+
+WORLD_BOX_POLYGON: dict = {
+    "type": "Polygon",
+    "coordinates": [
+        [[-180.0, -90.0], [180.0, -90.0], [180.0, 90.0], [-180.0, 90.0], [-180.0, -90.0]]
+    ],
+}
+
+
+def test_world_sized_polygon_is_not_geography_safe() -> None:
+    assert geometry_is_geography_safe(WORLD_BOX_POLYGON) is False
+
+
+def test_world_sized_polygon_inside_multipolygon_is_not_geography_safe() -> None:
+    multi = {"type": "MultiPolygon", "coordinates": [WORLD_BOX_POLYGON["coordinates"]]}
+    assert geometry_is_geography_safe(multi) is False
+
+
+def test_ordinary_geometries_are_geography_safe() -> None:
+    assert geometry_is_geography_safe(ROUTE_W_MULTIPOLYGON) is True
+    assert geometry_is_geography_safe({"type": "Point", "coordinates": [-92.1, 38.6]}) is True
+
+
+def test_assign_geojson_geometry_rejects_world_sized_polygon() -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        row = SubstrateLocation(project_id=1, name="Moon", normalized_name="moon")
+        with pytest.raises(GeometryBindError):
+            assign_geojson_geometry(session, row, WORLD_BOX_POLYGON)

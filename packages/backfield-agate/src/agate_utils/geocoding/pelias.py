@@ -4,9 +4,7 @@ import asyncio
 import logging
 import re
 import time
-from email.utils import parsedate_to_datetime
 from typing import Any, Dict, List, Optional
-from datetime import UTC
 
 import httpx
 from agate_utils.geocoding.geocoding_types import (
@@ -17,6 +15,7 @@ from agate_utils.geocoding.geocoding_types import (
     GeometryPolygon,
     bbox_west_south_east_north_to_polygon_coordinates,
 )
+from agate_utils.geocoding.lookup_budget import retry_delay_seconds
 from agate_utils.geocoding.provider_health import record_geocoder_http_status
 
 logger = logging.getLogger(__name__)
@@ -28,6 +27,7 @@ _RETRYABLE_HTTP_STATUSES: frozenset[int] = frozenset({429, 502, 503, 504})
 _MAX_HTTP_RETRIES = 4
 _MAX_RETRY_DELAY_S = 30.0
 _BASE_RETRY_DELAY_S = 0.75
+_RATE_LIMITED_RETRY_DELAY_S = 8.0
 
 
 def _redact_pelias_url(url_str: str) -> str:
@@ -42,40 +42,16 @@ def _params_for_log(params: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _retry_delay_seconds(
-    *,
-    response: httpx.Response | None,
-    attempt: int,
-    rate_limited: bool,
-) -> float:
-    """Backoff for retryable HTTP statuses; honor Retry-After when present."""
-    if response is not None:
-        retry_after = response.headers.get("Retry-After", "").strip()
-        if retry_after:
-            if retry_after.isdigit():
-                return min(float(retry_after), _MAX_RETRY_DELAY_S)
-            try:
-                retry_at = parsedate_to_datetime(retry_after)
-                if retry_at.tzinfo is None:
-                    retry_at = retry_at.replace(tzinfo=UTC)
-                delta = retry_at.timestamp() - time.time()
-                if delta > 0:
-                    return min(delta, _MAX_RETRY_DELAY_S)
-            except (TypeError, ValueError, OverflowError):
-                pass
-    multiplier = 2 ** max(0, attempt - 1)
-    floor = 8.0 if rate_limited else _BASE_RETRY_DELAY_S
-    return min(floor * multiplier, _MAX_RETRY_DELAY_S)
-
-
 async def _pelias_get(
     client: httpx.AsyncClient, url: str, params: dict[str, Any]
 ) -> httpx.Response:
     """GET with retries on timeouts and retryable HTTP statuses (429/5xx).
 
     Auth failures (401/403) are never retried; they are recorded for run-level
-    provider health surfacing.
+    provider health surfacing. Fleet Redis concurrency is acquired around each
+    attempt so waits during Retry-After do not hold a slot.
     """
+    from agate_utils.geocoding.request_gate import acquire_geocode_request_slot_async
     from backfield_observability.external import emit_external_request
 
     transient = (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.PoolTimeout)
@@ -84,21 +60,29 @@ async def _pelias_get(
     for attempt in range(1, _MAX_HTTP_RETRIES + 1):
         started = time.perf_counter()
         try:
-            try:
-                response = await client.get(url, params=params)
-            except transient as first:
-                logger.warning("Pelias %s, retrying once", type(first).__name__)
-                emit_external_request(
-                    operation="geocoding",
-                    duration_seconds=time.perf_counter() - started,
-                    failed=True,
-                    provider="pelias",
-                    error_type=type(first).__name__,
-                    outcome="retry",
-                )
+            async with acquire_geocode_request_slot_async("pelias"):
+                try:
+                    response = await client.get(url, params=params)
+                except transient as first:
+                    logger.warning("Pelias %s, retrying once", type(first).__name__)
+                    emit_external_request(
+                        operation="geocoding",
+                        duration_seconds=time.perf_counter() - started,
+                        failed=True,
+                        provider="pelias",
+                        error_type=type(first).__name__,
+                        outcome="retry",
+                    )
+                    response = None
+                    transient_error = first
+                else:
+                    transient_error = None
+
+            if transient_error is not None:
                 await asyncio.sleep(_BASE_RETRY_DELAY_S)
                 started = time.perf_counter()
-                response = await client.get(url, params=params)
+                async with acquire_geocode_request_slot_async("pelias"):
+                    response = await client.get(url, params=params)
 
             failed = response.status_code >= 400
             emit_external_request(
@@ -124,8 +108,11 @@ async def _pelias_get(
                 return response
 
             rate_limited = response.status_code == 429
-            delay = _retry_delay_seconds(
-                response=response, attempt=attempt, rate_limited=rate_limited
+            delay = retry_delay_seconds(
+                response,
+                attempt=attempt,
+                base_delay_s=_RATE_LIMITED_RETRY_DELAY_S if rate_limited else _BASE_RETRY_DELAY_S,
+                max_delay_s=_MAX_RETRY_DELAY_S,
             )
             logger.warning(
                 "Pelias HTTP %s, retrying in %.1fs (attempt %s/%s)",

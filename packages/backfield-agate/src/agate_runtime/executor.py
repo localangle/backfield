@@ -424,6 +424,7 @@ async def _run_node_async(
         before_each_node(node.id, node.type)
     t0 = time.perf_counter()
     node_timeout_s = _async_node_timeout_s()
+    node_deadline = asyncio.timeout(node_timeout_s)
     try:
         async def _execute() -> dict[str, Any]:
             async_runner = async_runners.get(node.type)
@@ -438,14 +439,15 @@ async def _run_node_async(
                 raise GraphExecutionError(f"Node {node.id} returned non-dict: {type(result)}")
             return result
 
-        if node_timeout_s is not None:
-            result = await asyncio.wait_for(_execute(), timeout=node_timeout_s)
-        else:
+        async with node_deadline:
             result = await _execute()
     except TimeoutError as exc:
-        raise GraphExecutionError(
-            f"Node {node.id} ({node.type}) exceeded {node_timeout_s:.0f}s wall-clock limit"
-        ) from exc
+        if node_deadline.expired():
+            raise GraphExecutionError(
+                f"Node {node.id} ({node.type}) exceeded {node_timeout_s:.0f}s wall-clock limit"
+            ) from exc
+        # A timeout raised inside the node (for example a model call) is not the node limit.
+        raise GraphExecutionError(f"Node {node.id} ({node.type}) failed: {exc}") from exc
     except GraphExecutionError:
         raise
     except Exception as exc:

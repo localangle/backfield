@@ -118,3 +118,9 @@ def test_natural_country_filter_rejects_canada_when_us() -> None:
 def test_street_road_city_gate_skips_when_city_equals_street_name() -> None:
     road = StreetRoad(name="Missouri Route J", city="Missouri Route J", state="MO")
     assert road._city_agrees({"pelias_locality": "Columbia", "pelias_county": "Boone"})
+
+
+def test_natural_estimate_rejects_world_sized_bounding_box() -> None:
+    place = NaturalPlace(name="Moon", place_name="Moon", place_is_natural=True)
+    assert place._is_valid_bbox([-90.0, -180.0, 90.0, 180.0]) is False
+    assert place._is_valid_bbox([40.0, -92.0, 41.0, -91.0]) is True

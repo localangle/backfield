@@ -99,3 +99,8 @@ def test_transient_error_retries_up_to_max_retries(
     assert mock_completion.call_count == 3
     assert mock_persist.call_count == 3
     assert mock_sleep.call_count == 2
+    # Attempts that never got a response cost nothing and do not make the run total incomplete.
+    for call in mock_persist.call_args_list:
+        assert call.kwargs["estimated_cost"] == Decimal(0)
+        assert call.kwargs["cost_estimate_incomplete"] is False
+        assert call.kwargs["cost_estimate_source"] == "no_response"

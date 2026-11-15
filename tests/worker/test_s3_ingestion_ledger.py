@@ -29,6 +29,7 @@ from worker.s3_ingestion_ledger import (
     find_succeeded_matching_metadata,
     mark_ledger_needs_attention,
     mark_ledger_succeeded,
+    unchanged_object_keys,
 )
 from worker.substrate.content.article import _upsert_article
 
@@ -261,6 +262,43 @@ def test_ledger_identity_lookups_are_project_scoped(ledger_engine):
             )
             is None
         )
+
+
+def test_unchanged_object_keys_matches_single_object_check(ledger_engine):
+    engine, _graph_id, project_id = ledger_engine
+    when = datetime(2024, 1, 1)  # SQLite returns naive timestamps
+
+    def _listing(key: str, etag: str) -> S3ObjectListing:
+        return S3ObjectListing(key=key, etag=etag, size_bytes=10, last_modified=when)
+
+    with Session(engine) as session:
+        for key, status in (("p/same.json", "succeeded"), ("p/failed.json", "failed")):
+            session.add(
+                AgateS3IngestionLedger(
+                    project_id=project_id,
+                    source_id="src",
+                    logical_item_id=f"my-bucket/{key}",
+                    bucket="my-bucket",
+                    key=key,
+                    content_fingerprint=f"fp-{key}",
+                    etag='"v1"',
+                    size_bytes=10,
+                    last_modified=when,
+                    status=status,
+                    attempt_count=1,
+                )
+            )
+        session.commit()
+        listings = [
+            _listing("p/same.json", '"v1"'),
+            _listing("p/failed.json", '"v1"'),
+            _listing("p/new.json", '"v1"'),
+        ]
+        kwargs = {"project_id": project_id, "source_id": "src", "bucket": "my-bucket"}
+        assert unchanged_object_keys(session, listings=listings, **kwargs) == {"p/same.json"}
+        edited = [_listing("p/same.json", '"v2"')]
+        assert unchanged_object_keys(session, listings=edited, **kwargs) == set()
+        assert unchanged_object_keys(session, listings=[], **kwargs) == set()
 
 
 def test_identical_revisions_are_processed_independently_by_project(ledger_engine, monkeypatch):

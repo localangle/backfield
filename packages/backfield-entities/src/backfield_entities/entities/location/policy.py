@@ -124,22 +124,24 @@ def canonical_ids_by_normalized_label(
             queries.add(folded)
     if not queries:
         return []
-    canons = session.exec(
-        select(StylebookLocationCanonical).where(
+    # Only id and label are needed. Loading whole rows pulls geometry for every canonical in the
+    # stylebook (about 200 MB per call), which multiplies across concurrent items.
+    canon_labels = session.exec(
+        select(StylebookLocationCanonical.id, StylebookLocationCanonical.label).where(
             StylebookLocationCanonical.stylebook_id == stylebook_id,
             StylebookLocationCanonical.status == "active",
         )
     ).all()
     winners: list[str] = []
-    for canon in canons:
-        if canon.id is None:
+    for canon_id, label in canon_labels:
+        if canon_id is None:
             continue
         label_keys = {
-            normalize_substrate_cache_query(str(canon.label)),
-            match_fold_key(str(canon.label)),
+            normalize_substrate_cache_query(str(label)),
+            match_fold_key(str(label)),
         }
         if label_keys & queries:
-            winners.append(str(canon.id))
+            winners.append(str(canon_id))
     return sorted(set(winners))
 
 

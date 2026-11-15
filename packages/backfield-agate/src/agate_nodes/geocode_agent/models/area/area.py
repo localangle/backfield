@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -333,7 +334,8 @@ class Area(Location):
                         return chosen
                     # LLM adjudication only when multiple plausible candidates exist.
                     if openai_api_key and len(candidates) >= 2:
-                        llm_pick = self._adjudicate_area_candidates_with_llm(
+                        llm_pick = await asyncio.to_thread(
+                            self._adjudicate_area_candidates_with_llm,
                             candidates=candidates,
                             expected_layer=expected_layer,
                             openai_api_key=openai_api_key,
@@ -377,7 +379,8 @@ class Area(Location):
                             self.geocoding_result = chosen
                             return chosen
                         if openai_api_key and len(candidates) >= 2:
-                            llm_pick = self._adjudicate_area_candidates_with_llm(
+                            llm_pick = await asyncio.to_thread(
+                                self._adjudicate_area_candidates_with_llm,
                                 candidates=candidates,
                                 expected_layer=expected_layer,
                                 openai_api_key=openai_api_key,
@@ -400,7 +403,8 @@ class Area(Location):
             try:
                 prep_data = self._prep()
                 if "geocodio" in prep_data:
-                    result = geocodio_search(
+                    result = await asyncio.to_thread(
+                        geocodio_search,
                         query=prep_data["geocodio"]["query"],
                         api_key=geocodio_api_key,
                         placetype=self._get_placetype()
@@ -418,7 +422,9 @@ class Area(Location):
                             self.geocoding_result = result
                             return result
                         elif openai_api_key:
-                            evaluation = self._evaluate_result(result, "Geocodio", openai_api_key)
+                            evaluation = await asyncio.to_thread(
+                                self._evaluate_result, result, "Geocodio", openai_api_key
+                            )
                             if evaluation and evaluation.get("quality") == "good":
                                 logger.info(f"Geocodio success for {self.name} (LLM evaluation)")
                                 self.geocoding_result = result
@@ -433,7 +439,8 @@ class Area(Location):
         try:
             prep_data = self._prep()
             if "nominatim" in prep_data:
-                result = geocode_address(
+                result = await asyncio.to_thread(
+                    geocode_address,
                     address=prep_data["nominatim"]["query"],
                     user_agent="agate/1.0",
                     placetype=self._get_placetype()
@@ -444,7 +451,9 @@ class Area(Location):
                         self.geocoding_result = result
                         return result
                     elif openai_api_key:
-                        evaluation = self._evaluate_result(result, "Nominatim", openai_api_key)
+                        evaluation = await asyncio.to_thread(
+                            self._evaluate_result, result, "Nominatim", openai_api_key
+                        )
                         if evaluation and evaluation.get("quality") == "good":
                             logger.info(f"Nominatim success for {self.name} (LLM evaluation)")
                             self.geocoding_result = result

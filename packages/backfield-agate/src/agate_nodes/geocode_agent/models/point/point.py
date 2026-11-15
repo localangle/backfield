@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Optional, Dict, Any
 from agate_utils.geocoding.geocoding_types import GeocodingResult
@@ -53,7 +54,9 @@ class Point(Location):
         # Try Geocodio
         if geocodio_api_key:
             try:
-                result = geocodio_search(query=prep_data["text"], api_key=geocodio_api_key)
+                result = await asyncio.to_thread(
+                    geocodio_search, query=prep_data["text"], api_key=geocodio_api_key
+                )
                 conf = (
                     result.result.confidence
                     if result and result.result is not None

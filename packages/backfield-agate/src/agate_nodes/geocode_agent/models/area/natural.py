@@ -541,6 +541,9 @@ class NaturalPlace(Area):
             return False
         if min_lat >= max_lat or min_lon >= max_lon:
             return False
+        # A box half the globe wide cannot be stored as a place boundary (e.g. "the Moon").
+        if max_lon - min_lon >= 180 or max_lat - min_lat >= 180:
+            return False
         return True
 
     def _build_fallback_id(self) -> str:
@@ -582,7 +585,8 @@ class NaturalPlace(Area):
             query = prep_data["nominatim"]["query"]
 
         if candidates:
-            chosen = self._choose_candidate_with_llm(
+            chosen = await asyncio.to_thread(
+                self._choose_candidate_with_llm,
                 candidates=candidates,
                 openai_api_key=openai_api_key,
                 context=prep_data.get("context"),
@@ -596,7 +600,8 @@ class NaturalPlace(Area):
             logger.info("NaturalPlace Nominatim found no candidates for '%s'", self.name)
 
         logger.info("Falling back to LLM bounding box estimate for natural place '%s'", self.name)
-        fallback_result = self._estimate_bbox_with_llm(
+        fallback_result = await asyncio.to_thread(
+            self._estimate_bbox_with_llm,
             openai_api_key=openai_api_key,
             context=prep_data.get("context"),
         )

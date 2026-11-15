@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -31,10 +32,7 @@ from agate_runtime.run_graph_spec import (
 )
 from agate_runtime.s3_batch import (
     list_json_objects_under_prefix,
-    logical_item_id,
-    parse_s3_text_json_document,
     s3_max_files_from_params,
-    sha256_hex,
 )
 from agate_runtime.s3_credentials import s3_client_from_env
 from agate_utils.llm import call_llm
@@ -93,7 +91,7 @@ from backfield_observability.lifecycle import (
     emit_worker_lost,
     worker_identity,
 )
-from celery import Celery, Task, chord, group
+from celery import Celery, Task
 from sqlalchemy import delete, func, update
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, col, select
@@ -107,12 +105,31 @@ from worker.processed_item_claims import (
     release_running_claim,
     should_reconcile_orphan_running_items,
 )
+from worker.s3_batch_dispatch import (
+    batch_max_inflight,
+    clear_batch_pending_ids,
+    dispatch_intake_chunk,
+    dispatch_next_batch_item,
+    order_batch_item_ids_by_text_length,
+    parent_run_status,
+    queue_execute_processed_item_chord,
+    replenish_batch_window,
+    store_batch_pending_ids,
+)
+from worker.s3_batch_intake import (
+    IntakeRamp,
+    IntakeTiming,
+    chunked,
+    intake_chunk_size,
+    ramp_seconds,
+)
+from worker.s3_batch_setup_intake import (
+    S3IntakeCounters,
+    commit_s3_intake_progress,
+    ingest_s3_chunk,
+)
 from worker.s3_ingestion_ledger import (
-    attach_processed_item,
-    claim_ledger_revision,
     ensure_s3_input_source_id,
-    find_row_for_fingerprint,
-    find_succeeded_matching_metadata,
     load_claim_token,
     mark_ledger_failed,
     mark_ledger_needs_attention,
@@ -626,10 +643,6 @@ def _terminalize_ingestion_ledger_for_item(
         )
 
 
-def _parent_run_status(session: Session, run_id: str) -> str | None:
-    return session.exec(select(AgateRun.status).where(AgateRun.id == run_id)).first()
-
-
 def _run_has_unfinished_items(session: Session, run_id: str) -> bool:
     blocker_id = session.exec(
         select(AgateProcessedItem.id)
@@ -655,8 +668,11 @@ def _update_processed_item_outcome_if_active(
     now: datetime,
 ) -> bool:
     """Store a terminal item outcome only while both parent and item remain active."""
+    # FOR NO KEY UPDATE (key_share=True), not FOR UPDATE: item persists insert rows with a run_id
+    # foreign key and hold a KEY SHARE lock on this run row until they commit. A plain FOR UPDATE
+    # queues every item completion behind those long persists (and pins PgBouncer connections).
     parent_status = session.exec(
-        select(AgateRun.status).where(AgateRun.id == run_id).with_for_update()
+        select(AgateRun.status).where(AgateRun.id == run_id).with_for_update(key_share=True)
     ).first()
     if parent_status != "running":
         return False
@@ -680,16 +696,37 @@ def _update_processed_item_outcome_if_active(
     return int(result.rowcount or 0) == 1
 
 
+def _s3_batch_intake_in_progress(result_json: str | None) -> bool:
+    """True while chunked intake is still adding items (``s3_batch.intake_complete`` is false)."""
+    batch = parse_run_result_payload(result_json).get("s3_batch")
+    return isinstance(batch, dict) and batch.get("intake_complete") is False
+
+
+def _s3_intake_in_progress(session: Session, run_id: str) -> bool:
+    result_json = session.exec(select(AgateRun.result_json).where(AgateRun.id == run_id)).first()
+    return _s3_batch_intake_in_progress(result_json)
+
+
 def _finalize_s3_parent_run(session: Session, run_id: str) -> None:
-    if _parent_run_status(session, run_id) != "running":
+    if parent_run_status(session, run_id) != "running":
+        clear_batch_pending_ids(run_id)
         return
 
     reaped = _reap_stale_running_items_for_run(session, run_id)
     if reaped:
         # Keep stale recovery durable and release item locks before taking the parent lock.
         session.commit()
+        # 1:1 replace for each reaped slot (same as a normal completion dispatch).
+        for _ in range(reaped):
+            dispatch_next_batch_item(run_id)
 
     if _run_has_unfinished_items(session, run_id):
+        # Stranded recovery only (running == 0); normal refill is dispatch-on-complete.
+        replenish_batch_window(session, run_id)
+        return
+
+    if _s3_intake_in_progress(session, run_id):
+        # More items are still being loaded; setup finalizes once intake is complete.
         return
 
     run = session.exec(
@@ -699,8 +736,12 @@ def _finalize_s3_parent_run(session: Session, run_id: str) -> None:
         .execution_options(populate_existing=True)
     ).first()
     if run is None or run.status != "running":
+        clear_batch_pending_ids(run_id)
         return
     if _run_has_unfinished_items(session, run_id):
+        replenish_batch_window(session, run_id)
+        return
+    if _s3_batch_intake_in_progress(run.result_json):
         return
 
     items = list(
@@ -741,6 +782,7 @@ def _finalize_s3_parent_run(session: Session, run_id: str) -> None:
     session.add(run)
     record_run_terminal_event(session, run)
     session.commit()
+    clear_batch_pending_ids(run_id)
     emit_run_terminal(
         previous_status=previous_status,
         new_status=run.status,
@@ -1023,11 +1065,8 @@ def execute_json_input_batch_setup(run_id: str) -> None:
                 len(pending),
                 run_id,
             )
-            pending_sorted = sorted(pending, key=lambda row: row[1], reverse=True)
-            ordered_ids = [item_id for item_id, _ in pending_sorted]
-            header = group(execute_processed_item.s(item_id) for item_id in ordered_ids)
-            _queue = os.environ.get("CELERY_QUEUE", "agate")
-            chord(header, finalize_s3_parent_run.s(run_id)).apply_async(queue=_queue)
+            ordered_ids = order_batch_item_ids_by_text_length(pending)
+            queue_execute_processed_item_chord(run_id, ordered_ids)
         except Exception as e:
             logger.exception("JSON Input batch setup failed for run %s", run_id)
             # Unpooled Session: the enclosing `with Session(engine)` above is still
@@ -1131,17 +1170,16 @@ def execute_s3_batch_setup(run_id: str) -> None:
             project_id = int(graph.project_id)
 
             overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
+            listing_started = time.perf_counter()
             with _env_overlay(overlay):
                 s3_client = _s3_client_from_env()
                 listings = list_json_objects_under_prefix(
                     s3_client, bucket=bucket, prefix=prefix
                 )
+            listing_s = time.perf_counter() - listing_started
 
-            skipped_invalid = 0
-            skipped_cap = 0
-            skipped_unchanged = 0
-            skipped_claim_conflict = 0
-            pending: list[tuple[int, int]] = []
+            counters = S3IntakeCounters()
+            timing = IntakeTiming(listing_s=listing_s)
 
             if not listings:
                 run = session.exec(
@@ -1181,142 +1219,74 @@ def execute_s3_batch_setup(run_id: str) -> None:
                 _kick_webhook_dispatch(session)
                 return
 
+            chunk_size = intake_chunk_size()
+            max_inflight = batch_max_inflight()
+            # Big batches stream: each chunk is committed and queued while later chunks are
+            # still being read, so items appear and start within seconds. Small batches (one
+            # chunk), uncapped runs, and runs without Redis queue everything after loading.
+            streaming = (
+                max_inflight > 0
+                and len(listings) > chunk_size
+                # An empty store resets the pending list and confirms Redis is reachable.
+                and store_batch_pending_ids(run_id, [])
+            )
+            ramp = IntakeRamp(window=max_inflight, ramp_s=ramp_seconds())
+            intake_flag = False if streaming else None
+            legacy_pending: list[tuple[int, int]] = []
+
+            if streaming and not commit_s3_intake_progress(
+                session,
+                run_id,
+                spec_json,
+                counters.as_meta(len(listings), intake_complete=False),
+            ):
+                clear_batch_pending_ids(run_id)
+                return
+
             with _env_overlay(overlay):
                 s3_client = _s3_client_from_env()
-                for listing in listings:
-                    key = listing.key
-                    item_logical_id = logical_item_id(bucket=bucket, key=key)
-
-                    if not reprocess_unchanged and find_succeeded_matching_metadata(
+                for chunk in chunked(listings, chunk_size):
+                    chunk_pending = ingest_s3_chunk(
                         session,
-                        project_id=project_id,
-                        source_id=source_id,
-                        item_id=item_logical_id,
-                        listing=listing,
-                    ):
-                        skipped_unchanged += 1
-                        continue
-
-                    if len(pending) >= max_files:
-                        skipped_cap += 1
-                        continue
-
-                    try:
-                        response = s3_client.get_object(Bucket=bucket, Key=key)
-                        raw_bytes = response["Body"].read()
-                        raw = raw_bytes.decode("utf-8")
-                        version_id = response.get("VersionId")
-                        version_id_str = (
-                            str(version_id) if version_id is not None else None
-                        )
-                    except Exception as exc:  # noqa: BLE001 — classify as skipped
-                        skipped_invalid += 1
-                        logger.info(
-                            "S3 batch skip get failure run_id=%s key=%s err=%s",
-                            run_id,
-                            key,
-                            exc,
-                        )
-                        continue
-
-                    fingerprint = sha256_hex(raw_bytes)
-                    existing_fp = find_row_for_fingerprint(
-                        session,
-                        project_id=project_id,
-                        source_id=source_id,
-                        item_id=item_logical_id,
-                        content_fingerprint=fingerprint,
-                    )
-                    if (
-                        not reprocess_unchanged
-                        and existing_fp is not None
-                        and existing_fp.status == "succeeded"
-                    ):
-                        skipped_unchanged += 1
-                        continue
-                    if (
-                        existing_fp is not None
-                        and existing_fp.status == "processing"
-                        and existing_fp.lease_expires_at is not None
-                    ):
-                        lease = existing_fp.lease_expires_at
-                        if lease.tzinfo is None:
-                            lease = lease.replace(tzinfo=UTC)
-                        if lease > datetime.now(UTC):
-                            skipped_claim_conflict += 1
-                            continue
-
-                    doc, err = parse_s3_text_json_document(raw)
-                    if err or doc is None:
-                        skipped_invalid += 1
-                        continue
-
-                    claim = claim_ledger_revision(
-                        session,
+                        run_id=run_id,
                         project_id=project_id,
                         source_id=source_id,
                         bucket=bucket,
-                        key=key,
-                        content_fingerprint=fingerprint,
-                        listing=listing,
-                        version_id=version_id_str,
-                        flow_run_id=run_id,
+                        s3_client=s3_client,
+                        chunk=chunk,
+                        reprocess_unchanged=reprocess_unchanged,
+                        max_files=max_files,
                         lease_duration=lease_duration,
-                        reclaim_succeeded=reprocess_unchanged,
+                        counters=counters,
+                        timing=timing,
                     )
-                    if claim is None:
-                        skipped_claim_conflict += 1
-                        continue
-
-                    row = AgateProcessedItem(
-                        run_id=run_id,
-                        source_file=key,
-                        input_json=json.dumps(doc),
-                        status="pending",
-                        ingestion_ledger_id=claim.ledger_id,
-                    )
-                    session.add(row)
-                    session.flush()
-                    if row.id is None:
-                        skipped_claim_conflict += 1
-                        continue
-                    attach_processed_item(
+                    if not commit_s3_intake_progress(
                         session,
-                        project_id=project_id,
-                        ledger_id=claim.ledger_id,
-                        claim_token=claim.claim_token,
-                        processed_item_id=int(row.id),
-                    )
-                    text_len = len(str(doc.get("text") or ""))
-                    pending.append((int(row.id), text_len))
+                        run_id,
+                        spec_json,
+                        counters.as_meta(len(listings), intake_complete=intake_flag),
+                    ):
+                        clear_batch_pending_ids(run_id)
+                        return
+                    timing.chunks += 1
+                    if streaming:
+                        dispatch_started = time.perf_counter()
+                        dispatch_intake_chunk(session, run_id, chunk_pending, ramp)
+                        timing.dispatch_s += time.perf_counter() - dispatch_started
+                    else:
+                        legacy_pending.extend(chunk_pending)
 
-            batch_meta = {
-                "total_json_objects": len(listings),
-                "skipped_invalid": skipped_invalid,
-                "skipped_cap": skipped_cap,
-                "skipped_unchanged": skipped_unchanged,
-                "skipped_claim_conflict": skipped_claim_conflict,
-                "valid_executed": len(pending),
-            }
-            run = session.exec(
-                select(AgateRun)
-                .where(AgateRun.id == run_id)
-                .with_for_update()
-                .execution_options(populate_existing=True)
-            ).first()
-            if run is None or run.status != "running":
-                session.rollback()
+            if streaming and not commit_s3_intake_progress(
+                session,
+                run_id,
+                spec_json,
+                counters.as_meta(len(listings), intake_complete=True),
+            ):
+                clear_batch_pending_ids(run_id)
                 return
-            run.result_json = merge_run_result_payload(
-                run.result_json,
-                s3_batch=batch_meta,
-                graph_spec_json=spec_json,
-            )
-            run.updated_at = datetime.now(UTC)
-            session.add(run)
-            session.commit()
+            timing.log(run_id=run_id, items=counters.valid, objects=len(listings))
 
-            if not pending:
+            if counters.valid == 0:
                 run = session.exec(
                     select(AgateRun)
                     .where(AgateRun.id == run_id)
@@ -1328,7 +1298,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                     return
                 previous_status = run.status
                 # Caught up: keys existed but nothing new to claim.
-                if skipped_unchanged > 0 or skipped_claim_conflict > 0:
+                if counters.skipped_unchanged > 0 or counters.skipped_claim_conflict > 0:
                     run.status = "succeeded"
                     run.error_message = None
                     run.updated_at = datetime.now(UTC)
@@ -1360,24 +1330,27 @@ def execute_s3_batch_setup(run_id: str) -> None:
                 _kick_webhook_dispatch(session)
                 return
 
+            if streaming:
+                # Every item may already have finished while the last chunks were loading. Skip
+                # otherwise: queued items still waiting to start would look stranded.
+                if not _run_has_unfinished_items(session, run_id):
+                    _finalize_s3_parent_run(session, run_id)
+                return
+
             # Queue all ``execute_processed_item`` tasks and return immediately. A ``chord``
             # callback finalizes the parent run when every child finishes — unlike
             # ``group().get()`` inside this task, that does not pin a worker slot while children
             # are waiting to start (avoids deadlock at concurrency=1).
             logger.info(
-                "execute_s3_batch_setup: queueing chord of %d execute_processed_item task(s) "
-                "for run %s",
-                len(pending),
+                "execute_s3_batch_setup: queueing %d execute_processed_item task(s) for run %s",
+                counters.valid,
                 run_id,
             )
-            pending_sorted = sorted(pending, key=lambda row: row[1], reverse=True)
-            ordered_ids = [item_id for item_id, _ in pending_sorted]
-            header = group(execute_processed_item.s(item_id) for item_id in ordered_ids)
-            _queue = os.environ.get("CELERY_QUEUE", "agate")
-            # Use the two-argument ``chord(header, body)`` primitive + ``apply_async()`` so the
-            # group is published to the broker in production. The ``header(body)`` callable form
-            # can return an eager result object (no ``apply_async``) when ``task_always_eager``.
-            chord(header, finalize_s3_parent_run.s(run_id)).apply_async(queue=_queue)
+            ordered_ids = order_batch_item_ids_by_text_length(legacy_pending)
+            # Sliding window via ``queue_execute_processed_item_chord`` (initial
+            # ``S3_BATCH_MAX_INFLIGHT``, then dispatch-on-complete). Falls back to a
+            # single chord when uncapped or when the batch fits in one window.
+            queue_execute_processed_item_chord(run_id, ordered_ids)
         except Exception as e:
             logger.exception("S3 batch setup failed for run %s", run_id)
             # Unpooled Session: the enclosing `with Session(engine)` above is still
@@ -1495,9 +1468,7 @@ def execute_run_replay_setup(source_run_id: str, new_run_id: str) -> None:
             new_run_id,
             source_run_id,
         )
-        _queue = os.environ.get("CELERY_QUEUE", "agate")
-        header = group(execute_processed_item.s(item_id) for item_id in pending_ids)
-        chord(header, finalize_s3_parent_run.s(new_run_id)).apply_async(queue=_queue)
+        queue_execute_processed_item_chord(new_run_id, pending_ids)
 
 
 @celery_app.task(
@@ -1750,6 +1721,7 @@ def _execute_processed_item_impl(
                     finished_at=finished_at,
                     correlation={"run_id": str(item_run_id), "item_id": str(item_id)},
                 )
+                dispatch_next_batch_item(str(item_run_id))
                 _finalize_s3_parent_run(session, item_run_id)
             else:
                 session.rollback()
@@ -1858,6 +1830,7 @@ def _execute_processed_item_impl(
             finished_at=finished_at,
             correlation={"run_id": run_id_str, "item_id": str(item_id)},
         )
+        dispatch_next_batch_item(run_id_str)
         _finalize_s3_parent_run(session, run_id_str)
 
 

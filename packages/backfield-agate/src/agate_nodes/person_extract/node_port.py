@@ -24,6 +24,7 @@ from agate_nodes.extraction.grounding import ChunkCandidate
 from agate_nodes.extraction.shared_llm import (
     effective_llm_timeout,
     extract_reasoning_effort,
+    llm_attempt_timeout,
     model_config_id_from_params,
     preflight_unchunked_prompt,
     resolve_extract_litellm_model,
@@ -237,10 +238,14 @@ class PersonExtractNode:
                 if is_skippable_compact_row_error(msg):
                     continue
                 parse_errors.append(msg)
-        if not people and parse_errors:
-            detail = parse_errors[0] if len(parse_errors) == 1 else "; ".join(parse_errors[:5])
-            raise ValueError(
-                f"Failed to parse LLM response as people data: no valid people. {detail}"
+        if parse_errors:
+            # Malformed entries are dropped so one bad row cannot fail the whole item.
+            logger.warning(
+                "[PersonExtract] skipped %d malformed person entr%s (kept %d): %s",
+                len(parse_errors),
+                "y" if len(parse_errors) == 1 else "ies",
+                len(people),
+                "; ".join(parse_errors[:5]),
             )
         return people
 
@@ -390,7 +395,7 @@ class PersonExtractNode:
                     system_message=system_message,
                     force_json=True,
                     temperature=0.0,
-                    timeout=effective_timeout,
+                    timeout=llm_attempt_timeout(effective_timeout),
                     openai_api_key=ctx.get_api_key("OPENAI_API_KEY"),
                     anthropic_api_key=ctx.get_api_key("ANTHROPIC_API_KEY"),
                     gemini_api_key=ctx.get_api_key("GEMINI_API_KEY"),
@@ -405,7 +410,7 @@ class PersonExtractNode:
             )
         except TimeoutError as exc:
             raise TimeoutError(
-                f"PersonExtract LLM call exceeded timeout of {effective_timeout}s"
+                f"PersonExtract LLM call exceeded its total time budget of {effective_timeout}s"
             ) from exc
 
         try:

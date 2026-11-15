@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -206,7 +207,8 @@ class Intersection(Point):
     ) -> Optional[GeocodingResult]:
         logger.info("Geocoding intersection: %s", self.name)
 
-        geocodio_result = self._try_geocodio(geocodio_api_key)
+        # Geocodio and the LLM block on network/gate waits; keep them off the event loop.
+        geocodio_result = await asyncio.to_thread(self._try_geocodio, geocodio_api_key)
         if geocodio_result:
             self.geocoding_result = geocodio_result
             return geocodio_result
@@ -217,7 +219,7 @@ class Intersection(Point):
             return overpass_result
 
         logger.info("Falling back to LLM point estimate for intersection '%s'", self.name)
-        llm_result = self._try_llm_point_estimate(openai_api_key)
+        llm_result = await asyncio.to_thread(self._try_llm_point_estimate, openai_api_key)
         if llm_result:
             self.geocoding_result = llm_result
             return llm_result

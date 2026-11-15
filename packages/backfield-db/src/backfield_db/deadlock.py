@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from sqlalchemy.exc import DBAPIError, OperationalError
 
 DEADLOCK_SQLSTATE = "40P01"
@@ -26,4 +28,37 @@ def is_postgres_deadlock(exc: BaseException) -> bool:
     cause = getattr(exc, "__cause__", None)
     if cause is not None and cause is not exc and isinstance(cause, BaseException):
         return is_postgres_deadlock(cause)
+    return False
+
+
+FOREIGN_KEY_VIOLATION_SQLSTATE = "23503"
+
+# Constraint name of a substrate row's Stylebook link, e.g.
+# ``substrate_person_stylebook_person_canonical_id_fkey``.
+_CANONICAL_LINK_CONSTRAINT = re.compile(
+    r"substrate_(person|organization|location)_stylebook_\1_canonical_id_fkey"
+)
+
+
+def _orig_indicates_missing_canonical_link(orig: object | None) -> bool:
+    if orig is None:
+        return False
+    sqlstate = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+    message = str(orig).lower()
+    is_fk_violation = sqlstate == FOREIGN_KEY_VIOLATION_SQLSTATE or "foreign key" in message
+    return is_fk_violation and _CANONICAL_LINK_CONSTRAINT.search(message) is not None
+
+
+def is_missing_canonical_link(exc: BaseException) -> bool:
+    """True when a substrate row linked to a Stylebook canonical that no longer exists.
+
+    A concurrent item can prune an ingest canonical between this item's match decision and its
+    commit. The whole persist transaction rolled back, so a fresh attempt re-matches safely.
+    """
+    if isinstance(exc, (OperationalError, DBAPIError)):
+        if _orig_indicates_missing_canonical_link(getattr(exc, "orig", None)):
+            return True
+    cause = getattr(exc, "__cause__", None)
+    if cause is not None and cause is not exc and isinstance(cause, BaseException):
+        return is_missing_canonical_link(cause)
     return False

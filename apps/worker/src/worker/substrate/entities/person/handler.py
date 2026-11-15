@@ -29,6 +29,10 @@ from worker.substrate.canonical.parallel_llm import (
     commit_session_before_session_free_llm,
     run_callables_parallel,
 )
+from worker.substrate.entities.lock_order import (
+    lock_person_rows,
+    relock_in_id_order,
+)
 from worker.substrate.entities.person.adjudication import (
     PersonAdjudicationPrepared,
     prepare_person_adjudication,
@@ -41,7 +45,11 @@ from worker.substrate.entities.person.mentions import (
     dispose_orphan_substrates_after_retired_mentions,
     retire_stale_article_mentions_for_rerun,
 )
-from worker.substrate.entities.person.upsert import _iter_people_entries, _upsert_person
+from worker.substrate.entities.person.upsert import (
+    _iter_people_entries,
+    _upsert_person,
+    person_fingerprint_for_entry,
+)
 from worker.substrate.entities.registry import (
     DomainReconciliationSummary,
     HandlerPersistResult,
@@ -169,6 +177,15 @@ class PersonPersistHandler:
         adj_model = (ctx.settings.adjudication_model or "").strip() or "gpt-5-nano"
         ai_assisted = ctx.settings.canonicalization_mode == "ai_assisted"
 
+        lock_person_rows(
+            session,
+            project_id=ctx.project_id,
+            fingerprints=[
+                fingerprint
+                for _bucket, entry in _iter_people_entries(people)
+                if (fingerprint := person_fingerprint_for_entry(entry))
+            ],
+        )
         for idx, (bucket, entry) in enumerate(_iter_people_entries(people)):
             anchor = entry.get("id") or entry.get("mention_id")
             if not (isinstance(anchor, str) and str(anchor).strip()):
@@ -318,7 +335,13 @@ class PersonPersistHandler:
                 for item in pending_adjudication
             ]
             llm_results = run_callables_parallel(llm_tasks, max_workers=max_workers)
-            for item, llm_data in zip(pending_adjudication, llm_results, strict=True):
+            applied = relock_in_id_order(
+                session,
+                col(SubstratePerson.id),
+                list(zip(pending_adjudication, llm_results, strict=True)),
+                row_id=lambda item: int(item.person.id),  # type: ignore[arg-type]
+            )
+            for item, llm_data in applied:
                 person_id = int(item.person.id)  # type: ignore[arg-type]
                 person = session.get(SubstratePerson, person_id)
                 if person is None:

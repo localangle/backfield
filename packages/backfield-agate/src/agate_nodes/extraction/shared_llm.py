@@ -14,9 +14,31 @@ logger = logging.getLogger(__name__)
 TASK_SOFT_TIME_LIMIT = int(os.getenv("TASK_SOFT_TIME_LIMIT", "3600"))
 CELERY_TIMEOUT_BUFFER = 300
 
+# One model request gets at most this long before the retry loop sends it again. The slowest
+# extract call seen across ~10k calls was about 66 s, while a stalled request never answers.
+_DEFAULT_LLM_ATTEMPT_TIMEOUT_S = 120.0
+
 
 def node_deadline_monotonic(start_time: float) -> float:
     return start_time + max(60.0, TASK_SOFT_TIME_LIMIT - CELERY_TIMEOUT_BUFFER)
+
+
+def llm_attempt_timeout(budget_s: float) -> float:
+    """Timeout for a single model request inside a node's total LLM time budget.
+
+    ``call_llm`` retries a failed request up to three times, but each request used to get the
+    whole budget, so one stalled request used up the node's wait and no retry could finish. A
+    shorter per-request timeout lets a stalled request be retried within the same budget.
+    ``EXTRACT_LLM_ATTEMPT_TIMEOUT_S`` overrides the default; 0 gives each request the whole budget.
+    """
+    raw = os.getenv("EXTRACT_LLM_ATTEMPT_TIMEOUT_S", "").strip()
+    try:
+        cap = float(raw) if raw else _DEFAULT_LLM_ATTEMPT_TIMEOUT_S
+    except ValueError:
+        cap = _DEFAULT_LLM_ATTEMPT_TIMEOUT_S
+    if cap <= 0:
+        return budget_s
+    return min(budget_s, cap)
 
 
 def effective_llm_timeout(*, start_time: float, llm_timeout: int) -> float:

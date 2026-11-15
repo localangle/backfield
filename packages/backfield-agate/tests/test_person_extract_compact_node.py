@@ -5,9 +5,7 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
-import pytest
 from agate_runtime import Edge, GraphSpec, NodeConfig, execute_graph
-from agate_runtime.executor import GraphExecutionError
 
 
 def _compact_llm_response() -> str:
@@ -190,7 +188,7 @@ def test_person_extract_compact_empty_row_returns_empty_people() -> None:
     assert out["person_extract"]["people"] == []
 
 
-def test_person_extract_compact_still_fails_on_structural_parse_error() -> None:
+def test_person_extract_compact_skips_structurally_malformed_row() -> None:
     spec = GraphSpec(
         name="compact-person-bad-row",
         nodes=[
@@ -222,5 +220,6 @@ def test_person_extract_compact_still_fails_on_structural_parse_error() -> None:
             }
         ),
     ):
-        with pytest.raises(GraphExecutionError, match="no valid people"):
-            execute_graph(spec)
+        out = execute_graph(spec)
+
+    assert out["person_extract"]["people"] == []

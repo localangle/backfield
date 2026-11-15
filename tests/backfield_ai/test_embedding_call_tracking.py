@@ -132,6 +132,9 @@ def test_embed_texts_sync_persists_failed_provider_call(
     assert rows[0].status == "failed"
     assert rows[0].model_kind == AI_MODEL_KIND_EMBEDDING
     assert rows[0].error_type == "EmbeddingBatchError"
+    assert rows[0].estimated_cost == 0
+    assert rows[0].cost_estimate_incomplete is False
+    assert rows[0].cost_estimate_source == "no_response"
 
 
 def test_persist_llm_attempt_noop_without_context() -> None:

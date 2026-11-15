@@ -1,18 +1,31 @@
 """Geocodio geocoding service wrapper using geopy."""
 
+from __future__ import annotations
+
 import logging
-from typing import Any
+import time
+from collections.abc import Callable
+from typing import Any, TypeVar
+
+from backfield_observability.external import sanitize_error_message
+from geopy.exc import GeocoderQuotaExceeded, GeocoderServiceError, GeocoderTimedOut
+from geopy.geocoders import Geocodio
 
 from agate_utils.geocoding.geocoding_types import (
     GeocodingResult,
     GeocodingResultData,
     GeometryPoint,
 )
-from backfield_observability.external import sanitize_error_message
-from geopy.exc import GeocoderServiceError, GeocoderTimedOut
-from geopy.geocoders import Geocodio
+from agate_utils.geocoding.provider_health import record_geocoder_http_status
+from agate_utils.geocoding.request_gate import acquire_geocode_request_slot
 
 logger = logging.getLogger(__name__)
+
+_GEOCODIO_MAX_HTTP_RETRIES = 4
+_GEOCODIO_RATE_LIMIT_FLOOR_S = 8.0
+_GEOCODIO_MAX_RETRY_DELAY_S = 30.0
+
+T = TypeVar("T")
 
 
 def _geocodio_result_id(raw_data: dict[str, Any]) -> str | None:
@@ -75,6 +88,43 @@ def is_acceptable_geocodio_accuracy(
     return accuracy_score >= min_accuracy
 
 
+def _looks_like_rate_limit(exc: BaseException) -> bool:
+    message = str(exc).lower()
+    return "429" in message or "rate" in message or "quota" in message
+
+
+def _call_geocodio_with_gate(operation: Callable[[], T]) -> T:
+    """Run a Geocodio geopy call under the fleet gate with 429/quota retries."""
+    last_exc: BaseException | None = None
+    for attempt in range(1, _GEOCODIO_MAX_HTTP_RETRIES + 1):
+        try:
+            with acquire_geocode_request_slot("geocodio"):
+                return operation()
+        except GeocoderTimedOut:
+            raise
+        except (GeocoderQuotaExceeded, GeocoderServiceError) as exc:
+            last_exc = exc
+            if not _looks_like_rate_limit(exc) and not isinstance(exc, GeocoderQuotaExceeded):
+                record_geocoder_http_status("geocodio", 502)
+                raise
+            record_geocoder_http_status("geocodio", 429)
+            if attempt >= _GEOCODIO_MAX_HTTP_RETRIES:
+                raise
+            delay = min(
+                _GEOCODIO_RATE_LIMIT_FLOOR_S * (2 ** (attempt - 1)),
+                _GEOCODIO_MAX_RETRY_DELAY_S,
+            )
+            logger.warning(
+                "Geocodio rate limited, retrying in %.1fs (attempt %s/%s)",
+                delay,
+                attempt,
+                _GEOCODIO_MAX_HTTP_RETRIES,
+            )
+            time.sleep(delay)
+    assert last_exc is not None
+    raise last_exc
+
+
 def geocode_search(
     query: str,
     api_key: str,
@@ -100,7 +150,7 @@ def geocode_search(
         logger.info("Geocodio search geocoding request")
         logger.debug("Geocodio search placetype hint present=%s", bool(placetype))
 
-        location = geolocator.geocode(query)
+        location = _call_geocodio_with_gate(lambda: geolocator.geocode(query))
         
         if not location:
             logger.warning("No Geocodio search results")
@@ -193,7 +243,7 @@ def geocode_structured(
         logger.info("Geocodio structured geocoding request")
         logger.debug("Geocodio structured placetype hint: %r", placetype)
 
-        location = geolocator.geocode(query_dict)
+        location = _call_geocodio_with_gate(lambda: geolocator.geocode(query_dict))
         
         if not location:
             logger.warning("No Geocodio structured results")
@@ -260,7 +310,7 @@ def reverse_geocode(
         
         logger.info("Geocodio reverse geocoding request")
         
-        location = geolocator.reverse((lat, lon))
+        location = _call_geocodio_with_gate(lambda: geolocator.reverse((lat, lon)))
         
         if not location:
             logger.warning("No Geocodio reverse results")

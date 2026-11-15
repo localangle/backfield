@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from backfield_db import SubstrateLocation, SubstrateLocationCache
@@ -13,7 +15,7 @@ from backfield_entities.entities.location.geometry_apply import (
     clear_geometry_editorial_override,
     substrate_has_editorial_geometry_override,
 )
-from backfield_entities.geo.geometry_bind import geometry_bind_value
+from backfield_entities.geo.geometry_bind import geometry_bind_value, geometry_is_geography_safe
 from backfield_entities.geo.h3_index import derive_h3_index
 from backfield_entities.ingest.geocode_cache.fingerprint import (
     substrate_location_cache_query_fingerprint,
@@ -22,6 +24,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
 from worker.substrate.common import _normalize_name, _sha256_hex, _utcnow
+
+logger = logging.getLogger(__name__)
 
 # Consolidated place payload key from GeocodeAgent (ignored by geometry/canonical logic).
 _AGATE_GEOCODE_ROUTER_AUDIT_KEY = "agate_geocode_router_audit"
@@ -56,8 +60,7 @@ _ADMIN_LOCATION_TYPES_DISAMBIGUATE_BY_NAME = frozenset(
     }
 )
 _STYLEBOOK_LOCATION_TYPES_DISAMBIGUATE_BY_NAME = (
-    _FINE_GRAINED_LOCATION_TYPES_DISAMBIGUATE_BY_NAME
-    | _ADMIN_LOCATION_TYPES_DISAMBIGUATE_BY_NAME
+    _FINE_GRAINED_LOCATION_TYPES_DISAMBIGUATE_BY_NAME | _ADMIN_LOCATION_TYPES_DISAMBIGUATE_BY_NAME
 )
 
 
@@ -121,62 +124,88 @@ def _upsert_location_cache(
         else (None, None)
     )
 
-    row = session.exec(
-        select(SubstrateLocationCache)
-        .where(
-            col(SubstrateLocationCache.project_id) == project_id,
-            col(SubstrateLocationCache.query_fingerprint) == fingerprint,
-        )
-        .with_for_update()
-    ).first()
-
     now = _utcnow()
     payload = {
         "places_entry": entry,
         "geocode_result": geocode_result,
     }
+    candidate = SubstrateLocationCache(
+        project_id=project_id,
+        query_text=query_text,
+        normalized_query=normalized_query,
+        query_fingerprint=fingerprint,
+        request_components_json=None,
+        external_source=external_source,
+        external_id=external_id,
+        location_name=query_text,
+        location_type=location_type,
+        geocode_type=geocode_type,
+        formatted_address=formatted_address,
+        geometry=geometry_value,
+        geometry_type=geometry_type_str,
+        geometry_json=geometry_json,
+        h3_cell=h3_cell,
+        h3_resolution=h3_resolution,
+        response_payload_json=payload,
+    )
 
+    row = _select_location_cache_row_for_update(
+        session, project_id=project_id, query_fingerprint=fingerprint
+    )
     if row is None:
-        session.add(
-            SubstrateLocationCache(
-                project_id=project_id,
-                query_text=query_text,
-                normalized_query=normalized_query,
-                query_fingerprint=fingerprint,
-                request_components_json=None,
-                external_source=external_source,
-                external_id=external_id,
-                location_name=query_text,
-                location_type=location_type,
-                geocode_type=geocode_type,
-                formatted_address=formatted_address,
-                geometry=geometry_value,
-                geometry_type=geometry_type_str,
-                geometry_json=geometry_json,
-                h3_cell=h3_cell,
-                h3_resolution=h3_resolution,
-                response_payload_json=payload,
+        # ``FOR UPDATE`` on a missing row locks nothing, so another item may insert the same
+        # query between the select above and this insert. Insert inside a savepoint and fall
+        # back to updating the winner's row instead of failing the whole persist.
+        try:
+            with session.begin_nested():
+                session.add(candidate)
+        except IntegrityError:
+            row = _select_location_cache_row_for_update(
+                session, project_id=project_id, query_fingerprint=fingerprint
             )
-        )
-    else:
-        row.query_text = query_text
-        row.normalized_query = normalized_query
-        row.external_source = external_source or row.external_source
-        row.external_id = external_id or row.external_id
-        row.location_name = query_text
-        row.location_type = location_type or row.location_type
-        row.geocode_type = geocode_type or row.geocode_type
-        row.formatted_address = formatted_address or row.formatted_address
-        row.geometry = geometry_value or row.geometry
-        row.geometry_type = geometry_type_str or row.geometry_type
-        row.geometry_json = geometry_json or row.geometry_json
-        row.h3_cell = h3_cell or row.h3_cell
-        row.h3_resolution = h3_resolution if h3_resolution is not None else row.h3_resolution
-        row.response_payload_json = payload
-        row.updated_at = now
+            if row is None:
+                raise
+    if row is not None:
+        _merge_location_cache_row(row, candidate, now=now)
         session.add(row)
 
     session.flush()
+
+
+def _select_location_cache_row_for_update(
+    session: Session, *, project_id: int, query_fingerprint: str
+) -> SubstrateLocationCache | None:
+    return session.exec(
+        select(SubstrateLocationCache)
+        .where(
+            col(SubstrateLocationCache.project_id) == project_id,
+            col(SubstrateLocationCache.query_fingerprint) == query_fingerprint,
+        )
+        .with_for_update()
+    ).first()
+
+
+def _merge_location_cache_row(
+    row: SubstrateLocationCache, candidate: SubstrateLocationCache, *, now: datetime
+) -> None:
+    """Update an existing cache row with a newer lookup; empty new values keep the old ones."""
+    row.query_text = candidate.query_text
+    row.normalized_query = candidate.normalized_query
+    row.external_source = candidate.external_source or row.external_source
+    row.external_id = candidate.external_id or row.external_id
+    row.location_name = candidate.location_name
+    row.location_type = candidate.location_type or row.location_type
+    row.geocode_type = candidate.geocode_type or row.geocode_type
+    row.formatted_address = candidate.formatted_address or row.formatted_address
+    row.geometry = candidate.geometry or row.geometry
+    row.geometry_type = candidate.geometry_type or row.geometry_type
+    row.geometry_json = candidate.geometry_json or row.geometry_json
+    row.h3_cell = candidate.h3_cell or row.h3_cell
+    row.h3_resolution = (
+        candidate.h3_resolution if candidate.h3_resolution is not None else row.h3_resolution
+    )
+    row.response_payload_json = candidate.response_payload_json
+    row.updated_at = now
 
 
 def _delete_location_cache(
@@ -371,6 +400,22 @@ def _fingerprint_for_location(
     return _sha256_hex(json.dumps(payload, sort_keys=True, default=str))
 
 
+def location_identities_for_entries(
+    *, project_id: int, entries: Iterable[tuple[str, dict[str, Any]]]
+) -> tuple[set[str], set[tuple[str, str]]]:
+    """Identity fingerprints and (source, id) pairs that the entries' upserts will look up."""
+    fingerprints: set[str] = set()
+    external_identities: set[tuple[str, str]] = set()
+    for bucket, entry in entries:
+        fields = _location_fields_for_entry(project_id=project_id, bucket=bucket, entry=entry)
+        if fields is None:
+            continue
+        fingerprints.add(fields.fingerprint)
+        if fields.external_source and fields.external_id:
+            external_identities.add((fields.external_source, fields.external_id))
+    return fingerprints, external_identities
+
+
 def _iter_place_entries(places: dict[str, Any]) -> Iterable[tuple[str, dict[str, Any]]]:
     areas = places.get("areas") if isinstance(places.get("areas"), dict) else {}
     for bucket in ("states", "counties", "cities", "neighborhoods", "regions", "other"):
@@ -420,21 +465,26 @@ def _h3_parts_from_geometry(
     return derived.h3_cell, derived.h3_resolution
 
 
-def _geometry_parts_from_entry(
-    session: Session, entry: dict[str, Any]
-) -> tuple[dict[str, Any] | None, object | None, str | None]:
+def _raw_geometry_json_from_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
     geocode = entry.get("geocode") if isinstance(entry.get("geocode"), dict) else None
     result = geocode.get("result") if geocode and isinstance(geocode.get("result"), dict) else None
-    geometry_json: dict[str, Any] | None = None
     if result and isinstance(result.get("geometry"), dict):
-        geometry_json = dict(result["geometry"])
-    elif isinstance(entry.get("geometry"), dict):
-        geometry_json = dict(entry["geometry"])
+        return dict(result["geometry"])
+    if isinstance(entry.get("geometry"), dict):
+        return dict(entry["geometry"])
+    return None
 
-    bind_value = geometry_bind_value(session, geometry_json) if geometry_json else None
-    geometry_type = geometry_json.get("type") if geometry_json else None
-    geometry_type_str = str(geometry_type) if geometry_type else None
-    return geometry_json, bind_value, geometry_type_str
+
+def _geometry_json_from_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
+    """Entry geometry, or None when it cannot be stored (e.g. a world-sized bounding box)."""
+    geometry_json = _raw_geometry_json_from_entry(entry)
+    if geometry_json is not None and not geometry_is_geography_safe(geometry_json):
+        logger.warning(
+            "Dropping geometry too wide to store for place %r",
+            _display_name_for_place_entry(entry),
+        )
+        return None
+    return geometry_json
 
 
 def _formatted_address_from_entry(entry: dict[str, Any]) -> str | None:
@@ -460,11 +510,19 @@ def _geocode_meta_from_entry(entry: dict[str, Any]) -> tuple[str | None, dict[st
     return geocode_type_str, result
 
 
+# Shared location rows are referenced by foreign keys from mentions and semantic documents, and
+# every inserted child row takes ``FOR KEY SHARE`` on its parent.
+# ``with_for_update(key_share=True)`` renders ``FOR NO KEY UPDATE``: it still excludes other
+# writers but does not conflict with that check, so items that only insert child rows no longer
+# wait on (and deadlock with) items that are updating the location. Use it for every explicit
+# lock on ``substrate_location``.
+
+
 def _lock_substrate_location_row(session: Session, location_id: int) -> SubstrateLocation:
     row = session.exec(
         select(SubstrateLocation)
         .where(col(SubstrateLocation.id) == int(location_id))
-        .with_for_update()
+        .with_for_update(key_share=True)
     ).first()
     if row is None:
         raise RuntimeError(f"substrate_location id={location_id} disappeared during upsert lock")
@@ -488,7 +546,7 @@ def _select_existing_substrate_location(
                 col(SubstrateLocation.external_source) == external_source,
                 col(SubstrateLocation.external_id) == external_id,
             )
-            .with_for_update()
+            .with_for_update(key_share=True)
         ).first()
         if row is not None:
             return row
@@ -498,7 +556,7 @@ def _select_existing_substrate_location(
             col(SubstrateLocation.project_id) == project_id,
             col(SubstrateLocation.identity_fingerprint) == fingerprint,
         )
-        .with_for_update()
+        .with_for_update(key_share=True)
     ).first()
 
 
@@ -591,16 +649,34 @@ def _apply_substrate_location_merge(
     loc.updated_at = now
 
 
-def _upsert_location(
-    session: Session,
-    *,
-    project_id: int,
-    bucket: str,
-    entry: dict[str, Any],
-    run_id: str,
-    graph_id: str,
-    update_existing: bool = True,
-) -> LocationUpsertResult | None:
+@dataclass(frozen=True)
+class _LocationEntryFields:
+    """What a place entry contributes to its ``substrate_location`` row (no session needed)."""
+
+    display_name: str
+    normalized: str
+    location_type_str: str | None
+    geometry_json: dict[str, Any] | None
+    geometry_type_str: str | None
+    h3_cell: str | None
+    h3_resolution: int | None
+    formatted_address: str | None
+    geocode_type: str | None
+    geocode_result: dict[str, Any] | None
+    authoritative_rejection: bool
+    external_source: str | None
+    external_id: str | None
+    fingerprint: str
+
+
+def _location_fields_for_entry(
+    *, project_id: int, bucket: str, entry: dict[str, Any]
+) -> _LocationEntryFields | None:
+    """Derive the row identity and geocode fields for a place entry (None when it has no name).
+
+    Pure in the entry, so the ordered row pre-lock and the upsert always agree on which
+    ``substrate_location`` row an entry maps to.
+    """
     display_name = _display_name_for_place_entry(entry)
     normalized = _normalize_name(display_name)
     if not normalized:
@@ -610,7 +686,9 @@ def _upsert_location(
     location_type_str = str(location_type).lower() if location_type is not None else None
 
     geocoded = entry.get("geocoded")
-    geometry_json, geometry_value, geometry_type_str = _geometry_parts_from_entry(session, entry)
+    geometry_json = _geometry_json_from_entry(entry)
+    geometry_type = geometry_json.get("type") if geometry_json else None
+    geometry_type_str = str(geometry_type) if geometry_type else None
     h3_cell, h3_resolution = _h3_parts_from_geometry(geometry_json)
     formatted_address = _formatted_address_from_entry(entry)
     geocode_type, geocode_result = _geocode_meta_from_entry(entry)
@@ -623,7 +701,6 @@ def _upsert_location(
     )
     if authoritative_rejection:
         geometry_json = None
-        geometry_value = None
         geometry_type_str = None
         h3_cell = None
         h3_resolution = None
@@ -649,6 +726,53 @@ def _upsert_location(
         formatted_address=formatted_address,
         display_name=display_name,
     )
+    return _LocationEntryFields(
+        display_name=display_name,
+        normalized=normalized,
+        location_type_str=location_type_str,
+        geometry_json=geometry_json,
+        geometry_type_str=geometry_type_str,
+        h3_cell=h3_cell,
+        h3_resolution=h3_resolution,
+        formatted_address=formatted_address,
+        geocode_type=geocode_type,
+        geocode_result=geocode_result,
+        authoritative_rejection=authoritative_rejection,
+        external_source=external_source,
+        external_id=external_id,
+        fingerprint=fingerprint,
+    )
+
+
+def _upsert_location(
+    session: Session,
+    *,
+    project_id: int,
+    bucket: str,
+    entry: dict[str, Any],
+    run_id: str,
+    graph_id: str,
+    update_existing: bool = True,
+) -> LocationUpsertResult | None:
+    fields = _location_fields_for_entry(project_id=project_id, bucket=bucket, entry=entry)
+    if fields is None:
+        return None
+    display_name = fields.display_name
+    normalized = fields.normalized
+    location_type_str = fields.location_type_str
+    geometry_json = fields.geometry_json
+    geometry_value = geometry_bind_value(session, geometry_json) if geometry_json else None
+    geometry_type_str = fields.geometry_type_str
+    h3_cell = fields.h3_cell
+    h3_resolution = fields.h3_resolution
+    formatted_address = fields.formatted_address
+    geocode_type = fields.geocode_type
+    geocode_result = fields.geocode_result
+    authoritative_rejection = fields.authoritative_rejection
+    external_source = fields.external_source
+    external_id = fields.external_id
+    fingerprint = fields.fingerprint
+    geocoded = entry.get("geocoded")
 
     router_audit = _router_audit_from_place_entry(entry)
 

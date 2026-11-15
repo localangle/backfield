@@ -33,6 +33,7 @@ from agate_nodes.extraction.grounding import (
 )
 from agate_nodes.extraction.shared_llm import (
     effective_llm_timeout,
+    llm_attempt_timeout,
     model_config_id_from_params,
     preflight_unchunked_prompt,
     resolve_extract_litellm_model,
@@ -247,7 +248,7 @@ class CustomExtractNode:
                     system_message=system_message,
                     force_json=True,
                     temperature=0.0,
-                    timeout=effective_timeout,
+                    timeout=llm_attempt_timeout(effective_timeout),
                     openai_api_key=ctx.get_api_key("OPENAI_API_KEY"),
                     anthropic_api_key=ctx.get_api_key("ANTHROPIC_API_KEY"),
                     gemini_api_key=ctx.get_api_key("GEMINI_API_KEY"),
@@ -261,7 +262,7 @@ class CustomExtractNode:
             )
         except TimeoutError as exc:
             raise TimeoutError(
-                f"Custom Extract LLM call exceeded timeout of {effective_timeout}s"
+                f"Custom Extract LLM call exceeded its total time budget of {effective_timeout}s"
             ) from exc
 
         try:

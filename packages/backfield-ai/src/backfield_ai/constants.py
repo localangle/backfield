@@ -17,6 +17,9 @@ COST_ESTIMATE_SOURCE_LITELLM = "litellm"
 COST_ESTIMATE_SOURCE_MANUAL = "manual"
 # No completion response to run ``litellm.completion_cost`` on (e.g. transport error).
 COST_ESTIMATE_SOURCE_UNAVAILABLE = "unavailable"
+# The attempt failed before any response came back (timeout, server error), so nothing was
+# produced to price; recorded as zero cost and not flagged incomplete.
+COST_ESTIMATE_SOURCE_NO_RESPONSE = "no_response"
 
 # Organization integration secret keys (encrypted at rest; generic pattern for future vendors).
 INTEGRATION_KEY_AI_PROVIDER_OPENAI = "ai.provider.openai"

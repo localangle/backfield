@@ -102,7 +102,11 @@ Successful export downloads use a presigned GET whose `Content-Disposition` save
 `{stylebook-slug}-stylebook-export-{YYYY-MM-DD}.zip` (UTC date from the job). Object keys in the
 bundle bucket remain job-id based.
 
-Bundles do not transfer project saved entities, candidate queues, caches, or activity history. Import upload and finalize are separate operations, and project mappings control project-scoped content such as metadata and connections.
+Bundles do not transfer project saved entities, candidate queues, caches, activity
+history, or articles. Connection evidence keeps quotes/reasons on import but drops
+source `article_id` / `processed_item_id` (those rows are not in the bundle). Import
+upload and finalize are separate operations, and project mappings control
+project-scoped content such as metadata and connections.
 
 ### Cleanup
 

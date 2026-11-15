@@ -13,7 +13,7 @@ from typing import Any
 from agate_runtime.output_node import consolidated_body_from_dboutput
 from agate_utils.llm import call_llm
 from backfield_db import AgateRun
-from backfield_db.deadlock import is_postgres_deadlock
+from backfield_db.deadlock import is_missing_canonical_link, is_postgres_deadlock
 from backfield_entities.connections.db_output import run_auto_connections_for_db_output
 from backfield_entities.ingest.article_embedding import persist_article_embedding_after_db_output
 from backfield_entities.ingest.article_metadata import persist_article_metadata_after_db_output
@@ -22,6 +22,7 @@ from backfield_entities.ingest.db_output_settings import DbOutputCanonicalSettin
 from backfield_entities.ingest.image_embedding import persist_image_embeddings_after_db_output
 from backfield_entities.ingest.semantic_indexing.db_output import (
     build_semantic_indexing_summary,
+    combined_semantic_indexing_status,
     sync_semantic_documents_after_db_output,
 )
 from backfield_events import (
@@ -41,19 +42,91 @@ from worker.substrate.canonical.llm_call_policy import (
     ADJUDICATION_LLM_MAX_RETRIES,
     ADJUDICATION_LLM_TIMEOUT_S,
 )
+from worker.substrate.canonical.parallel_llm import install_persist_slot_pause
 
 logger = logging.getLogger(__name__)
 
-_DBOUTPUT_DEADLOCK_MAX_ATTEMPTS = 4
+_DBOUTPUT_DEADLOCK_MAX_ATTEMPTS = 10
+_DBOUTPUT_DEADLOCK_BASE_DELAY_S = 0.5
+_DBOUTPUT_DEADLOCK_MAX_DELAY_S = 8.0
+
+
+def _deadlock_retry_delay_s(attempt: int) -> float:
+    """Back off long enough for the competing persist (often tens of seconds) to commit.
+
+    Sub-second retries re-collide with the same lock holder and exhaust all attempts.
+    """
+    uncapped = _DBOUTPUT_DEADLOCK_BASE_DELAY_S * (2**attempt)
+    exponential = min(uncapped, _DBOUTPUT_DEADLOCK_MAX_DELAY_S)
+    return exponential + random.uniform(0, exponential / 2)
+
 _DBOUTPUT_PERSIST_LOCK_TTL_S = int(os.getenv("DBOUTPUT_PERSIST_LOCK_TTL_S", "1800"))
 
 
 def _dboutput_max_concurrent_persists() -> int:
-    raw = os.getenv("DBOUTPUT_MAX_CONCURRENT_PERSISTS", "8")
+    raw = os.getenv("DBOUTPUT_MAX_CONCURRENT_PERSISTS", "12")
     try:
         return max(0, int(raw))
     except ValueError:
-        return 8
+        return 12
+
+
+# Slot waits shorter than this are normal under load and not worth a log line.
+_SLOW_PERSIST_SLOT_WAIT_MS = 1000.0
+
+
+class _PersistSlotLease:
+    """A Redis persist slot that can be handed back while session-free LLM calls run."""
+
+    def __init__(self, client: Any, max_concurrent: int) -> None:
+        self._client = client
+        self._max_concurrent = max_concurrent
+        self._lock: Any | None = None
+
+    def acquire(self) -> None:
+        """Wait for a slot. Fails open (no slot held) when Redis misbehaves."""
+        wait_started = time.perf_counter()
+        try:
+            lock = None
+            while lock is None:
+                for slot in range(self._max_concurrent):
+                    candidate = self._client.lock(
+                        f"backfield:dboutput:persist:{slot}",
+                        timeout=_DBOUTPUT_PERSIST_LOCK_TTL_S,
+                        blocking_timeout=0,
+                    )
+                    if candidate.acquire(blocking=False):
+                        lock = candidate
+                        break
+                if lock is None:
+                    time.sleep(0.05)
+        except Exception:
+            logger.warning(
+                "DBOutput persist gate acquire failed; continuing without concurrency cap"
+            )
+            return
+        self._lock = lock
+        wait_ms = (time.perf_counter() - wait_started) * 1000.0
+        if wait_ms >= _SLOW_PERSIST_SLOT_WAIT_MS:
+            logger.info("dboutput_persist_slot_acquired wait_ms=%.1f", wait_ms)
+
+    def release(self) -> None:
+        lock, self._lock = self._lock, None
+        if lock is None:
+            return
+        try:
+            lock.release()
+        except Exception:
+            logger.debug("DBOutput persist gate lock release failed", exc_info=True)
+
+    @contextmanager
+    def released_during_llm(self) -> Iterator[None]:
+        """Free the slot while session-free LLM calls run, then wait for a slot again."""
+        self.release()
+        try:
+            yield
+        finally:
+            self.acquire()
 
 
 @contextmanager
@@ -76,32 +149,13 @@ def _dboutput_persist_slot() -> Iterator[None]:
         yield
         return
 
-    lock = None
+    lease = _PersistSlotLease(client, max_concurrent)
+    lease.acquire()
     try:
-        while lock is None:
-            for slot in range(max_concurrent):
-                candidate = client.lock(
-                    f"backfield:dboutput:persist:{slot}",
-                    timeout=_DBOUTPUT_PERSIST_LOCK_TTL_S,
-                    blocking_timeout=0,
-                )
-                if candidate.acquire(blocking=False):
-                    lock = candidate
-                    break
-            if lock is None:
-                time.sleep(0.05)
-    except Exception:
-        logger.warning("DBOutput persist gate acquire failed; continuing without concurrency cap")
-        yield
-        return
-
-    try:
-        yield
+        with install_persist_slot_pause(lease.released_during_llm):
+            yield
     finally:
-        try:
-            lock.release()
-        except Exception:
-            logger.debug("DBOutput persist gate lock release failed", exc_info=True)
+        lease.release()
 
 
 def _kick_webhook_dispatch_after_commit(session: Session) -> None:
@@ -153,6 +207,7 @@ def _persist_db_output_in_session(
     processed_item_id: int | None,
     settings: DbOutputCanonicalSettings,
     infer_connections: bool = True,
+    embed_semantic: bool = True,
 ) -> dict[str, Any]:
     persist_result = persist_from_consolidated(
         session,
@@ -194,6 +249,7 @@ def _persist_db_output_in_session(
     domain_summaries = [summary.as_dict() for summary in persist_result.domain_summaries] or [
         reconciliation_summary
     ]
+    consolidated_domain_keys = list(persist_result.consolidated_domain_keys)
 
     if settings.semantic_indexing_enabled:
         try:
@@ -201,20 +257,32 @@ def _persist_db_output_in_session(
                 session,
                 project_id=project_id,
                 article_id=article_id,
-                consolidated_domain_keys=persist_result.consolidated_domain_keys,
+                consolidated_domain_keys=consolidated_domain_keys,
             )
-            embedding_summary = embed_pending_semantic_documents_for_db_output(
-                session,
-                project_id=project_id,
-                article_id=article_id,
-                consolidated_domain_keys=persist_result.consolidated_domain_keys,
-            )
+            embedding_summary = None
+            if embed_semantic:
+                embedding_summary = embed_pending_semantic_documents_for_db_output(
+                    session,
+                    project_id=project_id,
+                    article_id=article_id,
+                    consolidated_domain_keys=consolidated_domain_keys,
+                )
             semantic_indexing = build_semantic_indexing_summary(
                 enabled=True,
                 sync_result=sync_result,
                 embedding=embedding_summary,
             )
         except Exception as exc:
+            # Sync runs in a SAVEPOINT; expire so article aux persists can continue.
+            if isinstance(exc, SQLAlchemyError):
+                session.expire_all()
+            logger.warning(
+                "Semantic indexing failed project_id=%s article_id=%s: %s",
+                project_id,
+                article_id,
+                exc,
+                exc_info=True,
+            )
             semantic_indexing = build_semantic_indexing_summary(
                 enabled=True,
                 error=str(exc),
@@ -306,6 +374,7 @@ def _persist_db_output_in_session(
             "domains": domain_summaries,
         },
         "semantic_indexing": semantic_indexing,
+        "consolidated_domain_keys": consolidated_domain_keys,
         "article_embedding_persist": article_embedding_persist,
         "article_metadata_persist": article_metadata_persist,
         "image_embeddings_persist": image_embeddings_persist,
@@ -358,21 +427,25 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
                         processed_item_id=processed_item_id,
                         settings=settings,
                         infer_connections=False,
+                        embed_semantic=False,
                     )
                     session.commit()
                     _kick_webhook_dispatch_after_commit(session)
                 break
             except SQLAlchemyError as exc:
                 last_exc = exc
-                if not is_postgres_deadlock(exc) or attempt >= _DBOUTPUT_DEADLOCK_MAX_ATTEMPTS - 1:
+                retryable = is_postgres_deadlock(exc) or is_missing_canonical_link(exc)
+                if not retryable or attempt >= _DBOUTPUT_DEADLOCK_MAX_ATTEMPTS - 1:
                     raise
-                delay_s = 0.05 * (2**attempt) + random.uniform(0, 0.05)
+                delay_s = _deadlock_retry_delay_s(attempt)
+                reason = "deadlock" if is_postgres_deadlock(exc) else "canonical removed"
                 logger.warning(
-                    "DBOutput deadlock on attempt %s/%s for run_id=%s; retrying in %.2fs",
+                    "DBOutput persist retry on attempt %s/%s for run_id=%s; retrying in %.2fs (%s)",
                     attempt + 1,
                     _DBOUTPUT_DEADLOCK_MAX_ATTEMPTS,
                     run_id,
                     delay_s,
+                    reason,
                 )
                 time.sleep(delay_s)
 
@@ -380,6 +453,65 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
         raise last_exc
     if result is None:
         raise RuntimeError("DBOutput persist failed without an exception")
+
+    if settings.semantic_indexing_enabled:
+        try:
+            domain_keys = result.get("consolidated_domain_keys") or []
+            if not isinstance(domain_keys, list):
+                domain_keys = []
+            with Session(engine) as session:
+                embedding_summary = embed_pending_semantic_documents_for_db_output(
+                    session,
+                    project_id=project_id,
+                    article_id=int(result["article_id"]),
+                    consolidated_domain_keys=[str(key) for key in domain_keys],
+                )
+                prior = result.get("semantic_indexing")
+                embedding_payload = (
+                    embedding_summary.as_dict()
+                    if hasattr(embedding_summary, "as_dict")
+                    else embedding_summary
+                )
+                if not isinstance(embedding_payload, dict):
+                    embedding_payload = {
+                        "status": "failed",
+                        "error": "invalid_embedding_summary",
+                    }
+                if isinstance(prior, dict):
+                    # Preserve sync failure (do not rebuild a fresh "succeeded" summary).
+                    sync_status = str(prior.get("status") or "succeeded")
+                    result["semantic_indexing"] = {
+                        **prior,
+                        "embedding": embedding_payload,
+                        "status": combined_semantic_indexing_status(
+                            sync_status, embedding_payload
+                        ),
+                    }
+                else:
+                    result["semantic_indexing"] = build_semantic_indexing_summary(
+                        enabled=True,
+                        embedding=embedding_summary,
+                    )
+                session.commit()
+        except Exception:
+            logger.warning(
+                "Post-persist semantic embedding failed project_id=%s article_id=%s",
+                project_id,
+                result["article_id"],
+                exc_info=True,
+            )
+            prior = result.get("semantic_indexing")
+            if isinstance(prior, dict):
+                embedding_payload = {
+                    "status": "failed",
+                    "error": "post_persist_embedding_failed",
+                }
+                sync_status = str(prior.get("status") or "succeeded")
+                result["semantic_indexing"] = {
+                    **prior,
+                    "embedding": embedding_payload,
+                    "status": combined_semantic_indexing_status(sync_status, embedding_payload),
+                }
 
     try:
         with Session(engine) as session:
