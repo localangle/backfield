@@ -6,7 +6,6 @@ eager mode runs the group and ``finalize_s3_parent_run`` inline.
 
 from __future__ import annotations
 
-import io
 import json
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -17,41 +16,13 @@ from backfield_db import (
     AgateGraph,
     AgateProcessedItem,
     AgateRun,
-    BackfieldOrganization,
-    BackfieldProject,
-    BackfieldWorkspace,
 )
-from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from sqlalchemy import event, update
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, select
+from worker import s3_batch_dispatch
 from worker import tasks as worker_tasks
 
-
-def _spec_with_s3() -> str:
-    return json.dumps(
-        {
-            "name": "s3_flow",
-            "nodes": [
-                {
-                    "id": "s3n",
-                    "type": "S3Input",
-                    "params": {"bucket": "my-bucket", "folder_path": "p", "max_files": 10},
-                },
-                {"id": "out", "type": "Output", "params": {}},
-            ],
-            "edges": [
-                {"source": "s3n", "target": "out", "sourceHandle": "text", "targetHandle": "data"},
-            ],
-        }
-    )
-
-
-class _FakeBody:
-    def __init__(self, payload: bytes) -> None:
-        self._buf = io.BytesIO(payload)
-
-    def read(self) -> bytes:
-        return self._buf.read()
+from tests.worker.s3_batch_helpers import FakeBody
 
 
 class _FakeS3:
@@ -77,64 +48,10 @@ class _FakeS3:
     def get_object(self, **_kwargs: Any) -> dict[str, Any]:
         key = str(_kwargs.get("Key") or "")
         if key.endswith("bad.json"):
-            return {"Body": _FakeBody(b"not json")}
+            return {"Body": FakeBody(b"not json")}
         if key.endswith("good.json"):
-            return {"Body": _FakeBody(json.dumps({"text": "Batch line."}).encode())}
+            return {"Body": FakeBody(json.dumps({"text": "Batch line."}).encode())}
         raise AssertionError(key)
-
-
-@pytest.fixture
-def batch_engine(tmp_path, monkeypatch):
-    url = f"sqlite:///{tmp_path}/s3batch.db"
-    monkeypatch.setenv("BACKFIELD_DATABASE_URL", url)
-    import backfield_db.session as db_session
-
-    db_session._engine = None
-
-    engine = create_engine(url, connect_args={"check_same_thread": False})
-    SQLModel.metadata.create_all(engine)
-    monkeypatch.setattr(worker_tasks, "get_engine", lambda: engine)
-
-    worker_tasks.celery_app.conf.task_always_eager = True
-    worker_tasks.celery_app.conf.task_eager_propagates = True
-
-    with Session(engine) as session:
-        org = BackfieldOrganization(name="O", slug="o-s3")
-        session.add(org)
-        session.commit()
-        session.refresh(org)
-        oid = int(org.id)  # type: ignore[arg-type]
-        stylebook = ensure_default_stylebook_for_organization(session, oid)
-        workspace = BackfieldWorkspace(
-            organization_id=oid,
-            stylebook_id=int(stylebook.id),
-            name="Workspace",
-            slug="s3-worker",
-        )
-        session.add(workspace)
-        session.flush()
-        proj = BackfieldProject(
-            organization_id=oid,
-            workspace_id=int(workspace.id),
-            stylebook_id=int(stylebook.id),
-            name="P",
-            slug="p-s3",
-        )
-        session.add(proj)
-        session.commit()
-        session.refresh(proj)
-        pid = int(proj.id)  # type: ignore[arg-type]
-        graph = AgateGraph(name="G", spec_json=_spec_with_s3(), project_id=pid)
-        session.add(graph)
-        session.commit()
-        session.refresh(graph)
-        gid = graph.id
-
-    yield engine, gid
-
-    worker_tasks.celery_app.conf.task_always_eager = False
-    worker_tasks.celery_app.conf.task_eager_propagates = False
-    db_session._engine = None
 
 
 def _create_batch_run(
@@ -185,8 +102,8 @@ def test_finalization_returns_while_items_are_unfinished(
         started_at=datetime.now(UTC),
     )
     # Avoid eager Celery executing replenished pending items during this gate test.
-    monkeypatch.setattr(worker_tasks, "_enqueue_processed_item", lambda _item_id: True)
-    monkeypatch.setattr(worker_tasks, "_pop_batch_pending_id", lambda _run_id: None)
+    monkeypatch.setattr(s3_batch_dispatch, "_enqueue_processed_item", lambda _item_id: True)
+    monkeypatch.setattr(s3_batch_dispatch, "_pop_batch_pending_id", lambda _run_id: None)
 
     with Session(engine) as session:
         worker_tasks._finalize_s3_parent_run(session, run_id)
@@ -318,7 +235,7 @@ def test_repeated_active_finalization_uses_bounded_narrow_queries(
     run_id = _create_batch_run(engine, graph_id, ["pending"] * item_count)
     statements: list[str] = []
     # Replenish is covered elsewhere; keep this test focused on unfinished-gate query shape.
-    monkeypatch.setattr(worker_tasks, "_replenish_batch_window", lambda *_a, **_k: 0)
+    monkeypatch.setattr(worker_tasks, "replenish_batch_window", lambda *_a, **_k: 0)
 
     def capture_sql(_conn, _cursor, statement, _parameters, _context, _executemany):
         statements.append(str(statement).lower())
@@ -382,16 +299,16 @@ def test_order_batch_item_ids_interleaves_longest_and_shortest() -> None:
         (4, 10),
         (5, 150),
     ]
-    assert worker_tasks.order_batch_item_ids_by_text_length(pending) == [3, 4, 5, 2, 1]
-    assert worker_tasks.order_batch_item_ids_by_text_length([]) == []
-    assert worker_tasks.order_batch_item_ids_by_text_length([(9, 1)]) == [9]
+    assert s3_batch_dispatch.order_batch_item_ids_by_text_length(pending) == [3, 4, 5, 2, 1]
+    assert s3_batch_dispatch.order_batch_item_ids_by_text_length([]) == []
+    assert s3_batch_dispatch.order_batch_item_ids_by_text_length([(9, 1)]) == [9]
 
 
 def test_batch_max_inflight_defaults_to_100(monkeypatch) -> None:
     monkeypatch.delenv("S3_BATCH_MAX_INFLIGHT", raising=False)
-    assert worker_tasks.batch_max_inflight() == 100
+    assert s3_batch_dispatch.batch_max_inflight() == 100
     monkeypatch.setenv("S3_BATCH_MAX_INFLIGHT", "0")
-    assert worker_tasks.batch_max_inflight() == 0
+    assert s3_batch_dispatch.batch_max_inflight() == 0
 
 
 def test_queue_execute_processed_item_chord_uses_sliding_window(monkeypatch) -> None:
@@ -415,8 +332,8 @@ def test_queue_execute_processed_item_chord_uses_sliding_window(monkeypatch) -> 
             return None
 
     monkeypatch.setenv("S3_BATCH_MAX_INFLIGHT", "2")
-    monkeypatch.setattr(worker_tasks, "group", _FakeGroup)
-    monkeypatch.setattr(worker_tasks, "chord", _FakeChord)
+    monkeypatch.setattr(s3_batch_dispatch, "group", _FakeGroup)
+    monkeypatch.setattr(s3_batch_dispatch, "chord", _FakeChord)
     monkeypatch.setattr(
         worker_tasks,
         "execute_processed_item",
@@ -428,12 +345,12 @@ def test_queue_execute_processed_item_chord_uses_sliding_window(monkeypatch) -> 
         SimpleNamespace(s=lambda run_id: ("finalize", run_id)),
     )
     monkeypatch.setattr(
-        worker_tasks,
-        "_store_batch_pending_ids",
+        s3_batch_dispatch,
+        "store_batch_pending_ids",
         lambda run_id, ids: stored.append((run_id, list(ids))) or True,
     )
 
-    worker_tasks.queue_execute_processed_item_chord("run-1", [1, 2, 3, 4])
+    s3_batch_dispatch.queue_execute_processed_item_chord("run-1", [1, 2, 3, 4])
     assert stored == [("run-1", [3, 4])]
     assert group_calls == [[("exec", 1), ("exec", 2)]]
     assert chord_calls == []
@@ -441,15 +358,15 @@ def test_queue_execute_processed_item_chord_uses_sliding_window(monkeypatch) -> 
     group_calls.clear()
     stored.clear()
     monkeypatch.setenv("S3_BATCH_MAX_INFLIGHT", "0")
-    worker_tasks.queue_execute_processed_item_chord("run-1", [1, 2, 3])
+    s3_batch_dispatch.queue_execute_processed_item_chord("run-1", [1, 2, 3])
     assert stored == []
     assert len(chord_calls) == 1
     assert chord_calls[0] == ("finalize", "run-1")
 
 
-def test_dispatch_next_batch_item_applies_async(monkeypatch) -> None:
+def testdispatch_next_batch_item_applies_async(monkeypatch) -> None:
     applied: list[object] = []
-    monkeypatch.setattr(worker_tasks, "_pop_batch_pending_id", lambda _run_id: 99)
+    monkeypatch.setattr(s3_batch_dispatch, "_pop_batch_pending_id", lambda _run_id: 99)
     monkeypatch.setattr(
         worker_tasks,
         "execute_processed_item",
@@ -457,28 +374,28 @@ def test_dispatch_next_batch_item_applies_async(monkeypatch) -> None:
             apply_async=lambda **kwargs: applied.append(kwargs)  # type: ignore[misc]
         ),
     )
-    worker_tasks._dispatch_next_batch_item("run-1")
+    s3_batch_dispatch.dispatch_next_batch_item("run-1")
     assert applied == [{"args": [99], "queue": "agate"}]
 
 
-def test_dispatch_next_batch_item_requeues_on_enqueue_failure(monkeypatch) -> None:
+def testdispatch_next_batch_item_requeues_on_enqueue_failure(monkeypatch) -> None:
     requeued: list[tuple[str, int]] = []
 
     def _fail_enqueue(_item_id: int) -> bool:
         return False
 
-    monkeypatch.setattr(worker_tasks, "_pop_batch_pending_id", lambda _run_id: 42)
-    monkeypatch.setattr(worker_tasks, "_enqueue_processed_item", _fail_enqueue)
+    monkeypatch.setattr(s3_batch_dispatch, "_pop_batch_pending_id", lambda _run_id: 42)
+    monkeypatch.setattr(s3_batch_dispatch, "_enqueue_processed_item", _fail_enqueue)
     monkeypatch.setattr(
-        worker_tasks,
+        s3_batch_dispatch,
         "_requeue_batch_pending_id",
         lambda run_id, item_id: requeued.append((run_id, item_id)),
     )
-    worker_tasks._dispatch_next_batch_item("run-1")
+    s3_batch_dispatch.dispatch_next_batch_item("run-1")
     assert requeued == [("run-1", 42)]
 
 
-def test_replenish_batch_window_stranded_prefers_redis_then_db(
+def testreplenish_batch_window_stranded_prefers_redis_then_db(
     batch_engine, monkeypatch
 ) -> None:
     engine, graph_id = batch_engine
@@ -497,15 +414,15 @@ def test_replenish_batch_window_stranded_prefers_redis_then_db(
         return None
 
     monkeypatch.setenv("S3_BATCH_MAX_INFLIGHT", "2")
-    monkeypatch.setattr(worker_tasks, "_pop_batch_pending_id", _pop)
+    monkeypatch.setattr(s3_batch_dispatch, "_pop_batch_pending_id", _pop)
     monkeypatch.setattr(
-        worker_tasks,
+        s3_batch_dispatch,
         "_enqueue_processed_item",
         lambda item_id: enqueued.append(item_id) or True,
     )
 
     with Session(engine) as session:
-        count = worker_tasks._replenish_batch_window(session, run_id)
+        count = s3_batch_dispatch.replenish_batch_window(session, run_id)
 
     assert count == 2
     assert enqueued[0] == 9001
@@ -514,7 +431,7 @@ def test_replenish_batch_window_stranded_prefers_redis_then_db(
     assert enqueued[1] != 9001
 
 
-def test_replenish_batch_window_noop_while_items_running(
+def testreplenish_batch_window_noop_while_items_running(
     batch_engine, monkeypatch
 ) -> None:
     engine, graph_id = batch_engine
@@ -527,18 +444,18 @@ def test_replenish_batch_window_noop_while_items_running(
     enqueued: list[int] = []
     monkeypatch.setenv("S3_BATCH_MAX_INFLIGHT", "2")
     monkeypatch.setattr(
-        worker_tasks,
+        s3_batch_dispatch,
         "_pop_batch_pending_id",
         lambda _run_id: 9001,
     )
     monkeypatch.setattr(
-        worker_tasks,
+        s3_batch_dispatch,
         "_enqueue_processed_item",
         lambda item_id: enqueued.append(item_id) or True,
     )
 
     with Session(engine) as session:
-        count = worker_tasks._replenish_batch_window(session, run_id)
+        count = s3_batch_dispatch.replenish_batch_window(session, run_id)
 
     assert count == 0
     assert enqueued == []
@@ -555,7 +472,7 @@ def test_finalize_replenishes_when_items_still_pending(batch_engine, monkeypatch
 
     monkeypatch.setattr(
         worker_tasks,
-        "_replenish_batch_window",
+        "replenish_batch_window",
         lambda session, rid: calls.append(rid) or 1,
     )
 
@@ -648,7 +565,7 @@ def test_s3_setup_rolls_back_items_if_run_is_cancelled_during_listing(
 
     monkeypatch.setattr(worker_tasks, "_s3_client_from_env", _CancellingS3)
     monkeypatch.setattr(
-        worker_tasks,
+        s3_batch_dispatch,
         "chord",
         lambda *_args, **_kwargs: pytest.fail("cancelled setup must not queue item work"),
     )

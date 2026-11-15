@@ -105,20 +105,22 @@ def unchanged_object_keys(
     listings: Sequence[S3ObjectListing],
 ) -> set[str]:
     """Keys whose current revision already succeeded (same check as one-by-one, in one query)."""
-    item_ids = {logical_item_id(bucket=bucket, key=listing.key): listing for listing in listings}
-    if not item_ids:
+    listings_by_logical_id = {
+        logical_item_id(bucket=bucket, key=listing.key): listing for listing in listings
+    }
+    if not listings_by_logical_id:
         return set()
     rows = session.exec(
         select(AgateS3IngestionLedger).where(
             AgateS3IngestionLedger.project_id == project_id,
             AgateS3IngestionLedger.source_id == source_id,
-            col(AgateS3IngestionLedger.logical_item_id).in_(list(item_ids)),
+            col(AgateS3IngestionLedger.logical_item_id).in_(list(listings_by_logical_id)),
             AgateS3IngestionLedger.status == LEDGER_STATUS_SUCCEEDED,
         )
     ).all()
     unchanged: set[str] = set()
     for row in rows:
-        listing = item_ids.get(row.logical_item_id)
+        listing = listings_by_logical_id.get(row.logical_item_id)
         if listing is not None and listing_metadata_matches_succeeded(
             listing=listing,
             stored_etag=row.etag,

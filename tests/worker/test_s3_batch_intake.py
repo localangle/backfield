@@ -10,10 +10,10 @@ import pytest
 from agate_runtime.s3_batch import S3ObjectListing
 from backfield_db import AgateProcessedItem, AgateRun
 from sqlmodel import Session, select
-from worker import s3_batch_intake
+from worker import s3_batch_dispatch, s3_batch_intake
 from worker import tasks as worker_tasks
 
-from tests.worker.test_s3_batch_worker import _FakeBody, batch_engine  # noqa: F401
+from tests.worker.s3_batch_helpers import FakeBody
 
 
 def _listing(key: str) -> S3ObjectListing:
@@ -44,7 +44,7 @@ def test_fetch_objects_reads_in_parallel_and_reports_failures() -> None:
         def get_object(self, **kwargs: Any) -> dict[str, Any]:
             if kwargs["Key"] == "bad":
                 raise RuntimeError("boom")
-            return {"Body": _FakeBody(kwargs["Key"].encode()), "VersionId": "v1"}
+            return {"Body": FakeBody(kwargs["Key"].encode()), "VersionId": "v1"}
 
     listings = [_listing("a"), _listing("bad"), _listing("c")]
     fetched = s3_batch_intake.fetch_objects(_S3(), bucket="b", listings=listings, workers=4)
@@ -118,11 +118,11 @@ class _ManyObjectsS3:
 
     def get_object(self, **kwargs: Any) -> dict[str, Any]:
         text = f"Article {kwargs['Key']}"
-        return {"Body": _FakeBody(json.dumps({"text": text}).encode())}
+        return {"Body": FakeBody(json.dumps({"text": text}).encode())}
 
 
 @pytest.fixture
-def streaming_setup(batch_engine, monkeypatch):  # noqa: F811
+def streaming_setup(batch_engine, monkeypatch):
     engine, graph_id = batch_engine
     worker_tasks.celery_app.conf.task_always_eager = False
     redis = _FakeRedis()
@@ -138,7 +138,7 @@ def streaming_setup(batch_engine, monkeypatch):  # noqa: F811
     monkeypatch.setenv("S3_BATCH_INTAKE_CHUNK_SIZE", "4")
     monkeypatch.setenv("S3_BATCH_MAX_INFLIGHT", "6")
     monkeypatch.setenv("S3_BATCH_RAMP_SECONDS", "60")
-    monkeypatch.setattr(worker_tasks, "_redis_client_or_none", lambda: redis)
+    monkeypatch.setattr(s3_batch_dispatch, "_redis_client_or_none", lambda: redis)
     monkeypatch.setattr(worker_tasks, "execute_processed_item", _RecordingTask)
     monkeypatch.setattr(worker_tasks, "_s3_client_from_env", lambda: _ManyObjectsS3(10))
 
@@ -169,7 +169,7 @@ def test_large_prefix_streams_chunks_and_fills_the_window(streaming_setup) -> No
         assert len(items) == 10
     # Window of 6 is filled; the other 4 wait in Redis for completions to refill.
     assert len(queued) == 6
-    assert len(redis.lists[worker_tasks._batch_pending_redis_key(run_id)]) == 4
+    assert len(redis.lists[s3_batch_dispatch._batch_pending_redis_key(run_id)]) == 4
     # The ramp staggers the first window rather than starting it all at once.
     countdowns = [countdown for _item_id, countdown in queued]
     assert countdowns[0] == 0
