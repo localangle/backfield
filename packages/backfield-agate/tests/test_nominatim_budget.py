@@ -215,7 +215,7 @@ def test_cooldown_can_be_disabled(redis_client, monkeypatch) -> None:
 
 
 def test_overpass_cooldown_keeps_its_key(redis_client) -> None:
-    request_gate.start_overpass_cooldown("busy")
+    request_gate.start_provider_cooldown("overpass", "busy")
 
     assert "backfield:geocode:overpass:cooldown" in redis_client.values
-    assert request_gate.overpass_cooldown_active()
+    assert request_gate.provider_cooldown_active("overpass")

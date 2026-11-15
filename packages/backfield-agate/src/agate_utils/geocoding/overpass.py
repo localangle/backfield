@@ -10,8 +10,6 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC
-from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,11 +17,17 @@ import httpx
 import overpy
 from shapely.geometry import LineString, Point
 
+from agate_utils.geocoding.lookup_budget import (
+    new_deadline,
+    remaining_s,
+    retry_delay_seconds,
+    sleep_before_deadline,
+)
 from agate_utils.geocoding.request_gate import (
     GateWaitTimeout,
     acquire_geocode_request_slot,
-    overpass_cooldown_active,
-    start_overpass_cooldown,
+    provider_cooldown_active,
+    start_provider_cooldown,
 )
 from agate_utils.llm import call_llm
 
@@ -111,7 +115,7 @@ def _overpass_attempts_per_endpoint() -> int:
 
 def new_overpass_deadline() -> float:
     """Monotonic deadline for one lookup, from ``OVERPASS_LOOKUP_BUDGET_S``."""
-    return time.monotonic() + overpass_lookup_budget_s()
+    return new_deadline(overpass_lookup_budget_s())
 
 
 def _overpass_semaphore() -> threading.Semaphore:
@@ -124,12 +128,12 @@ def _overpass_semaphore() -> threading.Semaphore:
 @contextmanager
 def _overpass_request_slot(deadline: float | None = None) -> Iterator[None]:
     """Hold a per-process slot and a fleet-wide slot; give up when ``deadline`` passes."""
-    remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
+    remaining = None if deadline is None else remaining_s(deadline)
     sem = _overpass_semaphore()
     if not sem.acquire(timeout=remaining):
         raise GateWaitTimeout("No Overpass worker slot free before the lookup budget ended")
     try:
-        gate_wait = None if deadline is None else max(0.0, deadline - time.monotonic())
+        gate_wait = None if deadline is None else remaining_s(deadline)
         with acquire_geocode_request_slot("overpass", max_wait_s=gate_wait):
             yield
     finally:
@@ -143,33 +147,6 @@ def _looks_like_overpass_json(body: bytes) -> bool:
 
 def _is_retryable_http_status(status_code: int) -> bool:
     return status_code in _RETRYABLE_HTTP_STATUSES
-
-
-def _retry_delay_seconds(
-    *,
-    response: httpx.Response | None,
-    attempt: int,
-    base_delay_s: float,
-    rate_limited: bool,
-) -> float:
-    """Compute backoff; honor Retry-After when the server sends it."""
-    if response is not None:
-        retry_after = response.headers.get("Retry-After", "").strip()
-        if retry_after:
-            if retry_after.isdigit():
-                return min(float(retry_after), _MAX_RETRY_DELAY_S)
-            try:
-                retry_at = parsedate_to_datetime(retry_after)
-                if retry_at.tzinfo is None:
-                    retry_at = retry_at.replace(tzinfo=UTC)
-                delta = (retry_at.timestamp() - time.time())
-                if delta > 0:
-                    return min(delta, _MAX_RETRY_DELAY_S)
-            except (TypeError, ValueError, OverflowError):
-                pass
-    multiplier = 2 ** max(0, attempt - 1)
-    floor = 8.0 if rate_limited else base_delay_s
-    return min(floor * multiplier, _MAX_RETRY_DELAY_S)
 
 
 def _response_error_summary(response: httpx.Response) -> str:
@@ -344,7 +321,7 @@ def run_query_with_overpy(
     Returns:
         Optional[overpy.Result]: Query result or None if failed
     """
-    if overpass_cooldown_active():
+    if provider_cooldown_active("overpass"):
         logger.debug("Overpass cooling down; skipping query")
         return None
     if deadline is None:
@@ -362,17 +339,8 @@ def run_query_with_overpy(
         logger.warning("Overpass query skipped: %s", exc)
         return None
     if result is None and servers_overloaded:
-        start_overpass_cooldown("Overpass lookup failed or ran out of budget")
+        start_provider_cooldown("overpass", "Overpass lookup failed or ran out of budget")
     return result
-
-
-def _sleep_within_deadline(delay_s: float, deadline: float) -> bool:
-    """Sleep ``delay_s`` if it fits before ``deadline``; False means out of budget."""
-    if time.monotonic() + delay_s >= deadline:
-        return False
-    logger.debug("Retrying in %.1f seconds...", delay_s)
-    time.sleep(delay_s)
-    return True
 
 
 def _query_endpoints_until_deadline(
@@ -393,11 +361,11 @@ def _query_endpoints_until_deadline(
     with httpx.Client(follow_redirects=True) as client:
         for url_index, url in enumerate(urls):
             for attempt_no in range(1, attempts + 1):
-                remaining_s = deadline - time.monotonic()
-                if remaining_s <= 0:
+                time_left_s = remaining_s(deadline)
+                if time_left_s <= 0:
                     logger.error("Overpass lookup budget exhausted; giving up")
                     return None, True
-                timeout = httpx.Timeout(min(remaining_s, request_timeout_s))
+                timeout = httpx.Timeout(min(time_left_s, request_timeout_s))
                 logger.debug(
                     "Executing Overpass query (endpoint %s/%s, attempt %s/%s)",
                     url_index + 1,
@@ -453,13 +421,14 @@ def _query_endpoints_until_deadline(
                     break
                 if attempt_no >= attempts:
                     break
-                delay_s = _retry_delay_seconds(
-                    response=response,
+                delay_s = retry_delay_seconds(
+                    response,
                     attempt=attempt_no,
                     base_delay_s=_DEFAULT_RETRY_DELAY_S,
-                    rate_limited=False,
+                    max_delay_s=_MAX_RETRY_DELAY_S,
                 )
-                if not _sleep_within_deadline(delay_s, deadline):
+                logger.debug("Retrying in %.1f seconds...", delay_s)
+                if not sleep_before_deadline(delay_s, deadline):
                     logger.error("Overpass lookup budget exhausted before retry; giving up")
                     return None, True
 

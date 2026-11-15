@@ -479,15 +479,3 @@ def start_provider_cooldown(provider: GeocodeProvider, reason: str) -> None:
         logger.warning("%s_cooldown_started seconds=%d reason=%s", provider, cooldown_s, reason)
     except Exception:
         logger.debug("%s cool-down start failed", provider, exc_info=True)
-
-
-def overpass_cooldown_s() -> int:
-    return provider_cooldown_s("overpass")
-
-
-def overpass_cooldown_active() -> bool:
-    return provider_cooldown_active("overpass")
-
-
-def start_overpass_cooldown(reason: str) -> None:
-    start_provider_cooldown("overpass", reason)

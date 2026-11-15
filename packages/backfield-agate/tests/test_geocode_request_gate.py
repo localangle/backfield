@@ -105,14 +105,14 @@ def test_overpass_cooldown_round_trip(monkeypatch) -> None:
         SimpleNamespace(from_url=lambda *_args, **_kwargs: FakeRedis()),
     )
 
-    assert request_gate.overpass_cooldown_active() is False
-    request_gate.start_overpass_cooldown("test")
-    assert request_gate.overpass_cooldown_active() is True
+    assert request_gate.provider_cooldown_active("overpass") is False
+    request_gate.start_provider_cooldown("overpass", "test")
+    assert request_gate.provider_cooldown_active("overpass") is True
 
 
 def test_overpass_cooldown_disabled_and_fails_open(monkeypatch) -> None:
     monkeypatch.setenv("OVERPASS_COOLDOWN_S", "0")
-    assert request_gate.overpass_cooldown_active() is False
+    assert request_gate.provider_cooldown_active("overpass") is False
 
     monkeypatch.setenv("OVERPASS_COOLDOWN_S", "30")
 
@@ -120,8 +120,8 @@ def test_overpass_cooldown_disabled_and_fails_open(monkeypatch) -> None:
         raise RuntimeError("no redis")
 
     monkeypatch.setitem(sys.modules, "redis", SimpleNamespace(from_url=boom))
-    assert request_gate.overpass_cooldown_active() is False
-    request_gate.start_overpass_cooldown("ignored")
+    assert request_gate.provider_cooldown_active("overpass") is False
+    request_gate.start_provider_cooldown("overpass", "ignored")
 
 
 def test_acquire_geocode_request_slot_skips_when_disabled(monkeypatch) -> None:

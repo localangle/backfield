@@ -16,8 +16,10 @@ from agate_utils.geocoding import overpass as overpass_module
 def _no_redis_cooldown(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """Keep tests off Redis; record cool-down starts."""
     started: list[str] = []
-    monkeypatch.setattr(overpass_module, "overpass_cooldown_active", lambda: False)
-    monkeypatch.setattr(overpass_module, "start_overpass_cooldown", started.append)
+    monkeypatch.setattr(overpass_module, "provider_cooldown_active", lambda _provider: False)
+    monkeypatch.setattr(
+        overpass_module, "start_provider_cooldown", lambda _provider, reason: started.append(reason)
+    )
     return started
 
 
@@ -75,17 +77,6 @@ def test_looks_like_overpass_json() -> None:
     assert overpass_module._looks_like_overpass_json(b'{"elements": []}')
     assert overpass_module._looks_like_overpass_json(b"  [{")
     assert not overpass_module._looks_like_overpass_json(b"<!DOCTYPE html>")
-
-
-def test_retry_delay_honors_retry_after_header() -> None:
-    response = httpx.Response(429, headers={"Retry-After": "12"})
-    delay = overpass_module._retry_delay_seconds(
-        response=response,
-        attempt=1,
-        base_delay_s=4.0,
-        rate_limited=True,
-    )
-    assert delay == 12.0
 
 
 def test_run_query_retries_transient_error_then_parses_json(
@@ -262,7 +253,7 @@ def test_run_query_skips_http_while_fleet_cooldown_is_active(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_endpoints(monkeypatch, 1)
-    monkeypatch.setattr(overpass_module, "overpass_cooldown_active", lambda: True)
+    monkeypatch.setattr(overpass_module, "provider_cooldown_active", lambda _provider: True)
     mock_client = _mock_client([])
 
     with patch.object(overpass_module.httpx, "Client", return_value=mock_client) as client_cls:

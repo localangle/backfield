@@ -3,23 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
-from agate_utils.geocoding.pelias import _pelias_get, _retry_delay_seconds
+from agate_utils.geocoding.pelias import _pelias_get
 from agate_utils.geocoding.provider_health import (
     begin_geocoder_health_tracking,
     end_geocoder_health_tracking,
     record_geocoder_http_status,
     snapshot_geocoder_health,
 )
-
-
-def test_retry_delay_honors_retry_after_seconds() -> None:
-    response = MagicMock()
-    response.headers = {"Retry-After": "2"}
-    delay = _retry_delay_seconds(response=response, attempt=1, rate_limited=True)
-    assert delay == 2.0
 
 
 def test_provider_health_records_auth_and_rate_limit() -> None:

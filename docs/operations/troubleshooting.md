@@ -161,7 +161,7 @@ For a non-AWS object store, ensure `AWS_S3_ENDPOINT_URL` or `AWS_ENDPOINT_URL` i
 
 ## Overpass returns 429, 5xx, or HTML
 
-Public interpreters are rate-limited. Each lookup has a hard time budget (`OVERPASS_LOOKUP_BUDGET_S`, default 45 s), capacity errors move straight to the next mirror, and after an overloaded failure every worker skips Overpass for `OVERPASS_COOLDOWN_S` (log line `overpass_cooldown_started`; skipped queries log "Overpass cooling down"). Intersections then use the language-model estimate. If many lookups still fail, lower `GEOCODE_OVERPASS_MAX_CONCURRENT` or `OVERPASS_MAX_CONCURRENT`, increase `OVERPASS_QUERY_STAGGER_S`, or use a dedicated `OVERPASS_API_URL`. Keep a descriptive `OVERPASS_USER_AGENT`.
+Public interpreters are rate-limited. Each lookup has a hard time budget (`OVERPASS_LOOKUP_BUDGET_S`, default 45 s), capacity errors move straight to the next mirror, and after an overloaded failure every worker skips Overpass for `OVERPASS_COOLDOWN_S` (log line `overpass_cooldown_started`). Intersections then use the language-model estimate. If many lookups still fail, lower `GEOCODE_OVERPASS_MAX_CONCURRENT` or `OVERPASS_MAX_CONCURRENT`, increase `OVERPASS_QUERY_STAGGER_S`, or use a dedicated `OVERPASS_API_URL`. Keep a descriptive `OVERPASS_USER_AGENT`.
 
 ## Natural places time out or Nominatim returns 429
 
@@ -171,8 +171,7 @@ lookup has a hard budget (`NOMINATIM_LOOKUP_BUDGET_S`, default 60 s) so a locati
 out the 300 s per-location limit; rivers, lakes, and regions then use the language-model estimate.
 Successful searches are shared between workers for `NOMINATIM_SEARCH_CACHE_TTL_S`, so repeated names
 cost one request. After a lookup stays rate limited, every worker skips Nominatim for
-`NOMINATIM_COOLDOWN_S` (log line `nominatim_cooldown_started`; skipped lookups log "Nominatim
-cooling down"). Do not raise the shared slot count: it would break the public server's
+`NOMINATIM_COOLDOWN_S` (log line `nominatim_cooldown_started`). Do not raise the shared slot count: it would break the public server's
 one-request-per-second policy.
 
 ## UI dependencies are missing
