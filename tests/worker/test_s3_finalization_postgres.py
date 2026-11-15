@@ -35,7 +35,7 @@ def test_competing_finalizers_mutate_parent_once(monkeypatch) -> None:
     barrier = Barrier(2)
     mutation_lock = Lock()
     parent_updates: list[str] = []
-    original_parent_status = worker_tasks._parent_run_status
+    original_parent_status = worker_tasks.parent_run_status
 
     def synchronized_parent_status(session: Session, run_id: str) -> str | None:
         status = original_parent_status(session, run_id)
@@ -48,7 +48,7 @@ def test_competing_finalizers_mutate_parent_once(monkeypatch) -> None:
             with mutation_lock:
                 parent_updates.append(normalized)
 
-    monkeypatch.setattr(worker_tasks, "_parent_run_status", synchronized_parent_status)
+    monkeypatch.setattr(worker_tasks, "parent_run_status", synchronized_parent_status)
     event.listen(engine, "before_cursor_execute", capture_parent_updates)
 
     organization_id: int | None = None
