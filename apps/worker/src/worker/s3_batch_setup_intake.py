@@ -18,6 +18,7 @@ from agate_runtime.s3_batch import (
     sha256_hex,
 )
 from backfield_db import AgateProcessedItem, AgateRun
+from sqlalchemy.sql import Select
 from sqlmodel import Session, select
 
 from worker.s3_batch_intake import (
@@ -62,6 +63,21 @@ class S3IntakeCounters:
         return meta
 
 
+def _locked_run_statement(run_id: str) -> Select[tuple[AgateRun]]:
+    """Lock the parent run row without blocking item persists.
+
+    ``FOR UPDATE`` conflicts with the ``FOR KEY SHARE`` lock that every item persist takes on
+    this row through its foreign key, so intake would wait on (and could starve behind) all
+    in-flight persists. ``FOR NO KEY UPDATE`` is enough because intake never changes a key.
+    """
+    return (
+        select(AgateRun)
+        .where(AgateRun.id == run_id)
+        .with_for_update(key_share=True)
+        .execution_options(populate_existing=True)
+    )
+
+
 def commit_s3_intake_progress(
     session: Session,
     run_id: str,
@@ -73,12 +89,7 @@ def commit_s3_intake_progress(
     Returns False (after rolling back the rows) when the run is no longer ``running``, for
     example because it was cancelled while objects were being read.
     """
-    run = session.exec(
-        select(AgateRun)
-        .where(AgateRun.id == run_id)
-        .with_for_update()
-        .execution_options(populate_existing=True)
-    ).first()
+    run = session.exec(_locked_run_statement(run_id)).first()
     if run is None or run.status != "running":
         session.rollback()
         return False
