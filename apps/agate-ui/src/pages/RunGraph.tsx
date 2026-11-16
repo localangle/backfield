@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import GuidedFlowBuilder, { type GuidedFlowBuilderHandle } from '@/pages/GuidedFlowBuilder'
 import { createRun, deleteGraph, getGraph, getProject, getRun, updateGraph, type Graph, type Run } from '@/lib/api'
 import { getInvalidFlowNodeIds, hydrateFromSpec } from '@/lib/flowGraphModel'
+import { createRunFailureCopy } from '@/lib/runEmptyItemsCopy'
 import {
   buildProjectBreadcrumbItems,
   useProjectAndWorkspace,
@@ -198,9 +199,10 @@ export default function RunGraph() {
       }, 2000)
     } catch (error) {
       console.error('Failed to create run:', error)
+      const failure = createRunFailureCopy(error)
       showModal({
-        title: 'Run failed',
-        description: 'Failed to create run. Please check the console for details and try again.',
+        title: failure.title,
+        description: failure.description,
         type: 'error',
         confirmText: 'OK',
         onConfirm: () => {},

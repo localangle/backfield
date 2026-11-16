@@ -7,6 +7,10 @@ The trigger validates the stored `GraphSpec`, applies an optional public ingress
 stores the effective graph spec in `agate_run.result_json.graph_spec_json`. Workers execute that
 snapshot so later graph edits do not change queued work.
 
+For S3Input graphs, the trigger lists the configured bucket/prefix (using project/org storage
+credentials) before inserting an `agate_run`. An empty prefix raises `ValueError`, which both
+create-run APIs map to HTTP `400`, so no run row is created and nothing is enqueued.
+
 Core public run requests may reserve a seven-day idempotency key before creating the run. The
 reservation, run, and Celery enqueue descriptor are committed atomically with
 `enqueue_state=pending`, then the API claims the row and publishes to the broker. A successful

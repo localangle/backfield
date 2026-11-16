@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Any
 
@@ -13,6 +15,24 @@ from botocore.session import get_session
 # Not AWS_ROLE_ARN: that name selects the SDK web-identity credential provider.
 S3_ROLE_ARN_ENV = "BACKFIELD_S3_ROLE_ARN"
 ROLE_SESSION_NAME = "backfield-s3"
+
+
+@contextmanager
+def env_overlay(updates: dict[str, str]) -> Iterator[None]:
+    """Temporarily set process env keys from ``updates``, then restore prior values."""
+    keys = list(updates.keys())
+    previous: dict[str, str | None] = {k: os.environ.get(k) for k in keys}
+    try:
+        for key, value in updates.items():
+            os.environ[key] = value
+        yield
+    finally:
+        for key in keys:
+            prev = previous.get(key)
+            if prev is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = prev
 
 
 def s3_client_from_env(*, missing_credentials_message: str) -> Any:

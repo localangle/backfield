@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { runEmptyItemsCopy, s3BatchAlreadyProcessedCount } from '@/lib/runEmptyItemsCopy'
+import {
+  createRunFailureCopy,
+  runEmptyItemsCopy,
+  s3BatchAlreadyProcessedCount,
+} from '@/lib/runEmptyItemsCopy'
 
 describe('runEmptyItemsCopy', () => {
   it('explains already-processed S3 scans', () => {
@@ -48,5 +52,15 @@ describe('s3BatchAlreadyProcessedCount', () => {
       }),
     ).toBe(2)
     expect(s3BatchAlreadyProcessedCount(null)).toBe(0)
+  })
+})
+
+describe('createRunFailureCopy', () => {
+  it('explains empty S3 folders without technical wording', () => {
+    const copy = createRunFailureCopy(
+      new Error('API error: 400 - {"detail":"No JSON objects found under s3://bucket/prefix/"}'),
+    )
+    expect(copy.title).toBe('Nothing to run')
+    expect(copy.description).toContain('no JSON files')
   })
 })

@@ -254,7 +254,12 @@ def test_public_run_text_override(
 def test_public_run_s3_override_pins_spec(
     public_runs_client: TestClient,
     stub_enqueue: list[tuple[str, list[object]]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(
+        "agate_runtime.run_trigger.preflight_s3_batch_has_json_objects",
+        lambda *_a, **_k: None,
+    )
     raw_key = _service_key_with_trigger(public_runs_client)
     graph_id = _seed_public_s3_graph(app.dependency_overrides[get_session])
     r = public_runs_client.post(
@@ -284,6 +289,44 @@ def test_public_run_s3_override_pins_spec(
         s3_node = next(n for n in snap["nodes"] if n["type"] == "S3Input")
         assert s3_node["params"]["bucket"] == "override-bucket"
         assert s3_node["params"]["folder_path"] == "override/prefix/"
+    finally:
+        session.close()
+
+
+def test_public_run_s3_empty_prefix_returns_400(
+    public_runs_client: TestClient,
+    stub_enqueue: list[tuple[str, list[object]]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _reject(*_a: object, **_k: object) -> None:
+        raise ValueError("No JSON objects found under s3://override-bucket/override/prefix/")
+
+    monkeypatch.setattr(
+        "agate_runtime.run_trigger.preflight_s3_batch_has_json_objects",
+        _reject,
+    )
+    raw_key = _service_key_with_trigger(public_runs_client)
+    graph_id = _seed_public_s3_graph(app.dependency_overrides[get_session])
+    r = public_runs_client.post(
+        "/public/v1/projects/general/runs",
+        headers={"Authorization": f"Bearer {raw_key}"},
+        json={
+            "graph_id": graph_id,
+            "inputs": {
+                "batch": {
+                    "bucket": "override-bucket",
+                    "prefix": "override/prefix/",
+                }
+            },
+        },
+    )
+    assert r.status_code == 400
+    assert "No JSON objects found" in r.json()["error"]["message"]
+    assert stub_enqueue == []
+    gen = app.dependency_overrides[get_session]()
+    session = next(gen)
+    try:
+        assert session.exec(select(AgateRun).where(AgateRun.graph_id == graph_id)).first() is None
     finally:
         session.close()
 
