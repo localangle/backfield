@@ -14,6 +14,8 @@ import litellm
 from backfield_ai.cost_estimate import litellm_estimated_cost_from_response
 from backfield_ai.json_clean import clean_json_response_text
 
+litellm.drop_params = True
+
 logger = logging.getLogger(__name__)
 
 # Upper bound when bumping an explicit ``max_tokens`` after empty JSON + finish_reason=length.
@@ -192,6 +194,21 @@ def _gpt_major_version(model_id: str) -> int | None:
     return int(digits)
 
 
+def _model_supports_sampling_params(litellm_model: str) -> bool:
+    """False when LiteLLM's model map sets ``supports_sampling_params`` to false.
+
+    The map keys Anthropic models by bare id (``claude-opus-5-5``), so check the
+    full route and the id without its provider prefix. Models with no flag are
+    treated as supporting sampling params.
+    """
+    model = litellm_model.strip()
+    for candidate in (model, _provider_model_id_from_litellm(model)):
+        flag = (litellm.model_cost.get(candidate) or {}).get("supports_sampling_params")
+        if isinstance(flag, bool):
+            return flag
+    return True
+
+
 def _litellm_completion_temperature(
     litellm_model: str,
     temperature: float | None,
@@ -206,8 +223,15 @@ def _litellm_completion_temperature(
     GPT-6 and later reject any temperature other than ``1`` while reasoning is
     on. An unset effort leaves the provider default, which is reasoning on.
     ``reasoning_effort="none"`` may still send the caller's temperature.
+
+    Models LiteLLM flags ``supports_sampling_params: false`` (Claude Opus 5.5 and
+    other recent Claude models) get no temperature: LiteLLM raises
+    ``UnsupportedParamsError`` for any value but ``1``, and the Anthropic API
+    rejects the parameter ("`temperature` is deprecated for this model").
     """
     if temperature is None:
+        return None
+    if not _model_supports_sampling_params(litellm_model):
         return None
     model_id = _provider_model_id_from_litellm(litellm_model)
     if model_id.startswith("gpt-5"):
