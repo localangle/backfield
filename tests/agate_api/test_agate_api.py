@@ -1013,6 +1013,10 @@ def test_s3_graph_run_enqueues_batch_setup(monkeypatch, client: TestClient):
         sent_task["queue"] = queue
 
     monkeypatch.setattr(runs.celery_app, "send_task", fake_send_task)
+    monkeypatch.setattr(
+        "agate_runtime.run_trigger.preflight_s3_batch_has_json_objects",
+        lambda *_a, **_k: None,
+    )
 
     project = _post_project(client, name="S3 Project", slug="s3-proj").json()
     graph = client.post(
@@ -1054,6 +1058,65 @@ def test_s3_graph_run_enqueues_batch_setup(monkeypatch, client: TestClient):
         "args": [run["id"]],
         "queue": "agate",
     }
+
+
+def test_s3_graph_run_empty_prefix_returns_400(monkeypatch, client: TestClient):
+    sent_task: dict[str, object] = {}
+
+    def fake_send_task(name: str, args: list[str], queue: str) -> None:
+        sent_task["name"] = name
+        sent_task["args"] = args
+        sent_task["queue"] = queue
+
+    def _reject(*_a, **_k) -> None:
+        raise ValueError("No JSON objects found under s3://b/")
+
+    monkeypatch.setattr(runs.celery_app, "send_task", fake_send_task)
+    monkeypatch.setattr(
+        "agate_runtime.run_trigger.preflight_s3_batch_has_json_objects",
+        _reject,
+    )
+
+    project = _post_project(client, name="S3 Empty Project", slug="s3-empty-proj").json()
+    graph = client.post(
+        "/graphs",
+        json={
+            "name": "S3 Empty Flow",
+            "project_id": project["id"],
+            "spec": {
+                "name": "s3_flow",
+                "nodes": [
+                    {
+                        "id": "s3",
+                        "type": "S3Input",
+                        "params": {"bucket": "b", "folder_path": ""},
+                        "position": {"x": 0, "y": 0},
+                    },
+                    {
+                        "id": "out",
+                        "type": "Output",
+                        "params": {},
+                        "position": {"x": 200, "y": 0},
+                    },
+                ],
+                "edges": [
+                    {
+                        "source": "s3",
+                        "target": "out",
+                        "sourceHandle": "text",
+                        "targetHandle": "data",
+                    },
+                ],
+            },
+        },
+    ).json()
+    response = client.post("/runs", json={"graph_id": graph["id"]})
+    assert response.status_code == 400
+    assert "No JSON objects found" in response.json()["detail"]
+    assert sent_task == {}
+    listed = client.get("/runs", params={"graph_id": graph["id"]})
+    assert listed.status_code == 200
+    assert listed.json() == []
 
 
 def test_get_run_includes_processed_items_array(monkeypatch, client: TestClient):

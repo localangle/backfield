@@ -14,7 +14,7 @@ from agate_runtime.run_trigger import (
 )
 from agate_runtime.types import GraphSpec, NodeConfig
 from backfield_db import AgateGraph, AgateRun
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 
 def _text_spec(*, alias: str = "article", text: str = "Hello") -> GraphSpec:
@@ -182,3 +182,72 @@ def test_trigger_agate_run_json_input_batch_enqueues_setup() -> None:
         run = session.get(AgateRun, result.run.id)
         assert run is not None
         assert "graph_spec_json" in parse_run_result_payload(run.result_json)
+
+
+def test_trigger_agate_run_s3_empty_prefix_raises_without_creating_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agate_runtime import run_trigger as run_trigger_mod
+
+    def _reject(*_a: object, **_k: object) -> None:
+        raise ValueError("No JSON objects found under s3://saved-bucket/saved/prefix/")
+
+    monkeypatch.setattr(run_trigger_mod, "preflight_s3_batch_has_json_objects", _reject)
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    enqueued: list[tuple[str, list[object]]] = []
+
+    def enqueue(name: str, args: list[object]) -> None:
+        enqueued.append((name, args))
+
+    with Session(engine) as session:
+        graph = AgateGraph(
+            id="g-s3-empty",
+            name="S3 Empty",
+            spec_json=_s3_spec().model_dump_json(),
+            project_id=1,
+        )
+        session.add(graph)
+        session.commit()
+
+        with pytest.raises(ValueError, match="No JSON objects found"):
+            trigger_agate_run(session, graph=graph, enqueue=enqueue)
+
+        assert enqueued == []
+        existing = session.exec(select(AgateRun).where(AgateRun.graph_id == "g-s3-empty")).first()
+        assert existing is None
+
+
+def test_trigger_agate_run_s3_preflight_passes_and_enqueues(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agate_runtime import run_trigger as run_trigger_mod
+
+    monkeypatch.setattr(
+        run_trigger_mod,
+        "preflight_s3_batch_has_json_objects",
+        lambda *_a, **_k: None,
+    )
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    enqueued: list[tuple[str, list[object]]] = []
+
+    def enqueue(name: str, args: list[object]) -> None:
+        enqueued.append((name, args))
+
+    with Session(engine) as session:
+        graph = AgateGraph(
+            id="g-s3-ok",
+            name="S3 OK",
+            spec_json=_s3_spec().model_dump_json(),
+            project_id=1,
+        )
+        session.add(graph)
+        session.commit()
+
+        result = trigger_agate_run(session, graph=graph, enqueue=enqueue)
+        assert result.processed_item is None
+        assert result.run.status == "pending"
+        assert enqueued == [("worker.tasks.execute_s3_batch_setup", [result.run.id])]

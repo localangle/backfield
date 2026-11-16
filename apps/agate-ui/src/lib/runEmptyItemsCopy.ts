@@ -43,3 +43,19 @@ export function runEmptyItemsCopy(run: Pick<Run, 'status' | 's3_batch'>): RunEmp
     description: 'This run has no processed items yet.',
   }
 }
+
+/** User-facing copy when create-run fails before a run row exists. */
+export function createRunFailureCopy(error: unknown): RunEmptyItemsCopy {
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  if (/No JSON objects found under s3:\/\//i.test(message)) {
+    return {
+      title: 'Nothing to run',
+      description:
+        'This folder has no JSON files to process. Add files to the folder, then try again.',
+    }
+  }
+  return {
+    title: 'Run failed',
+    description: 'Failed to create run. Please check the console for details and try again.',
+  }
+}

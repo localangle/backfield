@@ -31,10 +31,13 @@ from agate_runtime.run_graph_spec import (
     resolve_run_graph_spec_json,
 )
 from agate_runtime.s3_batch import (
+    empty_s3_prefix_message,
+    first_s3_input_params,
     list_json_objects_under_prefix,
+    s3_input_bucket_and_prefix,
     s3_max_files_from_params,
 )
-from agate_runtime.s3_credentials import s3_client_from_env
+from agate_runtime.s3_credentials import env_overlay, s3_client_from_env
 from agate_utils.llm import call_llm
 from backfield_ai.credentials import merge_project_and_org_llm_api_keys
 from backfield_ai.tracking_context import (
@@ -498,23 +501,6 @@ def _register_worker_process_hooks() -> None:
 _register_worker_process_hooks()
 
 
-@contextmanager
-def _env_overlay(updates: dict[str, str]):
-    keys = list(updates.keys())
-    previous: dict[str, str | None] = {k: os.environ.get(k) for k in keys}
-    try:
-        for k, v in updates.items():
-            os.environ[k] = v
-        yield
-    finally:
-        for k in keys:
-            prev = previous.get(k)
-            if prev is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = prev
-
-
 def _call_llm_with_env_api_keys(prompt: str, **kwargs: Any) -> str:
     """Pass org/project API keys explicitly; ``call_llm`` does not read env by default."""
     return call_llm(
@@ -582,7 +568,7 @@ def _run_execution_env(
         updates["BACKFIELD_PROCESSED_ITEM_ID"] = str(int(processed_item_id))
     if project_system_prompt:
         updates["BACKFIELD_PROJECT_SYSTEM_PROMPT"] = project_system_prompt
-    with _env_overlay(updates):
+    with env_overlay(updates):
         yield
 
 
@@ -592,13 +578,6 @@ def _s3_client_from_env() -> Any:
             "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set for S3Input batch listing."
         )
     )
-
-
-def _first_s3_input_params(spec: GraphSpec) -> dict[str, Any]:
-    for node in spec.nodes:
-        if node.type == "S3Input":
-            return dict(node.params)
-    raise ValueError("S3 batch setup requires an S3Input node in the graph.")
 
 
 def _terminalize_ingestion_ledger_for_item(
@@ -871,7 +850,7 @@ def execute_agate_run(
                 run_id=run_id,
             )
         )
-        with _env_overlay(overlay), _run_execution_env(
+        with env_overlay(overlay), _run_execution_env(
             project_id=project_id,
             organization_id=organization_id,
             graph_id=graph_id,
@@ -1148,7 +1127,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                 graph_spec_json=graph.spec_json,
             )
             spec = GraphSpec.model_validate_json(spec_json)
-            params = _first_s3_input_params(spec)
+            params = first_s3_input_params(spec)
             source_id, spec_json, params = ensure_s3_input_source_id(
                 params=params,
                 graph_spec_json=spec_json,
@@ -1157,21 +1136,15 @@ def execute_s3_batch_setup(run_id: str) -> None:
                 graph.spec_json = spec_json
                 session.add(graph)
                 session.commit()
-            bucket = str(params.get("bucket") or "").strip()
-            folder_path = str(params.get("folder_path") or "").strip()
-            if not bucket:
-                raise ValueError(
-                    "S3Input requires a non-empty bucket parameter before running the flow."
-                )
+            bucket, prefix = s3_input_bucket_and_prefix(params)
             max_files = s3_max_files_from_params(params)
             reprocess_unchanged = bool(params.get("reprocess_unchanged"))
-            prefix = folder_path.rstrip("/") + "/" if folder_path else ""
             lease_duration = timedelta(seconds=_STALE_RUNNING_AFTER_S)
             project_id = int(graph.project_id)
 
             overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
             listing_started = time.perf_counter()
-            with _env_overlay(overlay):
+            with env_overlay(overlay):
                 s3_client = _s3_client_from_env()
                 listings = list_json_objects_under_prefix(
                     s3_client, bucket=bucket, prefix=prefix
@@ -1193,7 +1166,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                     return
                 previous_status = run.status
                 run.status = "failed"
-                run.error_message = f"No JSON objects found under s3://{bucket}/{prefix or ''}"
+                run.error_message = empty_s3_prefix_message(bucket=bucket, prefix=prefix)
                 run.result_json = merge_run_result_payload(
                     run.result_json,
                     s3_batch={
@@ -1243,7 +1216,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                 clear_batch_pending_ids(run_id)
                 return
 
-            with _env_overlay(overlay):
+            with env_overlay(overlay):
                 s3_client = _s3_client_from_env()
                 for chunk in chunked(listings, chunk_size):
                     chunk_pending = ingest_s3_chunk(
@@ -1740,7 +1713,7 @@ def _execute_processed_item_impl(
         )
     )
     try:
-        with _env_overlay(overlay), _run_execution_env(
+        with env_overlay(overlay), _run_execution_env(
             project_id=project_id,
             organization_id=organization_id,
             graph_id=graph_id,
@@ -1947,7 +1920,7 @@ def sync_processed_item_s3_output(item_id: int) -> None:
 
         error: str | None = None
         try:
-            with _env_overlay(overlay):
+            with env_overlay(overlay):
                 s3_client = _s3_client_from_env()
                 for payload in payloads.values():
                     bucket = str(payload["s3_bucket"])
@@ -2438,7 +2411,7 @@ def execute_cleanup_check_run(run_id: str) -> None:
                     session,
                     scope=scope,
                 )
-                with _env_overlay(llm_context.api_key_overlay):
+                with env_overlay(llm_context.api_key_overlay):
                     items = build_cleanup_check_items(
                         session,
                         scope=scope,

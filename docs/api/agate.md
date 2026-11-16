@@ -82,7 +82,8 @@ Deleting a flow removes its run-control records and detaches durable article row
 `/runs` creates, replays, lists, inspects, cancels, and reports cost for runs.
 
 - A run pins the effective graph specification before work is queued.
-- S3 Input starts batch setup and creates one processed item per input object.
+- S3 Input starts batch setup and creates one processed item per input object. Create rejects an
+  empty S3 folder with `400` and does not create a run.
 - Inline Text Input or JSON Input creates a processed item at trigger time.
 - Run cancellation is available while pending or running. Cancellation atomically fails active
   items, preserves completed items, and returns the same compact status shape used for polling.

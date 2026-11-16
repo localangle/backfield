@@ -15,6 +15,7 @@ from backfield_db import (
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, col, create_engine, select
+from worker.s3_batch_setup_intake import _locked_run_statement
 from worker.substrate import persist_from_consolidated
 from worker.substrate.entities.location import upsert as location_upsert
 from worker.substrate.entities.lock_order import _ordered_lock_statement
@@ -55,6 +56,12 @@ def test_ordered_lock_statement_is_ordered_no_key_update_and_project_scoped() ->
     assert "ORDER BY substrate_person.id" in sql
     assert sql.rstrip().endswith("FOR NO KEY UPDATE")
     assert "substrate_person.project_id =" in sql
+
+
+def test_intake_locks_parent_run_without_blocking_item_persists() -> None:
+    """FOR UPDATE would wait on the key-share locks item persists hold on the parent run."""
+    sql = _postgres_sql(_locked_run_statement("run-1"))
+    assert sql.rstrip().endswith("FOR NO KEY UPDATE")
 
 
 def test_location_row_locks_use_no_key_update() -> None:

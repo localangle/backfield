@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from agate_runtime.nodes.json_input import resolve_document_body_text
+from agate_runtime.types import GraphSpec
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,28 @@ def _normalize_last_modified(value: datetime | None) -> datetime | None:
     return value.astimezone(tz=value.tzinfo).replace(microsecond=0)
 
 
+def _is_json_object_key(key: str) -> bool:
+    return bool(key) and key.endswith(".json") and not key.endswith("/")
+
+
+def prefix_has_json_object(s3_client: Any, *, bucket: str, prefix: str) -> bool:
+    """Return True as soon as one ``*.json`` object exists under ``prefix``."""
+    token: str | None = None
+    while True:
+        kwargs: dict[str, Any] = {"Bucket": bucket, "Prefix": prefix}
+        if token:
+            kwargs["ContinuationToken"] = token
+        resp = s3_client.list_objects_v2(**kwargs)
+        for obj in resp.get("Contents") or []:
+            if _is_json_object_key(str(obj.get("Key") or "")):
+                return True
+        if not resp.get("IsTruncated"):
+            return False
+        token = resp.get("NextContinuationToken")
+        if not token:
+            return False
+
+
 def list_json_objects_under_prefix(
     s3_client: Any, *, bucket: str, prefix: str
 ) -> list[S3ObjectListing]:
@@ -82,7 +105,7 @@ def list_json_objects_under_prefix(
         resp = s3_client.list_objects_v2(**kwargs)
         for obj in resp.get("Contents") or []:
             key = str(obj.get("Key") or "")
-            if not key.endswith(".json") or key.endswith("/"):
+            if not _is_json_object_key(key):
                 continue
             size_raw = obj.get("Size")
             size_bytes: int | None
@@ -118,6 +141,28 @@ def list_json_keys_under_prefix(s3_client: Any, *, bucket: str, prefix: str) -> 
         obj.key
         for obj in list_json_objects_under_prefix(s3_client, bucket=bucket, prefix=prefix)
     ]
+
+
+def first_s3_input_params(spec: GraphSpec) -> dict[str, Any]:
+    """Return params from the first ``S3Input`` node, or raise if none exists."""
+    for node in spec.nodes:
+        if node.type == "S3Input":
+            return dict(node.params) if isinstance(node.params, dict) else {}
+    raise ValueError("S3 batch setup requires an S3Input node in the graph.")
+
+
+def empty_s3_prefix_message(*, bucket: str, prefix: str) -> str:
+    return f"No JSON objects found under s3://{bucket}/{prefix or ''}"
+
+
+def s3_input_bucket_and_prefix(params: dict[str, Any]) -> tuple[str, str]:
+    """Normalize S3Input params into ``(bucket, prefix)`` for listing."""
+    bucket = str(params.get("bucket") or "").strip()
+    if not bucket:
+        raise ValueError("S3Input requires a non-empty bucket before running the flow.")
+    folder_path = str(params.get("folder_path") or "").strip()
+    prefix = folder_path.rstrip("/") + "/" if folder_path else ""
+    return bucket, prefix
 
 
 def parse_s3_text_json_document(raw: str) -> tuple[dict[str, Any] | None, str | None]:

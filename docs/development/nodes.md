@@ -342,6 +342,13 @@ context window (8,000-token fallback when metadata is unknown) and fail with gui
 to add Document Chunker. Article Metadata and Embed Text keep whole-document outputs
 but truncate prompt/embedding body input safely.
 
+Embed Text input limit: the embedding model (`text-embedding-3-small`) rejects inputs over 8,192
+tokens, so the composed input (headline, body, then metadata) is capped at 8,000 real tokens
+(`cl100k_base`, counted through LiteLLM's bundled tokenizer, no network needed). Only the article
+body is shortened, so very long articles are embedded from their opening text and the vector
+does not reflect the tail. The output sets `truncated: true` when this happens. This is a
+deliberate short-term choice; chunked or averaged embeddings would be a future change.
+
 GPT-5.6 extract completions (`gpt-5.6`, Sol, Terra, Luna) always send
 `reasoning_effort=none` and an explicit completion budget (default 8,192 tokens,
 retried once if the JSON is empty or truncated). Do not fall back to `minimal`; 5.6

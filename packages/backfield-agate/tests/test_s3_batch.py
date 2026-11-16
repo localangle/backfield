@@ -12,6 +12,7 @@ from agate_runtime.s3_batch import (
     listing_metadata_matches_succeeded,
     logical_item_id,
     parse_s3_text_json_document,
+    prefix_has_json_object,
     s3_max_files_from_params,
     sha256_hex,
 )
@@ -166,3 +167,33 @@ def test_list_json_objects_under_prefix_paginates_and_filters() -> None:
     assert objects[0].etag == '"a"'
     assert objects[0].size_bytes == 1
     assert objects[1].size_bytes == 2
+
+
+def test_prefix_has_json_object_short_circuits() -> None:
+    class _Client:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def list_objects_v2(self, **_kwargs):
+            self.calls += 1
+            return {
+                "Contents": [
+                    {"Key": "p/note.txt"},
+                    {"Key": "p/story.json"},
+                    {"Key": "p/later.json"},
+                ],
+                "IsTruncated": True,
+                "NextContinuationToken": "page-2",
+            }
+
+    client = _Client()
+    assert prefix_has_json_object(client, bucket="bucket", prefix="p/") is True
+    assert client.calls == 1
+
+
+def test_prefix_has_json_object_empty() -> None:
+    class _Client:
+        def list_objects_v2(self, **_kwargs):
+            return {"Contents": [{"Key": "p/readme.txt"}, {"Key": "p/"}], "IsTruncated": False}
+
+    assert prefix_has_json_object(_Client(), bucket="bucket", prefix="p/") is False

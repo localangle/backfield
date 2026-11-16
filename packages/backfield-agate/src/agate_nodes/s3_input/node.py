@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from agate_runtime.s3_batch import list_json_keys_under_prefix, parse_s3_text_json_document
+from agate_runtime.s3_batch import (
+    empty_s3_prefix_message,
+    list_json_keys_under_prefix,
+    parse_s3_text_json_document,
+)
 from agate_runtime.s3_credentials import s3_client_from_env
 
 from agate_nodes.json_input.node import json_input_output_from_dict
@@ -36,7 +40,7 @@ def run_s3_input(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, An
     json_keys = list_json_keys_under_prefix(s3_client, bucket=bucket, prefix=prefix)
     total_files = len(json_keys)
     if total_files == 0:
-        raise ValueError(f"No JSON objects found under s3://{bucket}/{prefix or ''}")
+        raise ValueError(empty_s3_prefix_message(bucket=bucket, prefix=prefix))
 
     chosen_payload: dict[str, Any] | None = None
     source_file: str | None = None

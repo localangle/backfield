@@ -181,7 +181,8 @@ project; only the catalog (canonical) scope changes.
 1. `POST /public/v1/projects/{project_slug}/runs` with a body that includes
    `graph_id` and `inputs`. Requires a service-type project key with
    `runs:trigger`. The target graph must have public run trigger enabled. The
-   response is `202 Accepted` with `Location` and `Retry-After`.
+   response is `202 Accepted` with `Location` and `Retry-After`. S3Input graphs
+   whose bucket/prefix has no JSON objects return `400` and do not create a run.
 2. Poll `GET /public/v1/projects/{project_slug}/runs/{run_id}` until status and
    item counts settle. Pending and running responses include `Retry-After`.
    `needs_attention` is a finished status: the story was held by a Processing
