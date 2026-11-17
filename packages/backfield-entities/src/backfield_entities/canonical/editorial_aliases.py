@@ -62,7 +62,7 @@ def load_location_editorial_alias_keys(
 ) -> dict[str, frozenset[str]]:
     # Local imports avoid entity-package initialization cycles with canonical policy.
     from backfield_entities.entities.location.catalog_provenance import (
-        is_location_catalog_editorial_provenance,
+        is_location_alias_trusted_for_link_checks,
     )
 
     if not canonical_ids:
@@ -79,7 +79,7 @@ def load_location_editorial_alias_keys(
     ).all()
     return _editorial_alias_keys(
         rows,
-        is_editorial_provenance=is_location_catalog_editorial_provenance,
+        is_editorial_provenance=is_location_alias_trusted_for_link_checks,
     )
 
 

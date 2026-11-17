@@ -91,6 +91,18 @@ target canonical. Same-given / different-family pairs (for example Adam Fantilli
 vs Adam Henrique) are vetoed before generic name-overlap rescue; generational
 suffixes and surname particles do not create false conflicts.
 
+Location mismatch helpers compare names after folding accents, apostrophes, and
+spelling variants (`Theatre` / `Theater`, `Saint` / `St.`), and rescue a link when
+the substrate name matches a trusted alias on the target canonical. Trusted
+aliases are catalog-editorial ones plus those written by a cleanup merge or AI
+review (`stylebook_cleanup_merge`, `stylebook_cleanup_ai_review`); aliases written
+by `substrate_ingest` are not trusted. This trust applies to the sync gate and to
+the "Potential mismatched places" list, and does not change which canonicals are
+protected from pruning. The list additionally hides plain variants of the same
+name (words run together, or one name holding every meaningful word of the other
+for comparable place types); the sync gate does not use that looser rule, because
+`Lincoln Park` is a word subset of `Lincoln Park Zoo`.
+
 AI-assisted adjudication returns a strict structured payload (`decision`,
 `canonical_id`, finite numeric `confidence`, `same_identity`,
 `conflicting_identity_evidence`). Rationale is audit-only. A `link_existing`

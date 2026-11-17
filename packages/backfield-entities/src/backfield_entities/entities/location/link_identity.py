@@ -9,8 +9,12 @@ from backfield_entities.canonical.jurisdiction import district_kind_keywords_con
 from backfield_entities.canonical.link_matrix import types_are_comparable
 from backfield_entities.ingest.geocode_cache.fingerprint import normalize_substrate_cache_query
 from backfield_entities.ingest.geocode_cache.sanity import cache_hit_sane_for_substrate
+from backfield_entities.text.match_normalize import match_fold_key
 
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+
+# Spelling variants of the same word, compared as one token.
+_SPELLING_VARIANTS: dict[str, str] = {"theatre": "theater", "centre": "center", "saint": "st"}
 
 _LOCATION_STOP_WORDS: frozenset[str] = frozenset(
     {
@@ -98,7 +102,10 @@ def normalize_location_alias_key(value: str | None) -> str:
 
 
 def _compare_key(text: str) -> str:
-    return _NON_ALNUM_RE.sub(" ", (text or "").strip().lower()).strip()
+    """Lowercase, accent-folded key with apostrophes dropped and spelling variants unified."""
+    folded = match_fold_key(text).replace("'", "")
+    tokens = _NON_ALNUM_RE.sub(" ", folded).split()
+    return " ".join(_SPELLING_VARIANTS.get(token, token) for token in tokens)
 
 
 def _first_segment_key(text: str) -> str:
@@ -201,6 +208,39 @@ def location_names_share_obvious_identity(
         str(substrate_name or "").split(",")[0]
     ) & _meaningful_location_tokens(str(canonical_label or "").split(",")[0])
     return len(head_shared) >= 2
+
+
+_MIN_VARIANT_TOKEN_CHARS = 4
+
+
+def location_names_are_obvious_variants(
+    *,
+    substrate_name: str,
+    substrate_location_type: str | None,
+    canonical_label: str,
+    canonical_location_type: str | None,
+) -> bool:
+    """True when two names of comparable places are one name spelled or shortened differently.
+
+    Looser than ``location_names_share_obvious_identity``, so it is only for review lists, where
+    a missed flag is cheap. The link-commit gate must not use it: ``Lincoln Park`` is a subset of
+    ``Lincoln Park Zoo``. Covers the same words run together (``LaSalle`` / ``La Salle``) and one
+    name containing every meaningful word of the other (``Raven`` / ``Raven Theatre``).
+    """
+    if not types_are_comparable(substrate_location_type, canonical_location_type):
+        return False
+    substrate_head = _strip_leading_the(_first_segment_key(substrate_name))
+    canonical_head = _strip_leading_the(_first_segment_key(canonical_label))
+    if not substrate_head or not canonical_head:
+        return False
+    if substrate_head.replace(" ", "") == canonical_head.replace(" ", ""):
+        return True
+    substrate_tokens = _meaningful_location_tokens(substrate_head)
+    canonical_tokens = _meaningful_location_tokens(canonical_head)
+    shorter, longer = sorted((substrate_tokens, canonical_tokens), key=len)
+    if not shorter or sum(len(token) for token in shorter) < _MIN_VARIANT_TOKEN_CHARS:
+        return False
+    return shorter <= longer
 
 
 _MUNICIPALITY_LOCATION_TYPES: frozenset[str] = frozenset({"city", "town", "village"})

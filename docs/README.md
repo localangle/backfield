@@ -73,6 +73,8 @@ Boundaries and runtime behavior:
 Intent and decision records for features not currently scheduled:
 
 - [`plan/storylines.md`](plan/storylines.md) — multi-article coverage packaging (storylines)
+- [`plan/stylebook-agent-maintenance.md`](plan/stylebook-agent-maintenance.md) — agent-driven Stylebook maintenance; first case study is duplicate places
+- [`plan/stylebook-maintenance-program.md`](plan/stylebook-maintenance-program.md) — running plan and decision log for turning that cleanup into ingest, review-queue, AI review, and agent API work
 
 ## Agent workflows
 

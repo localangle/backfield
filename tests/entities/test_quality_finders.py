@@ -1083,6 +1083,79 @@ def test_location_name_mismatch_finder_sqlite() -> None:
         )
 
 
+def test_location_name_mismatch_finder_trusts_cleanup_merge_aliases_sqlite() -> None:
+    from backfield_db import StylebookLocationAlias
+    from backfield_entities.quality.finders.location_name_mismatch import (
+        count_location_name_mismatches,
+    )
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, org_id = _make_stylebook(session)
+        project = BackfieldProject(
+            **project_ownership_fields(session, org_id),
+            organization_id=org_id,
+            name="Demo",
+            slug="demo",
+        )
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+
+        def add_linked_place(*, slug: str, label: str, mention: str, alias_provenance: str) -> None:
+            canon = StylebookLocationCanonical(
+                stylebook_id=stylebook_id, slug=slug, label=label, location_type="place"
+            )
+            session.add(canon)
+            session.commit()
+            session.refresh(canon)
+            session.add(
+                SubstrateLocation(
+                    project_id=int(project.id),
+                    name=mention,
+                    normalized_name=mention.lower(),
+                    location_type="place",
+                    identity_fingerprint=f"fp-{slug}",
+                    stylebook_location_canonical_id=str(canon.id),
+                    canonical_link_status=CANONICAL_LINK_LINKED,
+                )
+            )
+            session.add(
+                StylebookLocationAlias(
+                    location_canonical_id=str(canon.id),
+                    alias_text=mention,
+                    normalized_alias=mention.lower(),
+                    provenance=alias_provenance,
+                )
+            )
+            session.commit()
+
+        # Renamed venue folded in by a cleanup merge: a person already decided it is the same place.
+        add_linked_place(
+            slug="american-family-field",
+            label="American Family Field, Milwaukee, WI",
+            mention="Miller Park, Milwaukee, WI",
+            alias_provenance="stylebook_cleanup_merge",
+        )
+        mismatch_count = count_location_name_mismatches(
+            session, stylebook_id=stylebook_id, organization_id=org_id
+        )
+        assert mismatch_count == 0
+
+        # The same unlike name is still flagged when the alias only came from ingest.
+        add_linked_place(
+            slug="general-iron",
+            label="General Iron, Southeast Side, Chicago, IL",
+            mention="Southside Recycling, East Side, Chicago, IL",
+            alias_provenance="substrate_ingest",
+        )
+        mismatch_count = count_location_name_mismatches(
+            session, stylebook_id=stylebook_id, organization_id=org_id
+        )
+        assert mismatch_count == 1
+
+
 def test_exact_duplicate_organization_apostrophe_normalization_sqlite() -> None:
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
     SQLModel.metadata.create_all(engine)

@@ -11,7 +11,10 @@ from sqlmodel import Session, col, select
 from backfield_entities.canonical.editorial_aliases import load_location_editorial_alias_keys
 from backfield_entities.canonical.jurisdiction import place_extract_components_from_entry
 from backfield_entities.canonical.link import CANONICAL_LINK_LINKED
-from backfield_entities.entities.location.link_identity import location_link_is_obvious_mismatch
+from backfield_entities.entities.location.link_identity import (
+    location_link_is_obvious_mismatch,
+    location_names_are_obvious_variants,
+)
 from backfield_entities.quality.dismissals import load_dismissed_keys
 from backfield_entities.quality.finders._name_mismatch_common import (
     LOCATION_NAME_MISMATCH_CHECK_ID,
@@ -72,6 +75,14 @@ def _aggregate_location_mismatches(
             canonical_label=str(canon.label),
             canonical_location_type=canon.location_type,
             editorial_alias_keys=alias_keys,
+        ):
+            continue
+        # A review list should not ask about plain spelling or shortening differences.
+        if location_names_are_obvious_variants(
+            substrate_name=str(loc.name or ""),
+            substrate_location_type=loc.location_type,
+            canonical_label=str(canon.label),
+            canonical_location_type=canon.location_type,
         ):
             continue
         agg.setdefault(cid, CanonicalMismatchAgg()).record(str(loc.name or ""))

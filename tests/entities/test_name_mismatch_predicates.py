@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from backfield_entities.entities.location.catalog_provenance import (
+    is_location_alias_trusted_for_link_checks,
+    is_location_catalog_editorial_provenance,
+)
 from backfield_entities.entities.location.link_identity import (
     location_link_is_obvious_mismatch,
     location_merge_pair_blocked,
+    location_names_are_obvious_variants,
     location_names_share_obvious_identity,
 )
 from backfield_entities.entities.organization.name_mismatch import (
@@ -383,3 +388,58 @@ def test_location_mismatch_case_only_difference_not_flagged() -> None:
         canonical_label="YMCA, West Garfield Park, Chicago, IL",
         canonical_location_type="place",
     )
+
+
+def test_location_identity_ignores_spelling_accents_and_apostrophes() -> None:
+    same_place_pairs = [
+        ("Chopin Theatre, Chicago, IL", "Chopin Theater, Chicago, IL"),
+        ("Taquería La Paz, Chicago, IL", "Taqueria La Paz, Chicago, IL"),
+        ("Fitzgerald\u2019s, Berwyn, IL", "Fitzgeralds, Berwyn, IL"),
+        ("Saint Sabina, Chicago, IL", "St. Sabina, Chicago, IL"),
+    ]
+    for substrate_name, canonical_label in same_place_pairs:
+        assert location_names_share_obvious_identity(substrate_name, canonical_label)
+
+
+def test_location_variants_run_together_words_and_shortened_names() -> None:
+    assert location_names_are_obvious_variants(
+        substrate_name="LaSalle Corridor, Chicago, IL",
+        substrate_location_type="place",
+        canonical_label="La Salle Corridor, Chicago, IL",
+        canonical_location_type="place",
+    )
+    assert location_names_are_obvious_variants(
+        substrate_name="Raven Theatre, Edgewater, Chicago, IL",
+        substrate_location_type="place",
+        canonical_label="Raven, Edgewater, Chicago, IL",
+        canonical_location_type="place",
+    )
+
+
+def test_location_variants_do_not_cover_a_place_inside_a_neighborhood() -> None:
+    """``Lincoln Park`` is a word subset of ``Lincoln Park Zoo`` but they are different places."""
+    assert not location_names_are_obvious_variants(
+        substrate_name="Lincoln Park Zoo, Chicago, IL",
+        substrate_location_type="place",
+        canonical_label="Lincoln Park, Chicago, IL",
+        canonical_location_type="neighborhood",
+    )
+
+
+def test_location_variants_reject_unrelated_names() -> None:
+    assert not location_names_are_obvious_variants(
+        substrate_name="Southside Recycling, East Side, Chicago, IL",
+        substrate_location_type="place",
+        canonical_label="General Iron, Southeast Side, Chicago, IL",
+        canonical_location_type="place",
+    )
+
+
+def test_cleanup_aliases_are_trusted_for_link_checks_but_not_editorial() -> None:
+    trusted = ("stylebook_cleanup_merge", "stylebook_cleanup_ai_review", "stylebook_ui_link")
+    for provenance in trusted:
+        assert is_location_alias_trusted_for_link_checks(provenance)
+    assert not is_location_alias_trusted_for_link_checks("substrate_ingest")
+    assert not is_location_alias_trusted_for_link_checks(None)
+    # Pruning protection stays limited to intentional catalog rows.
+    assert not is_location_catalog_editorial_provenance("stylebook_cleanup_merge")

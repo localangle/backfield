@@ -3,11 +3,12 @@ import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useSelectedStylebookLabel } from "@/lib/stylebookScopeContext"
 
 export function useScopeBreadcrumbRoot(): { label: string; to: string } {
-  const { catalogBasePath, filterScopeSuffix } = useProjectCatalogScope()
+  // The catalog home is a workflow page, so the link keeps the project scope (not the evidence filter).
+  const { catalogBasePath, workflowScopeSuffix } = useProjectCatalogScope()
   const label = useSelectedStylebookLabel()
   return useMemo(
-    () => ({ label, to: `${catalogBasePath}${filterScopeSuffix}` }),
-    [label, catalogBasePath, filterScopeSuffix],
+    () => ({ label, to: `${catalogBasePath}${workflowScopeSuffix}` }),
+    [label, catalogBasePath, workflowScopeSuffix],
   )
 }
 
