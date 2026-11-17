@@ -9,6 +9,8 @@ run on a schedule. Add to it as we learn. Move a spec out to its own file when i
 Evidence and method for the first category live in
 [`stylebook-agent-maintenance.md`](stylebook-agent-maintenance.md) (case study, findings, first
 endpoint sketch). This file holds decisions, the spec list, open questions, and the order of work.
+Closing requirements for places are in [`stylebook-places-requirements.md`](stylebook-places-requirements.md);
+the next category is planned in [`stylebook-people-maintenance.md`](stylebook-people-maintenance.md).
 
 ## How we work
 
@@ -41,10 +43,15 @@ Prefer the earliest rung that can solve it:
 | D7 | Regions and natural features should be **areas**, not points. A point for either is a defect to repair, not an acceptable shape. | 2026-11-17 |
 | D8 | Aim for consistent geometry. The existing rule applies: when a canonical's geometry changes, apply it to the mentions linked to that canonical (`apply_canonical_geometry_to_substrates`). The same rule fixes disagreement between a canonical and its mentions, but only after the canonical itself is judged right. | 2026-11-17 |
 | D9 | Missing geometry is acceptable by default. The review queue should surface wrong geometry, not missing geometry. | 2026-11-17 |
+| D10 | Scope rules come before readers. Candidate queues are cleared by what is worth a record (home region, mention count, public vs private, chains need an address), then by readers on what remains. | 2026-11-17 |
+| D11 | For candidate queues, an unattended agent may apply decisions when two readers agree on verdict, type and label, checks pass, and a dry run, backup and ledger exist; the owner reviews named lists afterward. | 2026-11-17 |
+| D12 | A geocode may create or referee but never decides alone: it must pass the acceptance checks in the places requirements (A2). | 2026-11-17 |
+| D13 | Next category is people, conservative by default: records stay apart when unsure, and sensitive types are never merged by an agent. See the people plan. | 2026-11-17 |
 
 ## Specs to write
 
-Each spec gets a status and an owner as we go. Order is the intended build order.
+Each spec gets a status and an owner as we go. Order is the intended build order. Requirements from places
+(IDs A1-A8, B1-B11, C1-C6, D1-D6, E1-E5) are in [`stylebook-places-requirements.md`](stylebook-places-requirements.md).
 
 | Spec | Scope | Status |
 |------|-------|--------|
@@ -320,15 +327,17 @@ the fact:
    project API keys work only under `/public/v1`. Does the cleanup namespace get a scoped agent
    credential, or do these endpoints move under a public path (which also triggers the API
    Playground update rule)?
-3. **Autonomy.** Which actions may an unattended agent take alone (rule dismissals, region folds),
-   which need recorded agreement from two readers, and which are never automatic? Per-Stylebook setting?
+3. **Autonomy.** Partly answered for candidate queues by D11. Still open: which actions may an unattended agent
+   take alone (rule dismissals, region folds, any merge of people), which need two readers, and which are never
+   automatic? Per-Stylebook setting?
 4. **Undo.** Is run history plus a backup enough, or does a merge need a real revert (recreate the
    source, relink mentions, aliases, connections)?
 5. **Redirects.** Merged-away canonical IDs need a `merged_into` lookup for pull-based clients.
 6. **Incremental runs.** What is the watermark: canonicals created or changed since the last run?
 7. **Reindex.** About 3,150 moved mentions still have no semantic reindex queued. Does an apply run
    queue it, batch it, or report the affected articles?
-8. **Next category.** People or organizations? (Locations: duplicates and geography are in progress.)
+8. **Next category.** Decided: people (D13). Organizations follow. Locations are closed apart from the open items
+   in the places requirements.
 9. **Shape sources and attribution.** Census outlines are public domain; OpenStreetMap shapes need
    attribution. Which sources may the agent use, and where does attribution show up?
 
@@ -336,11 +345,15 @@ the fact:
 
 For each category of review:
 
+0. **Measure the queue first.** Count it by cohort and by whether anything has read it, and ask what put each
+   item there (a gate, a race, a missing rule, an earlier cleanup). Agree scope rules with the owner (D10)
+   before readers run.
 1. **Frame.** Define "good" for this category in one paragraph, with examples of correct and wrong.
 2. **Find.** Candidate generation tuned for recall. Record misses by looking at what a person finds
    that the finder did not. If the finder compares against reference records (state shapes, country
    names), check those references first.
-3. **Rules.** Deterministic fold, merge, and dismiss rules. Run in dry mode and read the lists.
+3. **Rules.** Deterministic fold, merge, and dismiss rules. Run in dry mode and read the lists. Readers verify
+   the rules' output; they do not replace it.
 4. **Evidence.** One packet format; include what a person would look at.
 5. **Readers and referees.** Rubric plus addendum for the category; verdicts with confidence and
    `unsure`. Where an outside source can settle a disagreement (a geocoder for geography), use it as a
@@ -364,6 +377,16 @@ As of 2026-11-17:
 ## Lessons log
 
 Newest first. One entry per lesson: what we saw, what it implies, which spec owns it.
+
+- **2026-11-17: scope rules clear more queue than any reader.** The largest drops came from deciding what is
+  worth a record (single mentions out of area, chains without an address, private residences). Agree these
+  with the owner first. Owner: spec B and the playbook.
+- **2026-11-17: a cohort outside the packet filter stays invisible.** About 165 pending addresses were never
+  read because the filter excluded them. Count the queue by type and "read or not". Owner: spec B.
+- **2026-11-17: ask the geocoder for English, and check what comes back.** Local-language display names
+  failed region checks; unchecked matches placed a "Library Club" in Greenland. Owner: spec A.
+- **2026-11-17: reader ties need rules.** Create versus waive resolves to waive; a named place beats a bare
+  address; unlocated means waive. Owner: spec C.
 
 - **2026-11-17: a gate that blocks good matches inflates the queue.** 154 candidates sat in review with a 0.93-0.99
   match only because the content-sanity gate refused to link. Before sending a queue to readers, check why each

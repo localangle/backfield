@@ -74,6 +74,8 @@ Intent and decision records for features not currently scheduled:
 
 - [`plan/storylines.md`](plan/storylines.md) — multi-article coverage packaging (storylines)
 - [`plan/stylebook-agent-maintenance.md`](plan/stylebook-agent-maintenance.md) — agent-driven Stylebook maintenance; first case study is duplicate places
+- [`plan/stylebook-places-requirements.md`](plan/stylebook-places-requirements.md) — closing lessons and requirements by spec from the places cleanup
+- [`plan/stylebook-people-maintenance.md`](plan/stylebook-people-maintenance.md) — plan for the people category: survey, scope rules, phases, risks
 - [`plan/stylebook-maintenance-program.md`](plan/stylebook-maintenance-program.md) — running plan and decision log for turning that cleanup into ingest, review-queue, AI review, and agent API work
 
 ## Agent workflows
