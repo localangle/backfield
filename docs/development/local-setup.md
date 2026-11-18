@@ -78,7 +78,7 @@ Provide exactly one of `admin_password` or `admin_password_file`. Optional field
 
 | Field | Meaning |
 | --- | --- |
-| `skip_stack` | Skip Compose up / migrate / readiness when the stack is already running |
+| `skip_stack` | Skip `docker compose up` when stack is already running; migrations and API readiness checks still run |
 | `open_browser` | Whether interactive init may open Settings in a browser (default `true`) |
 
 ### Seed-only provisioning
