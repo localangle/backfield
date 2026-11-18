@@ -17,6 +17,15 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from itertools import combinations
 
+from backfield_entities.quality.finders._person_name_variants import (
+    formal_first_name,
+    name_variant_is_corroborated,
+    name_variant_kind,
+    quoted_nicknames,
+    spelling_blocking_keys,
+    strip_quoted_nicknames,
+)
+
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 _PERSON_TITLES: frozenset[str] = frozenset(
@@ -249,7 +258,25 @@ def build_person_variants(label: str) -> frozenset[str]:
     if collapsed_without_middle:
         variants.add(_with_suffix(collapsed_without_middle))
 
+    variants.update(_quoted_nickname_variants(label))
+
     return frozenset(variant for variant in variants if variant)
+
+
+def _quoted_nickname_variants(label: str) -> set[str]:
+    """Variants for ``Edward "Eddie" Acevedo``: no nickname, and nickname as first name."""
+    nicknames = quoted_nicknames(label)
+    if not nicknames:
+        return set()
+    bare_label = strip_quoted_nicknames(label)
+    variants: set[str] = set(build_person_variants(bare_label))
+    core, suffix = _split_suffix(_strip_titles(tokenize_person(bare_label)))
+    for nickname in nicknames:
+        nickname_tokens = tokenize_person(nickname)
+        if len(core) >= 2 and nickname_tokens:
+            swapped = (*nickname_tokens, *core[1:], *([suffix] if suffix else []))
+            variants.add(" ".join(swapped))
+    return variants
 
 
 def _should_add_first_last_key(core_tokens: tuple[str, ...]) -> bool:
@@ -284,7 +311,31 @@ def build_person_blocking_keys(label: str) -> frozenset[str]:
         if suffix:
             keys.add(f"first-last-suffix:{core_tokens[0]}:{core_tokens[-1]}:{suffix}")
 
+    keys.update(_name_variant_blocking_keys(core_tokens))
+    keys.update(spelling_blocking_keys(core_tokens))
+
     return frozenset(keys)
+
+
+def _name_variant_blocking_keys(core_tokens: tuple[str, ...]) -> set[str]:
+    """Keys that let nickname and compound-surname variants meet.
+
+    Examples: ``Hank Aaron`` and ``Maggie Daly Skogsbakken``.
+
+    Formal first names and ``first + second word`` use the same ``first-last`` key shape, so they
+    meet the plain ``first + last`` key of the other record. Scoring decides whether they are kept.
+    """
+    if len(core_tokens) < 2:
+        return set()
+    keys: set[str] = set()
+    first = formal_first_name(core_tokens[0])
+    last_words = {core_tokens[-1]}
+    if len(core_tokens) == 3:
+        last_words.add(core_tokens[1])
+    for last_word in last_words:
+        if _should_add_first_last_key((first, last_word)):
+            keys.add(f"first-last:{first}:{last_word}")
+    return keys
 
 
 @dataclass(frozen=True)
@@ -301,6 +352,8 @@ class PersonDuplicateProfile:
     variants: frozenset[str]
     blocking_keys: frozenset[str]
     warnings: tuple[str, ...]
+    affiliation: str | None = None
+    title: str | None = None
 
 
 def _profile_warnings(
@@ -326,6 +379,8 @@ def build_person_profile(
     canonical_id: str,
     label: str,
     person_type: str | None,
+    affiliation: str | None = None,
+    title: str | None = None,
 ) -> PersonDuplicateProfile:
     clean_label = (label or "").strip()
     tokens = tokenize_person(clean_label)
@@ -342,6 +397,8 @@ def build_person_profile(
         variants=build_person_variants(clean_label),
         blocking_keys=build_person_blocking_keys(clean_label),
         warnings=_profile_warnings(clean_label, tokens, core_tokens),
+        affiliation=affiliation,
+        title=title,
     )
 
 
@@ -433,6 +490,7 @@ def _org_like_without_exact_match(
 _SUBSTANTIVE_REASON_PREFIXES: tuple[str, ...] = (
     "exact_normalized_name",
     "shared_variant:",
+    "name_variant:",
     "high_label_similarity",
     "high_token_overlap",
 )
@@ -440,6 +498,7 @@ _SUBSTANTIVE_REASON_PREFIXES: tuple[str, ...] = (
 _STRONG_IDENTITY_PREFIXES: tuple[str, ...] = (
     "exact_normalized_name",
     "shared_variant:",
+    "name_variant:",
 )
 
 _NON_SUBSTANTIVE_REASONS: frozenset[str] = frozenset(
@@ -452,6 +511,31 @@ _NON_SUBSTANTIVE_REASONS: frozenset[str] = frozenset(
         "weak_text_similarity",
     }
 )
+
+
+def _corroborated_name_variant(
+    left: PersonDuplicateProfile,
+    right: PersonDuplicateProfile,
+) -> str | None:
+    """Kind of corroborated name variant (nickname, middle name, ...) linking two records."""
+    guarded = {"generic_group_label", "org_like", "short_or_ambiguous_label"}
+    if guarded & set(left.warnings) or guarded & set(right.warnings):
+        return None
+    if left.suffix != right.suffix:
+        return None
+    kind = name_variant_kind(left.core_name_tokens, right.core_name_tokens)
+    if kind is None:
+        return None
+    corroborated = name_variant_is_corroborated(
+        kind,
+        left_affiliation=left.affiliation,
+        right_affiliation=right.affiliation,
+        left_person_type=left.person_type,
+        right_person_type=right.person_type,
+        left_title=left.title,
+        right_title=right.title,
+    )
+    return kind if corroborated else None
 
 
 def _has_substantive_reason(reasons: tuple[str, ...]) -> bool:
@@ -467,7 +551,7 @@ def _has_substantive_reason(reasons: tuple[str, ...]) -> bool:
 
 def _has_strong_identity_signal(reasons: tuple[str, ...]) -> bool:
     return any(
-        reason == "exact_normalized_name" or reason.startswith("shared_variant:")
+        reason == "exact_normalized_name" or reason.startswith(("shared_variant:", "name_variant:"))
         for reason in reasons
     )
 
@@ -509,9 +593,8 @@ def score_person_pair(
 
     shared_variants = left.variants & right.variants
     generic_group_exact_only = (
-        ("generic_group_label" in left.warnings or "generic_group_label" in right.warnings)
-        and left.normalized_label != right.normalized_label
-    )
+        "generic_group_label" in left.warnings or "generic_group_label" in right.warnings
+    ) and left.normalized_label != right.normalized_label
     if (
         shared_variants
         and not generic_group_mismatch
@@ -520,6 +603,11 @@ def score_person_pair(
     ):
         signal_scores["shared_normalized_variant"] = 0.95
         reasons.append(f"shared_variant:{sorted(shared_variants)[0]}")
+
+    name_variant = _corroborated_name_variant(left, right)
+    if name_variant and "shared_normalized_variant" not in signal_scores:
+        signal_scores["corroborated_name_variant"] = 0.9
+        reasons.append(f"name_variant:{name_variant}")
 
     has_identity_signal = bool(signal_scores)
 

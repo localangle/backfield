@@ -44,10 +44,12 @@ def _load_person_profiles(
             StylebookPersonCanonical.label,
             StylebookPersonCanonical.person_type,
             StylebookPersonCanonical.status,
+            StylebookPersonCanonical.affiliation,
+            StylebookPersonCanonical.title,
         ).where(StylebookPersonCanonical.stylebook_id == stylebook_id)
     ).all()
     profiles: list[PersonDuplicateProfile] = []
-    for row_id, label, person_type, status in rows:
+    for row_id, label, person_type, status, affiliation, title in rows:
         if row_id is None or not label:
             continue
         if (status or "active").strip().lower() != "active":
@@ -60,6 +62,8 @@ def _load_person_profiles(
                 canonical_id=str(row_id),
                 label=clean,
                 person_type=person_type,
+                affiliation=affiliation,
+                title=title,
             )
         )
     return profiles

@@ -10,7 +10,8 @@ Evidence and method for the first category live in
 [`stylebook-agent-maintenance.md`](stylebook-agent-maintenance.md) (case study, findings, first
 endpoint sketch). This file holds decisions, the spec list, open questions, and the order of work.
 Closing requirements for places are in [`stylebook-places-requirements.md`](stylebook-places-requirements.md);
-the next category is planned in [`stylebook-people-maintenance.md`](stylebook-people-maintenance.md).
+people were planned in [`stylebook-people-maintenance.md`](stylebook-people-maintenance.md) and are closed in
+[`stylebook-people-requirements.md`](stylebook-people-requirements.md).
 
 ## How we work
 
@@ -47,11 +48,20 @@ Prefer the earliest rung that can solve it:
 | D11 | For candidate queues, an unattended agent may apply decisions when two readers agree on verdict, type and label, checks pass, and a dry run, backup and ledger exist; the owner reviews named lists afterward. | 2026-11-17 |
 | D12 | A geocode may create or referee but never decides alone: it must pass the acceptance checks in the places requirements (A2). | 2026-11-17 |
 | D13 | Next category is people, conservative by default: records stay apart when unsure, and sensitive types are never merged by an agent. See the people plan. | 2026-11-17 |
+| D14 | People who share name, title, affiliation and person type are folded by rule with no reader, after a dry run, a backup and a ledger; the owner reviews a list of folds where more than one record had mentions. | 2026-11-17 |
+| D15 | Other people merges need two readers from different models to say same with high confidence and no hard veto. One reader's `different` with high confidence dismisses the pair once an audit sample read by the second reader agrees (70 of 70 did). Everything else is held. | 2026-11-17 |
+| D16 | Sensitive person types (crime and justice subjects) are never merged or dismissed by an agent; clusters containing one are listed for a person. | 2026-11-17 |
+| D17 | For held people pairs, the owner chose a majority vote of three readers (A, B, and a third model when A and B split); a low-confidence verdict counts as unsure; hard vetoes and group-conflict checks still apply. | 2026-11-17 |
+| D18 | People candidates: relatives known only by first name plus a relationship get a canonical only if a public figure, a professional, or mentioned two or more times (otherwise waived); stage names link to the existing person when one exists, else public performers are created under the stage name and influencers, honorees and handles are waived; first-name-only with a title or affiliation goes to a reader to try to link, the rest are waived. | 2026-11-17 |
+| D19 | For candidates, a link or create needs two readers from different models to agree (same record, or same folded name) with no low confidence; a waive needs one reader's high confidence, checked by a blind sample read by the second reader. Anything else stays pending. Sensitive person types are never touched. | 2026-11-17 |
+| D20 | Narrows D16 for held pairs that involve a sensitive person type: two readers who agree the people are different may dismiss the pair (it only hides a suggestion); two readers who agree they are the same may only propose a merge, which the owner approves from a list. An agent still never merges, links or creates a sensitive record on its own. The type reflects a person's role in one story, so a difference in type is not evidence of different people. | 2026-11-17 |
 
 ## Specs to write
 
 Each spec gets a status and an owner as we go. Order is the intended build order. Requirements from places
-(IDs A1-A8, B1-B11, C1-C6, D1-D6, E1-E5) are in [`stylebook-places-requirements.md`](stylebook-places-requirements.md).
+(IDs A1-A8, B1-B11, C1-C6, D1-D6, E1-E5) are in [`stylebook-places-requirements.md`](stylebook-places-requirements.md);
+requirements from people (IDs PA1-PA11, PB1-PB8, PC1-PC7, PD1-PD6, PE1-PE7) and the product decisions still to
+make are in [`stylebook-people-requirements.md`](stylebook-people-requirements.md).
 
 | Spec | Scope | Status |
 |------|-------|--------|
@@ -319,6 +329,131 @@ the fact:
 - **Worth a look.** The odd existing record "Khan Yunis, NY"; Chicago school-board sub-districts sitting next to
   whole-district records; duplicate canonicals such as Willis Tower and Sears Tower.
 
+## Category 5: near-duplicate people
+
+Check: `duplicate-people` (one run, 1,717 clusters over 52,671 active people on `cpm-stylebook`, 2026-11-17).
+Direction: fold the same person when evidence is strong, keep records apart when unsure, never touch sensitive
+types. Plan and survey: [`stylebook-people-maintenance.md`](stylebook-people-maintenance.md).
+
+### Findings
+
+1. **The finder has full recall on exact names and poor precision.** It missed none of the 1,574 exact-name
+   groups, but it scores person type, not title or affiliation, so 87% of its pairs are same-name pairs and many
+   are different people (`Brian Johnson` x6).
+2. **Most duplicates were obvious.** 649 groups (673 records) shared name, title, affiliation and type, and
+   were folded by rule. A hand audit of 50 random groups plus all 37 where a duplicate had mentions found no
+   wrong fold.
+3. **Duplicates carried connections.** 429 of those 649 groups had connections on a duplicate (1,167 rows,
+   962 after de-duplication), so zero-mention copies are not inert.
+4. **The shared merge drops information.** It does not carry `public_figure`, title, affiliation or the
+   source's aliases; the cleanup script did so before merging.
+5. **Rules dismissed more pairs than readers.** After the folds, 1,235 pairs remained outside sensitive
+   clusters. Rules dismissed 460 (conflicting middle initials; different organization, role and type;
+   different specific types with nothing shared). Readers then judged 775: 341 same/high, 140 different/high,
+   94 different/medium, 199 unsure, 1 same/medium.
+6. **A second model agreed on the dismissals and almost on the merges.** Reader B read the 341 same/high
+   pairs and a blind sample of 70 different/high pairs: 332 of 341 agreed, 6 unsure, 3 different; all 70 of the
+   sample agreed different. 301 groups (307 records) merged; a 50-group hand audit found no wrong merge.
+7. **The finder cannot see nicknames.** After cleanup a probe found 179 pairs it does not cluster
+   (`Tom Dart` and `Thomas Dart`, `Dan Goldman` and `Daniel Goldman`), 68 with the same affiliation. Not all
+   are the same person (`Matthew Martin` and `Matt Martin` at different fire departments), so nicknames need
+   readers, not a rule. Smaller gaps: 54 compound-surname pairs (`Maggie Daly`, `Maggie Daly Skogsbakken`),
+   75 dropped middle names, 5 first-initial-only, 7 single-name labels, 2 spacing variants.
+
+### Procedure used
+
+Snapshot and recluster -> Tier 1 rule folds (dry run, backup, per-group transaction, ledger, activity log,
+semantic reindex) -> rule triage of the remainder -> Reader A (Claude) on every pair -> Reader B (GPT) on
+Reader A's same/high pairs plus a blind sample of different/high pairs -> consensus with hard vetoes ->
+apply through the shared merge and dismissal functions. Scratch scripts and lists are under
+`tmp/stylebook-agent-cleanup/people_dupes/` and are not committed.
+
+### What this means for the specs
+
+Requirement IDs (PA through PF) are in the people plan.
+
+| Where | Change | Spec |
+| --- | --- | --- |
+| Shared person merge | Carry `public_figure`, title, affiliation and trusted aliases; rewire connections before deleting | A |
+| Finder | Score title and affiliation; add a nickname and compound-surname key; exclude dismissed pairs | B |
+| Review with AI | A people rubric, vetoes applied after readers, reader-agreement log | C |
+| Agent API | Merge with a returned ledger and undo; dismissals with a reason code | D |
+| Evaluation | Audit sample of merges and dismissals; named review lists | E |
+
+### Status
+
+Active people went from 52,671 to 51,675 (996 records folded: 673 by rule, 307 by two readers, 16 by
+majority vote). Linked mentions were unchanged by every merge group (guards held), no mention points at a
+removed record, and semantic reindex jobs were queued. 682 dismissals were recorded (586 in the first pass,
+96 by majority vote). Left for a person, in named lists:
+
+- **Sensitive clusters, untouched:** 130 clusters (`tier1_sensitive.jsonl`).
+- **Held pairs after the majority round:** 186 (172 with no majority, 14 vetoed for a different organization
+  and title) plus the group conflicts, in `review_still_held.jsonl`. The first-round list of 318 is
+  `review_held.jsonl`. The live finder shows 304 clusters: 130 sensitive and 174 held.
+- **Majority-vote round (D17):** Reader B judged the 294 pairs only Reader A had seen; a third model
+  (Gemini) judged the 134 where A and B split. Result: 98 pairs dismissed, 16 merged, 172 no majority. Most of
+  the no-majority pairs are thin records (a name with a contact line or a single quote). Two merges
+  (`Reganne Reardon`, `Matthew Bailey`) rest on a record with the wrong team: two readers called them the same
+  player, one called them opposing players. Listed in `review_majority_merges.jsonl`.
+- **Reader merges to review:** all 301 in `review_merges.jsonl`; **rule folds to review:** 37 groups in
+  `tier1_review.jsonl`.
+- **Sample of dismissals:** 50 random same-name dismissals to spot check, in `review_dismissal_sample.jsonl`
+  (503 same-name dismissals in total).
+- **Not in scope:** the 22 intersections and spans from places; the finder blind-spot pairs
+  (`blind_spots_people.jsonl`), which are proposals only.
+
+## Category 6: people candidate queue
+
+Check: pending people candidates on `cpm-stylebook` (2,193 on 2026-11-17, before any cleanup). Direction: waive
+what should never be a canonical, link what is already in the catalog, create the rest, and leave unsure or
+sensitive items for a person. Plan: [`stylebook-people-maintenance.md`](stylebook-people-maintenance.md), Phase 5.
+
+### Findings
+
+1. **Most of the queue was not people to create.** Of 2,193, 721 fell to deterministic rules: descriptive
+   pseudonyms, children, social handles, initials, five named groups, and a lone first name with no title or
+   affiliation on a private-looking person type.
+2. **The earlier model adjudication said "no match" for 743 candidates, and that was mostly right.** They were
+   relatives ("Son", "Wife" plus a first name) and stage names, which a name match cannot link. Few real
+   links existed, so rules and readers mostly decided between create and waive.
+3. **Relatives with a first name are a scope question, not a matching one.** 568 had a surname inferred
+   from the article: 173 were created (public figures, professionals, or two or more mentions), 395 waived.
+4. **Rules over-reached until restricted by person type.** The first-name and initials rules waived mononym
+   artists (GZA, DMX, Beck) and surname-only public figures (Trump, Putin, Musk); they now apply only to
+   community members and unknown types.
+5. **Readers repaired labels the extraction got wrong.** Bands typed as artists, surnames labelled as first
+   names (Burke, Jenks), and surname-only references to public figures that resolve by title and
+   affiliation (Vance, Poles, Welch).
+6. **A second reader makes waives safe only at high confidence.** On a blind sample of 60 of Reader A's waives,
+   Reader B agreed with all 41 high-confidence ones, but disagreed on 8 of 15 low- and medium-confidence ones.
+
+### Procedure used
+
+Survey (read-only) -> rule waives (dry run, backup, ledger, activity log) -> relatives by owner scope ->
+packets of 50 with ranked catalog candidates, article evidence and the extraction note -> Reader A (Claude) on
+868 -> Reader B (GPT) on A's 602 link and create rows plus a blind 60 of A's waives -> consensus (D19) ->
+hand audit of 45 creates and 25 links -> apply through the shared link and create functions. Scratch scripts
+and lists are under `tmp/stylebook-agent-cleanup/people_queue/` and are not committed.
+
+### What this means for the specs
+
+| Where | Change | Spec |
+| --- | --- | --- |
+| Ingest | Do not queue a relationship plus first name or a bare first name with no title or affiliation; resolve surname-only public figures by title and affiliation | A |
+| Person rules | Apply first-name and initials rules by person type; recognize relationship titles | A |
+| Review with AI | Packets with ranked catalog candidates and a people rubric; two-reader agreement for link and create | C |
+| Agent API | A decision endpoint with reason codes, a ledger and undo | D |
+
+### Status
+
+Pending went from 2,193 to 187. Applied: 721 rule waives, 173 relative creates and 395 relative waives, then
+reader decisions on 868 rows: 384 new canonicals, 150 links, 1 create that reused an existing canonical, and 182
+waives. Active people went from 51,675 to 52,226. No link points at a missing canonical and semantic reindex
+jobs were queued. Left for a person: 151 held rows (84 low- or medium-confidence waives, 49 low-confidence
+actions, 10 reader disagreements, 5 label mismatches, 2 whose name already exists in the catalog, 1 link
+mismatch) in `review_held.jsonl`, and 36 sensitive rows, untouched.
+
 ## Open questions
 
 1. **Polygons for natural features and regions.** Which source can supply an area for a lake, river, or
@@ -374,9 +509,78 @@ As of 2026-11-17:
   error rate. (The geometry rebind and the re-geocoding of contradictory addresses are done; see
   Category 2.)
 
+## Status: near-duplicate people in `cpm-stylebook`
+
+As of 2026-11-17: active people went from 52,671 to 51,675 (673 folded by rule, 307 by two readers, 16 by
+majority vote), and 682 pairs were dismissed with reasons in the ledger. A later name-variant round (after
+the finder learned nicknames, quoted nicknames, middle names and compound surnames) folded 150 more records
+and recorded 32 dismissals. A sensitive-pair round under D20 then dismissed 49 pairs and, after the owner
+approved all 64 proposed groups, folded 68 more records. A spelling-slip round (names one letter apart, listed
+when organization, title or type agrees) folded 300 more (7 of them crime / justice records the owner
+approved) and recorded 7 dismissals; active people are 51,708.
+What is left are held pairs and sensitive records that readers could not settle, which need a person. Open data items: a random audit of reader merges for an error rate and the finder
+blind-spot pairs. See [Category 5](#category-5-near-duplicate-people).
+
+## Status: people candidate queue in `cpm-stylebook`
+
+As of 2026-11-17: pending candidates went from 2,193 to 187 (557 created, 150 linked, 1,298 waived across
+rules, relatives and readers). Active people are 52,226. What is left (151 held, 36 sensitive) needs a person.
+See [Category 6](#category-6-people-candidate-queue).
+
 ## Lessons log
 
 Newest first. One entry per lesson: what we saw, what it implies, which spec owns it.
+
+- **2026-11-17: a finder can only score pairs it compares, and comparison starts from shared keys.** Names one
+  letter apart shared no key, so no score or cap mattered: 789 such pairs were invisible. Giving each long
+  word a "one letter removed" key made them comparable. Spelling alone cannot decide (George Carlin and George
+  Catlin are two people; Dominique Morrisseau and Morisseau are one), so a second signal is required and two
+  readers confirm. Of 318 listed pairs, readers agreed 295 were the same and 6 different. Owner: spec B (PB2).
+
+- **2026-11-17: a person type that describes a role in one story cannot also be a safety rule.** The
+  crime / justice type blocked 175 pairs, including the same former House speaker typed two ways and a
+  student against the mayor. Two readers settled 120 of them (49 different, 71 same). The type should
+  describe the person's standing, with the story role kept per mention. Merged records now keep the standing
+  type (D20). Owner: spec A (canonical type) and spec C.
+- **2026-11-17: snapshot a record before changing it, not after.** The first apply for sensitive merges set the
+  survivor's type before the before-state was saved, so an undo would have restored the wrong type; a check of
+  the dry-run ledger caught it. Owner: spec D (undo).
+- **2026-11-17: a suffix guard hides real duplicates and real differences alike.** 40 groups have a bare name
+  next to a numbered form (Carlton Davis and Carlton Davis III are one person; Henry Ford and Henry Ford II
+  are not). A rule cannot decide; the finder would have to list them when title or affiliation agrees. The
+  owner deferred this (Pope Leo, XIII and XIV). Owner: spec B.
+
+- **2026-11-17: a variant rule needs a second signal, and "affiliation agrees" must ignore generic words.**
+  Our first affiliation test treated "Chicago Fire Department" and "Evanston Fire Department" as the same
+  because they share "fire" and "department"; a test caught it. Nickname and middle-initial variants need
+  the same organization (or both empty with the same person type); dropped middle names and compound
+  surnames need the same organization; a quoted nickname in the label needs nothing more. Two readers then
+  agreed on 153 of 222 new pairs. Owner: spec B (PB2).
+- **2026-11-17: a finder change surfaces records that earlier rounds could not see, so the review round is
+  part of the change.** The same change also surfaced 74 pairs from labels with quoted nicknames or exact
+  names created by earlier work. Plan to re-run readers on newly visible pairs. Owner: spec E.
+
+- **2026-11-17: a candidate queue is mostly things that should never become records.** 721 of 2,193 people
+  candidates were removed by rules and 395 more by one scope decision; only about a quarter needed a reader.
+  Settle scope with the owner first, and apply rules by person type so mononym artists and surname-only
+  public figures are not caught. Owner: spec A.
+- **2026-11-17: let readers see ranked catalog candidates, not the whole catalog.** With 8 candidates per row
+  scored by name, alias, affiliation and title overlap, both readers chose the same record for 150 links and
+  agreed on labels for 385 creates. Owner: spec C.
+
+- **2026-11-17: for people, a finder that scores only names is a grouper, not a duplicate detector.** 87% of
+  its pairs were same-name pairs; title, affiliation and type separated duplicates from different people
+  well enough to fold 673 records by rule and dismiss 460 pairs by rule. Score those signals in the finder.
+  Owner: spec B.
+- **2026-11-17: a second model's blind audit is what makes one reader's dismissals usable.** Reader B was
+  not told which pairs were sampled from Reader A's `different/high`; all 70 matched. This is cheaper than
+  two readers on every pair. Keep the audit as a standing check. Owner: specs C, E.
+- **2026-11-17: the shared person merge loses data a person would keep.** `public_figure`, title,
+  affiliation and the source's aliases were dropped, and the delete can run before connections are
+  rewired. Cleanup scripts compensated. Owner: spec A.
+- **2026-11-17: nickname pairs hide in plain sight.** 179 pairs (Tom and Thomas Dart) are outside every
+  finder cluster, and a rule would be wrong about some (two fire chiefs at different departments). Add
+  nicknames to blocking and let readers decide. Owner: spec B.
 
 - **2026-11-17: scope rules clear more queue than any reader.** The largest drops came from deciding what is
   worth a record (single mentions out of area, chains without an address, private residences). Agree these

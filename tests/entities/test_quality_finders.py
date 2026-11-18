@@ -302,6 +302,8 @@ def _add_person(
     slug: str,
     label: str,
     person_type: str | None = None,
+    affiliation: str | None = None,
+    title: str | None = None,
 ) -> str:
     from backfield_db import StylebookPersonCanonical
 
@@ -310,6 +312,8 @@ def _add_person(
         slug=slug,
         label=label,
         person_type=person_type,
+        affiliation=affiliation,
+        title=title,
     )
     session.add(row)
     session.commit()
@@ -486,6 +490,201 @@ def test_same_person_type_alone_does_not_cluster_sqlite() -> None:
 
         clusters = duplicate_person_cluster_ids(session, stylebook_id=stylebook_id)
         assert clusters == []
+
+
+def _person_clusters(people: list[dict[str, str | None]]) -> list[set[str]]:
+    """Add people to a fresh database and return the clusters as sets of labels."""
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        label_by_id: dict[str, str] = {}
+        for index, person in enumerate(people):
+            label = str(person["label"])
+            person_id = _add_person(
+                session,
+                stylebook_id=stylebook_id,
+                slug=f"person-{index}",
+                label=label,
+                person_type=person.get("person_type"),
+                affiliation=person.get("affiliation"),
+                title=person.get("title"),
+            )
+            label_by_id[person_id] = label
+        clusters = duplicate_person_cluster_ids(session, stylebook_id=stylebook_id)
+    return [{label_by_id[member] for member in cluster} for cluster in clusters]
+
+
+def test_nickname_variants_cluster_when_person_type_agrees_sqlite() -> None:
+    clusters = _person_clusters(
+        [
+            {"label": "Hank Aaron", "person_type": "athlete"},
+            {"label": "Henry Aaron", "person_type": "athlete"},
+        ]
+    )
+    assert clusters == [{"Hank Aaron", "Henry Aaron"}]
+
+
+def test_nickname_variants_with_different_affiliations_do_not_cluster_sqlite() -> None:
+    clusters = _person_clusters(
+        [
+            {"label": "Matt Martin", "affiliation": "Chicago Fire Department"},
+            {"label": "Matthew Martin", "affiliation": "Evanston Fire Department"},
+        ]
+    )
+    assert clusters == []
+
+
+def test_nickname_variants_with_suffix_mismatch_do_not_cluster_sqlite() -> None:
+    clusters = _person_clusters(
+        [
+            {"label": "Jack Brown", "affiliation": "Batavia Bulldogs"},
+            {"label": "John Brown IV", "affiliation": "Batavia Bulldogs"},
+        ]
+    )
+    assert clusters == []
+
+
+def test_middle_initial_and_middle_name_cluster_sqlite() -> None:
+    clusters = _person_clusters(
+        [
+            {"label": "Robert S Abbott", "affiliation": "Chicago Defender"},
+            {"label": "Robert Sengstacke Abbott", "affiliation": "Chicago Defender"},
+        ]
+    )
+    assert clusters == [{"Robert S Abbott", "Robert Sengstacke Abbott"}]
+
+
+def test_quoted_nickname_links_nickname_and_formal_names_sqlite() -> None:
+    clusters = _person_clusters(
+        [
+            {
+                "label": "Eddie Acevedo",
+                "person_type": "elected_official",
+                "affiliation": "Illinois House of Representatives",
+            },
+            {
+                "label": "Edward Acevedo",
+                "person_type": "crime_justice_subject",
+                "affiliation": "Illinois House of Representatives",
+            },
+            {
+                "label": 'Edward "Eddie" Acevedo',
+                "person_type": "elected_official",
+                "affiliation": "Illinois General Assembly",
+            },
+        ]
+    )
+    assert clusters == [{"Eddie Acevedo", "Edward Acevedo", 'Edward "Eddie" Acevedo'}]
+
+
+def test_quoted_nickname_needs_no_second_signal_sqlite() -> None:
+    clusters = _person_clusters(
+        [
+            {"label": "Jon Sciambi"},
+            {"label": 'Jon "Boog" Sciambi'},
+        ]
+    )
+    assert clusters == [{"Jon Sciambi", 'Jon "Boog" Sciambi'}]
+
+
+def test_compound_surname_needs_matching_affiliation_sqlite() -> None:
+    same_affiliation = _person_clusters(
+        [
+            {"label": "Maggie Daly", "affiliation": "Pace"},
+            {"label": "Maggie Daly Skogsbakken", "affiliation": "Pace"},
+        ]
+    )
+    no_affiliation = _person_clusters(
+        [
+            {"label": "Maggie Daly", "person_type": "journalist"},
+            {"label": "Maggie Daly Skogsbakken", "person_type": "journalist"},
+        ]
+    )
+    assert same_affiliation == [{"Maggie Daly", "Maggie Daly Skogsbakken"}]
+    assert no_affiliation == []
+
+
+def test_dropped_middle_name_needs_matching_affiliation_sqlite() -> None:
+    clusters = _person_clusters(
+        [
+            {"label": "John Jones", "affiliation": "Englewood Alliance"},
+            {"label": "John Paul Jones", "affiliation": "Sustainable Cities Group"},
+        ]
+    )
+    assert clusters == []
+
+
+def test_spelling_slip_with_same_title_clusters_even_when_person_type_differs_sqlite() -> None:
+    clusters = _person_clusters(
+        [
+            {
+                "label": "Shepshu Aakhu",
+                "title": "Playwright",
+                "person_type": "arts_culture_professional",
+            },
+            {"label": "Shepsu Aakhu", "title": "Playwright", "person_type": "artist_entertainer"},
+        ]
+    )
+    assert clusters == [{"Shepshu Aakhu", "Shepsu Aakhu"}]
+
+
+def test_spelling_slip_with_same_affiliation_clusters_sqlite() -> None:
+    clusters = _person_clusters(
+        [
+            {
+                "label": "Kristie Harris",
+                "affiliation": "City of Evanston",
+                "title": "Councilmember",
+            },
+            {
+                "label": "Krissie Harris",
+                "affiliation": "Evanston City Council",
+                "title": "Alderman",
+            },
+        ]
+    )
+    assert clusters == [{"Kristie Harris", "Krissie Harris"}]
+
+
+def test_spelling_slip_with_different_affiliations_does_not_cluster_sqlite() -> None:
+    clusters = _person_clusters(
+        [
+            {"label": "Kerby Joseph", "affiliation": "Detroit Lions", "person_type": "athlete"},
+            {"label": "Kerry Joseph", "affiliation": "Chicago Bears", "person_type": "athlete"},
+        ]
+    )
+    assert clusters == []
+
+
+def test_spelling_slip_with_nothing_in_common_does_not_cluster_sqlite() -> None:
+    clusters = _person_clusters(
+        [
+            {"label": "Jalen Smith", "title": "Big man", "person_type": "athlete"},
+            {"label": "Jaden Smith", "title": "Actor", "person_type": "artist_entertainer"},
+        ]
+    )
+    assert clusters == []
+
+
+def test_short_names_one_letter_apart_do_not_cluster_sqlite() -> None:
+    clusters = _person_clusters(
+        [
+            {"label": "Marc Lee", "person_type": "athlete"},
+            {"label": "Mark Lee", "person_type": "athlete"},
+        ]
+    )
+    assert clusters == []
+
+
+def test_two_changed_words_are_not_a_spelling_slip_sqlite() -> None:
+    clusters = _person_clusters(
+        [
+            {"label": "Shepshu Aakhu", "title": "Playwright"},
+            {"label": "Shepsu Aakhi", "title": "Playwright"},
+        ]
+    )
+    assert clusters == []
 
 
 def test_duplicate_person_bounded_no_false_positives_sqlite() -> None:
