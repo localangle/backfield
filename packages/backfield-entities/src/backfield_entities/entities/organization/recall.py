@@ -7,13 +7,14 @@ from backfield_db import (
     StylebookOrganizationCanonical,
     SubstrateOrganization,
 )
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, func, select
 
 from backfield_entities.entities.organization.types import (
     GENERATED_ACRONYM_PROVENANCE,
     multiword_organization_names_share_ambiguous_acronym,
     normalize_organization_text,
     normalize_organization_type,
+    organization_acronym_from_name,
     organization_match_key,
     organization_names_match_via_acronym,
     organization_substrate_alias_lookup_keys,
@@ -143,6 +144,10 @@ def _organization_lookup_norms(
             if key not in seen:
                 seen.add(key)
                 norms.append(key)
+        acronym = organization_acronym_from_name(source)
+        if acronym and acronym not in seen:
+            seen.add(acronym)
+            norms.append(acronym)
     return tuple(norms)
 
 
@@ -200,16 +205,50 @@ def retrieve_organization_canonical_candidates(
             )
         )
 
-    label_stmt = (
-        select(StylebookOrganizationCanonical)
-        .where(
-            StylebookOrganizationCanonical.stylebook_id == stylebook_id,
-            StylebookOrganizationCanonical.status == "active",
+    candidate_rows: dict[str, StylebookOrganizationCanonical] = {}
+    if exact_alias_ids:
+        exact_rows = session.exec(
+            select(StylebookOrganizationCanonical).where(
+                StylebookOrganizationCanonical.stylebook_id == stylebook_id,
+                StylebookOrganizationCanonical.status == "active",
+                col(StylebookOrganizationCanonical.id).in_(sorted(exact_alias_ids)),
+            )
+        ).all()
+        candidate_rows.update(
+            {str(canon.id): canon for canon in exact_rows if canon.id is not None}
         )
-        .order_by(col(StylebookOrganizationCanonical.label).asc())
-        .limit(max(limit * 8, 96))
-    )
-    for canon in session.exec(label_stmt).all():
+
+    # Search labels around the mention's most distinctive token. The previous implementation
+    # scored an alphabetic prefix of the entire catalog, so a relevant row could be impossible
+    # to recall solely because its label sorted later.
+    per_name_limit = max(limit * 8, 96)
+    for lookup_norm in lookup_norms:
+        tokens = [token for token in lookup_norm.split() if len(token) >= 2]
+        search_token = max(tokens, key=len, default="")
+        if not search_token:
+            continue
+        escaped = escape_ilike_metacharacters(search_token)
+        label_rows = session.exec(
+            select(StylebookOrganizationCanonical)
+            .where(
+                StylebookOrganizationCanonical.stylebook_id == stylebook_id,
+                StylebookOrganizationCanonical.status == "active",
+                func.lower(col(StylebookOrganizationCanonical.label)).like(
+                    f"%{escaped.lower()}%",
+                    escape="\\",
+                ),
+            )
+            .order_by(
+                func.abs(func.length(col(StylebookOrganizationCanonical.label)) - len(lookup_norm)),
+                col(StylebookOrganizationCanonical.label).asc(),
+            )
+            .limit(per_name_limit)
+        ).all()
+        candidate_rows.update(
+            {str(canon.id): canon for canon in label_rows if canon.id is not None}
+        )
+
+    for canon in candidate_rows.values():
         if canon.id is None:
             continue
         cid = str(canon.id)

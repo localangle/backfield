@@ -24,6 +24,7 @@ from backfield_entities.quality.finders._duplicate_labels import (
 from backfield_entities.quality.finders._organization_duplicate_signals import (
     DEFAULT_ORG_ACCEPT_THRESHOLD,
     DEFAULT_ORG_MAX_BLOCK_SIZE,
+    OrganizationDuplicateEdge,
     OrganizationDuplicateProfile,
     build_organization_profile,
     generate_organization_pair_edges,
@@ -43,7 +44,10 @@ def _load_organization_profiles(
             StylebookOrganizationCanonical.id,
             StylebookOrganizationCanonical.label,
             StylebookOrganizationCanonical.organization_type,
-        ).where(StylebookOrganizationCanonical.stylebook_id == stylebook_id)
+        ).where(
+            StylebookOrganizationCanonical.stylebook_id == stylebook_id,
+            StylebookOrganizationCanonical.status == "active",
+        )
     ).all()
     profiles: list[OrganizationDuplicateProfile] = []
     for row_id, label, organization_type in rows:
@@ -76,14 +80,30 @@ def duplicate_organization_pair_edges(
     full_threshold: float = DEFAULT_FULL_SIMILARITY_THRESHOLD,
     max_block_size: int = DEFAULT_ORG_MAX_BLOCK_SIZE,
 ) -> list[tuple[str, str]]:
-    profiles = _load_organization_profiles(session, stylebook_id=stylebook_id)
-    edges = generate_organization_pair_edges(
-        profiles,
-        threshold=_accept_threshold(full_threshold),
+    edges = duplicate_organization_scored_edges(
+        session,
+        stylebook_id=stylebook_id,
+        full_threshold=full_threshold,
         max_block_size=max_block_size,
     )
     pairs = [(edge.left_id, edge.right_id) for edge in edges]
     return dedupe_pairs(pairs)
+
+
+def duplicate_organization_scored_edges(
+    session: Session,
+    *,
+    stylebook_id: int,
+    full_threshold: float = DEFAULT_FULL_SIMILARITY_THRESHOLD,
+    max_block_size: int = DEFAULT_ORG_MAX_BLOCK_SIZE,
+) -> list[OrganizationDuplicateEdge]:
+    """Return the exact accepted edges, scores, and reasons used by the cleanup check."""
+    profiles = _load_organization_profiles(session, stylebook_id=stylebook_id)
+    return generate_organization_pair_edges(
+        profiles,
+        threshold=_accept_threshold(full_threshold),
+        max_block_size=max_block_size,
+    )
 
 
 def _prepare_duplicate_organization_clusters(

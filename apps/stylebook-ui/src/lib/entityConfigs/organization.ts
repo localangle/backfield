@@ -11,6 +11,7 @@ import {
 import {
   linkOrganizationSubstrateToCanonical,
   listCanonicalOrganizations,
+  type CanonicalOrganizationStatusFilter,
   unlinkOrganizationSubstrateFromCanonical,
 } from "@/lib/stylebook-api/organizations"
 import type { EntityConfig } from "@/lib/entityTypes"
@@ -33,6 +34,8 @@ export function createListOrganizationPickerRows(stylebookSlug: string) {
     limit: number = 100,
     offset: number = 0,
   ): Promise<{ organizations: OrganizationPickerRow[] }> {
+    const status: CanonicalOrganizationStatusFilter =
+      _status === "inactive" || _status === "all" ? _status : "active"
     const res = await listCanonicalOrganizations(
       stylebookSlug,
       q,
@@ -40,6 +43,7 @@ export function createListOrganizationPickerRows(stylebookSlug: string) {
       offset,
       undefined,
       projectSlug,
+      { status },
     )
     return {
       organizations: res.canonicals.map((c) => ({

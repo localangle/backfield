@@ -39,10 +39,12 @@ export interface PaginatedCanonicalOrganizationResponse {
 }
 
 export type CanonicalOrganizationListSort = "label" | "recent"
+export type CanonicalOrganizationStatusFilter = "active" | "inactive" | "all"
 
 export type CanonicalOrganizationListFilters = {
   minMentions?: number
   sort?: CanonicalOrganizationListSort
+  status?: CanonicalOrganizationStatusFilter
   /** Editorial mention nature filter when supported by the API. */
   nature?: string
 }
@@ -60,6 +62,8 @@ export async function listCanonicalOrganizations(
   if (projectFilterSlug) params.append("project", projectFilterSlug)
   if (q) params.append("q", q)
   if (typeFilter && typeFilter !== "all") params.append("type_filter", typeFilter)
+  const status = options?.status ?? "active"
+  if (status !== "active") params.append("status", status)
   const minMentions = options?.minMentions ?? 0
   if (minMentions > 0) params.append("min_mentions", String(minMentions))
   const sort = options?.sort ?? "label"

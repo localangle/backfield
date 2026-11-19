@@ -73,11 +73,11 @@ _LIST_BATCH_SIZE = 500
 _ALGORITHM_VERSIONS: dict[str, str] = {
     "duplicate-locations": "duplicate-locations:v1",
     "duplicate-people": "duplicate-people:v2",
-    "duplicate-organizations": "duplicate-organizations:v1",
+    "duplicate-organizations": "duplicate-organizations:v2",
     "missing-geometry-locations": "missing-geometry-locations:v1",
     "mismatched-locations": "mismatched-locations:v1",
     "mismatched-people": "mismatched-people:v1",
-    "mismatched-organizations": "mismatched-organizations:v1",
+    "mismatched-organizations": "mismatched-organizations:v2",
     "questionable-person-canonicals": "questionable-person-canonicals:v1",
     "questionable-organization-canonicals": "questionable-organization-canonicals:v4",
 }
@@ -423,6 +423,7 @@ def get_latest_cleanup_check_run(
             StylebookCleanupCheckRun.stylebook_id == stylebook_id,
             StylebookCleanupCheckRun.check_id == check_id,
             StylebookCleanupCheckRun.scope_hash == scope_hash,
+            StylebookCleanupCheckRun.algorithm_version == cleanup_algorithm_version(check_id),
         )
         .order_by(col(StylebookCleanupCheckRun.created_at).desc())
     ).first()
@@ -441,6 +442,7 @@ def get_active_cleanup_check_run(
             StylebookCleanupCheckRun.stylebook_id == stylebook_id,
             StylebookCleanupCheckRun.check_id == check_id,
             StylebookCleanupCheckRun.scope_hash == scope_hash,
+            StylebookCleanupCheckRun.algorithm_version == cleanup_algorithm_version(check_id),
             col(StylebookCleanupCheckRun.status).in_(_ACTIVE_RUN_STATUSES),
         )
         .order_by(col(StylebookCleanupCheckRun.created_at).desc())
@@ -460,6 +462,7 @@ def get_latest_succeeded_cleanup_check_run(
             StylebookCleanupCheckRun.stylebook_id == stylebook_id,
             StylebookCleanupCheckRun.check_id == check_id,
             StylebookCleanupCheckRun.scope_hash == scope_hash,
+            StylebookCleanupCheckRun.algorithm_version == cleanup_algorithm_version(check_id),
             StylebookCleanupCheckRun.status == "succeeded",
         )
         .order_by(col(StylebookCleanupCheckRun.completed_at).desc())

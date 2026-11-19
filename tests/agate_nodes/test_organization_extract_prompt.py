@@ -14,6 +14,15 @@ _PROMPT_PATH = (
     / "prompts"
     / "extract.md"
 )
+_COMPACT_PROMPT_PATH = (
+    Path(__file__).resolve().parents[1].parent
+    / "packages"
+    / "backfield-agate"
+    / "src"
+    / "agate_nodes"
+    / "organization_extract"
+    / "compact_prompt.py"
+)
 
 
 def test_organization_extract_prompt_includes_hard_stops_table() -> None:
@@ -50,3 +59,13 @@ def test_organization_extract_prompt_includes_school_possessive_team_rule() -> N
     assert "Hersey’s Jake Nawrot" in prompt
     assert "Chicago’s mayor" in prompt
     assert "Phillies masher Kyle Schwarber" in prompt
+
+
+def test_organization_extract_prompt_expands_school_names_conservatively() -> None:
+    prompt = _PROMPT_PATH.read_text(encoding="utf-8")
+    compact_prompt = _COMPACT_PROMPT_PATH.read_text(encoding="utf-8")
+    for text in (prompt, compact_prompt):
+        assert "Richards` → `Richards High School" in text
+        assert "longer official identity" in text
+        assert "Never invent" in text
+        assert "shortest supported school name" in text

@@ -16,6 +16,7 @@ from backfield_entities.quality.finders.duplicate_locations import (
 )
 from backfield_entities.quality.finders.duplicate_organizations import (
     duplicate_organization_cluster_ids,
+    duplicate_organization_scored_edges,
 )
 from backfield_entities.quality.finders.duplicate_people import duplicate_person_cluster_ids
 from backfield_entities.quality.finders.location_geography_issues import (
@@ -712,6 +713,7 @@ def _add_organization(
     slug: str,
     label: str,
     organization_type: str | None = None,
+    status: str = "active",
 ) -> str:
     from backfield_db import StylebookOrganizationCanonical
 
@@ -720,6 +722,7 @@ def _add_organization(
         slug=slug,
         label=label,
         organization_type=organization_type,
+        status=status,
     )
     session.add(row)
     session.commit()
@@ -738,6 +741,60 @@ def test_exact_duplicate_organization_clustering_sqlite() -> None:
         clusters = duplicate_organization_cluster_ids(session, stylebook_id=stylebook_id)
         assert len(clusters) == 1
         assert len(clusters[0]) == 2
+        edges = duplicate_organization_scored_edges(session, stylebook_id=stylebook_id)
+        assert len(edges) == 1
+        assert edges[0].score == 1.0
+        assert "exact_normalized_name" in edges[0].reasons
+
+
+def test_inactive_organization_is_excluded_from_duplicate_clusters_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        _add_organization(
+            session,
+            stylebook_id=stylebook_id,
+            slug="city-hall-active",
+            label="City Hall",
+        )
+        _add_organization(
+            session,
+            stylebook_id=stylebook_id,
+            slug="city-hall-inactive",
+            label="City Hall",
+            status="inactive",
+        )
+
+        assert duplicate_organization_cluster_ids(session, stylebook_id=stylebook_id) == []
+
+
+def test_compact_organization_label_variant_is_duplicate_edge_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        first_id = _add_organization(
+            session,
+            stylebook_id=stylebook_id,
+            slug="350-chicago",
+            label="350 Chicago",
+            organization_type="community_group",
+        )
+        second_id = _add_organization(
+            session,
+            stylebook_id=stylebook_id,
+            slug="350chicago",
+            label="350Chicago",
+            organization_type="community_group",
+        )
+
+        edges = duplicate_organization_scored_edges(session, stylebook_id=stylebook_id)
+
+        assert len(edges) == 1
+        assert {edges[0].left_id, edges[0].right_id} == {first_id, second_id}
+        assert edges[0].score == 0.95
+        assert "shared_variant:350chicago" in edges[0].reasons
 
 
 def test_fuzzy_duplicate_organization_clustering_sqlite() -> None:

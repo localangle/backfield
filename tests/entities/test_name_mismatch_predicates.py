@@ -12,6 +12,9 @@ from backfield_entities.entities.location.link_identity import (
     location_names_are_obvious_variants,
     location_names_share_obvious_identity,
 )
+from backfield_entities.entities.organization.catalog_provenance import (
+    is_organization_catalog_editorial_provenance,
+)
 from backfield_entities.entities.organization.name_mismatch import (
     organization_link_is_obvious_mismatch,
     organization_names_share_significant_token,
@@ -155,6 +158,12 @@ def test_organization_mismatch_editorial_alias_rescued() -> None:
         substrate_name="Facebook",
         canonical_label="Meta Platforms",
         editorial_alias_keys=frozenset({"facebook"}),
+    )
+
+
+def test_organization_maintenance_provenance_is_editorial() -> None:
+    assert is_organization_catalog_editorial_provenance(
+        "stylebook_agent_organization_maintenance"
     )
 
 

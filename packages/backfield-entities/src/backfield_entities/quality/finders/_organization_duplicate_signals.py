@@ -18,6 +18,7 @@ from itertools import combinations
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _PARENTHETICAL_RE = re.compile(r"\([^)]*\)")
+_MIN_COMPACT_VARIANT_LEN = 8
 
 _STOPWORDS: frozenset[str] = frozenset(
     {"a", "an", "and", "at", "by", "for", "from", "in", "of", "on", "or", "the", "to"}
@@ -254,6 +255,12 @@ def build_organization_variants(label: str) -> frozenset[str]:
     sig = " ".join(sig_tokens)
     if sig:
         variants.add(sig)
+
+    # Surface spacing and punctuation-only differences such as 350Chicago /
+    # 350 Chicago without creating broad short-token blocks (for example A B).
+    compact = "".join(tokens)
+    if len(tokens) >= 2 and len(compact) >= _MIN_COMPACT_VARIANT_LEN:
+        variants.add(compact)
 
     # Order-independent significant-token variant so reorderings like
     # "Finance Department" and "Department of Finance" share a variant

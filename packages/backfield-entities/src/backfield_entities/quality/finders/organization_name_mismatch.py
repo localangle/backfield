@@ -18,7 +18,6 @@ from backfield_entities.entities.organization.name_mismatch import (
 )
 from backfield_entities.quality.dismissals import load_dismissed_keys
 from backfield_entities.quality.finders._name_mismatch_common import (
-    ORG_TRIGRAM_CANDIDATE_FLOOR,
     ORGANIZATION_NAME_MISMATCH_CHECK_ID,
     CanonicalMismatchAgg,
     organization_project_ids,
@@ -63,9 +62,7 @@ def _aggregate_organization_mismatches_sqlite(
             if canon_id is not None
         }
     )
-    editorial_aliases = load_organization_editorial_alias_keys(
-        session, canonical_ids=canonical_ids
-    )
+    editorial_aliases = load_organization_editorial_alias_keys(session, canonical_ids=canonical_ids)
 
     agg: dict[str, CanonicalMismatchAgg] = {}
     for substrate_name, _substrate_canon_id, canon_id, canonical_label in linked_rows:
@@ -107,7 +104,6 @@ def _aggregate_organization_mismatches_postgres(
           AND s.canonical_link_status = :linked
           AND s.stylebook_organization_canonical_id IS NOT NULL
           AND lower(s.normalized_name) <> lower(c.label)
-          AND similarity(lower(s.normalized_name), lower(c.label)) < :floor
         """
     )
     rows = session.execute(
@@ -116,16 +112,13 @@ def _aggregate_organization_mismatches_postgres(
             "stylebook_id": stylebook_id,
             "project_ids": project_ids,
             "linked": CANONICAL_LINK_LINKED,
-            "floor": ORG_TRIGRAM_CANDIDATE_FLOOR,
         },
     ).all()
 
     canonical_ids = sorted(
         {str(canon_id) for _name, canon_id, _label in rows if canon_id is not None}
     )
-    editorial_aliases = load_organization_editorial_alias_keys(
-        session, canonical_ids=canonical_ids
-    )
+    editorial_aliases = load_organization_editorial_alias_keys(session, canonical_ids=canonical_ids)
 
     agg: dict[str, CanonicalMismatchAgg] = {}
     for substrate_name, canon_id, canonical_label in rows:

@@ -165,11 +165,13 @@ Done in this order, with the playbook from the program doc ([Category 5](stylebo
 | Sensitive pairs (D20) | 175 held pairs that involve a crime / justice type, two readers each: 49 agreed different (dismissed), 71 agreed same (64 merge groups, 68 records folded after the owner approved all 64), 55 held (3 of them a missing second verdict). Mixed types resolved to the person's standing role in 15 groups; 1 group (a lone "other" against crime / justice) kept crime / justice. Active people 52,076 to 52,008; mentions unchanged (142); 763 dismissals; 252 live clusters |
 | Spelling-slip round | The finder did not compare names one letter apart (`Shepshu Aakhu` and `Shepsu Aakhu`): they shared no blocking key. Probe: 789 such pairs, of which about 330 share an organization, a title, or a person type. The finder now lists a one-letter pair when one of those agrees. Two readers judged the 318 new non-sensitive pairs: 295 agreed same (286 groups merged, 293 records folded), 6 agreed different (George Carlin and George Catlin, Betty Davis and Bette Davis, Greg Janes and Greg Jones), 17 held. Active people 52,008 to 51,715; mentions unchanged (650); 769 dismissals |
 | Spelling slips involving a crime / justice type (D20) | 12 more pairs: 1 agreed different (dismissed), 7 agreed same (merged after the owner approved all 7), 4 held. Active people 51,715 to 51,708; mentions unchanged (15); 770 dismissals; 271 live clusters |
+| Final full-queue adjudication | Two blinded readers and a senior judge reviewed all 295 remaining live edges. Person-specific veto and component checks approved 94 merge groups covering 100 sources; 190 surviving pairs were dismissed and two mapped decisions resolved through post-merge state. Active people 51,708 to 51,608; 42,820 linked substrate people, 120,713 mentions and 440,718 occurrences unchanged; 960 dismissals; zero live clusters |
 
 Integrity: linked mentions were identical before and after every group, no mention points at a removed
 person, no connection was left on a removed person or closed by a merge, and semantic reindex jobs were
 queued (206 for the rule folds, 562 for reader merges). Backups: `backup/people_tier1_*.dump` and
-`backup/people_readers_*.dump` under `tmp/stylebook-agent-cleanup/`.
+`backup/people_readers_*.dump` under `tmp/stylebook-agent-cleanup/`; the final pass used a validated
+custom-format backup and durable pre/post ledgers before applying any mutation.
 
 **Phase 0 findings that changed the plan.** The survey counted 1,496 shared labels; the 1,717 finder
 clusters yielded 950 merge groups (649 by rule, 301 by readers). Zero-mention copies were common inside

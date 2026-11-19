@@ -172,6 +172,7 @@ def _linked_substrate_counts(
 def _canonical_filters(
     *,
     stylebook_id: int,
+    status: Literal["active", "inactive", "all"],
     q: str | None,
     type_filter: str | None,
     nature: str | None,
@@ -180,6 +181,8 @@ def _canonical_filters(
     filters: list[ColumnElement[bool]] = [
         StylebookOrganizationCanonical.stylebook_id == stylebook_id
     ]
+    if status != "all":
+        filters.append(StylebookOrganizationCanonical.status == status)
     q_text = (q or "").strip()
     if q_text:
         filters.append(
@@ -330,6 +333,10 @@ def list_canonical_organizations(
         description="Optional project slug to filter evidence/counts.",
     ),
     q: str | None = None,
+    status: Literal["active", "inactive", "all"] = Query(
+        "active",
+        description="Canonical status to list. Active records are shown by default.",
+    ),
     type_filter: str | None = Query(None),
     nature: str | None = Query(
         None,
@@ -358,6 +365,7 @@ def list_canonical_organizations(
 
     filters = _canonical_filters(
         stylebook_id=int(sb.id),
+        status=status,
         q=q,
         type_filter=type_filter,
         nature=nature,
@@ -444,6 +452,7 @@ def list_canonical_organization_types(
     rows = session.exec(
         select(StylebookOrganizationCanonical.organization_type).where(
             StylebookOrganizationCanonical.stylebook_id == int(sb.id),
+            StylebookOrganizationCanonical.status == "active",
             col(StylebookOrganizationCanonical.organization_type).is_not(None),
             func.length(func.trim(col(StylebookOrganizationCanonical.organization_type))) > 0,
         )

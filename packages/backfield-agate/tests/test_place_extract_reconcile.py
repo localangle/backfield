@@ -30,3 +30,16 @@ def test_stitches_shortened_venue_name() -> None:
     assert unresolved == 0
     assert len(places) == 1
     assert places[0]["location"] == "Wrigley Field"
+
+
+def test_stitch_does_not_treat_longer_school_name_as_better_evidence() -> None:
+    places, unresolved = stitch_place_candidates(
+        [
+            _cand("Richards High School, Oak Lawn, IL", 10),
+            _cand("Albert G. Richards High School, Oak Lawn, IL", 400),
+        ]
+    )
+
+    assert unresolved == 0
+    assert len(places) == 1
+    assert places[0]["location"] == "Richards High School, Oak Lawn, IL"

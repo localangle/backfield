@@ -123,6 +123,49 @@ def test_list_canonical_organizations_token_search(
     assert "City of Portland" in labels
 
 
+def test_list_canonical_organizations_hides_inactive_by_default(
+    editor_client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    with Session(stylebook_test_engine) as session:
+        project = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")
+        ).one()
+        workspace = session.get(BackfieldWorkspace, int(project.workspace_id))  # type: ignore[arg-type]
+        stylebook_id = int(workspace.stylebook_id)
+        session.add_all(
+            [
+                StylebookOrganizationCanonical(
+                    stylebook_id=stylebook_id,
+                    label="Active Organization",
+                    slug="active-organization",
+                    status="active",
+                ),
+                StylebookOrganizationCanonical(
+                    stylebook_id=stylebook_id,
+                    label="Inactive Organization",
+                    slug="inactive-organization",
+                    status="inactive",
+                ),
+            ]
+        )
+        session.commit()
+
+    default_response = editor_client.get("/v1/stylebooks/default/canonical-organizations")
+    assert default_response.status_code == 200
+    assert [row["label"] for row in default_response.json()["canonicals"]] == [
+        "Active Organization"
+    ]
+
+    all_response = editor_client.get(
+        "/v1/stylebooks/default/canonical-organizations?status=all"
+    )
+    assert all_response.status_code == 200
+    assert {row["label"] for row in all_response.json()["canonicals"]} == {
+        "Active Organization",
+        "Inactive Organization",
+    }
+
+
 def test_create_canonical_organization(
     editor_client: TestClient, stylebook_test_engine: Engine
 ) -> None:

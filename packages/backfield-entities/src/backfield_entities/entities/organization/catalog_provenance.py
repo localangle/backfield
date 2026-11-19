@@ -4,6 +4,7 @@ from __future__ import annotations
 
 ORGANIZATION_CATALOG_EDITORIAL_PROVENANCES: frozenset[str] = frozenset(
     {
+        "stylebook_agent_organization_maintenance",
         "stylebook_ui_manual",
         "stylebook_ui_import_csv",
         "stylebook_ui_accept",

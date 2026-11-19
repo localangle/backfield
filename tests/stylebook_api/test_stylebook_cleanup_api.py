@@ -411,11 +411,32 @@ def test_cancel_cleanup_check_run_no_active(
 
 
 def test_get_latest_cleanup_check_run(cleanup_client: tuple[TestClient, Engine]) -> None:
-    client, _engine = cleanup_client
+    from datetime import UTC, datetime, timedelta
+
+    client, engine = cleanup_client
     missing = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-locations/runs/latest")
     assert missing.status_code == 200
     assert missing.json() is None
     run = _run_cleanup_check(client, "duplicate-locations")
+    with Session(engine) as session:
+        current = session.get(StylebookCleanupCheckRun, run["id"])
+        assert current is not None
+        later = datetime.now(UTC) + timedelta(minutes=1)
+        session.add(
+            StylebookCleanupCheckRun(
+                stylebook_id=current.stylebook_id,
+                check_id=current.check_id,
+                status="succeeded",
+                scope_hash=current.scope_hash,
+                scope_json=current.scope_json,
+                algorithm_version="duplicate-locations:v0",
+                candidate_count=999,
+                completed_at=later,
+                created_at=later,
+                updated_at=later,
+            )
+        )
+        session.commit()
     latest = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-locations/runs/latest")
     assert latest.status_code == 200
     body = latest.json()
@@ -759,6 +780,10 @@ def test_merge_cleanup_organization_relinks_and_deletes_source(
                 StylebookOrganizationCanonical.slug == "org-dupe-b"
             )
         ).one()
+        source.organization_type = "community_group"
+        target.organization_type = "government"
+        session.add(source)
+        session.add(target)
         session.add(
             SubstrateOrganization(
                 project_id=int(proj.id),
@@ -783,6 +808,9 @@ def test_merge_cleanup_organization_relinks_and_deletes_source(
 
     with Session(engine) as session:
         assert session.get(StylebookOrganizationCanonical, source_id) is None
+        merged = session.get(StylebookOrganizationCanonical, target_id)
+        assert merged is not None
+        assert merged.organization_type == "government"
         organization = session.exec(
             select(SubstrateOrganization).where(
                 SubstrateOrganization.identity_fingerprint == "fp-cleanup-org-merge"

@@ -174,3 +174,42 @@ def test_recall_ranks_exact_alias_match() -> None:
         )
         labels = [label for _cid, label in recall]
         assert "Chicago Teachers Union" in labels
+
+
+def test_recall_searches_relevant_labels_beyond_alphabetic_prefix() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed(session)
+        for index in range(120):
+            session.add(
+                StylebookOrganizationCanonical(
+                    stylebook_id=sb_id,
+                    label=f"Alpha Organization {index:03d}",
+                    slug=f"alpha-organization-{index:03d}",
+                    organization_type="nonprofit",
+                )
+            )
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=sb_id,
+                label="Zzyzx Observatory",
+                slug="zzyzx-observatory",
+                organization_type="nonprofit",
+            )
+        )
+        session.commit()
+        organization = SubstrateOrganization(
+            project_id=pid,
+            name="Zzyzx Observatory",
+            normalized_name="zzyzx observatory",
+            organization_type="nonprofit",
+        )
+
+        recall = retrieve_organization_canonical_candidates(
+            session,
+            stylebook_id=sb_id,
+            organization=organization,
+            limit=8,
+        )
+
+        assert recall[0][1] == "Zzyzx Observatory"

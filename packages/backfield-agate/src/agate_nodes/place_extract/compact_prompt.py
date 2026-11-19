@@ -6,7 +6,10 @@ from agate_nodes.place_extract.compact_codes import COMPACT_CODE_LEGEND
 
 COMPACT_OUTPUT_INSTRUCTIONS = """\
 Return ONLY compact JSON with this shape:
-{"locations": [["location", "type", "nature", "address_place_kind", "description", "geocode_hints", "evidence_anchor"], ...]}
+{"locations": [
+  ["location", "type", "nature", "address_place_kind", "description",
+   "geocode_hints", "evidence_anchor"]
+]}
 
 Rules for compact output:
 - Apply all editorial inclusion, exclusion, typing, and formatting rules above —
@@ -50,9 +53,22 @@ Rules for compact output:
   do not also emit a standalone neighborhood row for that same neighborhood.
 - When the story is datelined or clearly based in a local anchor city, emit that city as its own
   city row even if it also appears inside longer location strings elsewhere.
-- Prefer the same location-string granularity you would use in full mode (e.g. "Ragadan, Chicago, IL"
-  rather than "Ragadan, Uptown, Chicago, IL") unless an extra segment is needed to geocode or
-  disambiguate.
-- Scheduled scoreboard lines without scores ("Team A at Team B"), final score lines ("Team A 55, Team B 53"), and state-tournament bracket lines ("Title: St. Rita 12, Triad 11"; "Semifinals"; "Third place: Naperville Central vs. Mount Carmel, 9"): emit **every participating school** as separate **`pl` / place** rows with expanded school names plus city/state — even when a shared venue is also named. Never use **`ot` / other** for school tokens, never bare tokens (`Belvidere`, `Smith`, `East Peoria`) as `location`, and never put a school name in the city component. Bracket labels (`CLASS 3A`, `Title:`, `Semifinals`) are not locations.
+- Prefer the same location-string granularity you would use in full mode
+  (e.g. "Ragadan, Chicago, IL" rather than "Ragadan, Uptown, Chicago, IL")
+  unless an extra segment is needed to geocode or disambiguate.
+- Scheduled scoreboard lines without scores ("Team A at Team B"), final score
+  lines ("Team A 55, Team B 53"), and state-tournament bracket lines
+  ("Title: St. Rita 12, Triad 11"; "Semifinals"; "Third place: Naperville
+  Central vs. Mount Carmel, 9"): emit **every participating school** as separate
+  **`pl` / place** rows with conservatively expanded school names plus
+  city/state, even when a shared venue is also named. Add generic institutional
+  words supported by prep context (`Richards` → `Richards High School`). Use a
+  longer official identity (`Harold L. Richards High School`) only when article
+  context identifies exactly one school. Never invent first or middle names,
+  initials, directional qualifiers, campuses, or numbers; when uncertain, use
+  the shortest supported school name. Never use **`ot` / other** for school
+  tokens, never bare tokens (`Belvidere`, `Smith`, `East Peoria`) as `location`,
+  and never put a school name in the city component. Bracket labels
+  (`CLASS 3A`, `Title:`, `Semifinals`) are not locations.
 
 """ + COMPACT_CODE_LEGEND

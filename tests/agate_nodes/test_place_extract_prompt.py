@@ -22,6 +22,15 @@ _PROMPT_PATH = (
     / "prompts"
     / "extract.md"
 )
+_COMPACT_PROMPT_PATH = (
+    Path(__file__).resolve().parents[1].parent
+    / "packages"
+    / "backfield-agate"
+    / "src"
+    / "agate_nodes"
+    / "place_extract"
+    / "compact_prompt.py"
+)
 
 
 def test_place_extract_prompt_excludes_non_location_candidate_patterns() -> None:
@@ -69,6 +78,16 @@ def test_place_extract_prompt_includes_tournament_scoreline_rules() -> None:
     assert "Title: St. Rita 12, Triad 11" in prompt
     assert "Third place: Naperville Central vs. Mount Carmel, 9" in prompt
     assert "still extract every named school and venue on the same lines" in prompt
+
+
+def test_place_extract_prompt_expands_school_names_conservatively() -> None:
+    prompt = _PROMPT_PATH.read_text(encoding="utf-8")
+    compact_prompt = _COMPACT_PROMPT_PATH.read_text(encoding="utf-8")
+    for text in (prompt, compact_prompt):
+        assert "Richards` → `Richards High School" in text
+        assert "Harold L. Richards High School" in text
+        assert "Never invent" in text
+        assert "shortest supported school name" in text
 
 
 def test_place_extract_prompt_normalizes_block_addresses() -> None:

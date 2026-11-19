@@ -11,7 +11,11 @@ Evidence and method for the first category live in
 endpoint sketch). This file holds decisions, the spec list, open questions, and the order of work.
 Closing requirements for places are in [`stylebook-places-requirements.md`](stylebook-places-requirements.md);
 people were planned in [`stylebook-people-maintenance.md`](stylebook-people-maintenance.md) and are closed in
-[`stylebook-people-requirements.md`](stylebook-people-requirements.md).
+[`stylebook-people-requirements.md`](stylebook-people-requirements.md). Organizations were planned in
+[`stylebook-organizations-maintenance.md`](stylebook-organizations-maintenance.md) and closed in
+[`stylebook-organizations-requirements.md`](stylebook-organizations-requirements.md). The next
+full-year experiment is specified in
+[`stylebook-autonomous-year-cleanup.md`](stylebook-autonomous-year-cleanup.md).
 
 ## How we work
 
@@ -55,13 +59,24 @@ Prefer the earliest rung that can solve it:
 | D18 | People candidates: relatives known only by first name plus a relationship get a canonical only if a public figure, a professional, or mentioned two or more times (otherwise waived); stage names link to the existing person when one exists, else public performers are created under the stage name and influencers, honorees and handles are waived; first-name-only with a title or affiliation goes to a reader to try to link, the rest are waived. | 2026-11-17 |
 | D19 | For candidates, a link or create needs two readers from different models to agree (same record, or same folded name) with no low confidence; a waive needs one reader's high confidence, checked by a blind sample read by the second reader. Anything else stays pending. Sensitive person types are never touched. | 2026-11-17 |
 | D20 | Narrows D16 for held pairs that involve a sensitive person type: two readers who agree the people are different may dismiss the pair (it only hides a suggestion); two readers who agree they are the same may only propose a merge, which the owner approves from a list. An agent still never merges, links or creates a sensitive record on its own. The type reflects a person's role in one story, so a difference in type is not evidence of different people. | 2026-11-17 |
+| D21 | Organizations are the next maintenance category. A canonical is a durable acting institution, not a product, platform, event, law, work title, generic group, or place. | 2026-11-18 |
+| D22 | Organization hierarchy remains explicit: parent and child institutions, chapters, departments, schools and districts, universities and teams, leagues and teams, and independently acting branches stay apart. Readers may answer `related_but_distinct`; that result is never a merge. | 2026-11-18 |
+| D23 | Organization type mismatch is taxonomy evidence, not an identity veto. Exact label and type are not sufficient for an unattended fold; a rule fold needs a second independent signal and no hard veto. Generated acronyms and ingest aliases never decide identity alone. | 2026-11-18 |
+| D24 | Brand/platform boundary candidates link only when the mention denotes an existing institution as actor; create only an independently acting organization; otherwise defer or waive with a boundary reason. Products and streaming services do not become organization canonicals by default. | 2026-11-18 |
+| D25 | The next full-year experiment uses cohort-triggered guarded autonomy across every candidate and cleanup queue. It permits reversible writes only, treats explained holds as valid, and runs at most three closure iterations. | 2026-11-19 |
+| D26 | Freeze ingest and manual edits for that run and take one validated full-database backup before mutation. Quarantine known item conflicts, but abort globally on unexplained drift, evidence loss, or integrity failures. | 2026-11-19 |
+| D27 | `GPT-6 Luna` and `GPT-6.1 Terra` read independently, cross-critique disagreements, and must converge without a hard veto before apply. Every merge, unlink, retirement, and high-impact geometry repair receives an adversarial audit. This is an experiment-specific exception to D20 for sensitive people; both readers must be high confidence, and D20 remains the product default pending audit. | 2026-11-19 |
+| D28 | Evaluate the run with operation/reference counts, issue and residual rates per 1,000 articles, model behavior, integrity, and incremental model cost. Duplicate rate, link precision, false-merge rate, and residual quality use a clearly labeled model-only holdout, not claimed ground truth. | 2026-11-19 |
 
 ## Specs to write
 
 Each spec gets a status and an owner as we go. Order is the intended build order. Requirements from places
 (IDs A1-A8, B1-B11, C1-C6, D1-D6, E1-E5) are in [`stylebook-places-requirements.md`](stylebook-places-requirements.md);
 requirements from people (IDs PA1-PA11, PB1-PB8, PC1-PC7, PD1-PD6, PE1-PE7) and the product decisions still to
-make are in [`stylebook-people-requirements.md`](stylebook-people-requirements.md).
+make are in [`stylebook-people-requirements.md`](stylebook-people-requirements.md). Organization evidence and
+measured procedure are in [`stylebook-organizations-maintenance.md`](stylebook-organizations-maintenance.md);
+closing requirements OA through OF are in
+[`stylebook-organizations-requirements.md`](stylebook-organizations-requirements.md).
 
 | Spec | Scope | Status |
 |------|-------|--------|
@@ -454,6 +469,30 @@ jobs were queued. Left for a person: 151 held rows (84 low- or medium-confidence
 actions, 10 reader disagreements, 5 label mismatches, 2 whose name already exists in the catalog, 1 link
 mismatch) in `review_held.jsonl`, and 36 sensitive rows, untouched.
 
+## Category 7: organizations
+
+Checks: `duplicate-organizations`, `mismatched-organizations`,
+`questionable-organization-canonicals`, and the organization candidate queue. Direction: fold real
+institutional duplicates without flattening hierarchy, remove wrong entity boundaries without losing
+evidence, reconcile type after identity, and close the brand/platform queue under D24. Running plan:
+[`stylebook-organizations-maintenance.md`](stylebook-organizations-maintenance.md).
+
+### Baseline
+
+As of 2026-11-18: 30,401 active canonicals; 5,178 duplicate edges in 2,900 clusters; 1,606 repeated labels
+(only 222 repeated label/type groups); 10,194 zero-linked canonicals; 2,711 questionable-label prefilter
+hits; zero reported name mismatches pending an audit; and 88 brand/platform candidates. Organization rows
+participate in 37,876 open connections, so zero linked mentions does not make a row safe to discard.
+
+### Procedure
+
+Measure and label cohorts -> harden merge, finder, recall, dismissal and cached-run behavior -> deterministic
+two-signal rules -> two independent readers with `related_but_distinct` -> guarded duplicate waves ->
+questionable/boundary and type review -> mismatch audit -> candidate queue -> closing requirements.
+
+No data mutation begins until source aliases and metadata survive merges, external-ID conflicts veto a merge,
+and the dry-run ledger can restore every affected field.
+
 ## Open questions
 
 1. **Polygons for natural features and regions.** Which source can supply an area for a lake, river, or
@@ -471,8 +510,8 @@ mismatch) in `review_held.jsonl`, and 36 sensitive rows, untouched.
 6. **Incremental runs.** What is the watermark: canonicals created or changed since the last run?
 7. **Reindex.** About 3,150 moved mentions still have no semantic reindex queued. Does an apply run
    queue it, batch it, or report the affected articles?
-8. **Next category.** Decided: people (D13). Organizations follow. Locations are closed apart from the open items
-   in the places requirements.
+8. **Next category.** Organizations are closed apart from the open items in their requirements summary
+   (D21-D24), as are locations and people.
 9. **Shape sources and attribution.** Census outlines are public domain; OpenStreetMap shapes need
    attribution. Which sources may the agent use, and where does attribution show up?
 

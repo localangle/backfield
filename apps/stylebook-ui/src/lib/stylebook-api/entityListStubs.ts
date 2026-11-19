@@ -1,4 +1,7 @@
-import { listCanonicalOrganizations } from "@/lib/stylebook-api/organizations"
+import {
+  listCanonicalOrganizations,
+  type CanonicalOrganizationStatusFilter,
+} from "@/lib/stylebook-api/organizations"
 import { listCanonicalPeople } from "@/lib/stylebook-api/people"
 
 export interface PersonListRow {
@@ -95,6 +98,8 @@ export async function listOrganizations(
   has_next: boolean
   has_prev: boolean
 }> {
+  const status: CanonicalOrganizationStatusFilter =
+    _status === "inactive" || _status === "all" ? _status : "active"
   const res = await listCanonicalOrganizations(
     stylebookSlug,
     q,
@@ -102,6 +107,7 @@ export async function listOrganizations(
     offset,
     options?.type_filter,
     projectSlug,
+    { status },
   )
   return {
     organizations: res.canonicals.map((c) => ({

@@ -115,8 +115,11 @@ commits from prose alone.
 Exact-alias lookups used for tier-1 / exact-identity autolink ignore
 `substrate_ingest` aliases (`trusted_alias_only=True`). Editorial provenances
 such as `stylebook_ui_accept`, `stylebook_ui_link`, and `stylebook_ui_import_csv`
-still count. Person name keys strip a multi-token ``Name, Title`` suffix so
-title-glued CSV labels still exact-match bare names. Ingest aliases may still
+still count. Organization aliases explicitly approved by the two-reader
+maintenance process use `stylebook_agent_organization_maintenance` and also
+count; generated acronyms and unreviewed ingest aliases do not. Person name
+keys strip a multi-token ``Name, Title`` suffix so title-glued CSV labels still
+exact-match bare names. Ingest aliases may still
 appear in fuzzy recall for LLM adjudication; autolink-tier fuzzy scores and the
 sync commit gate must not treat machine aliases as identity evidence alone.
 Affiliation- or title-only bonuses cannot alone clear person recall.
@@ -133,6 +136,13 @@ substrate `external_id` values for fine-grained and admin location types include
 a normalized name suffix so a poisoned candidate UUID cannot collapse distinct
 places onto one substrate row. Already-linked ingest paths re-validate before
 alias refresh and clear/re-plan on mismatch.
+
+Organization duplicate review compares active canonicals only. Its bounded
+label variants include a compact punctuation-and-spacing form for labels of at
+least eight characters, so `350 Chicago` and `350Chicago` reach review; that
+variant is candidate evidence, not an unattended merge rule. The organization
+catalog list likewise defaults to active canonicals. API callers may request
+`status=inactive` or `status=all` when auditing retained history.
 
 ## Evidence and editorial scope
 

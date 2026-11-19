@@ -77,7 +77,10 @@ Intent and decision records for features not currently scheduled:
 - [`plan/stylebook-places-requirements.md`](plan/stylebook-places-requirements.md) — closing lessons and requirements by spec from the places cleanup
 - [`plan/stylebook-people-maintenance.md`](plan/stylebook-people-maintenance.md) — plan for the people category: survey, scope rules, phases, risks
 - [`plan/stylebook-people-requirements.md`](plan/stylebook-people-requirements.md) — closing lessons, requirements by spec, and product decisions from the people cleanup
+- [`plan/stylebook-organizations-maintenance.md`](plan/stylebook-organizations-maintenance.md) — measured organization cleanup: identity hierarchy, duplicate review, wrong boundaries, taxonomy, and candidate queue
+- [`plan/stylebook-organizations-requirements.md`](plan/stylebook-organizations-requirements.md) — closing organization lessons, requirements by spec, product decisions, and remaining review lists
 - [`plan/stylebook-maintenance-program.md`](plan/stylebook-maintenance-program.md) — running plan and decision log for turning that cleanup into ingest, review-queue, AI review, and agent API work
+- [`plan/stylebook-autonomous-year-cleanup.md`](plan/stylebook-autonomous-year-cleanup.md) — guarded autonomous runbook for the next full-year, cross-entity cleanup experiment
 
 ## Agent workflows
 

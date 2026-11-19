@@ -43,12 +43,6 @@ def _jurisdiction_compatible(left: dict[str, Any], right: dict[str, Any]) -> boo
 
 def _merge_place(base: dict[str, Any], other: dict[str, Any]) -> dict[str, Any]:
     merged = dict(base)
-    left = _loc_key(merged)
-    right = _loc_key(other)
-    if len(right) > len(left):
-        merged["location"] = other.get("location")
-        if other.get("components"):
-            merged["components"] = other["components"]
     for key in ("description", "geocode_hints", "nature", "type", "address_place_kind"):
         if not merged.get(key) and other.get(key):
             merged[key] = other[key]

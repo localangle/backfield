@@ -240,6 +240,13 @@ text. End `prompts/extract.md` with:
 
 This keeps the reusable prompt prefix stable while the article text varies.
 
+School-name expansion in `PlaceExtract` and `OrganizationExtract` is conservative.
+Prep context may add generic institutional words (`Richards` → `Richards High School`).
+A longer official identity is allowed only when article context identifies one school
+unambiguously; extraction must not invent names, initials, directional qualifiers,
+campuses, or numbers. Cross-chunk place stitching preserves the first supported name
+instead of treating a longer variant as better evidence.
+
 `PlaceExtract` **`geocode_hints`** must carry geographic disambiguators (street,
 neighborhood, nearby landmark, which branch)—not story synopsis—so
 `GeocodeAgent` web search and candidate picking can resolve multi-location names.

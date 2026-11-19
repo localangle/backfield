@@ -13,14 +13,22 @@ every merge group, so no merge moved a mention to the wrong person by count.
 
 | Measure | Start | Now |
 | --- | --- | --- |
-| Active people | 52,671 | 51,708 (1,514 records folded; 52,226 after creating from the candidate queue) |
-| Duplicate finder clusters | 1,717 | 271 (all held pairs or crime / justice records; none left that a rule or two readers could settle) |
+| Active people | 52,671 | 51,608 (1,614 records folded; 52,226 after creating from the candidate queue) |
+| Duplicate finder clusters | 1,717 | 0 |
 | Pending people candidates | 2,193 | 187 (151 held rows, 36 crime / justice rows) |
-| Dismissed pairs (reasons kept only in a scratch ledger) | 0 | 770 |
+| Dismissed pairs (reasons kept only in a scratch ledger) | 0 | 960 |
 
 How the 1,514 folds happened: 673 by rule, 307 by two readers, 16 by a three-reader majority, 150 after the
 finder learned nicknames, middle names and compound surnames, 68 crime / justice records the owner approved
-(D20), and 300 one-letter spelling slips (7 of them crime / justice records, owner approved).
+(D20), 300 one-letter spelling slips (7 of them crime / justice records, owner approved), and 100 records
+from the final full-queue adjudication.
+
+The final pass materialized all 295 remaining scored edges, gave each to two blinded readers and a senior
+judge, then applied person-specific veto and component checks. It merged 100 source records in 94 groups,
+dismissed 190 surviving pairs, and accounted for two post-merge state transitions. The shared person merge
+was fixed before apply to preserve source aliases, metadata, standing fields, primary evidence and
+connections. All 42,820 linked substrate people, 120,713 mentions and 440,718 occurrences were preserved;
+the finder now has zero live edges and zero clusters.
 
 ## What we learned
 
@@ -50,9 +58,11 @@ finder learned nicknames, middle names and compound surnames, 68 crime / justice
    record and "elected official" on another. The rule blocked 175 pairs; two readers settled 120 of them.
 9. **Dismissing and merging are not equally risky for sensitive records.** A dismissal only hides a suggestion;
    a merge attributes one record's story to another. Agents may dismiss on two readers; merges go to a person.
-10. **The shared merge drops what a person would keep.** It did not carry `public_figure`, title, affiliation
-    or the source's aliases, and the delete could run before connections were rewired (429 of 649 groups had
-    connections on a duplicate). Cleanup scripts compensated.
+10. **The shared merge must preserve the whole identity record.** It previously dropped `public_figure`,
+    title, affiliation and source aliases, and the delete could run before connections were rewired (429 of
+    649 groups had connections on a duplicate). The runtime merge now transfers aliases and metadata, fills
+    standing fields, preserves primary evidence, resolves standing type and rewires connections before a
+    relink can prune the source.
 11. **Take the before-state before any change.** A first apply set the merged record's type before the
     before-state was saved, so an undo would have restored the wrong type. A dry-run ledger check caught it.
 12. **A suffix guard hides real duplicates and real differences alike.** 40 groups have a bare name beside a
@@ -66,6 +76,9 @@ finder learned nicknames, middle names and compound surnames, 68 crime / justice
     not help; a person or more evidence does.
 16. **Dismissals need a reason and a way back.** The dismissal table stores only the pair; every reason lives
     in a scratch ledger.
+17. **Rollback simulation must inspect preservation, not only row counts.** The final dry run caught 15
+    source alias requirements and 77 connections that the old merge path would have lost. Exact mention
+    totals alone would have missed both defects.
 
 ## Operating model (what to automate)
 
@@ -191,8 +204,8 @@ Each is a choice the owner has not yet made. The recommendation is what the work
 
 ## Open after people
 
-- The 271 clusters the finder still lists: 17 spelling pairs, 4 crime / justice spelling pairs, 55 crime / justice
-  pairs, 33 variant pairs, and the held pairs from the majority round. Most are thin records.
+- The duplicate finder is at zero live edges; its pair-key dismissals still need reason, evidence-hash and
+  finder-version metadata so changed evidence can reopen them safely.
 - The 151 held candidate rows and 36 crime / justice candidate rows.
 - The 40 suffix groups, first-initial-only and spacing variants, and two-letter slips (PB2, PB7).
 - A random audit of agreed merges for an error rate (PE1).
