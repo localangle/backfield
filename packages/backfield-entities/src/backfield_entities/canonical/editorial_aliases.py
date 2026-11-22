@@ -34,7 +34,7 @@ def load_person_editorial_alias_keys(
 ) -> dict[str, frozenset[str]]:
     # Local imports avoid entity-package initialization cycles with canonical policy.
     from backfield_entities.entities.person.catalog_provenance import (
-        is_person_catalog_editorial_provenance,
+        is_person_alias_trusted_for_link_checks,
     )
 
     if not canonical_ids:
@@ -51,7 +51,7 @@ def load_person_editorial_alias_keys(
     ).all()
     return _editorial_alias_keys(
         rows,
-        is_editorial_provenance=is_person_catalog_editorial_provenance,
+        is_editorial_provenance=is_person_alias_trusted_for_link_checks,
     )
 
 
@@ -81,6 +81,23 @@ def load_location_editorial_alias_keys(
         rows,
         is_editorial_provenance=is_location_alias_trusted_for_link_checks,
     )
+
+
+def location_has_trusted_alias(
+    session: Session,
+    *,
+    canonical_id: str,
+    name_or_normalized_name: str,
+) -> bool:
+    """Return whether a reviewed alias explicitly confirms this location identity."""
+    from backfield_entities.entities.location.recall import location_alias_lookup_keys
+
+    alias_keys = load_location_editorial_alias_keys(
+        session,
+        canonical_ids=[str(canonical_id)],
+    ).get(str(canonical_id), frozenset())
+    substrate_keys = set(location_alias_lookup_keys(name_or_normalized_name))
+    return bool(substrate_keys & set(alias_keys))
 
 
 def load_organization_editorial_alias_keys(

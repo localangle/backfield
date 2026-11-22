@@ -22,6 +22,7 @@ from backfield_entities.canonical.editorial_aliases import (
     load_location_editorial_alias_keys,
     load_organization_editorial_alias_keys,
     load_person_editorial_alias_keys,
+    location_has_trusted_alias,
 )
 from backfield_entities.canonical.jurisdiction import place_extract_components_from_entry
 from backfield_entities.canonical.link_matrix import (
@@ -34,6 +35,7 @@ from backfield_entities.canonical.plan_types import (
 )
 from backfield_entities.ingest.geocode_cache.sanity import (
     canonical_location_self_consistency_blocked,
+    named_location_identity_corroborated,
     substrate_canonical_jurisdiction_compatible,
     substrate_canonical_link_blocked_by_content_sanity,
 )
@@ -142,6 +144,21 @@ def _location_link_blocked(
         canonical_subdivision_code=canon.subdivision_code,
     ):
         return VETO_JURISDICTION_MISMATCH
+    trusted_alias_match = location_has_trusted_alias(
+        session,
+        canonical_id=canonical_id,
+        name_or_normalized_name=str(location.normalized_name or location.name or ""),
+    )
+    corroborated_identity_match = named_location_identity_corroborated(
+        substrate_name=str(location.name or ""),
+        canonical_label=str(canon.label or ""),
+        substrate_formatted_address=location.formatted_address,
+        canonical_formatted_address=canon.formatted_address,
+        substrate_geometry_json=(
+            location.geometry_json if isinstance(location.geometry_json, dict) else None
+        ),
+        canonical_geometry_json=geometry_json,
+    )
     if substrate_canonical_link_blocked_by_content_sanity(
         substrate_location_type=location.location_type,
         location_text=str(location.name or ""),
@@ -150,6 +167,8 @@ def _location_link_blocked(
         match_formatted_address=canon.formatted_address,
         match_location_type=canon.location_type,
         match_geometry_type=canon.geometry_type,
+        trusted_alias_match=trusted_alias_match,
+        corroborated_identity_match=corroborated_identity_match,
     ):
         return VETO_CONTENT_SANITY_BLOCKED
 
@@ -165,6 +184,7 @@ def _location_link_blocked(
         canonical_label=str(canon.label or ""),
         canonical_location_type=canon.location_type,
         editorial_alias_keys=alias_keys,
+        corroborated_identity_match=corroborated_identity_match,
     ):
         return VETO_OBVIOUS_NAME_MISMATCH
     return None

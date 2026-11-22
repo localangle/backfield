@@ -96,12 +96,23 @@ spelling variants (`Theatre` / `Theater`, `Saint` / `St.`), and rescue a link wh
 the substrate name matches a trusted alias on the target canonical. Trusted
 aliases are catalog-editorial ones plus those written by a cleanup merge or AI
 review (`stylebook_cleanup_merge`, `stylebook_cleanup_ai_review`); aliases written
-by `substrate_ingest` are not trusted. This trust applies to the sync gate and to
-the "Potential mismatched places" list, and does not change which canonicals are
-protected from pruning. The list additionally hides plain variants of the same
-name (words run together, or one name holding every meaningful word of the other
-for comparable place types); the sync gate does not use that looser rule, because
-`Lincoln Park` is a word subset of `Lincoln Park Zoo`.
+by `substrate_ingest` are not trusted. A trusted exact alias can satisfy the named
+place-head check during cache resolution, adjudication, and sync commit; it does
+not bypass canonical self-consistency, type, or jurisdiction checks. Routine
+ingest refreshes never downgrade a trusted alias back to `substrate_ingest`, and
+merging locations records the removed canonical label as a trusted alias of the
+survivor. If the survivor has no geometry, the merge also carries over the
+source's geometry and missing address/jurisdiction fields. Before an alias exists,
+an exact street address or point can corroborate
+an expanded name only when its shorter named-place head is the same trailing
+three-or-more-word identity (for example, an added person's full name);
+co-located child venues and places with unrelated names remain distinct. This trust also
+applies to the "Potential mismatched places" list and
+does not change which canonicals are protected from pruning. The list additionally
+hides plain variants of the same name (words run together, or one name holding
+every meaningful word of the other for comparable place types); the sync gate
+does not use that looser rule, because `Lincoln Park` is a word subset of
+`Lincoln Park Zoo`.
 
 AI-assisted adjudication returns a strict structured payload (`decision`,
 `canonical_id`, finite numeric `confidence`, `same_identity`,
@@ -129,6 +140,14 @@ requires one active, compatible, self-consistent survivor; multiple survivors
 defer. Organization acronyms generated from a long name use
 `generated_acronym` provenance and are recall-only evidence. Literal canonical
 acronym labels and editor-accepted aliases remain trusted.
+
+The `duplicate-locations` v2 finder also creates review edges when one active
+canonical's label is a trusted alias of another active canonical. This detects a
+record that was recreated after an earlier merge or reviewed link even when its
+label differs too much for ordinary duplicate-name similarity. The edge is a
+review signal, not an automatic merge: branches, campuses, rooms, child venues,
+and institution/building pairs can share addresses or historical aliases and
+still require identity adjudication.
 
 Neighborhood and other admin proper-name rows also require a compatible leading
 placename head so distinct named areas cannot share identity. Stylebook-derived

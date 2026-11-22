@@ -5,10 +5,14 @@ from __future__ import annotations
 import difflib
 from collections import defaultdict
 
-from backfield_db import StylebookLocationCanonical
+from backfield_db import StylebookLocationAlias, StylebookLocationCanonical
 from sqlalchemy import text
 from sqlmodel import Session, col, select
 
+from backfield_entities.entities.location.catalog_provenance import (
+    is_location_alias_trusted_for_link_checks,
+)
+from backfield_entities.entities.location.recall import location_alias_lookup_keys
 from backfield_entities.quality.dismissals import filter_dismissed_pairs, load_dismissed_keys
 from backfield_entities.quality.finders._clustering import cluster_ids_from_pairs
 from backfield_entities.quality.finders._duplicate_labels import (
@@ -56,6 +60,45 @@ def _star_edges(members: list[str]) -> list[tuple[str, str]]:
         return []
     root = members[0]
     return [(root, member) for member in members[1:]]
+
+
+def _trusted_alias_pair_edges(
+    session: Session,
+    *,
+    stylebook_id: int,
+) -> list[tuple[str, str]]:
+    """Find active records whose label is already a reviewed alias of another active record."""
+    canonical_rows = session.exec(
+        select(StylebookLocationCanonical.id, StylebookLocationCanonical.label).where(
+            StylebookLocationCanonical.stylebook_id == stylebook_id,
+            StylebookLocationCanonical.status == "active",
+        )
+    ).all()
+    active_ids = {str(canonical_id) for canonical_id, _label in canonical_rows}
+    alias_rows = session.exec(
+        select(
+            StylebookLocationAlias.location_canonical_id,
+            StylebookLocationAlias.normalized_alias,
+            StylebookLocationAlias.provenance,
+        ).where(StylebookLocationAlias.suppressed.is_(False))
+    ).all()
+    alias_owners: dict[str, set[str]] = defaultdict(set)
+    for canonical_id, normalized_alias, provenance in alias_rows:
+        owner_id = str(canonical_id)
+        if owner_id not in active_ids:
+            continue
+        if not is_location_alias_trusted_for_link_checks(str(provenance)):
+            continue
+        alias_owners[str(normalized_alias)].add(owner_id)
+
+    pairs: list[tuple[str, str]] = []
+    for canonical_id, label in canonical_rows:
+        source_id = str(canonical_id)
+        for alias_key in location_alias_lookup_keys(str(label)):
+            for owner_id in alias_owners.get(alias_key, set()):
+                if owner_id != source_id:
+                    pairs.append((source_id, owner_id))
+    return _dedupe_pairs(pairs)
 
 
 def _exact_label_pair_edges(
@@ -213,6 +256,7 @@ def duplicate_location_pair_edges(
     head_threshold: float = DEFAULT_HEAD_SIMILARITY_THRESHOLD,
 ) -> list[tuple[str, str]]:
     exact = _exact_label_pair_edges(session, stylebook_id=stylebook_id)
+    trusted_alias = _trusted_alias_pair_edges(session, stylebook_id=stylebook_id)
     bind = session.get_bind()
     if bind is not None and bind.dialect.name == "postgresql":
         near = _postgres_near_duplicate_pair_edges(
@@ -227,7 +271,7 @@ def duplicate_location_pair_edges(
             full_threshold=full_threshold,
             head_threshold=head_threshold,
         )
-    return _dedupe_pairs([*exact, *near])
+    return _dedupe_pairs([*exact, *near, *trusted_alias])
 
 
 def duplicate_location_cluster_ids(

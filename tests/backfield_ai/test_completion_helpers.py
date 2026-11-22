@@ -10,9 +10,11 @@ from backfield_ai.completion import (
     _assistant_json_is_parseable,
     _extract_message_content_text,
     _gpt5_reasoning_effort_for_simple_completion,
+    _is_gpt6_family,
     _is_gpt56_family,
     _litellm_completion_temperature,
     _litellm_json_object_response_format_supported,
+    _needs_json_completion_guardrails,
     completion_text_sync,
 )
 from backfield_ai.constants import COST_ESTIMATE_SOURCE_LITELLM
@@ -116,11 +118,15 @@ def test_completion_text_sync_omits_temperature_for_gpt5(
 
 
 @pytest.mark.parametrize(
-    ("temperature", "reasoning_effort", "expected_temperature"),
+    ("temperature", "reasoning_effort", "expected_temperature", "expected_effort"),
     [
-        (0.0, None, None),
-        (0.0, "none", 0.0),
-        (1, None, 1),
+        # GPT-6 defaults to reasoning_effort=none, so caller temperature is sent.
+        (0.0, None, 0.0, "none"),
+        (0.0, "none", 0.0, "none"),
+        # Explicit non-none effort keeps temperature omitted unless it is 1.
+        (0.0, "low", None, "low"),
+        (1, None, 1, "none"),
+        (1, "low", 1, "low"),
     ],
 )
 def test_completion_text_sync_gpt6_temperature(
@@ -128,6 +134,7 @@ def test_completion_text_sync_gpt6_temperature(
     temperature: float,
     reasoning_effort: str | None,
     expected_temperature: float | None,
+    expected_effort: str,
 ) -> None:
     captured: dict[str, object] = {}
 
@@ -153,10 +160,7 @@ def test_completion_text_sync_gpt6_temperature(
         assert "temperature" not in captured
     else:
         assert captured.get("temperature") == expected_temperature
-    if reasoning_effort is None:
-        assert "reasoning_effort" not in captured
-    else:
-        assert captured.get("reasoning_effort") == reasoning_effort
+    assert captured.get("reasoning_effort") == expected_effort
 
 
 @pytest.mark.parametrize(
@@ -177,6 +181,25 @@ def test_gpt56_family_forces_reasoning_effort_none(model: str) -> None:
 def test_gpt55_is_not_gpt56_family() -> None:
     assert _is_gpt56_family("gpt-5.5") is False
     assert _is_gpt56_family("openai/gpt-5.5") is False
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "gpt-6",
+        "gpt-6-luna",
+        "openai/gpt-6-luna",
+    ],
+)
+def test_gpt6_family_forces_reasoning_effort_none(model: str) -> None:
+    assert _is_gpt6_family(model) is True
+    assert _needs_json_completion_guardrails(model) is True
+    assert _gpt5_reasoning_effort_for_simple_completion(model) == "none"
+
+
+def test_gpt5_is_not_gpt6_family() -> None:
+    assert _is_gpt6_family("gpt-5.6-luna") is False
+    assert _is_gpt6_family("gpt-5-mini") is False
 
 
 def test_assistant_json_is_parseable() -> None:
@@ -241,6 +264,8 @@ def test_completion_text_sync_gpt56_defaults(
         ("gpt-5.6-terra", "low", "low"),
         ("openai/gpt-5-nano", None, "minimal"),
         ("gpt-5.6-terra", None, "none"),
+        ("gpt-6-luna", None, "none"),
+        ("gpt-6-luna", "low", "low"),
     ],
 )
 def test_completion_text_sync_explicit_reasoning_effort_wins(
@@ -375,6 +400,38 @@ def test_completion_text_sync_gpt56_rejects_truncated_json_after_retry(
         )
     assert "truncated or invalid JSON" in str(ctx.value)
     assert ctx.value.result.text.startswith('{"people":')
+
+
+def test_completion_text_sync_gpt6_defaults_and_retries_truncated_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_completion(**kwargs: object) -> object:
+        calls.append(dict(kwargs))
+        if len(calls) == 1:
+            return _ok_resp('{"people":[["Iain D. Johnston","Judge","",1,"jud"', "stop")
+        return _ok_resp('{"people":[]}')
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm, "completion_cost", lambda **_kw: 0.0)
+
+    result = completion_text_sync(
+        litellm_model="openai/gpt-6-luna",
+        messages=[{"role": "user", "content": "hi"}],
+        api_key="sk-test",
+        max_tokens=None,
+        temperature=0.0,
+        timeout=30.0,
+        force_json_response=True,
+    )
+
+    assert result.text == '{"people":[]}'
+    assert len(calls) == 2
+    assert calls[0]["max_tokens"] == _GPT56_DEFAULT_MAX_COMPLETION_TOKENS
+    assert calls[1]["max_tokens"] == _GPT56_DEFAULT_MAX_COMPLETION_TOKENS * 2
+    assert calls[0]["reasoning_effort"] == "none"
+    assert calls[0]["temperature"] == 0.0
 
 
 def test_completion_text_sync_retries_empty_output_on_length(

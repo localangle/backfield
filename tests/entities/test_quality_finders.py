@@ -6,6 +6,7 @@ from backfield_db import (
     BackfieldOrganization,
     BackfieldProject,
     Stylebook,
+    StylebookLocationAlias,
     StylebookLocationCanonical,
     SubstrateLocation,
 )
@@ -105,6 +106,69 @@ def test_fuzzy_duplicate_location_clustering_sqlite() -> None:
         clusters = duplicate_location_cluster_ids(session, stylebook_id=stylebook_id)
         assert len(clusters) == 1
         assert len(clusters[0]) == 2
+
+
+def test_trusted_location_alias_collision_is_clustered_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        survivor = _add_canonical(
+            session,
+            stylebook_id=stylebook_id,
+            slug="adlai-stevenson",
+            label="Adlai E. Stevenson High School, Lincolnshire, IL",
+        )
+        recreated = _add_canonical(
+            session,
+            stylebook_id=stylebook_id,
+            slug="stevenson-high-school",
+            label="Stevenson High School, Lincolnshire, IL",
+        )
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=str(survivor.id),
+                alias_text=str(recreated.label),
+                normalized_alias="stevenson high school, lincolnshire, il",
+                provenance="stylebook_cleanup_merge",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        clusters = duplicate_location_cluster_ids(session, stylebook_id=stylebook_id)
+        assert {str(survivor.id), str(recreated.id)} in [set(cluster) for cluster in clusters]
+
+
+def test_unreviewed_location_alias_collision_is_not_clustered_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        survivor = _add_canonical(
+            session,
+            stylebook_id=stylebook_id,
+            slug="adlai-stevenson",
+            label="Adlai E. Stevenson High School, Lincolnshire, IL",
+        )
+        recreated = _add_canonical(
+            session,
+            stylebook_id=stylebook_id,
+            slug="stevenson-high-school",
+            label="Stevenson High School, Lincolnshire, IL",
+        )
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=str(survivor.id),
+                alias_text=str(recreated.label),
+                normalized_alias="stevenson high school, lincolnshire, il",
+                provenance="substrate_ingest",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        assert duplicate_location_cluster_ids(session, stylebook_id=stylebook_id) == []
 
 
 def test_suffix_only_labels_not_clustered_sqlite() -> None:
@@ -1106,6 +1170,7 @@ def test_duplicate_organization_clusters_filter_by_query_sqlite() -> None:
 def test_person_name_mismatch_finder_sqlite() -> None:
     from backfield_db import (
         BackfieldProject,
+        StylebookPersonAlias,
         StylebookPersonCanonical,
         SubstratePerson,
     )
@@ -1170,6 +1235,35 @@ def test_person_name_mismatch_finder_sqlite() -> None:
         assert rows[0].label == "Jane Doe"
         assert rows[0].mismatched_linked_count == 1
         assert "John Smith" in rows[0].mismatched_examples
+
+        alias = StylebookPersonAlias(
+            person_canonical_id=str(canon.id),
+            alias_text="John Smith",
+            normalized_alias="john smith",
+            provenance="stylebook_cleanup_merge",
+        )
+        session.add(alias)
+        session.commit()
+        assert (
+            count_person_name_mismatches(
+                session,
+                stylebook_id=stylebook_id,
+                organization_id=org_id,
+            )
+            == 0
+        )
+
+        alias.provenance = "substrate_ingest"
+        session.add(alias)
+        session.commit()
+        assert (
+            count_person_name_mismatches(
+                session,
+                stylebook_id=stylebook_id,
+                organization_id=org_id,
+            )
+            == 1
+        )
 
         dismiss_canonical_issue(
             session,

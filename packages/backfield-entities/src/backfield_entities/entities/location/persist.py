@@ -40,6 +40,7 @@ from backfield_entities.canonical.slug import (
 )
 from backfield_entities.connections.lifecycle import close_open_connections_for_canonical
 from backfield_entities.entities.location.catalog_provenance import (
+    is_location_alias_trusted_for_link_checks,
     is_location_catalog_editorial_provenance,
 )
 from backfield_entities.entities.location.policy import plan_has_ambiguous_canonical_match
@@ -136,9 +137,21 @@ def upsert_alias_for_canonical_text(
         )
     else:
         existing.alias_text = str(alias_text)
-        existing.provenance = provenance
+        existing_rank = _location_alias_provenance_rank(str(existing.provenance))
+        incoming_rank = _location_alias_provenance_rank(provenance)
+        if incoming_rank > existing_rank:
+            existing.provenance = provenance
         existing.suppressed = False
         session.add(existing)
+
+
+def _location_alias_provenance_rank(provenance: str | None) -> int:
+    """Keep routine ingest refreshes from erasing a reviewed alias decision."""
+    if is_location_catalog_editorial_provenance(provenance):
+        return 3
+    if is_location_alias_trusted_for_link_checks(provenance):
+        return 2
+    return 1
 
 
 def _upsert_alias_for_canonical(

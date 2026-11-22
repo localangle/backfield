@@ -115,7 +115,7 @@ for the product and the outside agent.
 
 | ID | Requirement | Evidence |
 | --- | --- | --- |
-| PA1 | The shared person merge carries `public_figure` (true wins), fills an empty title and affiliation, and keeps the source's aliases with a trusted merge provenance | A zero-mention source was a public figure; source aliases were all untrusted ingest aliases |
+| PA1 | The shared person merge carries `public_figure` (true wins), fills an empty title and affiliation, and keeps the source's aliases with a trusted merge provenance; person link-mismatch checks must honor those cleanup aliases while continuing to distrust ingest-only aliases | A zero-mention source was a public figure; source aliases were all untrusted ingest aliases; the 2024 merge wave initially surfaced merged name variants as false mismatches |
 | PA2 | Rewire connections before deleting the source, and de-duplicate edges that collide | 429 of 649 groups had connections on a duplicate |
 | PA3 | Do not create a person when name, title, affiliation and type match an existing record; resolve known nicknames first | 649 groups of exact copies |
 | PA4 | Do not create a person whose name is one letter from an existing record with the same organization (or, with no organization, the same title or type); link or hold it instead | About 300 spelling slips folded afterwards (`Shepsu Aakhu` and `Shepshu Aakhu`) |

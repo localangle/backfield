@@ -17,6 +17,8 @@ from backfield_entities.entities.linking.substrate_actions import (
     link_substrate_to_canonical_atomic,
 )
 from backfield_entities.entities.location.link_identity import location_merge_pair_blocked
+from backfield_entities.entities.location.persist import seed_aliases_for_canonical_label
+from backfield_entities.geo.geometry_bind import assign_geojson_geometry
 
 
 @dataclass(frozen=True)
@@ -56,6 +58,29 @@ def _linked_substrate_count(
     )
 
 
+def _preserve_source_geography_if_target_missing(
+    session: Session,
+    *,
+    source: StylebookLocationCanonical,
+    target: StylebookLocationCanonical,
+) -> None:
+    if target.geometry_json is not None or not isinstance(source.geometry_json, dict):
+        return
+    assign_geojson_geometry(session, target, dict(source.geometry_json))
+    for field_name in (
+        "formatted_address",
+        "country_code",
+        "subdivision_code",
+        "city_name",
+        "district_kind",
+        "district_number",
+        "district_key",
+    ):
+        if getattr(target, field_name) in (None, ""):
+            setattr(target, field_name, getattr(source, field_name))
+    session.add(target)
+
+
 def merge_location_canonical_into(
     session: Session,
     *,
@@ -87,6 +112,21 @@ def merge_location_canonical_into(
             f"({source.label!r} vs {target.label!r}) and cannot be merged. "
             "If they really are the same place, fix the place kind on one record first."
         )
+
+    # Approving the merge makes the removed record's label a reviewed alias of the keeper.
+    # This is preserved even when the source has no linked substrates to relink.
+    seed_aliases_for_canonical_label(
+        session,
+        canon_id=target_id,
+        label=str(source.label),
+        provenance=provenance,
+    )
+    _preserve_source_geography_if_target_missing(
+        session,
+        source=source,
+        target=target,
+    )
+    session.flush()
 
     # The merged event subsumes the per-substrate relink evidence events below.
     suppress_canonical_evidence_events(

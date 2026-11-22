@@ -310,6 +310,7 @@ def location_link_is_obvious_mismatch(
     canonical_label: str,
     canonical_location_type: str | None,
     editorial_alias_keys: frozenset[str] | set[str] | None = None,
+    corroborated_identity_match: bool = False,
 ) -> bool:
     """True when a linked substrate row is clearly not the same place as the canonical label."""
     # District-kind conflicts flag before the editorial-alias and equal-name rescues:
@@ -334,8 +335,10 @@ def location_link_is_obvious_mismatch(
     # wording); place-head conflict is too brittle there (Eighth Ward vs Ward 8).
     s_lt = (substrate_location_type or "").strip().lower()
     c_lt = (canonical_location_type or "").strip().lower()
-    if "political_district" not in (s_lt, c_lt) and location_place_heads_conflict(
-        location_text, canonical_label
+    if (
+        not corroborated_identity_match
+        and "political_district" not in (s_lt, c_lt)
+        and location_place_heads_conflict(location_text, canonical_label)
     ):
         return True
 
@@ -347,6 +350,7 @@ def location_link_is_obvious_mismatch(
         match_formatted_address=formatted_address,
         match_location_type=canonical_location_type,
         match_geometry_type=geometry_type,
+        corroborated_identity_match=corroborated_identity_match,
     ):
         return False
 

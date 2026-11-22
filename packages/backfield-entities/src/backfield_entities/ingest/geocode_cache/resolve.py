@@ -9,6 +9,7 @@ from typing import Any
 from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocationCache
 from sqlmodel import Session, col, select
 
+from backfield_entities.canonical.editorial_aliases import location_has_trusted_alias
 from backfield_entities.canonical.link_matrix import (
     autolink_container_to_fine_denied,
     link_pair_allowed,
@@ -191,6 +192,7 @@ def _canonical_winner_passes_content_sanity(
     substrate_lt: str | None,
     location_text: str,
     components: dict[str, Any] | None,
+    trusted_alias_match: bool = False,
 ) -> bool:
     geometry_json = winner.geometry_json if isinstance(winner.geometry_json, dict) else None
     if canonical_location_self_consistency_blocked(
@@ -218,6 +220,7 @@ def _canonical_winner_passes_content_sanity(
         match_formatted_address=winner.formatted_address,
         match_location_type=winner.location_type,
         match_geometry_type=winner.geometry_type,
+        trusted_alias_match=trusted_alias_match,
     )
 
 
@@ -304,6 +307,11 @@ def resolve_geocode_cache_strict_with_outcome(
             substrate_lt=substrate_lt,
             location_text=location_text,
             components=components,
+            trusted_alias_match=location_has_trusted_alias(
+                session,
+                canonical_id=str(winner.id),
+                name_or_normalized_name=normalized,
+            ),
         )
     ]
 
@@ -415,11 +423,17 @@ def materialize_canonical_match_dict(
     if not _strict_type_pair_allowed(lt, canon_lt):
         return None
     query_text = (location_text or "").strip() or str(canon.label)
+    trusted_alias_match = location_has_trusted_alias(
+        session,
+        canonical_id=str(canon.id),
+        name_or_normalized_name=query_text,
+    )
     if not _canonical_winner_passes_content_sanity(
         canon,
         substrate_lt=lt,
         location_text=query_text,
         components=components,
+        trusted_alias_match=trusted_alias_match,
     ):
         return None
     if not cache_hit_sane_for_substrate(
@@ -430,6 +444,7 @@ def materialize_canonical_match_dict(
         match_formatted_address=canon.formatted_address,
         match_location_type=canon.location_type,
         match_geometry_type=canon.geometry_type,
+        trusted_alias_match=trusted_alias_match,
     ):
         return None
     return _canonical_to_stylebook_match_dict(canon)
@@ -506,6 +521,11 @@ def build_geocode_cache_adjudication_candidates(
             substrate_lt=substrate_lt,
             location_text=location_text,
             components=comps,
+            trusted_alias_match=location_has_trusted_alias(
+                session,
+                canonical_id=cid,
+                name_or_normalized_name=location_text,
+            ),
         ):
             continue
         aliases = list(alias_tuple)[:8]

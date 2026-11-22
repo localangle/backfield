@@ -262,6 +262,64 @@ def test_decide_links_imported_canonical_by_normalized_label_without_alias(
         )
 
 
+def test_reviewed_alias_wins_over_recreated_exact_label(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BACKFIELD_STRICT_CANONICAL_GATES", "1")
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="trusted-alias-before-recreated-label")
+        survivor = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Adlai E. Stevenson High School, Lincolnshire, IL",
+            slug="adlai-e-stevenson-high-school",
+            location_type="place",
+            status="active",
+        )
+        recreated = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Stevenson High School, Lincolnshire, IL",
+            slug="stevenson-high-school",
+            location_type="place",
+            status="active",
+        )
+        session.add_all((survivor, recreated))
+        session.flush()
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=str(survivor.id),
+                alias_text="Stevenson High School, Lincolnshire, IL",
+                normalized_alias="stevenson high school, lincolnshire, il",
+                provenance="stylebook_cleanup_merge",
+                suppressed=False,
+            )
+        )
+        location = SubstrateLocation(
+            project_id=1,
+            name="Stevenson High School, Lincolnshire, IL",
+            normalized_name="stevenson high school, lincolnshire, il",
+            location_type="place",
+            status="resolved",
+            canonical_link_status="pending",
+            identity_fingerprint="fp-reviewed-alias-before-recreated-label",
+        )
+        session.add(location)
+        session.commit()
+
+        plan = decide_location_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="places",
+            location=location,
+            entry={},
+        )
+
+        assert plan.decision == CanonicalPersistDecision.LINK_EXISTING
+        assert plan.existing_canonical_id == str(survivor.id)
+        assert plan.existing_canonical_id != str(recreated.id)
+        assert plan.resolution_reasons[0]["code"] == "linked_exact_normalized_alias"
+
+
 def test_needs_review_location_still_links_exact_canonical_without_geometry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

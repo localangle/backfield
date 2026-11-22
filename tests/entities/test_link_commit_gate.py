@@ -310,6 +310,85 @@ def test_location_commit_gate_revalidates_canonical_self_consistency(
         assert veto == expected_veto
 
 
+@pytest.mark.parametrize(
+    ("alias_provenance", "include_corroborating_evidence"),
+    [
+        ("stylebook_cleanup_merge", False),
+        ("substrate_ingest", True),
+    ],
+)
+def test_location_commit_gate_accepts_confirmed_identity_with_different_name_head(
+    alias_provenance: str,
+    include_corroborating_evidence: bool,
+) -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, project_id = _seed_stylebook(session)
+        canonical = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Adlai E. Stevenson High School, Lincolnshire, IL",
+            slug="adlai-e-stevenson-high-school",
+            location_type="place",
+            country_code="US",
+            subdivision_code="IL",
+            status="active",
+            formatted_address="1 Stevenson Dr, Lincolnshire, IL 60069, USA",
+            geometry_type="Point",
+            geometry_json={"type": "Point", "coordinates": [-87.91, 42.19]},
+        )
+        session.add(canonical)
+        session.flush()
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=str(canonical.id),
+                alias_text="Stevenson High School, Lincolnshire, IL",
+                normalized_alias="stevenson high school, lincolnshire, il",
+                provenance=alias_provenance,
+                suppressed=False,
+            )
+        )
+        location = SubstrateLocation(
+            project_id=project_id,
+            name="Stevenson High School, Lincolnshire, IL",
+            normalized_name="stevenson high school, lincolnshire, il",
+            location_type="place",
+            canonical_link_status="pending",
+            formatted_address=(
+                "1 Stevenson Dr, Lincolnshire, IL 60069, USA"
+                if include_corroborating_evidence
+                else None
+            ),
+            geometry_type="Point" if include_corroborating_evidence else None,
+            geometry_json=(
+                {"type": "Point", "coordinates": [-87.91, 42.19]}
+                if include_corroborating_evidence
+                else None
+            ),
+            source_details_json={
+                "place_extract_components": {
+                    "place": {"name": "Stevenson High School"},
+                    "city": "Lincolnshire",
+                    "state": {"abbr": "IL"},
+                    "country": {"abbr": "US"},
+                }
+            },
+        )
+        session.add(location)
+        session.commit()
+
+        assert (
+            sync_link_commit_blocked(
+                session,
+                entity_type="location",
+                substrate_row=location,
+                canonical_id=str(canonical.id),
+                stylebook_id=sb_id,
+                entry={"components": location.source_details_json["place_extract_components"]},
+            )
+            is None
+        )
+
+
 def test_linked_location_refresh_revalidates_parent_child_identity() -> None:
     engine = _engine()
     with Session(engine) as session:

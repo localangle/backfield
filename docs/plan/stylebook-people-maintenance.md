@@ -230,6 +230,63 @@ Pending candidates went from 2,193 to 187. Full account: [Category 6](stylebook-
 - The extraction misses relationship titles ("Son", "Wife") with a first name only; created relatives inherit
   those titles, which spec A should stop.
 
+## Results of the 2024 full-year pass
+
+The 2024 cohort was closed on 2026-11-22 with a throughput-oriented LLM pass over the refreshed live
+queues. `duplicate-people` started at 2,629 clusters. The prepared two-reader plan folded 1,058
+canonicals; a senior good-enough partition pass folded another 1,133, and post-create closure folded 14.
+Reviewed namesake and conflicted pairs were recorded as keep-separate decisions. The final refreshed
+duplicate count is zero.
+
+Candidate cleanup linked 123 rows, created 176 canonicals, and newly deferred 1,422 rows; 253 reviewed
+rows were already deferred. One mixed-identity `Matt Smith` substrate was explicitly deferred rather than
+materialized. The 2024 cohort has zero pending person candidates after closure. Questionable-person
+review removed 59 non-person canonicals and retained 20 real people whose names also matched brands,
+organizations, or stage identities. Refreshed counts for duplicate, mismatch, and questionable-person
+checks are all zero.
+
+The merge waves preserved 263,308 active person mentions and 931,470 unsuppressed occurrences, with no
+dangling canonical links or invalid link states. They also exposed a finder gap: person mismatch checks
+did not trust aliases written by approved cleanup merges. Cleanup alias provenance is now trusted for
+person link checks, matching the location behavior, while ingest-only aliases remain untrusted.
+
+### Post-pass one-word and spelling sweep
+
+A follow-up catalog sweep on 2026-11-22 reviewed 361 linked, structurally suspicious one-word
+canonicals rather than assuming every one-word label was a surname. It retained 96 legitimate
+mononyms or otherwise specific single-name people, merged 37 rows into existing full-name
+canonicals, completed 32 labels to a supported full name, retired 96 ambiguous or conflated records,
+and removed 100 bands, animals, fictional characters, and other non-people. Two additional full-name
+variants were merged during that pass.
+
+The sweep then found 43 punctuation- or spacing-equivalent label groups that the normal duplicate
+queue did not expose. A context review merged 21 pairs and kept 23 pairs apart (one proposed merge was
+overridden after evidence showed two different people with the same name). Seven remaining obvious
+music groups were removed. A refreshed duplicate check found one final extraction spelling variant,
+`Donovan Hunter` / `Donovyn Hunter`, which was merged into the correctly spelled record.
+
+Recurring quality categories:
+
+- Surname-only and first-name-only extraction can combine unrelated people or even unrelated senses
+  of a word in one substrate record. `Johnson` combined Mayor Johnson, a court case, and an unrelated
+  worker; these records must be retired rather than guessed.
+- Article or extraction typos can produce a plausible but wrong person label. `Vargas` in a Gus
+  Varland article and `Donovan` for Donovyn Hunter required surrounding-article evidence.
+- Bands, animals, and fictional characters still leak into the person catalog when no organization or
+  namesake canonical exists, so cross-catalog comparison alone is not a sufficient questionable-person
+  check.
+- Punctuation and internal spacing (`LaSpata` / `La Spata`, straight / curly apostrophes, `VanVleet` /
+  `Van Vleet`) remain a duplicate-finder blind spot.
+- Exact shared labels remain common and often represent genuinely different people. They require role,
+  affiliation, and article context; label equality is not itself a merge rule.
+- Legitimate mononyms and stage names mean a blanket ban on one-word people would be wrong. The
+  prevention rule must distinguish supported public identities from unresolved surname/first-name
+  fragments.
+
+After the sweep, duplicate, mismatch, and questionable-person checks all report zero. The catalog has
+849 active one-word canonicals, 701 with linked evidence. Active mentions remain 263,308 and
+unsuppressed occurrences remain 931,470; dangling links and invalid link states remain zero.
+
 ## Requirements by spec
 
 **Moved.** The requirements, updated for everything learned since this list was written (including the

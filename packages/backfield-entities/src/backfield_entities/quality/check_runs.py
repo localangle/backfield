@@ -71,7 +71,7 @@ _ACTIVE_RUN_STATUSES: frozenset[str] = frozenset({"queued", "running"})
 _LIST_BATCH_SIZE = 500
 
 _ALGORITHM_VERSIONS: dict[str, str] = {
-    "duplicate-locations": "duplicate-locations:v1",
+    "duplicate-locations": "duplicate-locations:v2",
     "duplicate-people": "duplicate-people:v2",
     "duplicate-organizations": "duplicate-organizations:v2",
     "missing-geometry-locations": "missing-geometry-locations:v1",

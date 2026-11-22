@@ -122,6 +122,53 @@ def test_try_resolve_single_canonical_winner() -> None:
     assert hit["boundaries"] == [gj]
 
 
+def test_try_resolve_reviewed_alias_with_different_place_name_head() -> None:
+    gj = {"type": "Point", "coordinates": [-87.91, 42.19]}
+    engine = _engine()
+    with Session(engine) as session:
+        pid, sb_id, _ = _seed_org_sb_project(session)
+        canonical = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Adlai E. Stevenson High School, Lincolnshire, IL",
+            slug="adlai-e-stevenson-high-school",
+            location_type="place",
+            status="active",
+            country_code="US",
+            subdivision_code="IL",
+            geometry_json=gj,
+            geometry_type="Point",
+        )
+        session.add(canonical)
+        session.flush()
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=str(canonical.id),
+                alias_text="Stevenson High School, Lincolnshire, IL",
+                normalized_alias="stevenson high school, lincolnshire, il",
+                provenance="stylebook_cleanup_merge",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        hit = try_resolve_geocode_cache(
+            session,
+            project_id=pid,
+            stylebook_id=sb_id,
+            location_text="Stevenson High School, Lincolnshire, IL",
+            location_type="place",
+            components={
+                "place": {"name": "Stevenson High School"},
+                "city": "Lincolnshire",
+                "state": {"abbr": "IL"},
+                "country": {"abbr": "US"},
+            },
+        )
+
+    assert hit is not None
+    assert hit["id"] == str(canonical.id)
+
+
 def test_try_resolve_inexact_strings_miss_tier1_canonical() -> None:
     """Tier 1 is exact normalized label/alias only — no fuzzy parent matches."""
     gj = {"type": "Point", "coordinates": [-87.0, 41.0]}

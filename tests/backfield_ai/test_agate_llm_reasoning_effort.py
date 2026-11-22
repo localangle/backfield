@@ -52,10 +52,14 @@ def test_call_llm_forwards_reasoning_effort_to_litellm(
     assert captured.get("reasoning_effort") == expected
 
 
-def test_call_llm_without_run_id_omits_gpt6_temperature(
+def test_call_llm_without_run_id_defaults_gpt6_to_no_reasoning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Stylebook reviews call ``call_llm`` without ``BACKFIELD_RUN_ID``."""
+    """Stylebook reviews call ``call_llm`` without ``BACKFIELD_RUN_ID``.
+
+    GPT-6 defaults to ``reasoning_effort=none`` so JSON completions stay visible;
+    with reasoning off, the caller's temperature is allowed through.
+    """
     monkeypatch.delenv("BACKFIELD_RUN_ID", raising=False)
     captured: dict[str, object] = {}
 
@@ -74,7 +78,9 @@ def test_call_llm_without_run_id_omits_gpt6_temperature(
     )
 
     assert captured["model"] == "openai/gpt-6-luna"
-    assert "temperature" not in captured
+    assert captured.get("reasoning_effort") == "none"
+    assert captured.get("temperature") == 0.0
+    assert captured.get("max_tokens") == 8192
 
 
 def test_call_llm_without_run_id_omits_gpt5_temperature(

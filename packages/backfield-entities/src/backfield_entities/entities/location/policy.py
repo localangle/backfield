@@ -51,6 +51,7 @@ from backfield_entities.canonical.retrieval import (
 )
 from backfield_entities.entities.location.recall import (
     canonical_ids_from_location_name_keys,
+    location_alias_lookup_keys,
 )
 from backfield_entities.entities.location.review_display import deferred_policy_display_message
 from backfield_entities.entities.location.types import (
@@ -64,6 +65,7 @@ from backfield_entities.ingest.geocode_cache.resolve import (
     try_resolve_substrate_location_cache_geometry,
 )
 from backfield_entities.ingest.geocode_cache.sanity import (
+    named_location_identity_corroborated,
     substrate_canonical_link_blocked_by_content_sanity,
 )
 from backfield_entities.text.match_normalize import match_fold_key
@@ -668,6 +670,22 @@ def _apply_recall_match_gates(
         match_formatted_address=canon.formatted_address,
         match_location_type=canon.location_type,
         match_geometry_type=canon.geometry_type,
+        trusted_alias_match=bool(
+            set(location_alias_lookup_keys(str(location.normalized_name or location.name)))
+            & set(feat.normalized_aliases)
+        ),
+        corroborated_identity_match=named_location_identity_corroborated(
+            substrate_name=str(location.name),
+            canonical_label=str(canon.label),
+            substrate_formatted_address=location.formatted_address,
+            canonical_formatted_address=canon.formatted_address,
+            substrate_geometry_json=(
+                location.geometry_json if isinstance(location.geometry_json, dict) else None
+            ),
+            canonical_geometry_json=(
+                canon.geometry_json if isinstance(canon.geometry_json, dict) else None
+            ),
+        ),
     ):
         sc = min(sc, _RECALL_SCORE_DEMOTED)
     return sc

@@ -6,6 +6,7 @@ import pytest
 from backfield_entities.ingest.geocode_cache.sanity import (
     cache_hit_sane_for_substrate,
     explicit_location_components_match_labels,
+    named_location_identity_corroborated,
 )
 
 
@@ -171,6 +172,52 @@ def test_place_allows_same_venue_with_neighborhood_tail_and_extract_postal() -> 
             match_geometry_type="Point",
         )
         is True
+    )
+
+
+def test_place_trusted_alias_allows_expanded_editorial_name() -> None:
+    kwargs = {
+        "substrate_location_type": "place",
+        "location_text": "Stevenson High School, Lincolnshire, IL",
+        "components": {
+            "place": {"name": "Stevenson High School"},
+            "city": "Lincolnshire",
+            "state": {"abbr": "IL"},
+        },
+        "match_label": "Adlai E. Stevenson High School, Lincolnshire, IL",
+        "match_formatted_address": (
+            "1 Stevenson Dr, Lincolnshire, IL 60069, USA"
+        ),
+        "match_location_type": "place",
+        "match_geometry_type": "Point",
+    }
+
+    assert cache_hit_sane_for_substrate(**kwargs) is False
+    assert cache_hit_sane_for_substrate(**kwargs, trusted_alias_match=True) is True
+
+
+def test_corroborating_place_evidence_requires_shared_name_identity() -> None:
+    common = {
+        "substrate_formatted_address": "1 Stevenson Dr, Lincolnshire, IL 60069, USA",
+        "canonical_formatted_address": "1 Stevenson Dr, Lincolnshire, IL 60069, USA",
+        "substrate_geometry_json": {
+            "type": "Point",
+            "coordinates": [-87.91, 42.19],
+        },
+        "canonical_geometry_json": {
+            "type": "Point",
+            "coordinates": [-87.91, 42.19],
+        },
+    }
+    assert named_location_identity_corroborated(
+        substrate_name="Stevenson High School, Lincolnshire, IL",
+        canonical_label="Adlai E. Stevenson High School, Lincolnshire, IL",
+        **common,
+    )
+    assert not named_location_identity_corroborated(
+        substrate_name="Performing Arts Center, Lincolnshire, IL",
+        canonical_label="Adlai E. Stevenson High School, Lincolnshire, IL",
+        **common,
     )
 
 

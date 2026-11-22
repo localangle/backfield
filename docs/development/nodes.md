@@ -356,18 +356,17 @@ body is shortened, so very long articles are embedded from their opening text an
 does not reflect the tail. The output sets `truncated: true` when this happens. This is a
 deliberate short-term choice; chunked or averaged embeddings would be a future change.
 
-GPT-5.6 extract completions (`gpt-5.6`, Sol, Terra, Luna) always send
-`reasoning_effort=none` and an explicit completion budget (default 8,192 tokens,
-retried once if the JSON is empty or truncated). Do not fall back to `minimal`; 5.6
-does not support it. Place, Person, and Organization Extract send
+GPT-5.6 and GPT-6 extract completions (`gpt-5.6` Sol/Terra/Luna, `gpt-6` Luna, and
+later) always send `reasoning_effort=none` and an explicit completion budget (default
+8,192 tokens, retried once if the JSON is empty or truncated). Do not fall back to
+`minimal` for 5.6; it does not support it. Place, Person, and Organization Extract send
 `reasoning_effort=low` to the original GPT-5 family (`gpt-5`, `gpt-5-mini`,
 `gpt-5-nano`): at `minimal`, nano answers the extract prompt with an empty list for
 articles full of entities. Other GPT-5 calls still pick the lowest LiteLLM-supported
 effort (`none`, then `minimal`). GPT-6 and later omit temperature while reasoning
-is on, including when no effort is set. `reasoning_effort=none` may still send
-the caller's temperature. There is no GPT-6 effort default. Stylebook candidate and
-cleanup AI review calls go through the same completion helper when they invoke
-`call_llm` without an Agate run id.
+is on; with the extract default of `reasoning_effort=none`, the caller's temperature
+may still be sent. Stylebook candidate and cleanup AI review calls go through the same
+completion helper when they invoke `call_llm` without an Agate run id.
 
 ## Canvas components
 

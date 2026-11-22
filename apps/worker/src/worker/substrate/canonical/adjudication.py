@@ -9,6 +9,7 @@ from typing import Any
 
 from agate_utils.llm import call_llm
 from backfield_db import StylebookLocationCanonical, SubstrateLocation
+from backfield_entities.canonical.editorial_aliases import location_has_trusted_alias
 from backfield_entities.canonical.jurisdiction import (
     district_identity_from_components,
     district_identity_key,
@@ -29,6 +30,7 @@ from backfield_entities.entities.location.policy import (
     substrate_may_materialize_canonical_after_recall,
 )
 from backfield_entities.ingest.geocode_cache.sanity import (
+    named_location_identity_corroborated,
     substrate_canonical_link_blocked_by_content_sanity,
 )
 from sqlmodel import Session, select
@@ -323,6 +325,35 @@ def resolve_location_adjudication_plan(
         return _reject_link_extra(outcome="no_high_confidence_link")
 
     comps = place_extract_components_from_entry(location, entry)
+    trusted_alias_match = (
+        location_has_trusted_alias(
+            session,
+            canonical_id=chosen,
+            name_or_normalized_name=str(location.normalized_name or location.name or ""),
+        )
+        if session is not None
+        else False
+    )
+    chosen_canonical = (
+        session.get(StylebookLocationCanonical, chosen) if session is not None else None
+    )
+    corroborated_identity_match = bool(
+        chosen_canonical
+        and named_location_identity_corroborated(
+            substrate_name=str(location.name or ""),
+            canonical_label=str(chosen_canonical.label or ""),
+            substrate_formatted_address=location.formatted_address,
+            canonical_formatted_address=chosen_canonical.formatted_address,
+            substrate_geometry_json=(
+                location.geometry_json if isinstance(location.geometry_json, dict) else None
+            ),
+            canonical_geometry_json=(
+                chosen_canonical.geometry_json
+                if isinstance(chosen_canonical.geometry_json, dict)
+                else None
+            ),
+        )
+    )
     if substrate_canonical_link_blocked_by_content_sanity(
         substrate_location_type=location.location_type,
         location_text=str(location.name),
@@ -331,6 +362,8 @@ def resolve_location_adjudication_plan(
         match_formatted_address=canon_fa,
         match_location_type=canon_location_type,
         match_geometry_type=canon_gt,
+        trusted_alias_match=trusted_alias_match,
+        corroborated_identity_match=corroborated_identity_match,
     ):
         return _reject_link_extra(outcome="content_sanity_coerced")
 

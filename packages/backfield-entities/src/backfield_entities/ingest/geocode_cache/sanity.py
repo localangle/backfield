@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from backfield_entities.canonical.jurisdiction import (
+    geojson_point_lon_lat,
     jurisdiction_from_components,
     parse_jurisdiction_from_formatted_address,
 )
@@ -66,6 +67,7 @@ _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 _INTERSECTION_AND_RE = re.compile(r"\s+(?:and|&)\s+", re.IGNORECASE)
 _DIRECTION_PREFIX = frozenset({"n", "north", "s", "south", "e", "east", "w", "west"})
 _NAMED_POI_TYPES: frozenset[str] = frozenset({"place", "point", "natural"})
+_IDENTITY_HEAD_STOPWORDS: frozenset[str] = frozenset({"a", "an", "and", "at", "of", "the"})
 
 
 def autolink_fine_substrate_to_container_canonical_denied(
@@ -180,6 +182,51 @@ def named_location_heads_compatible(left: str, right: str) -> bool:
     if left_head == right_head:
         return True
     return left_head.replace(" ", "") == right_head.replace(" ", "")
+
+
+def named_location_identity_corroborated(
+    *,
+    substrate_name: str,
+    canonical_label: str,
+    substrate_formatted_address: str | None,
+    canonical_formatted_address: str | None,
+    substrate_geometry_json: dict[str, Any] | None,
+    canonical_geometry_json: dict[str, Any] | None,
+) -> bool:
+    """Confirm expanded POI names with shared core words plus exact place evidence."""
+    substrate_tokens = [
+        token
+        for token in _identity_head_key(substrate_name).split()
+        if token not in _IDENTITY_HEAD_STOPWORDS
+    ]
+    canonical_tokens = [
+        token
+        for token in _identity_head_key(canonical_label).split()
+        if token not in _IDENTITY_HEAD_STOPWORDS
+    ]
+    shorter = min((substrate_tokens, canonical_tokens), key=len)
+    longer = max((substrate_tokens, canonical_tokens), key=len)
+    if len(shorter) < 3 or longer[-len(shorter) :] != shorter:
+        return False
+
+    substrate_address = normalize_substrate_cache_query(substrate_formatted_address or "")
+    canonical_address = normalize_substrate_cache_query(canonical_formatted_address or "")
+    exact_street_address = bool(
+        substrate_address
+        and canonical_address
+        and _HOUSE_NUMBER_RE.search(substrate_address)
+        and substrate_address == canonical_address
+    )
+
+    substrate_point = geojson_point_lon_lat(substrate_geometry_json)
+    canonical_point = geojson_point_lon_lat(canonical_geometry_json)
+    exact_point = bool(
+        substrate_point
+        and canonical_point
+        and abs(substrate_point[0] - canonical_point[0]) <= 1e-6
+        and abs(substrate_point[1] - canonical_point[1]) <= 1e-6
+    )
+    return exact_street_address or exact_point
 
 
 def canonical_location_self_consistency_blocked(
@@ -405,6 +452,8 @@ def cache_hit_sane_for_substrate(
     match_formatted_address: str | None = None,
     match_location_type: str | None = None,
     match_geometry_type: str | None = None,
+    trusted_alias_match: bool = False,
+    corroborated_identity_match: bool = False,
 ) -> bool:
     """Return False when a cache match is too coarse or inconsistent for this extract row."""
     substrate_lt = (substrate_location_type or "").strip().lower() or None
@@ -487,7 +536,11 @@ def cache_hit_sane_for_substrate(
                 if len(_meaningful_place_name_tokens(token)) < 2:
                     return True
             if canon_lt in _NAMED_POI_TYPES:
-                if not named_location_heads_compatible(location_text, match_label):
+                if (
+                    not trusted_alias_match
+                    and not corroborated_identity_match
+                    and not named_location_heads_compatible(location_text, match_label)
+                ):
                     return False
             elif not _label_contains_token(label_blob, token):
                 return False
@@ -519,6 +572,8 @@ def substrate_canonical_link_blocked_by_content_sanity(
     match_formatted_address: str | None = None,
     match_location_type: str | None = None,
     match_geometry_type: str | None = None,
+    trusted_alias_match: bool = False,
+    corroborated_identity_match: bool = False,
 ) -> bool:
     """True when type policy allows a pair but label/content checks forbid linking."""
     return not cache_hit_sane_for_substrate(
@@ -529,4 +584,6 @@ def substrate_canonical_link_blocked_by_content_sanity(
         match_formatted_address=match_formatted_address,
         match_location_type=match_location_type,
         match_geometry_type=match_geometry_type,
+        trusted_alias_match=trusted_alias_match,
+        corroborated_identity_match=corroborated_identity_match,
     )

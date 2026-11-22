@@ -1,6 +1,6 @@
 # Stylebook maintenance: organizations (running plan)
 
-**Status:** Closed 2026-11-18; nothing here is a runtime contract. Organizations follow places and
+**Status:** Closed through 2026-11-22; nothing here is a runtime contract. Organizations follow places and
 people in [`stylebook-maintenance-program.md`](stylebook-maintenance-program.md). The reusable method and
 requirements are in [`stylebook-places-requirements.md`](stylebook-places-requirements.md) and
 [`stylebook-people-requirements.md`](stylebook-people-requirements.md).
@@ -156,6 +156,23 @@ Close with `stylebook-organizations-requirements.md`: lessons, operating tiers, 
 product decisions, metrics and remaining review lists.
 
 ## Results
+
+### 2024 cohort follow-up — 2026-11-22
+
+The full 2024 ingest added a new organization wave after the original catalog cleanup. The pass reviewed
+4,279 live duplicate edges, 3,351 questionable-prefilter records, and 209 pending candidates with tracked
+Luna and Terra calls. Primary consensus, evidence-change closure, and a final binary pass merged 2,417
+duplicate source canonicals and recorded 1,135 surviving keep-separate or related decisions. It also
+retired 124 zero-evidence ingest orphans, waived 167 product/platform or other non-organization candidates,
+and promoted 40 linked-name variants to trusted aliases.
+
+Active canonicals fell from 33,913 to 31,372 while all 39,021 linked substrate organizations, 260,287
+mentions, and 338,723 unsuppressed occurrences were preserved. Persisted checks close at zero duplicate
+clusters and zero mismatches. The 853 questionable rows and 42 pending candidates are explicit reviewed
+holds, not unread work; no questionable record passed both the two-reader wrong-boundary decision and the
+live empty-evidence retirement gate. No zero-evidence ingest orphan, dangling reference, invalid link state,
+or cross-Stylebook reference remains. The 508 tracked calls used 10,928,902 tokens at an estimated direct
+model cost of $10.39.
 
 The guarded waves completed on 2026-11-18:
 

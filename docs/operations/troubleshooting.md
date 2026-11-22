@@ -110,11 +110,11 @@ This serializes nodes within each item; it does not change concurrency across di
 ## Extract nodes fail with truncated JSON
 
 Person, Organization, and Place Extract can fail with `Unterminated string` or similar
-JSON parse errors when a GPT-5.6 model (Terra/Luna especially) spends the completion
-budget on hidden reasoning and returns a half-written object. Backfield forces
-`reasoning_effort=none` and an explicit `max_completion_tokens` for `gpt-5.6*` and
-retries once when the JSON is truncated. If failures persist, add Document Chunker or
-switch the extract node to GPT-5.5.
+JSON parse errors when a GPT-5.6 or GPT-6 model (Terra/Luna especially) spends the
+completion budget on hidden reasoning and returns a half-written object. Backfield
+forces `reasoning_effort=none` and an explicit `max_completion_tokens` for `gpt-5.6*`
+and `gpt-6*`, and retries once when the JSON is truncated. If failures persist, add
+Document Chunker or switch the extract node to GPT-5.5.
 
 ## Extract nodes succeed but return no entities
 

@@ -5,8 +5,9 @@ runbook, not a runtime contract. Do not turn it into a reusable skill until this
 has completed and its exceptions are incorporated.
 
 This runbook applies the lessons from the 2025 cleanup across locations, people, and organizations.
-It is intentionally conservative: an autonomous run may leave explained holds, but it must not
-force a destructive identity decision merely to empty a queue.
+It is throughput-oriented: LLM review is the practical adjudicator for queues whose volume prevents
+human review. The run should accept a bounded false-positive risk instead of leaving most work
+unreviewed. Holds require concrete conflicting evidence, not merely incomplete corroboration.
 
 Related evidence and product intent:
 
@@ -18,50 +19,49 @@ Related evidence and product intent:
 
 ## 1. Goal
 
-After one complete publication year has been ingested, autonomously review and safely resolve all
-cohort-triggered Stylebook quality work for:
+After one complete publication year has been ingested, autonomously review and resolve all current
+project-scoped Stylebook quality work for:
 
 - locations;
 - people;
 - organizations;
-- their open and cohort-changed deferred candidate queues; and
+- their open and current project-scoped deferred candidate queues; and
 - all registered cleanup checks.
 
-The run should maximize accuracy, not queue closure. It may merge, create, link, relink, unlink,
+The run should balance useful queue reduction with bounded error risk. It may merge, create, link,
+relink, unlink,
 dismiss, waive/defer, repair aliases or metadata, repair geography, and soft-retire records when
 the evidence and existing shared operations support those actions. It must preserve evidence,
 leave an auditable decision trail, and report both completed work and intentional holds.
 
 ## 2. Locked decisions for this experiment
 
-1. **Guarded autonomy.** Apply only actions that pass the model, rule, veto, dry-run, and integrity
-   gates below. Missing or conflicting evidence becomes a hold.
+1. **LLM-led autonomy.** Models decide identity and action. Rules retrieve candidates and enforce
+   concrete integrity or identity conflicts; missing corroboration alone is not a veto.
 2. **All quality queues.** Include candidates, duplicates, mismatches, questionable canonicals,
    and location geography.
-3. **Cohort-triggered scope.** An action is in scope when at least one candidate, canonical, edge,
-   substrate row, mention, or evidence item was created or changed by the new-year cohort. Older
-   records may be mutated to resolve that issue. Report old-only issues; do not mutate them.
+3. **Current-queue scope.** Every item in the selected project's current queue is in scope. The
+   publication-year cohort remains a reporting dimension, not a filter that leaves residual work.
 4. **Reversible operations only.** Hard deletion is prohibited. If a shared operation cannot express
    a reversible correction, hold it as `tooling_gap`.
-5. **One backup.** Create and validate exactly one full-database backup near the start, before the
-   first mutation. Do not create per-phase backups.
-6. **Write freeze.** Ingest and manual Stylebook edits remain stopped from initial snapshot through
-   final verification.
-7. **Models.** Use exact active Backfield configurations `GPT-6 Luna` (`gpt-6-luna`) and
+5. **Transactional recovery.** Use per-item transactions, freshness checks, idempotent keys, and
+   before/after ledgers. A dedicated backup and global write freeze are optional operator choices.
+6. **Models.** Use exact active Backfield configurations `GPT-6 Luna` (`gpt-6-luna`) and
    `GPT-6.1 Terra` (`gpt-6.1-terra`). Never silently substitute another model.
-8. **Disagreement protocol.** Luna and Terra read independently and blindly. On disagreement, each
-   receives the other's evidence and rationale and independently votes once more. Apply only on
-   converged decisions with no hard veto; otherwise hold.
-9. **Parallel reads, serialized writes.** Evidence construction and model calls may run in parallel.
+7. **Disagreement protocol.** Luna and Terra read independently and blindly. On disagreement, each
+   receives the other's evidence and rationale and independently votes once more. Convergence is
+   preferred but not mandatory when one vote is high-confidence and the other names only
+   uncertainty, with no concrete conflict or competing target.
+8. **Parallel reads, serialized writes.** Evidence construction and model calls may run in parallel.
    Mutations are dependency-ordered and transactional.
-10. **Bounded closure.** Stop when a full closure iteration makes no changes or after three closure
+9. **Bounded closure.** Stop when a full closure iteration makes no changes or after three closure
     iterations, whichever comes first.
-11. **Targeted outside evidence.** Public research is allowed only when a high-risk or high-impact
+10. **Targeted outside evidence.** Public research is allowed only when a high-risk or high-impact
     ambiguity cannot be settled locally. Store URLs and exact claims. Uncited model memory never
     overrides local evidence or a hard veto.
-12. **Accuracy before cost.** Estimate and report spend, but do not reduce review quality to meet a
+11. **Accuracy before cost.** Estimate and report spend, but do not reduce review quality to meet a
     cost target.
-13. **Model-only quality audit.** Quality estimates are explicitly model-estimated, not human ground
+12. **Model-only quality audit.** Quality estimates are explicitly model-estimated, not human ground
     truth. Do not report human review time.
 
 This experiment is an owner-authorized exception to the older default that sensitive person merges
@@ -78,9 +78,7 @@ Do not begin until the operator supplies or confirms:
 - publication year;
 - ingest/Agate run IDs that produced the year;
 - all processing and retries for the year are complete;
-- ingest and manual Stylebook edits are frozen;
 - local stack and worker are healthy;
-- direct database access is available for the backup; and
 - Luna and Terra are active and their credentials work.
 
 Resolve the cohort primarily as `project + article publication year`. Cross-check that population
@@ -93,7 +91,7 @@ Also require:
 - no dangling canonical references at baseline;
 - no failed migration or worker task affecting the cohort;
 - a writable durable artifact directory; and
-- enough disk space for the backup and artifacts.
+- enough disk space for artifacts.
 
 ## 4. Run identity and artifacts
 
@@ -123,16 +121,16 @@ The directory contains:
 - `ledger.jsonl` — one before/after record per attempted operation;
 - `metrics.json` — definitions, numerators, denominators, and values;
 - `final-report.md`; and
-- `backup-manifest.json` — backup path, size, checksum, PostgreSQL version, and restore-list result.
+- optional `backup-manifest.json` when an operator elects to take an out-of-band snapshot.
 
 Use atomic writes. Hash packets, outputs, decisions, and the apply plan. Never overwrite a reader
 output or before-state ledger; append a new attempt with its own ID.
 
-## 5. Baseline and single backup
+## 5. Baseline and recovery
 
 ### 5.1 Baseline snapshot
 
-Before the backup and any mutation, record:
+Before mutation, record:
 
 - cohort article count and run IDs;
 - articles with missing or conflicting publication-year/run membership;
@@ -149,24 +147,21 @@ Before the backup and any mutation, record:
 Record cohort and global values separately. A cohort-triggered merge may legitimately move older
 references, so global before/after counts remain necessary.
 
-### 5.2 Full-database backup
+### 5.2 Recovery posture
 
-After baseline validation and before any mutation:
+A cleanup run does not require a dedicated full-database backup or a global write freeze. Operators
+may use an existing database snapshot, but backup creation and validation are not mutation gates.
 
-1. Use the direct PostgreSQL connection.
-2. Create one custom-format `pg_dump` of the full database.
-3. Require a non-empty file.
-4. Require `pg_restore --list` to succeed.
-5. Compute SHA-256 and byte size.
-6. Write and fsync `backup-manifest.json`.
-7. Confirm the recorded checksum matches a second read.
+Recovery relies on:
 
-If any step fails, stop. A shell-path failure is not a validated backup, and `pg_dump` exit status
-alone is insufficient.
+- one item or merge component per transaction;
+- a before/after ledger with model and evidence provenance;
+- stale-evidence and existence checks immediately before each transaction;
+- idempotent operation keys; and
+- shared merge/link/unlink functions that preserve references.
 
-Do not create another backup during this run. Per-operation before-state ledgers and transactions
-provide local recovery. The backup is the last-resort run-level recovery point. Never restore it
-automatically; stop and present the restore decision.
+Concurrent ingest is allowed. A stale item is skipped and rematerialized rather than aborting the
+run. Never auto-restore a database snapshot.
 
 ## 6. Queue inventory
 
@@ -177,8 +172,9 @@ The registered cleanup checks are:
 - organizations: `duplicate-organizations`, `mismatched-organizations`,
   `questionable-organization-canonicals`.
 
-Also include open candidate queues for all three types. Existing deferred items are in scope only
-when cohort evidence changed them; otherwise report them as historical.
+Also include open candidate queues for all three types. Existing deferred items are in scope when
+they belong to the selected project/year or remain in the current project queue. Do not limit a
+pass to new or evidence-changed items.
 
 Materialize exact scored edges for duplicate checks. Never expand a connected component into every
 possible pair. For list checks and candidates, materialize stable item IDs. Store the dismissal set
@@ -304,24 +300,35 @@ When actions or targets disagree:
 1. Give each reader the original packet plus the other reader's rationale and decisive evidence.
 2. Ask each to critique the other decision and vote again independently.
 3. Preserve original and revised outputs.
-4. Apply only if revised actions and targets converge, confidence gates pass, and no veto applies.
-5. Otherwise hold with both reasons.
+4. Apply when revised actions and targets converge, or when one reader gives a high-confidence
+   actionable decision and the other gives only an uncertainty/insufficient-evidence hold with no
+   concrete conflicting evidence or competing target.
+5. Hold when readers propose competing actions or targets, or either identifies a concrete veto.
+
+For duplicate clusters, differing partitions are not automatically a hold. If both readers vote to
+merge and name no concrete veto, combine their proposed identity groups. If either names a concrete
+veto, apply only the member pairs present in both proposed partitions and leave the rest current.
 
 No model has a special judge role. A repeated call is not an independent third model.
 
 ### 9.4 Confidence gates
 
-- Merge, link, relink, create, alias/metadata repair, and geometry repair require converged action
-  and target, neither vote low confidence, and at least one high-confidence vote.
+- Merge, link, relink, create, alias/metadata repair, and geometry repair pass with converged
+  medium-or-better votes, or one high-confidence vote after critique when the other vote is only
+  uncertainty and names no concrete contradiction.
 - Sensitive-person identity changes require both final votes high confidence.
-- Unlink and soft retirement require both final votes high confidence.
-- Dismiss/keep-separate and waive/defer require converged final actions; low confidence is a hold.
+- Unlink and soft retirement pass with converged medium-or-better votes, or one high-confidence
+  vote when the other reader names no concrete counterevidence.
+- Dismiss/keep-separate and waive/defer may pass on one high-confidence vote when the other reader
+  names no competing identity or concrete contradiction.
 - Conflicting target labels, types, kinds, geometry, or fields require an explicit field-resolution
   plan accepted by both readers.
 
 ## 10. Hard guards
 
-Hard guards run after model decisions and cannot be overridden by confidence.
+Hard guards run after model decisions and cannot be overridden by confidence. Rules are not
+substitute identity adjudicators: they generate candidates, check integrity, and block only
+concrete contradictions.
 
 ### 10.1 All entities
 
@@ -368,30 +375,22 @@ Type mismatch alone is not an organization identity veto.
 
 ## 11. Adversarial audit
 
-Before mutation, adversarially audit every proposed:
+Adversarial review is a quality sample, not a gate on every action. Select deterministic stratified
+samples by entity type, issue class, operation, confidence band, reference-impact band, and
+agreement path. Audit all rare and sensitive strata and store the sample seed before outcomes.
 
-- merge;
-- unlink;
-- soft retirement; and
-- geometry change that propagates to linked substrates or contradicts current references.
-
-Give Luna and Terra the proposed action without supporting model verdicts and ask each to find
-evidence that it is wrong. Any substantiated objection, new hard veto, or unresolved disagreement
-holds the action.
-
-For lower-risk actions, select deterministic stratified samples by entity type, issue class,
-operation, confidence band, reference-impact band, and agreement path. Store the sample seed before
-reading outcomes.
+A substantiated objection holds the sampled action and pauses that action's stratum for review.
+Unsampled actions proceed through the ordinary LLM decision and hard-guard gates.
 
 ## 12. Execution order
 
-### Phase 0 — freeze, preflight, baseline, and backup
+### Phase 0 — preflight and baseline
 
-Complete Sections 3–5. No mutation occurs before the validated backup manifest exists.
+Complete Sections 3–5. Mutation may begin after model/accounting and integrity preflight passes.
 
 ### Phase 1 — stabilize existing organization canonicals
 
-Process cohort-triggered:
+Process all current project-scoped:
 
 1. questionable organization canonicals;
 2. organization mismatches;
@@ -401,7 +400,7 @@ Organizations run first so later person affiliation and graph evidence points to
 
 ### Phase 2 — stabilize existing location canonicals
 
-Process cohort-triggered:
+Process all current project-scoped:
 
 1. location mismatches;
 2. location duplicates;
@@ -411,7 +410,7 @@ Identity stabilizes before geography so work is not spent repairing a duplicate 
 
 ### Phase 3 — stabilize existing person canonicals
 
-Process cohort-triggered:
+Process all current project-scoped:
 
 1. questionable person canonicals;
 2. person mismatches;
@@ -421,7 +420,7 @@ Use stabilized organization and location graph evidence.
 
 ### Phase 4 — process candidates
 
-Process open and cohort-changed deferred candidates in this order:
+Process open and current project-scoped deferred candidates in this order:
 
 1. organizations;
 2. locations;
@@ -431,12 +430,16 @@ For each candidate choose only among link to an existing canonical, create with 
 waive/defer with a reason, or hold. Do not create when recall returns an unresolved identity
 conflict. A geocoder may create or referee but never decides identity alone.
 
+Before applying creates, group decisions with the same normalized label, type, address, and
+geometry identity. Create one canonical and link every member of that group to it so the cleanup
+does not manufacture another duplicate set.
+
 ### Phase 5 — closure iterations
 
 Rerun all candidate queues and cleanup checks. Each iteration:
 
 1. materializes fresh candidate items and scored edges;
-2. selects only cohort-triggered or evidence-changed work;
+2. reviews every current in-scope item, including unchanged residual work;
 3. reviews and applies through the same gates;
 4. refreshes persisted check runs; and
 5. records new, resolved, held, and disappeared issues.
@@ -454,12 +457,12 @@ Every queue follows the same state machine:
 4. **Read.** Run blinded Luna and Terra batches.
 5. **Deliberate.** Cross-critique disagreements once.
 6. **Guard.** Apply hard vetoes and merge-component consistency checks.
-7. **Audit.** Run required adversarial reviews and lower-risk samples.
+7. **Audit.** Run deterministic stratified adversarial samples and all sensitive strata.
 8. **Plan.** Choose targets, field resolutions, source-to-target maps, and operation order.
-9. **Dry run.** Execute the whole queue plan in rollback-only transactions. Recompute the queue from
-   inside simulated state and account for disappeared, remapped, and pre-dismissed items.
-10. **Fresh preflight.** Immediately before mutation, require the live set and evidence hashes to
-    match the approved plan.
+9. **Canary.** Dry-run and apply a small representative canary when the operation path or schema is
+   new; do not require a full-queue rollback rehearsal for an already validated shared operation.
+10. **Fresh preflight.** Immediately before each mutation, require that item's evidence hash and
+    source/target preconditions to remain current.
 11. **Apply.** Use shared entity, candidate, connection, geometry, dismissal, and retirement
     functions. Never use ad hoc SQL to bypass a missing operation.
 12. **Reindex.** Queue semantic reindex work for moved or changed entities.
@@ -467,6 +470,15 @@ Every queue follows the same state machine:
     link states, dangling rows, and affected queue.
 14. **Refresh.** Run the persisted cleanup check so the UI displays current state.
 15. **Ledger.** Append actual before/after results, activity/event IDs, reindex scopes, and holds.
+
+For locations, duplicate materialization must include active-canonical label ↔ trusted-alias
+collisions, not only exact or similar labels. After every location merge or candidate-create wave,
+rerun that check and classify newly recreated records before moving to the next entity type.
+Packets must expose alias provenance and timestamps so readers can recognize a prior identity
+decision while still holding parent/child, branch, campus, room, terminal, and
+institution/building pairs. Consensus is evaluated per proposed merge group: a hard veto for an
+excluded child or branch must dismiss that cross-group edge, not block a merge group on which both
+readers agree.
 
 ## 14. Apply and recovery rules
 
@@ -487,18 +499,16 @@ operation—roll back that item, become a named hold, and allow independent work
 
 Abort the entire run on:
 
-- backup or manifest invalidity;
-- loss of the write freeze;
 - model substitution or accounting failure;
 - unexplained candidate-set drift;
 - evidence, alias, metadata, connection, geometry, mention, or occurrence loss;
 - dangling or cross-Stylebook references;
 - failed global invariant;
 - repeated provider failure preventing the two-model policy; or
-- mutation outside the approved cohort-triggered plan.
+- mutation outside the current LLM-approved plan.
 
 After a global abort, perform no more mutations. Write observed state and recovery options. Never
-auto-restore the backup.
+auto-restore a database snapshot.
 
 ## 15. Metrics
 
@@ -636,7 +646,7 @@ After the final closure iteration:
 - model-estimated quality with sample sizes and intervals;
 - integrity results;
 - cost per 1,000 articles;
-- backup and ledger locations; and
+- optional snapshot and required ledger locations; and
 - whether the run stopped stable, reached the iteration cap, or aborted.
 
 Distinguish cohort-triggered actions from historical-only findings, observed facts from estimates,
@@ -646,10 +656,10 @@ applied actions from dismissals/holds, and expected transitions from data loss.
 
 The experiment succeeds when:
 
-- cohort and freeze are explicit;
-- the single backup is validated before mutation;
+- cohort and current project scope are explicit;
+- each mutation has current preconditions and transactional recovery;
 - every in-scope queue passes the same evidence and safety gates;
-- every high-risk action passes adversarial audit;
+- adversarial audit covers a deterministic sample plus all sensitive-person actions;
 - mutations are reversible and ledgered;
 - no global integrity invariant regresses;
 - all model calls use Luna/Terra without silent substitution;
@@ -669,6 +679,7 @@ Do not create the skill during this run. After the final report:
 3. Identify prompts, packet schemas, metrics, and stop gates that remained stable.
 4. Decide whether the stable procedure is safe to encode as a skill.
 
-Any future skill must interview for all required scope/freeze inputs, refuse to run with missing
+Any future skill must interview for all required scope inputs, refuse to run with missing
 answers, use existing shared operations, never silently choose a Stylebook/project/model, and retain
-the backup, evidence-hash, dry-run, ledger, and fail-closed requirements.
+the evidence-hash, transactional ledger, representative canary, and fail-closed integrity
+requirements.

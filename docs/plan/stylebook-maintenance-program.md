@@ -15,7 +15,9 @@ people were planned in [`stylebook-people-maintenance.md`](stylebook-people-main
 [`stylebook-organizations-maintenance.md`](stylebook-organizations-maintenance.md) and closed in
 [`stylebook-organizations-requirements.md`](stylebook-organizations-requirements.md). The next
 full-year experiment is specified in
-[`stylebook-autonomous-year-cleanup.md`](stylebook-autonomous-year-cleanup.md).
+[`stylebook-autonomous-year-cleanup.md`](stylebook-autonomous-year-cleanup.md). The proposed boundaries
+for reusable skills, functions, APIs, and pipeline jobs are cataloged in
+[`stylebook-maintenance-job-catalog.md`](stylebook-maintenance-job-catalog.md).
 
 ## How we work
 
@@ -274,6 +276,56 @@ helpers as the link-commit gate. It lists places, one row per canonical, and dis
 Finder fix applied and tested. Four items remain (two street-address mentions of a named place, two
 name variants); the model review has little left to do here, so this category is closer to done than expected. Lesson: before
 building a review for a queue, measure what the queue's own rules and our own earlier work contribute.
+
+### Recreated canonicals after reviewed aliases (2026-11-22)
+
+The 2024 location pass exposed a second-order failure: a merge correctly preserved the removed
+label as a trusted alias, but later ingest could still create a new active canonical with that
+label. The immediate audit found 849 active canonical pairs where one label was already a trusted
+alias of the other. Of those, 349 shared exact stored address and geometry and had linked
+substrates on both sides; 337 source records were created after the trusted alias already existed.
+A deterministic 30-pair sample judged 28 likely merges and found two institution/building or
+container/child exceptions, so this remains an adjudicated queue rather than an unattended merge.
+
+Runtime hardening:
+
+- reviewed alias provenance cannot be downgraded by a later `substrate_ingest` refresh;
+- trusted exact aliases can satisfy the named-place content check in cache, adjudication, and sync
+  commit paths while type, jurisdiction, and canonical self-consistency remain enforced;
+- exact trusted-alias planning precedes exact canonical-label planning, so a recreated label does
+  not win over the reviewed survivor; and
+- `duplicate-locations:v2` adds an edge whenever one active canonical's label is a trusted alias of
+  another active canonical.
+
+Required product/operations follow-up:
+
+1. Add a visible cleanup reason/filter for **recreated after reviewed alias**, including alias
+   provenance, alias timestamp, canonical creation timestamp, and source/survivor evidence totals.
+2. Show the prior merge or link activity beside the candidate decision so an editor or agent can
+   distinguish a recurrence from a new fuzzy guess.
+3. Emit a metric and structured warning whenever materialization is attempted while a compatible
+   trusted alias exists. The expected steady-state value is zero.
+4. Provide a bounded bulk-AI action for this subtype that partitions mixed clusters and preserves
+   explicit parent/child, branch, campus, room, terminal, and institution/building holds.
+5. After every candidate or duplicate apply wave, rerun the v2 duplicate check and require zero
+   unexplained trusted-alias collisions before declaring location closure.
+
+Acceptance coverage must include the Stevenson regression: an active `Stevenson High School`
+record plus a reviewed alias on `Adlai E. Stevenson High School` must link a new substrate to the
+reviewed survivor and must appear in duplicate cleanup if both canonicals already exist.
+
+Cleanup result (2026-11-22):
+
+- `duplicate-locations:v2` initially materialized 618 connected clusters.
+- Iterative two-reader partitioning plus current-state dry runs merged 724 source canonicals and
+  relinked 1,268 substrates; agreed parent/child, branch, campus, and component separations were
+  recorded as pair dismissals.
+- A separate pass over the still-active high-confidence historical link-veto cohort merged 21 of
+  24 pairs and kept `Acela Corridor` / `Northeast Corridor`, `Maidenhead` / `England`, and `Gaza` /
+  `Gaza City` separate.
+- The refreshed duplicate queue reached zero. The central merge operation was also hardened so a
+  source geometry is copied when the survivor has none; the final geography queue contains six
+  separate distant-link findings and no new duplicate work.
 
 ## Category 4: location candidate review queue
 
