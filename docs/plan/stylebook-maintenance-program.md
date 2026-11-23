@@ -17,7 +17,10 @@ people were planned in [`stylebook-people-maintenance.md`](stylebook-people-main
 full-year experiment is specified in
 [`stylebook-autonomous-year-cleanup.md`](stylebook-autonomous-year-cleanup.md). The proposed boundaries
 for reusable skills, functions, APIs, and pipeline jobs are cataloged in
-[`stylebook-maintenance-job-catalog.md`](stylebook-maintenance-job-catalog.md).
+[`stylebook-maintenance-job-catalog.md`](stylebook-maintenance-job-catalog.md). The plan for the
+outside cleanup toolkit and ingest prevention is in
+[`stylebook-cleanup-toolkit.md`](stylebook-cleanup-toolkit.md); the keyed API it calls is in
+[`stylebook-cleanup-api.md`](stylebook-cleanup-api.md).
 
 ## How we work
 
@@ -69,6 +72,23 @@ Prefer the earliest rung that can solve it:
 | D26 | Freeze ingest and manual edits for that run and take one validated full-database backup before mutation. Quarantine known item conflicts, but abort globally on unexplained drift, evidence loss, or integrity failures. | 2026-11-19 |
 | D27 | `GPT-6 Luna` and `GPT-6.1 Terra` read independently, cross-critique disagreements, and must converge without a hard veto before apply. Every merge, unlink, retirement, and high-impact geometry repair receives an adversarial audit. This is an experiment-specific exception to D20 for sensitive people; both readers must be high confidence, and D20 remains the product default pending audit. | 2026-11-19 |
 | D28 | Evaluate the run with operation/reference counts, issue and residual rates per 1,000 articles, model behavior, integrity, and incremental model cost. Duplicate rate, link precision, false-merge rate, and residual quality use a clearly labeled model-only holdout, not claimed ground truth. | 2026-11-19 |
+| D29 | External tools authenticate with a project API key and call a keyed cleanup namespace under `/public/v1`; the session and service-token cleanup routes stay for the Stylebook UI. Details: [`stylebook-cleanup-api.md`](stylebook-cleanup-api.md). | 2026-11-23 |
+| D30 | The cleanup toolkit is API-only. SQL is for local exploration on an instance the developer controls and never appears in a skill or the toolkit runtime. Reusable findings are promoted into endpoints or checks. | 2026-11-23 |
+| D31 | Model calls run in the toolkit repository; the API runs no models for it. Refines D1. | 2026-11-23 |
+| D32 | `auto_safe` verdicts are advisory. No server-side setting applies merges unattended; unattended runs are a toolkit scheduling choice. | 2026-11-23 |
+| D33 | New findings pass through the discovery loop and findings register in the toolkit plan before a new endpoint is added. Prefer a check, rule, or rubric over a new apply verb. | 2026-11-23 |
+| D34 | Apply is one route per operation, sharing one request and response envelope and one server pipeline. | 2026-11-23 |
+| D35 | `cleanup:read` may be granted on any project key; `cleanup:apply` on service keys only (organization-admin minted, like `runs:trigger`). | 2026-11-23 |
+| D36 | Canonical export is a new cleanup route, not an extension of the public list routes. | 2026-11-23 |
+| D37 | Path shape: `/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/...`, hosted in `core-api` with logic in `backfield-entities`. | 2026-11-23 |
+| D38 | Cleanup routes launch as a preview surface: tagged `cleanup-preview`, excluded from the public OpenAPI and the API Playground, served as a keyed schema, and documented in prose. They graduate once the shape has held across several runs and a second consumer exists. | 2026-11-23 |
+| D39 | Backfield provides a surface (operations, reads, instance protections) and is unopinionated about how tools use it. Per item, the API enforces what the UI enforces plus each operation's data-model invariants; judgment, staleness, and whether a cleanup is complete belong to the tool. No fingerprints, idempotency keys, per-item integrity snapshots, review state, or plan objects on the server. Refines D32. | 2026-11-23 |
+| D40 | The cleanup API mimics hand cleanup: removal is two operations, soft **retirements** (strict no-live-evidence check) and hard **deletions**, both with a `mention_disposition` (`refuse`, `waive`, `requeue`) and per-mention reason codes in one transaction. | 2026-11-23 |
+| D41 | Cleanup project scope: queues are project-scoped by default (optional `scope=stylebook`), evidence is Stylebook-wide with project tags, and service keys see the Stylebook-wide view. | 2026-11-23 |
+| D42 | A run is a lightweight grouping the caller opens when it chooses, for attribution, the ledger, and undo; no lease, declared caps, or expiry. Instance protection is operator-set ceilings per operation class per run plus a kill switch. Reason codes and provenance are stored uninterpreted. Phases and the review default are decided in the toolkit repository. | 2026-11-23 |
+| D43 | The first API release is scopes, merge fixes, reads, and apply for merges, edits, aliases, dismissals, retirements, and deletions. Candidate decisions, mention links, relations, and undo follow in a second release. Undo covers everything except hard deletions, which are ledgered but not undoable. | 2026-11-23 |
+| D44 | The API is delivered as one branch and pull request per phase, each leaving the repository working, with the pre-PR reviews. | 2026-11-23 |
+| D45 | The first API release includes basic instance-level snippet controls (a length cap or off switch for evidence snippets). | 2026-11-23 |
 
 ## Specs to write
 
@@ -95,11 +115,11 @@ D1 changes the shape of the API and where checks live:
 
 - **Evidence over verdicts.** The server returns candidate groups and evidence packets (labels,
   addresses, points, distances, mention snippets, linked counts, curated data). The agent decides.
-- **The server enforces hard guards, not the model's honesty.** Apply endpoints re-check facts: members
-  still exist and are unchanged since the evidence was read, no merge across different states or far
-  apart (unless a rule allows it), the survivor keeps a shape a source had, kinds are compatible,
-  and per-run caps hold. The server cannot verify that two readers were independent, so a
-  "two-model consensus" policy has to be the agent's own practice, recorded with the decision.
+- **The server enforces the guards the UI enforces, not the model's honesty.** Apply endpoints refuse
+  what the UI refuses (members that no longer exist, incompatible kinds, a survivor that would lose a
+  shape a source had) and keep each operation's data intact. Per-run ceilings protect the instance
+  (D42). Judgment rules such as no merge across different states or far apart, and a
+  "two-model consensus" policy, are the agent's own practice, recorded with the decision (D39).
 - **Record the decision's provenance.** Store the agent identity, model name, rubric version, reasons,
   and confidence with each merge and dismissal, so a person can audit and the evaluation set can
   use it.
@@ -108,7 +128,7 @@ D1 changes the shape of the API and where checks live:
   per-Stylebook configuration.
 - **Evidence is untrusted text.** Snippets come from articles. Mark packets as data and keep the
   agent's tools narrow, because an article could try to steer an agent that can merge.
-- **Cost is the agent owner's.** The server still needs rate limits, per-run caps, and idempotency keys.
+- **Cost is the agent owner's.** The server still needs rate limits and per-run ceilings (see D42).
 
 ## Category 2: missing or incorrect geography
 
@@ -550,9 +570,11 @@ and the dry-run ledger can restore every affected field.
 1. **Polygons for natural features and regions.** Which source can supply an area for a lake, river, or
    estimated region, and who owns the correction when it is a model's estimate?
 2. **Credentials.** Cleanup routes authenticate browser sessions and the internal service token;
-   project API keys work only under `/public/v1`. Does the cleanup namespace get a scoped agent
-   credential, or do these endpoints move under a public path (which also triggers the API
-   Playground update rule)?
+   project API keys work only under `/public/v1`. Direction chosen in D29: a keyed namespace under
+   `/public/v1`, hosted in `core-api`, with `cleanup:read` and service-key-only `cleanup:apply`
+   scopes (D35, D37), launched as a preview outside the public OpenAPI and Playground (D38). Still
+   open: key expiry and Stylebook binding; see
+   [`stylebook-cleanup-api.md`](stylebook-cleanup-api.md#open-questions).
 3. **Autonomy.** Partly answered for candidate queues by D11. Still open: which actions may an unattended agent
    take alone (rule dismissals, region folds, any merge of people), which need two readers, and which are never
    automatic? Per-Stylebook setting?

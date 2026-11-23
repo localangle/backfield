@@ -23,9 +23,7 @@ from backfield_entities.activity import (
     EVENT_CLEANUP_MERGE,
     log_stylebook_activity_safe,
 )
-from backfield_entities.entities.location.merge import merge_location_canonical_into
-from backfield_entities.entities.organization.merge import merge_organization_canonical_into
-from backfield_entities.entities.person.merge import merge_person_canonical_into
+from backfield_entities.cleanup.apply_merge import MergeEntityType, MergeRequest, apply_merge
 from backfield_entities.quality.checks import cleanup_check_by_id
 from backfield_entities.quality.dismissals import dismiss_pair
 from backfield_observability.celery_publish import register_publish_timestamp_hook
@@ -174,6 +172,12 @@ def _validate_model_selection(
             raise HTTPException(status_code=400, detail="Invalid AI model selection")
 
 
+_MERGE_ENTITY_BY_CHECK: dict[str, MergeEntityType] = {
+    "duplicate-people": "person",
+    "duplicate-organizations": "organization",
+}
+
+
 def _canonical_exists(
     session: Session,
     *,
@@ -199,48 +203,24 @@ def _apply_merge_proposal(
     target_canonical_id: str,
     member_ids: list[str],
 ) -> int:
+    entity_type: MergeEntityType = _MERGE_ENTITY_BY_CHECK.get(check_id, "location")
     relinked_total = 0
     for member_id in member_ids:
         if member_id == target_canonical_id:
             continue
-        if check_id == "duplicate-people":
-            result = merge_person_canonical_into(
-                session,
-                stylebook_id=stylebook_id,
-                organization_id=organization_id,
-                source_canonical_id=member_id,
-                target_canonical_id=target_canonical_id,
-                provenance="stylebook_cleanup_ai_review",
-            )
-            entity_type = "person"
-        elif check_id == "duplicate-organizations":
-            result = merge_organization_canonical_into(
-                session,
-                stylebook_id=stylebook_id,
-                organization_id=organization_id,
-                source_canonical_id=member_id,
-                target_canonical_id=target_canonical_id,
-                provenance="stylebook_cleanup_ai_review",
-            )
-            entity_type = "organization"
-        else:
-            result = merge_location_canonical_into(
-                session,
-                stylebook_id=stylebook_id,
-                organization_id=organization_id,
-                source_canonical_id=member_id,
-                target_canonical_id=target_canonical_id,
-                provenance="stylebook_cleanup_ai_review",
-            )
-            entity_type = "location"
-        relinked_total += int(result.relinked_substrate_count)
-        for project_id, entity_id in result.relinked_substrates:
-            enqueue_semantic_reindex_for_entity(
-                session,
-                project_id=project_id,
+        result = apply_merge(
+            session,
+            MergeRequest(
                 entity_type=entity_type,
-                entity_id=entity_id,
-            )
+                stylebook_id=stylebook_id,
+                organization_id=organization_id,
+                source_canonical_id=member_id,
+                target_canonical_id=target_canonical_id,
+                provenance="stylebook_cleanup_ai_review",
+            ),
+            reindex=enqueue_semantic_reindex_for_entity,
+        )
+        relinked_total += int(result.relinked_substrate_count)
     return relinked_total
 
 

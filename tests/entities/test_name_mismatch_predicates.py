@@ -297,8 +297,8 @@ def test_location_merge_allowed_same_type() -> None:
     )
 
 
-def test_location_merge_allowed_same_label_cross_type() -> None:
-    assert not location_merge_pair_blocked(
+def test_location_merge_blocked_same_label_cross_type() -> None:
+    assert location_merge_pair_blocked(
         source_label="Near North Side, Chicago, IL",
         source_location_type="place",
         target_label="Near North Side, Chicago, IL",

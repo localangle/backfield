@@ -118,7 +118,9 @@ project-scoped content such as metadata and connections.
 - duplicate checks for locations, people, and organizations;
 - missing-geometry and canonical/entity mismatch checks;
 - questionable-person and questionable-organization checks with keep, delete, and bulk actions;
-- merge and empty-canonical deletion actions for all current canonical domains;
+- merge and empty-canonical deletion actions for all current canonical domains. Merges (and AI-review
+  merges) share one apply path, `backfield_entities.cleanup.apply_merge`, that runs the merge, queues
+  the semantic reindex, and writes the activity row;
 - dismissal recording;
 - optional AI review with proposal listing, acceptance, rejection, status, and cancellation.
   AI review resolves provider credentials from the selected Agate model config and organization

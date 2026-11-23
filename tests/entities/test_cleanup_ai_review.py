@@ -206,7 +206,7 @@ def test_build_proposals_skips_location_merge_across_incompatible_place_kinds() 
     assert [proposal for proposal in proposals if proposal.action == "merge"] == []
 
 
-def test_build_proposals_allows_location_merge_of_same_label_cross_type() -> None:
+def test_build_proposals_skips_location_merge_of_same_label_cross_type() -> None:
     members = [
         CleanupClusterMember(
             id="keeper",
@@ -234,5 +234,4 @@ def test_build_proposals_allows_location_merge_of_same_label_cross_type() -> Non
         members=members,
         groups=groups,
     )
-    merge = next(proposal for proposal in proposals if proposal.action == "merge")
-    assert merge.target_canonical_id == "keeper"
+    assert [proposal for proposal in proposals if proposal.action == "merge"] == []

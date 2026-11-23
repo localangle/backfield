@@ -100,9 +100,16 @@ by `substrate_ingest` are not trusted. A trusted exact alias can satisfy the nam
 place-head check during cache resolution, adjudication, and sync commit; it does
 not bypass canonical self-consistency, type, or jurisdiction checks. Routine
 ingest refreshes never downgrade a trusted alias back to `substrate_ingest`, and
-merging locations records the removed canonical label as a trusted alias of the
-survivor. If the survivor has no geometry, the merge also carries over the
-source's geometry and missing address/jurisdiction fields. Before an alias exists,
+merging locations moves every source alias and the removed canonical label to the
+survivor as trusted aliases (aliases the survivor already holds are left as they were),
+and moves source metadata (a conflicting value for the same metadata type refuses the
+merge). If the survivor has no geometry, the merge also carries over the source's
+geometry and missing address/jurisdiction fields; if both have geometry, the survivor
+keeps its own unless the caller chooses the source's, and the merge result reports the
+source geometry it did not use. Connections move to the survivor before relinking, so
+pruning the source cannot close them. A location merge is refused when the two records
+have different place kinds, even when the labels match: fix the kind on one record first.
+Before an alias exists,
 an exact street address or point can corroborate
 an expanded name only when its shorter named-place head is the same trailing
 three-or-more-word identity (for example, an added person's full name);

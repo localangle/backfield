@@ -210,6 +210,10 @@ Design points:
   allowed 169 of the 182 mixed-kind pairs, including ones that are different places
   (`Lincoln Park` neighborhood vs park). A UI user can make those merges today. The agent API needs
   its own kind-compatibility rules and evidence, and the UI merge should share them.
+  *Status 2026-11-23:* fixed in the shared guard. Records of different place kinds are now refused
+  even when the labels match, for the UI, AI review, and the API alike.
+  *Status 2026-11-23:* fixed in the shared guard. Records of different place kinds are now refused
+  even when the labels match, for the UI, AI review, and the API alike.
 
 ### 5. What rules cannot settle
 

@@ -192,7 +192,7 @@ def test_merge_preserves_source_geography_when_target_has_none() -> None:
         assert keeper.country_code == "ZZ"
 
 
-def test_merge_same_label_cross_type_still_allowed() -> None:
+def test_merge_same_label_cross_type_is_refused_until_the_kind_is_fixed() -> None:
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
@@ -211,6 +211,18 @@ def test_merge_same_label_cross_type_still_allowed() -> None:
             slug="near-north-side-2",
             location_type="place",
         )
+        with pytest.raises(ValueError, match="fix the place kind"):
+            merge_location_canonical_into(
+                session,
+                stylebook_id=stylebook_id,
+                organization_id=org_id,
+                source_canonical_id=str(mistyped.id),
+                target_canonical_id=str(keeper.id),
+            )
+
+        mistyped.location_type = "neighborhood"
+        session.add(mistyped)
+        session.commit()
         result = merge_location_canonical_into(
             session,
             stylebook_id=stylebook_id,

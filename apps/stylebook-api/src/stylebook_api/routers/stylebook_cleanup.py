@@ -17,27 +17,18 @@ from backfield_entities.activity import (
     EVENT_CLEANUP_DELETE,
     EVENT_CLEANUP_KEEP,
     EVENT_CLEANUP_KEEP_SEPARATE,
-    EVENT_CLEANUP_MERGE,
     log_stylebook_activity_safe,
 )
+from backfield_entities.cleanup.apply_merge import MergeActivity, MergeRequest, apply_merge
 from backfield_entities.connections.lifecycle import close_open_connections_for_canonical
 from backfield_entities.entities.location.merge import (
     canonical_has_linked_evidence as location_has_linked_evidence,
 )
-from backfield_entities.entities.location.merge import (
-    merge_location_canonical_into,
-)
 from backfield_entities.entities.organization.merge import (
     canonical_has_linked_evidence as organization_has_linked_evidence,
 )
-from backfield_entities.entities.organization.merge import (
-    merge_organization_canonical_into,
-)
 from backfield_entities.entities.person.merge import (
     canonical_has_linked_evidence as person_has_linked_evidence,
-)
-from backfield_entities.entities.person.merge import (
-    merge_person_canonical_into,
 )
 from backfield_entities.quality.check_runs import (
     CleanupRunScope,
@@ -2100,25 +2091,22 @@ def merge_cleanup_canonical_location(
     sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
-    source_label = _canonical_label_for_entity(
-        session,
-        stylebook_id=int(sb.id),
-        entity_type="location",
-        canonical_id=source_canonical_id,
-    )
-    target_label = _canonical_label_for_entity(
-        session,
-        stylebook_id=int(sb.id),
-        entity_type="location",
-        canonical_id=body.target_canonical_id,
-    )
     try:
-        result = merge_location_canonical_into(
+        result = apply_merge(
             session,
-            stylebook_id=int(sb.id),
-            organization_id=int(sb.organization_id),
-            source_canonical_id=source_canonical_id,
-            target_canonical_id=body.target_canonical_id,
+            MergeRequest(
+                entity_type="location",
+                stylebook_id=int(sb.id),
+                organization_id=int(sb.organization_id),
+                source_canonical_id=source_canonical_id,
+                target_canonical_id=body.target_canonical_id,
+            ),
+            reindex=enqueue_semantic_reindex_for_entity,
+            activity=MergeActivity(
+                actor_type="user",
+                actor_user_id=_created_by_user_id(auth),
+                payload={"check_id": "duplicate-locations"},
+            ),
         )
     except ValueError as exc:
         msg = str(exc)
@@ -2126,29 +2114,6 @@ def merge_cleanup_canonical_location(
             raise HTTPException(status_code=404, detail=msg) from exc
         raise HTTPException(status_code=400, detail=msg) from exc
 
-    for project_id, location_id in result.relinked_substrates:
-        enqueue_semantic_reindex_for_entity(
-            session,
-            project_id=project_id,
-            entity_type="location",
-            entity_id=location_id,
-        )
-
-    log_stylebook_activity_safe(
-        session,
-        stylebook_id=int(sb.id),
-        actor_type="user",
-        actor_user_id=_created_by_user_id(auth),
-        source="cleanup_check",
-        event_type=EVENT_CLEANUP_MERGE,
-        entity_type="location",
-        entity_id=result.source_id,
-        entity_label=source_label,
-        related_entity_type="location",
-        related_entity_id=result.target_id,
-        related_entity_label=target_label,
-        payload_json={"check_id": "duplicate-locations"},
-    )
     session.commit()
     return MergeCleanupCanonicalResponse(
         source_id=result.source_id,
@@ -2252,25 +2217,22 @@ def merge_cleanup_canonical_person(
     sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
-    source_label = _canonical_label_for_entity(
-        session,
-        stylebook_id=int(sb.id),
-        entity_type="person",
-        canonical_id=source_canonical_id,
-    )
-    target_label = _canonical_label_for_entity(
-        session,
-        stylebook_id=int(sb.id),
-        entity_type="person",
-        canonical_id=body.target_canonical_id,
-    )
     try:
-        result = merge_person_canonical_into(
+        result = apply_merge(
             session,
-            stylebook_id=int(sb.id),
-            organization_id=int(sb.organization_id),
-            source_canonical_id=source_canonical_id,
-            target_canonical_id=body.target_canonical_id,
+            MergeRequest(
+                entity_type="person",
+                stylebook_id=int(sb.id),
+                organization_id=int(sb.organization_id),
+                source_canonical_id=source_canonical_id,
+                target_canonical_id=body.target_canonical_id,
+            ),
+            reindex=enqueue_semantic_reindex_for_entity,
+            activity=MergeActivity(
+                actor_type="user",
+                actor_user_id=_created_by_user_id(auth),
+                payload={"check_id": "duplicate-people"},
+            ),
         )
     except ValueError as exc:
         msg = str(exc)
@@ -2278,29 +2240,6 @@ def merge_cleanup_canonical_person(
             raise HTTPException(status_code=404, detail=msg) from exc
         raise HTTPException(status_code=400, detail=msg) from exc
 
-    for project_id, person_id in result.relinked_substrates:
-        enqueue_semantic_reindex_for_entity(
-            session,
-            project_id=project_id,
-            entity_type="person",
-            entity_id=person_id,
-        )
-
-    log_stylebook_activity_safe(
-        session,
-        stylebook_id=int(sb.id),
-        actor_type="user",
-        actor_user_id=_created_by_user_id(auth),
-        source="cleanup_check",
-        event_type=EVENT_CLEANUP_MERGE,
-        entity_type="person",
-        entity_id=result.source_id,
-        entity_label=source_label,
-        related_entity_type="person",
-        related_entity_id=result.target_id,
-        related_entity_label=target_label,
-        payload_json={"check_id": "duplicate-people"},
-    )
     session.commit()
     return MergeCleanupCanonicalResponse(
         source_id=result.source_id,
@@ -2404,25 +2343,22 @@ def merge_cleanup_canonical_organization(
     sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
-    source_label = _canonical_label_for_entity(
-        session,
-        stylebook_id=int(sb.id),
-        entity_type="organization",
-        canonical_id=source_canonical_id,
-    )
-    target_label = _canonical_label_for_entity(
-        session,
-        stylebook_id=int(sb.id),
-        entity_type="organization",
-        canonical_id=body.target_canonical_id,
-    )
     try:
-        result = merge_organization_canonical_into(
+        result = apply_merge(
             session,
-            stylebook_id=int(sb.id),
-            organization_id=int(sb.organization_id),
-            source_canonical_id=source_canonical_id,
-            target_canonical_id=body.target_canonical_id,
+            MergeRequest(
+                entity_type="organization",
+                stylebook_id=int(sb.id),
+                organization_id=int(sb.organization_id),
+                source_canonical_id=source_canonical_id,
+                target_canonical_id=body.target_canonical_id,
+            ),
+            reindex=enqueue_semantic_reindex_for_entity,
+            activity=MergeActivity(
+                actor_type="user",
+                actor_user_id=_created_by_user_id(auth),
+                payload={"check_id": "duplicate-organizations"},
+            ),
         )
     except ValueError as exc:
         msg = str(exc)
@@ -2430,29 +2366,6 @@ def merge_cleanup_canonical_organization(
             raise HTTPException(status_code=404, detail=msg) from exc
         raise HTTPException(status_code=400, detail=msg) from exc
 
-    for project_id, organization_id in result.relinked_substrates:
-        enqueue_semantic_reindex_for_entity(
-            session,
-            project_id=project_id,
-            entity_type="organization",
-            entity_id=organization_id,
-        )
-
-    log_stylebook_activity_safe(
-        session,
-        stylebook_id=int(sb.id),
-        actor_type="user",
-        actor_user_id=_created_by_user_id(auth),
-        source="cleanup_check",
-        event_type=EVENT_CLEANUP_MERGE,
-        entity_type="organization",
-        entity_id=result.source_id,
-        entity_label=source_label,
-        related_entity_type="organization",
-        related_entity_id=result.target_id,
-        related_entity_label=target_label,
-        payload_json={"check_id": "duplicate-organizations"},
-    )
     session.commit()
     return MergeCleanupCanonicalResponse(
         source_id=result.source_id,

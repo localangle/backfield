@@ -279,13 +279,12 @@ def location_merge_pair_blocked(
     target_label: str,
     target_location_type: str | None,
 ) -> bool:
-    """True when merging these canonicals would be an obvious scale/kind error.
+    """True when merging these canonicals would cross place kinds.
 
-    Blocks merges across deny-listed ``location_type`` pairs (e.g. a venue ``place``
-    into its containing ``city``) unless the labels clearly name the same place —
-    the identity escape hatch keeps mistyped rows of the same place mergeable.
-    Political-district conflicts are blocked without the escape hatch: a district
-    canonical labeled like its city is still not the city.
+    Two records of different kinds are never merged, even when the labels match: a
+    ``neighborhood`` and a ``place`` called "Lincoln Park" are different things, and a mistyped
+    duplicate should have its kind fixed first. A record with no kind recorded is not blocked.
+    Political-district conflicts are blocked even between records of the same kind.
     """
     if location_district_kind_conflict(
         substrate_texts=(source_label,),
@@ -294,9 +293,11 @@ def location_merge_pair_blocked(
         canonical_location_type=target_location_type,
     ):
         return True
-    if types_are_comparable(source_location_type, target_location_type):
+    source_kind = (source_location_type or "").strip().lower()
+    target_kind = (target_location_type or "").strip().lower()
+    if not source_kind or not target_kind:
         return False
-    return not location_names_share_obvious_identity(source_label, target_label)
+    return source_kind != target_kind
 
 
 def location_link_is_obvious_mismatch(
