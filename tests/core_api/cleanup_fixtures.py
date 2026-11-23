@@ -134,7 +134,10 @@ def create_cleanup_key(
     project_id: int = 1,
 ) -> dict[str, str]:
     """Create a project API key as the first admin and return its bearer header."""
-    seed_first_admin(client, "cleanup-admin@example.com", "cleanup-secret")
+    try:
+        seed_first_admin(client, "cleanup-admin@example.com", "cleanup-secret")
+    except RuntimeError:
+        pass  # a previous call in the same test already created the admin
     client.post(
         "/v1/auth/login",
         json={"email": "cleanup-admin@example.com", "password": "cleanup-secret"},

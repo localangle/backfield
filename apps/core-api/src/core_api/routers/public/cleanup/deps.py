@@ -18,6 +18,11 @@ require_cleanup_read = require_scope(SCOPE_CLEANUP_READ)
 require_cleanup_apply = require_scope(SCOPE_CLEANUP_APPLY)
 
 
+def is_service_principal(auth: dict[str, Any]) -> bool:
+    """True for the shared service token and for service-type project keys."""
+    return auth["type"] == "service" or auth.get("credential_type") == "service"
+
+
 @dataclass(frozen=True)
 class CleanupContext:
     """The authenticated caller, project, and Stylebook a cleanup route works on."""

@@ -573,16 +573,15 @@ def filter_visible_cached_results(
     return visible
 
 
-def query_cached_check_results(
+def list_visible_cached_results(
     session: Session,
     *,
     run_id: str,
     stylebook_id: int,
     check_id: str,
-    limit: int,
-    offset: int,
     query: str | None = None,
-) -> tuple[list[StylebookCleanupCheckResult], int]:
+) -> list[StylebookCleanupCheckResult]:
+    """Every cached result of a run that is still open: not dismissed, canonicals still present."""
     dismissed_keys = load_dismissed_keys(
         session,
         stylebook_id=stylebook_id,
@@ -603,10 +602,29 @@ def query_cached_check_results(
         check_id=check_id,
         results=rows,
     )
-    visible = filter_visible_cached_results(
+    return filter_visible_cached_results(
         rows,
         dismissed_keys=dismissed_keys,
         existing_canonical_ids=existing_canonical_ids,
+    )
+
+
+def query_cached_check_results(
+    session: Session,
+    *,
+    run_id: str,
+    stylebook_id: int,
+    check_id: str,
+    limit: int,
+    offset: int,
+    query: str | None = None,
+) -> tuple[list[StylebookCleanupCheckResult], int]:
+    visible = list_visible_cached_results(
+        session,
+        run_id=run_id,
+        stylebook_id=stylebook_id,
+        check_id=check_id,
+        query=query,
     )
     total = len(visible)
     page = visible[offset : offset + limit]

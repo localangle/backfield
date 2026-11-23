@@ -6,6 +6,11 @@ Routes here carry the `cleanup-preview` tag, so they stay out of the published c
 
 from __future__ import annotations
 
+from backfield_entities.cleanup.check_reads import (
+    CheckListOut,
+    CheckResultsPage,
+    CheckRunOut,
+)
 from backfield_entities.cleanup.evidence import BatchEvidence, CanonicalEvidence, PairComparison
 from backfield_entities.cleanup.export import CleanupExportPage
 from fastapi import APIRouter
@@ -13,6 +18,12 @@ from fastapi import APIRouter
 from core_api.routers.public.cleanup.capabilities import (
     CleanupCapabilitiesOut,
     get_cleanup_capabilities,
+)
+from core_api.routers.public.cleanup.checks import (
+    get_cleanup_check_latest_run,
+    get_cleanup_check_results,
+    get_cleanup_checks,
+    post_cleanup_check_run,
 )
 from core_api.routers.public.cleanup.evidence import (
     get_cleanup_compare,
@@ -35,4 +46,10 @@ router.get("/{entity}/{canonical_id}/evidence", response_model=CanonicalEvidence
 router.post("/{entity}/evidence", response_model=BatchEvidence)(post_cleanup_evidence)
 router.get("/{entity}/{canonical_id}/compare/{other_id}", response_model=PairComparison)(
     get_cleanup_compare
+)
+router.get("/checks", response_model=CheckListOut)(get_cleanup_checks)
+router.get("/checks/{check_id}/results", response_model=CheckResultsPage)(get_cleanup_check_results)
+router.post("/checks/{check_id}/runs", response_model=CheckRunOut)(post_cleanup_check_run)
+router.get("/checks/{check_id}/runs/latest", response_model=CheckRunOut)(
+    get_cleanup_check_latest_run
 )

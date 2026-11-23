@@ -119,3 +119,11 @@ _MODELS_BY_NAME: dict[EntityName, CleanupEntityModels] = {
 def cleanup_entity_models(name: EntityName) -> CleanupEntityModels:
     """Return the table mapping for an entity kind."""
     return _MODELS_BY_NAME[name]
+
+
+def cleanup_entity_models_for_singular(singular: str) -> CleanupEntityModels:
+    """Look up the table mapping by singular name (`location`, `person`, `organization`)."""
+    for models in _MODELS_BY_NAME.values():
+        if models.singular == singular:
+            return models
+    raise ValueError(f"Unknown entity type: {singular}")

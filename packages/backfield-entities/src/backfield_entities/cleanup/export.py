@@ -19,6 +19,7 @@ from backfield_entities.cleanup.entity_models import CleanupEntityModels, Entity
 
 EXPORT_DEFAULT_LIMIT = 500
 EXPORT_MAX_LIMIT = 1000
+_ID_CHUNK_SIZE = 500
 
 
 class ExportCursor(BaseModel):
@@ -147,6 +148,36 @@ def canonical_mention_counts(
         .group_by(substrate_canonical)
     ).all()
     return {str(row[0]): (int(row[1]), int(row[2])) for row in rows}
+
+
+def canonical_ids_mentioned_in_range(
+    session: Session,
+    models: CleanupEntityModels,
+    canonical_ids: set[str],
+    filters: ExportFilters,
+) -> set[str]:
+    """Return the ids that have an active mention inside the filters' date range."""
+    if not canonical_ids:
+        return set()
+    substrate_canonical = models.column(models.substrate, models.substrate_canonical_column)
+    mention_substrate = models.column(models.mention, models.mention_substrate_column)
+    found: set[str] = set()
+    ordered = sorted(canonical_ids)
+    for start in range(0, len(ordered), _ID_CHUNK_SIZE):
+        chunk = ordered[start : start + _ID_CHUNK_SIZE]
+        rows = session.exec(
+            select(substrate_canonical)
+            .select_from(models.substrate)
+            .join(models.mention, mention_substrate == models.substrate.id)
+            .join(SubstrateArticle, SubstrateArticle.id == models.mention.article_id)
+            .where(
+                col(substrate_canonical).in_(chunk),
+                *_mention_article_conditions(models, filters),
+            )
+            .distinct()
+        ).all()
+        found.update(str(row) for row in rows)
+    return found
 
 
 def canonical_alias_counts(
