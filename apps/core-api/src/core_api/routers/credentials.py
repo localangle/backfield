@@ -9,8 +9,10 @@ from typing import Literal
 
 from backfield_auth.gate import (
     ALL_SCOPES,
+    SCOPE_CLEANUP_APPLY,
+    SCOPE_CLEANUP_READ,
     SCOPE_READ,
-    SCOPE_RUNS_TRIGGER,
+    SERVICE_ONLY_SCOPES,
     parse_scopes,
 )
 from backfield_db import BackfieldApiCredential
@@ -23,7 +25,7 @@ from core_api.deps import get_auth, get_session
 
 router = APIRouter(prefix="/projects", tags=["credentials"])
 CredentialType = Literal["user", "service"]
-CredentialScope = Literal["read", "runs:trigger"]
+CredentialScope = Literal["read", "runs:trigger", "cleanup:read", "cleanup:apply"]
 
 
 def _hash_raw_key(raw: str) -> str:
@@ -44,11 +46,16 @@ def _normalize_requested_scopes(
             status_code=400,
             detail=f"Unknown scope(s): {', '.join(unknown)}",
         )
-    if SCOPE_RUNS_TRIGGER in tokens and credential_type != "service":
-        raise HTTPException(
-            status_code=400,
-            detail="runs:trigger requires a service key",
-        )
+    if credential_type != "service":
+        for scope in SERVICE_ONLY_SCOPES:
+            if scope in tokens:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{scope} requires a service key",
+                )
+    if SCOPE_CLEANUP_APPLY in tokens:
+        # A key that can change a Stylebook can always read it too.
+        tokens.append(SCOPE_CLEANUP_READ)
     normalized: list[CredentialScope] = [SCOPE_READ]
     for scope in ALL_SCOPES:
         if scope != SCOPE_READ and scope in tokens:

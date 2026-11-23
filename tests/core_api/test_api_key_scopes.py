@@ -6,6 +6,8 @@ from collections.abc import Generator
 
 import pytest
 from backfield_auth.gate import (
+    SCOPE_CLEANUP_APPLY,
+    SCOPE_CLEANUP_READ,
     SCOPE_READ,
     SCOPE_RUNS_TRIGGER,
     parse_scopes,
@@ -81,6 +83,14 @@ def test_parse_scopes_runs_trigger() -> None:
     assert parse_scopes("read runs:trigger") == [SCOPE_READ, SCOPE_RUNS_TRIGGER]
 
 
+def test_parse_scopes_cleanup_scopes() -> None:
+    assert parse_scopes("read cleanup:read cleanup:apply") == [
+        SCOPE_READ,
+        SCOPE_CLEANUP_READ,
+        SCOPE_CLEANUP_APPLY,
+    ]
+
+
 def test_parse_scopes_filters_unknown() -> None:
     assert parse_scopes("read foo") == [SCOPE_READ]
 
@@ -136,6 +146,41 @@ def test_create_user_key_with_runs_trigger_rejected(client: TestClient) -> None:
     )
     assert r.status_code == 400
     assert "service key" in r.json()["detail"].lower()
+
+
+def _login_admin(client: TestClient, email: str) -> None:
+    seed_first_admin(client, email, "cleanup-secret")
+    client.post("/v1/auth/login", json={"email": email, "password": "cleanup-secret"})
+
+
+def test_user_key_can_have_cleanup_read(client: TestClient) -> None:
+    _login_admin(client, "cleanup-read@example.com")
+    created = client.post(
+        "/v1/projects/1/api-keys",
+        json={"credential_type": "user", "scopes": ["cleanup:read"]},
+    )
+    assert created.status_code == 200
+    assert created.json()["scopes"] == [SCOPE_READ, SCOPE_CLEANUP_READ]
+
+
+def test_user_key_with_cleanup_apply_rejected(client: TestClient) -> None:
+    _login_admin(client, "cleanup-user-apply@example.com")
+    r = client.post(
+        "/v1/projects/1/api-keys",
+        json={"credential_type": "user", "scopes": ["cleanup:apply"]},
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"] == "cleanup:apply requires a service key"
+
+
+def test_service_key_cleanup_apply_includes_cleanup_read(client: TestClient) -> None:
+    _login_admin(client, "cleanup-service@example.com")
+    created = client.post(
+        "/v1/projects/1/api-keys",
+        json={"credential_type": "service", "scopes": ["cleanup:apply"]},
+    )
+    assert created.status_code == 200
+    assert created.json()["scopes"] == [SCOPE_READ, SCOPE_CLEANUP_READ, SCOPE_CLEANUP_APPLY]
 
 
 def test_create_api_key_unknown_scope_rejected(client: TestClient) -> None:

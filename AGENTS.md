@@ -58,7 +58,8 @@ canonical agent/engineering checklist.
 - Update the matching source-of-truth doc when behavior, architecture, or operations change.
 - Public `/public/v1` contract changes must also update the API Playground presentation in
   `apps/api-playground` (include pickers, helpers, discovery dropdowns, and request-body
-  controls). Regenerating OpenAPI is not enough when those UI tokens are hardcoded.
+  controls). Regenerating OpenAPI is not enough when those UI tokens are hardcoded. Routes tagged
+  `cleanup-preview` are exempt until they graduate (see `docs/api/public.md`).
 - Keep work reviewable: one task per branch, one coherent diff, no unrelated cleanup.
 - In user-facing UI copy and frontend docs, prefer **product language** (e.g. “locations”, “candidates”, “canonicals”) over internal database terms like **“substrate”**.
 - **Frontend copy** (`apps/agate-ui`, `apps/stylebook-ui`, shared UI in `packages/backfield-ui`, node panels synced into apps): write for a **non-technical end user** and **avoid technical or code-related language** in any string shown in the product (see [`docs/development/frontend/conventions.md`](docs/development/frontend/conventions.md) → **User-facing copy**).

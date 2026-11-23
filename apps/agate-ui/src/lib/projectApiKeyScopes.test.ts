@@ -3,6 +3,7 @@ import {
   defaultCreateScopeSelection,
   normalizeScopeSelectionForType,
   scopesForCreateRequest,
+  scopesForRotation,
 } from './projectApiKeyScopes'
 
 describe('projectApiKeyScopes', () => {
@@ -21,5 +22,32 @@ describe('projectApiKeyScopes', () => {
     const selected = new Set(['read', 'runs:trigger'] as const)
     expect(normalizeScopeSelectionForType('user', selected)).toEqual(new Set(['read']))
     expect(normalizeScopeSelectionForType('service', selected)).toEqual(selected)
+  })
+
+  it('lets any key read for cleanup but only service keys make cleanup changes', () => {
+    const selected = new Set(['read', 'cleanup:read', 'cleanup:apply'] as const)
+    expect(scopesForCreateRequest('user', selected)).toEqual(['cleanup:read'])
+    expect(normalizeScopeSelectionForType('user', selected)).toEqual(
+      new Set(['read', 'cleanup:read']),
+    )
+    expect(scopesForCreateRequest('service', selected)).toEqual(['cleanup:read', 'cleanup:apply'])
+  })
+
+  it('selecting cleanup changes also selects cleanup reading', () => {
+    const selected = new Set(['read', 'cleanup:apply'] as const)
+    expect(normalizeScopeSelectionForType('service', selected)).toEqual(
+      new Set(['read', 'cleanup:read', 'cleanup:apply']),
+    )
+  })
+
+  it('keeps every granted scope when rotating a key', () => {
+    const granted = ['read', 'runs:trigger', 'cleanup:read', 'cleanup:apply']
+    expect(scopesForRotation('service', granted)).toEqual([
+      'runs:trigger',
+      'cleanup:read',
+      'cleanup:apply',
+    ])
+    expect(scopesForRotation('user', ['read', 'cleanup:read'])).toEqual(['cleanup:read'])
+    expect(scopesForRotation('user', ['read'])).toBeUndefined()
   })
 })

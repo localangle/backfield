@@ -23,7 +23,11 @@ from backfield_auth.session_tokens import verify_session_token
 
 SCOPE_READ = "read"
 SCOPE_RUNS_TRIGGER = "runs:trigger"
-ALL_SCOPES = (SCOPE_READ, SCOPE_RUNS_TRIGGER)
+SCOPE_CLEANUP_READ = "cleanup:read"
+SCOPE_CLEANUP_APPLY = "cleanup:apply"
+ALL_SCOPES = (SCOPE_READ, SCOPE_RUNS_TRIGGER, SCOPE_CLEANUP_READ, SCOPE_CLEANUP_APPLY)
+# Scopes that only a service key may hold.
+SERVICE_ONLY_SCOPES = (SCOPE_RUNS_TRIGGER, SCOPE_CLEANUP_APPLY)
 
 
 def parse_scopes(raw: str | None) -> list[str]:
