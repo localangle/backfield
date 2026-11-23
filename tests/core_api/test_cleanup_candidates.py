@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from backfield_db import SubstrateLocation
 from backfield_entities.canonical.link import CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED
 
 from tests.core_api.cleanup_fixtures import (
@@ -366,3 +367,29 @@ def test_queue_matches_the_stylebook_ui_filters_and_order(
             ).json()
             assert [i["id"] for i in body["items"]] == expected, (entity, params)
             assert expected, (entity, params)
+
+
+def test_paging_does_not_skip_candidates_resolved_between_pages(
+    cleanup_client, cleanup_world, cleanup_session
+) -> None:
+    headers = create_cleanup_key(cleanup_client)
+    ids = [
+        _candidate(cleanup_session, cleanup_world, name)
+        for name in ("Alpha", "Bravo", "Charlie", "Delta", "Echo")
+    ]
+
+    first = cleanup_client.get(QUEUE_URL, headers=headers, params={"limit": 2}).json()
+    assert [i["name"] for i in first["items"]] == ["Alpha", "Bravo"]
+
+    # The caller resolves the first page (here: sets both aside) before asking for the next.
+    for substrate_id in ids[:2]:
+        row = cleanup_session.get(SubstrateLocation, substrate_id)
+        row.canonical_link_status = CANONICAL_LINK_WAIVED
+        cleanup_session.add(row)
+    cleanup_session.commit()
+
+    second = cleanup_client.get(
+        QUEUE_URL, headers=headers, params={"limit": 2, "cursor": first["next_cursor"]}
+    ).json()
+    assert [i["name"] for i in second["items"]] == ["Charlie", "Delta"]
+    assert second["total"] == 3

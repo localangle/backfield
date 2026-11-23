@@ -7,7 +7,6 @@ the whole catalog (or an incremental slice) without calling the interactive Styl
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
 
 from backfield_db import SubstrateArticle
 from pydantic import BaseModel, Field
@@ -15,7 +14,7 @@ from sqlalchemy import exists, func
 from sqlmodel import Session, col, select
 
 from backfield_entities.cleanup.cursor import decode_cursor, encode_cursor
-from backfield_entities.cleanup.entity_models import CleanupEntityModels, EntityName
+from backfield_entities.cleanup.entity_models import CanonicalRow, CleanupEntityModels, EntityName
 
 EXPORT_DEFAULT_LIMIT = 500
 EXPORT_MAX_LIMIT = 1000
@@ -207,7 +206,7 @@ def point_from_geometry_json(geometry_json: dict | None) -> ExportPoint | None:
         return None
 
 
-def canonical_export_details(models: CleanupEntityModels, canonical: Any) -> ExportDetails:
+def canonical_export_details(models: CleanupEntityModels, canonical: CanonicalRow) -> ExportDetails:
     if models.name == "locations":
         return LocationExportDetails(
             formatted_address=canonical.formatted_address,

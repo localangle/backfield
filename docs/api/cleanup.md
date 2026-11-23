@@ -48,10 +48,10 @@ The keyed contract is served at `GET …/cleanup/openapi.json` and committed as
 ## Conventions
 
 **Paging.** Lists return `next_cursor`; pass it back as `cursor`. A cursor is opaque. A bad cursor is
-a `400`. Export pages by canonical id, so a changing catalog never repeats or skips a row. Queues
-(candidates and check results) page by position, so resolving items between pages shifts the rest
-up and a later page can skip some. A tool that works through a queue should refetch from the start
-after each batch rather than continuing a stale cursor.
+a `400`. Every list pages from a fixed position (canonical id for export and dismissals, queue
+order for candidates, result order within a run for check results), so a tool can resolve items
+between pages without skipping or repeating any. `total` is the size of the whole queue right now,
+not a position.
 
 **Errors.** The same JSON error body as the rest of `/public/v1`. `400` for bad cursors or a pair of
 identical ids, `403` for a missing scope, `404` for an unknown Stylebook, canonical, candidate, or

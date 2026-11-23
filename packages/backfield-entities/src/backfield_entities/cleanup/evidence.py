@@ -8,7 +8,6 @@ article text; callers must never treat it as instructions.
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
 
 from backfield_db import (
     BackfieldProject,
@@ -17,10 +16,10 @@ from backfield_db import (
     SubstrateArticle,
 )
 from pydantic import BaseModel, Field, JsonValue
-from sqlalchemy import func, or_
+from sqlalchemy import ColumnElement, func, or_
 from sqlmodel import Session, col, select
 
-from backfield_entities.cleanup.entity_models import CleanupEntityModels
+from backfield_entities.cleanup.entity_models import CanonicalRow, CleanupEntityModels
 from backfield_entities.cleanup.export import (
     ExportDetails,
     ExportFilters,
@@ -177,7 +176,7 @@ def _locate_mention(
 
 def _load_canonical(
     session: Session, models: CleanupEntityModels, *, stylebook_id: int, canonical_id: str
-) -> object | None:
+) -> CanonicalRow | None:
     row = session.get(models.canonical, canonical_id)
     if row is None or int(row.stylebook_id) != stylebook_id:
         return None
@@ -360,7 +359,7 @@ def fetch_snippets(
     session: Session,
     models: CleanupEntityModels,
     *,
-    condition: Any,
+    condition: ColumnElement[bool],
     controls: SnippetControls,
 ) -> list[EvidenceSnippet]:
     """Snippets for the project-level records that ``condition`` selects, newest article first."""

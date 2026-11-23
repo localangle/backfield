@@ -7,11 +7,11 @@ the caller's decision.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NamedTuple
 
 from backfield_db import BackfieldProject, StylebookConnection
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, exists, func, or_
+from sqlalchemy import ColumnElement, Select, and_, exists, func, or_
 from sqlmodel import Session, col, select
 
 from backfield_entities.canonical.link import (
@@ -48,12 +48,20 @@ class IntegrityReport(BaseModel):
     issues: list[IntegrityIssue]
 
 
-def _count(session: Session, statement: Any) -> int:
+class IntegrityCheck(NamedTuple):
+    """One invariant: a query that selects the ids of the records breaking it."""
+
+    code: str
+    description: str
+    statement: Select[Any]
+
+
+def _count(session: Session, statement: Select[Any]) -> int:
     return int(session.scalar(select(func.count()).select_from(statement.subquery())) or 0)
 
 
 def _issue(
-    session: Session, *, code: str, description: str, statement: Any
+    session: Session, *, code: str, description: str, statement: Select[Any]
 ) -> IntegrityIssue | None:
     count = _count(session, statement)
     if count == 0:
@@ -66,18 +74,18 @@ def _issue(
     )
 
 
-def _stylebook_project_ids(stylebook_id: int) -> Any:
+def _stylebook_project_ids(stylebook_id: int) -> Select[Any]:
     return select(BackfieldProject.id).where(BackfieldProject.stylebook_id == stylebook_id)
 
 
 def _link_state_statements(
-    models: CleanupEntityModels, project_ids: Any
-) -> list[tuple[str, str, Any]]:
+    models: CleanupEntityModels, project_ids: Select[Any]
+) -> list[IntegrityCheck]:
     substrate = models.substrate
     link = models.column(substrate, models.substrate_canonical_column)
     in_stylebook = col(substrate.project_id).in_(project_ids)
     return [
-        (
+        IntegrityCheck(
             "linked_without_canonical",
             "A record is marked linked but points at no canonical.",
             select(substrate.id).where(
@@ -86,7 +94,7 @@ def _link_state_statements(
                 link.is_(None),
             ),
         ),
-        (
+        IntegrityCheck(
             "canonical_without_linked_state",
             "A record points at a canonical but is not marked linked.",
             select(substrate.id).where(
@@ -95,7 +103,7 @@ def _link_state_statements(
                 substrate.canonical_link_status != CANONICAL_LINK_LINKED,
             ),
         ),
-        (
+        IntegrityCheck(
             "dangling_canonical_reference",
             "A record points at a canonical that does not exist.",
             select(substrate.id).where(
@@ -107,13 +115,11 @@ def _link_state_statements(
     ]
 
 
-def _cross_stylebook_statement(
-    models: CleanupEntityModels, stylebook_id: int
-) -> tuple[str, str, Any]:
+def _cross_stylebook_statement(models: CleanupEntityModels, stylebook_id: int) -> IntegrityCheck:
     substrate = models.substrate
     link = models.column(substrate, models.substrate_canonical_column)
     canonical = models.canonical
-    return (
+    return IntegrityCheck(
         "cross_stylebook_reference",
         "A record belongs to a project in one Stylebook but links a canonical in another.",
         select(substrate.id)
@@ -131,13 +137,13 @@ def _cross_stylebook_statement(
 
 def _primary_record_statements(
     models: CleanupEntityModels, stylebook_id: int
-) -> list[tuple[str, str, Any]]:
+) -> list[IntegrityCheck]:
     canonical = models.canonical
     substrate = models.substrate
     primary = getattr(canonical, f"primary_substrate_{models.singular}_id")
     link = models.column(substrate, models.substrate_canonical_column)
     return [
-        (
+        IntegrityCheck(
             "dangling_primary_record",
             "A canonical's primary record does not exist.",
             select(canonical.id).where(
@@ -146,7 +152,7 @@ def _primary_record_statements(
                 ~exists().where(substrate.id == primary),
             ),
         ),
-        (
+        IntegrityCheck(
             "primary_record_linked_elsewhere",
             "A canonical's primary record is not linked to that canonical.",
             select(canonical.id)
@@ -159,16 +165,18 @@ def _primary_record_statements(
     ]
 
 
-def _connection_statement(models: CleanupEntityModels, stylebook_id: int) -> tuple[str, str, Any]:
+def _connection_statement(models: CleanupEntityModels, stylebook_id: int) -> IntegrityCheck:
     canonical = models.canonical
 
-    def missing_or_inactive(entity_type: Any, entity_id: Any) -> Any:
+    def missing_or_inactive(
+        entity_type: ColumnElement[str], entity_id: ColumnElement[str]
+    ) -> ColumnElement[bool]:
         return and_(
             entity_type == models.singular,
             ~exists().where(canonical.id == entity_id, canonical.status == "active"),
         )
 
-    return (
+    return IntegrityCheck(
         "open_connection_on_missing_or_inactive_canonical",
         "An open connection touches a canonical that is missing or no longer active.",
         select(StylebookConnection.id).where(
@@ -187,7 +195,7 @@ def _connection_statement(models: CleanupEntityModels, stylebook_id: int) -> tup
 
 
 def _counts(
-    session: Session, models: CleanupEntityModels, stylebook_id: int, project_ids: Any
+    session: Session, models: CleanupEntityModels, stylebook_id: int, project_ids: Select[Any]
 ) -> IntegrityCounts:
     canonical = models.canonical
     substrate = models.substrate
@@ -248,8 +256,12 @@ def build_integrity_report(
     ]
     issues = [
         issue
-        for code, description, statement in checks
-        if (issue := _issue(session, code=code, description=description, statement=statement))
+        for check in checks
+        if (
+            issue := _issue(
+                session, code=check.code, description=check.description, statement=check.statement
+            )
+        )
     ]
     return IntegrityReport(
         entity=models.name,

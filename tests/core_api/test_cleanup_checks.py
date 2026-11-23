@@ -165,6 +165,42 @@ def test_results_page_filter_and_hide_dismissed(
     assert [i["label"] for i in after["items"]] == ["Cluster 1", "Cluster 2"]
 
 
+def test_results_paging_does_not_skip_results_dismissed_between_pages(
+    cleanup_client, cleanup_world, cleanup_session
+) -> None:
+    headers = create_cleanup_key(cleanup_client)
+    run = _seed_run(cleanup_session, cleanup_world)
+    pairs = [
+        _two_places(cleanup_session, cleanup_world, name=n) for n in ("Alpha", "Bravo", "Charlie")
+    ]
+    for ordinal, (left, right) in enumerate(pairs):
+        _seed_cluster(
+            cleanup_session,
+            run,
+            ordinal=ordinal,
+            label=f"Cluster {ordinal}",
+            members=[left.canonical_id, right.canonical_id],
+        )
+    url = f"{CLEANUP_BASE}/checks/{CHECK_ID}/results"
+
+    first = cleanup_client.get(url, headers=headers, params={"limit": 1}).json()
+    assert [i["label"] for i in first["items"]] == ["Cluster 0"]
+    left, right = pairs[0]
+    cleanup_session.add(
+        StylebookCleanupDismissal(
+            stylebook_id=cleanup_world.stylebook_id,
+            check_id=CHECK_ID,
+            pair_key=pair_key_for_ids(left.canonical_id, right.canonical_id),
+        )
+    )
+    cleanup_session.commit()
+
+    second = cleanup_client.get(
+        url, headers=headers, params={"limit": 1, "cursor": first["next_cursor"]}
+    ).json()
+    assert [i["label"] for i in second["items"]] == ["Cluster 1"]
+
+
 def test_results_before_any_run_are_empty(cleanup_client, cleanup_world) -> None:
     headers = create_cleanup_key(cleanup_client)
     body = cleanup_client.get(f"{CLEANUP_BASE}/checks/{CHECK_ID}/results", headers=headers).json()

@@ -116,7 +116,9 @@ class CheckResultsPage(BaseModel):
 
 
 class ResultsCursor(BaseModel):
-    offset: int = Field(ge=0)
+    """Position after the last result returned; ordinals are fixed for the life of a run."""
+
+    after_ordinal: int
 
 
 class UnknownCheckError(LookupError):
@@ -246,7 +248,7 @@ def get_check_results(
 
     Raises ``InvalidCursorError`` when ``cursor`` cannot be decoded.
     """
-    offset = decode_cursor(cursor, ResultsCursor).offset if cursor else 0
+    after_ordinal = decode_cursor(cursor, ResultsCursor).after_ordinal if cursor else -1
     empty = CheckResultsPage(
         check_id=check.id,
         algorithm_version=cleanup_algorithm_version(check.id),
@@ -273,8 +275,9 @@ def get_check_results(
     )
     if filters.mentioned_from is not None or filters.mentioned_to is not None:
         visible = _within_mention_range(session, check, visible, filters)
-    page = visible[offset : offset + limit]
-    has_more = offset + limit < len(visible)
+    remaining = [row for row in visible if row.ordinal > after_ordinal]
+    page = remaining[:limit]
+    has_more = len(remaining) > limit
     return CheckResultsPage(
         check_id=check.id,
         algorithm_version=str(run.algorithm_version),
@@ -283,7 +286,9 @@ def get_check_results(
         as_of=run.completed_at,
         total=len(visible),
         items=[_result_item(row) for row in page],
-        next_cursor=encode_cursor(ResultsCursor(offset=offset + limit)) if has_more else None,
+        next_cursor=(
+            encode_cursor(ResultsCursor(after_ordinal=page[-1].ordinal)) if has_more else None
+        ),
     )
 
 

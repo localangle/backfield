@@ -9,17 +9,17 @@ assigned to the Stylebook.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from backfield_db import BackfieldProject, SubstrateArticle
 from pydantic import BaseModel, Field, JsonValue
-from sqlalchemy import exists, func, or_
+from sqlalchemy import ColumnElement, and_, exists, func, or_
 from sqlmodel import Session, col, select
 
 from backfield_entities.canonical.link import CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED
 from backfield_entities.catalog.search import substrate_name_ilike_filter
 from backfield_entities.cleanup.cursor import decode_cursor, encode_cursor
-from backfield_entities.cleanup.entity_models import CleanupEntityModels
+from backfield_entities.cleanup.entity_models import CleanupEntityModels, SubstrateRow
 from backfield_entities.cleanup.evidence import EvidenceSnippet, SnippetControls, fetch_snippets
 from backfield_entities.cleanup.export import ExportFilters, mention_article_conditions
 from backfield_entities.entities.linking.substrate_actions import (
@@ -109,7 +109,10 @@ class CandidateEvidence(BaseModel):
 
 
 class CandidatesCursor(BaseModel):
-    offset: int = Field(ge=0)
+    """Position after the last row returned, in the queue's (sort value, id) order."""
+
+    after_sort: str
+    after_id: int
 
 
 class CandidateNotFoundError(LookupError):
@@ -141,7 +144,7 @@ def _escape_like(text: str) -> str:
     )
 
 
-def _name_filter(models: CleanupEntityModels, q: str) -> Any:
+def _name_filter(models: CleanupEntityModels, q: str) -> ColumnElement[bool]:
     substrate = models.substrate
     if models.name == "locations":
         return substrate_name_ilike_filter(
@@ -156,7 +159,7 @@ def _name_filter(models: CleanupEntityModels, q: str) -> Any:
     )
 
 
-def _sort_column(models: CleanupEntityModels) -> Any:
+def _sort_column(models: CleanupEntityModels) -> ColumnElement[str]:
     substrate = models.substrate
     if models.name == "people":
         return func.coalesce(col(substrate.sort_key), col(substrate.normalized_name))
@@ -174,11 +177,11 @@ def _queue_filters(
     kind: str | None,
     needs_review: bool | None,
     date_filters: ExportFilters,
-) -> list[Any]:
+) -> list[ColumnElement[bool]]:
     substrate = models.substrate
     link_column = models.column(substrate, models.substrate_canonical_column)
     kind_column = models.column(substrate, models.kind_column)
-    filters: list[Any] = [
+    filters: list[ColumnElement[bool]] = [
         col(substrate.project_id).in_(project_ids),
         col(link_column).is_(None),
         substrate.canonical_link_status == CANONICAL_LINK_STATUS[status],
@@ -208,7 +211,7 @@ def _queue_filters(
     return filters
 
 
-def _review_items(raw: Any) -> list[dict[str, JsonValue]]:
+def _review_items(raw: JsonValue) -> list[dict[str, JsonValue]]:
     if isinstance(raw, list):
         return [dict(item) for item in raw if isinstance(item, dict)]
     if isinstance(raw, dict):
@@ -262,7 +265,7 @@ def _text(value: JsonValue) -> str | None:
 
 
 def _candidate_item(
-    models: CleanupEntityModels, row: Any, project: BackfieldProject
+    models: CleanupEntityModels, row: SubstrateRow, project: BackfieldProject
 ) -> CandidateItem:
     items = _review_items(row.canonical_review_reasons_json)
     return CandidateItem(
@@ -307,7 +310,6 @@ def list_candidates(
 
     Raises ``InvalidCursorError`` when ``cursor`` cannot be decoded.
     """
-    offset = decode_cursor(cursor, CandidatesCursor).offset if cursor else 0
     filters = _queue_filters(
         models,
         project_ids=project_ids,
@@ -320,25 +322,42 @@ def list_candidates(
     total = int(
         session.scalar(select(func.count()).select_from(models.substrate).where(*filters)) or 0
     )
+    sort_value = _sort_column(models)
+    page_filters = list(filters)
+    if cursor:
+        position = decode_cursor(cursor, CandidatesCursor)
+        page_filters.append(
+            or_(
+                sort_value > position.after_sort,
+                and_(
+                    sort_value == position.after_sort,
+                    col(models.substrate.id) > position.after_id,
+                ),
+            )
+        )
     rows = session.exec(
-        select(models.substrate)
-        .where(*filters)
-        .order_by(_sort_column(models).asc(), col(models.substrate.id).asc())
-        .offset(offset)
-        .limit(limit)
+        select(models.substrate, sort_value.label("sort_value"))
+        .where(*page_filters)
+        .order_by(sort_value.asc(), col(models.substrate.id).asc())
+        .limit(limit + 1)
     ).all()
-    projects = _projects_by_id(session, [int(r.project_id) for r in rows])
-    items = [_candidate_item(models, row, projects[int(row.project_id)]) for row in rows]
-    has_more = offset + len(items) < total
+    has_more = len(rows) > limit
+    page_rows = rows[:limit]
+    projects = _projects_by_id(session, [int(row.project_id) for row, _ in page_rows])
+    items = [_candidate_item(models, row, projects[int(row.project_id)]) for row, _ in page_rows]
+    next_cursor = None
+    if has_more:
+        last_row, last_sort = page_rows[-1]
+        next_cursor = encode_cursor(
+            CandidatesCursor(after_sort=str(last_sort), after_id=int(last_row.id))
+        )
     return CandidatePage(
         entity=models.name,
         queue_scope=queue_scope,
         status=status,
         total=total,
         items=items,
-        next_cursor=encode_cursor(CandidatesCursor(offset=offset + len(items)))
-        if has_more
-        else None,
+        next_cursor=next_cursor,
     )
 
 
@@ -410,7 +429,7 @@ def list_candidate_kinds(
 
 
 def _ranked_matches(
-    session: Session, models: CleanupEntityModels, *, stylebook_id: int, row: Any
+    session: Session, models: CleanupEntityModels, *, stylebook_id: int, row: SubstrateRow
 ) -> list[tuple[str, str]]:
     if models.name == "locations":
         return rank_location_matches(

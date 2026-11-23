@@ -35,6 +35,12 @@ from backfield_db import (
 EntityName = Literal["locations", "people", "organizations"]
 ENTITY_NAMES: tuple[EntityName, ...] = ("locations", "people", "organizations")
 
+# One row of the canonical table or the project-level (substrate) table, whichever kind it is.
+CanonicalRow = (
+    StylebookLocationCanonical | StylebookPersonCanonical | StylebookOrganizationCanonical
+)
+SubstrateRow = SubstrateLocation | SubstratePerson | SubstrateOrganization
+
 
 @dataclass(frozen=True)
 class CleanupEntityModels:
@@ -55,7 +61,7 @@ class CleanupEntityModels:
     mention_substrate_column: str
     occurrence_mention_column: str
 
-    def canonical_kind(self, canonical: Any) -> str | None:
+    def canonical_kind(self, canonical: CanonicalRow) -> str | None:
         """Return the canonical's type value (place kind, person type or organization type)."""
         return getattr(canonical, self.kind_column)
 
