@@ -147,6 +147,27 @@ def create_cleanup_key(
     return {"Authorization": f"Bearer {created.json()['raw_key']}"}
 
 
+def seed_substrate(
+    session: Session,
+    entity: EntityName,
+    *,
+    canonical_id: str,
+    project_id: int,
+    name: str,
+) -> int:
+    """Insert a project-level record linked to a canonical; return its id."""
+    models = cleanup_entity_models(entity)
+    substrate = models.substrate(
+        project_id=project_id,
+        name=name,
+        normalized_name=name.lower(),
+        **{models.substrate_canonical_column: canonical_id},
+    )
+    session.add(substrate)
+    session.flush()
+    return int(substrate.id)
+
+
 def seed_entity(
     session: Session,
     entity: EntityName,
@@ -165,14 +186,9 @@ def seed_entity(
         setattr(canonical, models.kind_column, kind)
     session.add(canonical)
     session.flush()
-    substrate = models.substrate(
-        project_id=project_id,
-        name=label,
-        normalized_name=label.lower(),
-        **{models.substrate_canonical_column: canonical.id},
+    substrate_id = seed_substrate(
+        session, entity, canonical_id=str(canonical.id), project_id=project_id, name=label
     )
-    session.add(substrate)
-    session.flush()
     for alias in aliases:
         session.add(
             models.alias(
@@ -183,7 +199,7 @@ def seed_entity(
             )
         )
     session.commit()
-    return SeededEntity(canonical_id=str(canonical.id), substrate_id=int(substrate.id))
+    return SeededEntity(canonical_id=str(canonical.id), substrate_id=substrate_id)
 
 
 def seed_article(

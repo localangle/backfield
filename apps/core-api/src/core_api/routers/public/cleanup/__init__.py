@@ -6,12 +6,18 @@ Routes here carry the `cleanup-preview` tag, so they stay out of the published c
 
 from __future__ import annotations
 
+from backfield_entities.cleanup.evidence import BatchEvidence, CanonicalEvidence, PairComparison
 from backfield_entities.cleanup.export import CleanupExportPage
 from fastapi import APIRouter
 
 from core_api.routers.public.cleanup.capabilities import (
     CleanupCapabilitiesOut,
     get_cleanup_capabilities,
+)
+from core_api.routers.public.cleanup.evidence import (
+    get_cleanup_compare,
+    get_cleanup_evidence,
+    post_cleanup_evidence,
 )
 from core_api.routers.public.cleanup.export import get_cleanup_export
 from core_api.routers.public.openapi import CLEANUP_PREVIEW_TAG
@@ -23,3 +29,10 @@ router = APIRouter(
 
 router.get("/capabilities", response_model=CleanupCapabilitiesOut)(get_cleanup_capabilities)
 router.get("/{entity}/export", response_model=CleanupExportPage)(get_cleanup_export)
+router.get("/{entity}/{canonical_id}/evidence", response_model=CanonicalEvidence)(
+    get_cleanup_evidence
+)
+router.post("/{entity}/evidence", response_model=BatchEvidence)(post_cleanup_evidence)
+router.get("/{entity}/{canonical_id}/compare/{other_id}", response_model=PairComparison)(
+    get_cleanup_compare
+)

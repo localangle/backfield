@@ -120,7 +120,7 @@ def _has_mention_in_range(models: CleanupEntityModels, filters: ExportFilters) -
     )
 
 
-def _mention_counts(
+def canonical_mention_counts(
     session: Session,
     models: CleanupEntityModels,
     filters: ExportFilters,
@@ -149,7 +149,7 @@ def _mention_counts(
     return {str(row[0]): (int(row[1]), int(row[2])) for row in rows}
 
 
-def _alias_counts(
+def canonical_alias_counts(
     session: Session, models: CleanupEntityModels, canonical_ids: list[str]
 ) -> dict[str, int]:
     if not canonical_ids:
@@ -166,7 +166,7 @@ def _alias_counts(
     return {str(row[0]): int(row[1]) for row in rows}
 
 
-def _point_from_geometry_json(geometry_json: dict | None) -> ExportPoint | None:
+def point_from_geometry_json(geometry_json: dict | None) -> ExportPoint | None:
     if not isinstance(geometry_json, dict) or geometry_json.get("type") != "Point":
         return None
     coordinates = geometry_json.get("coordinates")
@@ -178,12 +178,12 @@ def _point_from_geometry_json(geometry_json: dict | None) -> ExportPoint | None:
         return None
 
 
-def _details_for(models: CleanupEntityModels, canonical: Any) -> ExportDetails:
+def canonical_export_details(models: CleanupEntityModels, canonical: Any) -> ExportDetails:
     if models.name == "locations":
         return LocationExportDetails(
             formatted_address=canonical.formatted_address,
             geometry_type=canonical.geometry_type,
-            point=_point_from_geometry_json(canonical.geometry_json),
+            point=point_from_geometry_json(canonical.geometry_json),
             country_code=canonical.country_code,
             subdivision_code=canonical.subdivision_code,
             city_name=canonical.city_name,
@@ -249,8 +249,8 @@ def export_canonicals(
     has_more = len(rows) > limit
     page_rows = rows[:limit]
     page_ids = [str(row.id) for row in page_rows]
-    counts = _mention_counts(session, models, filters, page_ids)
-    alias_counts = _alias_counts(session, models, page_ids)
+    counts = canonical_mention_counts(session, models, filters, page_ids)
+    alias_counts = canonical_alias_counts(session, models, page_ids)
     items = [
         CleanupExportItem(
             id=str(row.id),
@@ -262,7 +262,7 @@ def export_canonicals(
             alias_count=alias_counts.get(str(row.id), 0),
             created_at=row.created_at,
             updated_at=row.updated_at,
-            details=_details_for(models, row),
+            details=canonical_export_details(models, row),
         )
         for row in page_rows
     ]
