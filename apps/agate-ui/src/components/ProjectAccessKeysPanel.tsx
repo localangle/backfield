@@ -38,6 +38,7 @@ import {
   PROJECT_API_KEY_SCOPE_OPTIONS,
   scopeOptionLabel,
   scopesForCreateRequest,
+  scopesForRotation,
   type ProjectApiKeyScope,
 } from "@/lib/projectApiKeyScopes"
 
@@ -204,7 +205,7 @@ const ProjectAccessKeysPanel = forwardRef<
     setSaving(true)
     setError(null)
     try {
-      const scopes = row.scopes?.includes("runs:trigger") ? ["runs:trigger"] : undefined
+      const scopes = scopesForRotation(row.credential_type as "user" | "service", row.scopes)
       const created = await createProjectAccessKey(projectId, {
         credential_type: row.credential_type as "user" | "service",
         label: nextRotatedLabel(row),
@@ -457,8 +458,8 @@ const ProjectAccessKeysPanel = forwardRef<
               </div>
               {createType === "user" ? (
                 <p className="text-xs text-muted-foreground">
-                  Personal keys can read project data only. Use a service key to trigger flows via
-                  API.
+                  Personal keys can read project and cleanup data only. Use a service key to start
+                  flows or make cleanup changes.
                 </p>
               ) : null}
             </div>

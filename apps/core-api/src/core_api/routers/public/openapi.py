@@ -7,6 +7,11 @@ from typing import Any
 
 PUBLIC_PREFIX = "/public/v1"
 PUBLIC_SCHEMA_PATH = f"{PUBLIC_PREFIX}/openapi.json"
+# Routes in preview carry this tag. They work and appear in the app's own schema, but stay out of
+# the consumer contract until they graduate.
+CLEANUP_PREVIEW_TAG = "cleanup-preview"
+HIDDEN_PREVIEW_TAGS = frozenset({CLEANUP_PREVIEW_TAG})
+_HTTP_METHODS = frozenset({"get", "put", "post", "delete", "options", "head", "patch", "trace"})
 
 
 def _schema_references(value: Any) -> set[str]:
@@ -35,16 +40,34 @@ def _reachable_schemas(paths: dict[str, Any], schemas: dict[str, Any]) -> dict[s
     return {name: deepcopy(schemas[name]) for name in sorted(reachable)}
 
 
+def _without_preview_operations(path_item: dict[str, Any]) -> dict[str, Any] | None:
+    """Drop preview-tagged operations; return None when no operation is left on the path."""
+    kept: dict[str, Any] = {}
+    kept_any_operation = False
+    for key, value in path_item.items():
+        if key not in _HTTP_METHODS:
+            kept[key] = value
+            continue
+        tags = set(value.get("tags") or []) if isinstance(value, dict) else set()
+        if tags & HIDDEN_PREVIEW_TAGS:
+            continue
+        kept[key] = value
+        kept_any_operation = True
+    return kept if kept_any_operation else None
+
+
 def build_public_openapi(schema: dict[str, Any]) -> dict[str, Any]:
     """Return a deterministic, consumer-only OpenAPI document."""
     paths = schema.get("paths") or {}
-    public_paths = {
-        path: deepcopy(item)
-        for path, item in paths.items()
-        if isinstance(path, str)
-        and path.startswith(PUBLIC_PREFIX)
-        and path != PUBLIC_SCHEMA_PATH
-    }
+    public_paths: dict[str, Any] = {}
+    for path, item in paths.items():
+        if not (
+            isinstance(path, str) and path.startswith(PUBLIC_PREFIX) and path != PUBLIC_SCHEMA_PATH
+        ):
+            continue
+        visible_item = _without_preview_operations(deepcopy(item))
+        if visible_item is not None:
+            public_paths[path] = visible_item
     sorted_paths = dict(sorted(public_paths.items()))
     source_components = schema.get("components") or {}
     source_schemas = source_components.get("schemas") or {}

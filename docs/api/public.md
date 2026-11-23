@@ -51,7 +51,8 @@ Create and revoke keys from Core API under
 `/v1/projects/{project_id}/api-keys` (session auth in the product UI, or see
 [`core.md`](core.md)). Keys are bound to one project. Project keys include the
 `read` scope when minted. Starting a run additionally requires `runs:trigger`;
-that scope is limited to service-type project keys.
+that scope is limited to service-type project keys. The preview cleanup routes use `cleanup:read`
+(any key) and `cleanup:apply` (service keys only; it includes `cleanup:read`).
 
 Personal keys remain valid only while the owner is enabled, belongs to the project's organization,
 and can currently access the project. Revocation, account disablement, organization removal, or
@@ -259,6 +260,18 @@ reachable from them, declares project API key Bearer authentication, and lists
 production and local server URLs. Paths retain the `/public/v1` prefix, so
 clients append them directly to the server URL. The full internal schema
 remains available at `/openapi.json`.
+
+## Preview: Stylebook cleanup
+
+Routes under `/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup` are a
+**preview** for outside cleanup tools. They are tagged `cleanup-preview`, work with the scopes above,
+and are deliberately left out of `/public/v1/openapi.json`, `public.openapi.json`, and the API
+Playground until they graduate (the Playground rule above does not apply to them). The Stylebook is
+always named in the path and must belong to the key's organization. The app's own `/openapi.json`
+lists them. The design is tracked in the Stylebook cleanup API plan under `docs/plan/`.
+
+Today the only route is `GET …/cleanup/capabilities` (contract version, the key's scopes, whether it
+can apply changes).
 
 ## Related documentation
 
