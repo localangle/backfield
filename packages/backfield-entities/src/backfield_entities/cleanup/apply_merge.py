@@ -22,6 +22,7 @@ from backfield_entities.activity import (
     ActorType,
     log_stylebook_activity_safe,
 )
+from backfield_entities.cleanup.redirects import record_redirect
 from backfield_entities.entities.location.merge import (
     GeometryWinner,
     merge_location_canonical_into,
@@ -183,12 +184,19 @@ def apply_merge(
     reindex: ReindexEntity | None,
     activity: MergeActivity | None = None,
 ) -> MergeOutcome:
-    """Merge ``source`` into ``target``, queue the reindex, and log the activity.
+    """Merge ``source`` into ``target``, persist ``merged_into``, queue reindex, and log activity.
 
     Raises ``ValueError`` for anything the merge guard refuses (missing record, different kinds,
     metadata conflict). The caller commits.
     """
     outcome = _run_merge(session, request)
+    record_redirect(
+        session,
+        stylebook_id=request.stylebook_id,
+        entity_type=request.entity_type,
+        old_id=outcome.source_id,
+        new_id=outcome.target_id,
+    )
     if reindex is not None:
         for project_id, entity_id in outcome.relinked_substrates:
             reindex(

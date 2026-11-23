@@ -8,7 +8,7 @@ from backfield_db import (
     StylebookLocationCanonical,
     SubstrateLocation,
 )
-from backfield_entities.canonical.link import CANONICAL_LINK_LINKED
+from backfield_entities.canonical.link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
 
 from tests.core_api.cleanup_fixtures import (
     CLEANUP_BASE,
@@ -88,7 +88,7 @@ def test_integrity_reports_inconsistent_links_and_connections(
     cleanup_client, cleanup_world, cleanup_session
 ) -> None:
     headers = create_cleanup_key(cleanup_client)
-    # Points at a canonical but never marked linked (the helper leaves the default state).
+    # Points at a canonical but is not marked linked.
     unmarked = seed_entity(
         cleanup_session,
         "locations",
@@ -96,6 +96,9 @@ def test_integrity_reports_inconsistent_links_and_connections(
         project_id=cleanup_world.project_id,
         label="Unmarked",
     )
+    unmarked_record = cleanup_session.get(SubstrateLocation, unmarked.substrate_id)
+    unmarked_record.canonical_link_status = CANONICAL_LINK_PENDING
+    cleanup_session.add(unmarked_record)
     # Marked linked with no canonical.
     orphan = seed_substrate(
         cleanup_session,

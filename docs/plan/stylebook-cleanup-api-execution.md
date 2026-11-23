@@ -141,6 +141,22 @@ apply route exists yet.
 review becomes unwieldy, split at a slice boundary (D44 allows it).
 
 **Slice 1: runs, ledger, merges**
+
+**Status (2026-11-23):** Built on `feat/cleanup-shared-merge`; design in
+[`stylebook-cleanup-api-ledger.md`](stylebook-cleanup-api-ledger.md). Differences from the task text:
+- Migration `084_cleanup_run_ledger` adds the three tables. Tried on a scratch Postgres database
+  (upgrade, downgrade, upgrade; no model drift on the new tables).
+- `apply_merge` persists `merged_into` itself, so the Stylebook app's merge routes record redirects
+  too (with no ledger row). A chain shortens on the next merge, so resolving is one lookup.
+- A dry run does the real merge inside the item's transaction and rolls it back, rather than
+  duplicating the guards. The cost is one real merge's work per dry-run item.
+- A run that is not open makes each item an `error` (`run_not_open`), not a request-level failure.
+- Ceilings count ledger rows in the run, so dry runs never use them up.
+- The `core-api` reindex adapter is `core_api/semantic_reindex.py`; it runs inside the item, so a
+  queue failure fails the item and the merge rolls back.
+- Not built here: `envelope.py`'s generic pipeline. The shared pieces (envelope models, ceilings,
+  ledger, runs, redirects) are separate modules and `merge_items.py` is the first pipeline. Slice 2
+  decides whether a second pipeline justifies a shared driver.
 1. Write the **before-state spec** (what each operation records so undo works) as a short design note before any code.
 2. Migration and models, `stylebook_` prefix: `stylebook_cleanup_run`, `stylebook_cleanup_action`, `stylebook_canonical_redirect`; indexes per the API plan.
 3. Library: `envelope`, `ceilings` (settings with defaults sized from the 2024 counts, smaller for retirements and deletions), `ledger` (same transaction, fail closed), `runs`.

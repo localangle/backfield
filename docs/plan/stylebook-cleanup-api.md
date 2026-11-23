@@ -311,8 +311,8 @@ Status after phase A (branch `feat/cleanup-shared-merge`):
    run table in phase C.
 6. Queue semantic reindex inside the shared operation, not only in the API layer. **Done**
    (`apply_merge` takes the enqueue function, so the library has no Celery dependency).
-7. Persist `merged_into`. (Needs the new redirect table, so it ships in phase C, slice 1, not in
-   phase A.)
+7. Persist `merged_into`. **Done** in phase C, slice 1: `apply_merge` records the redirect, for the
+   app's merge routes and the keyed route alike.
 8. Remove the redundant delete after pruning. **Done** for locations (the merge deleted a source the
    relink had already pruned, which SQLAlchemy reported as a zero-row delete); people and
    organizations never did it.
@@ -376,12 +376,12 @@ tool that ran it.
 
 ## Open questions
 
-1. **Before-state format.** What each operation records so that undo can revert it (for a merge: the
-   source canonical row, its aliases, its connections, and the linked mention ids). Specify this at
-   the start of phase C, slice 1, because phase E depends on it. Hard deletions record their
-   before-state but are not undoable (D43). How much of a revert is automatic for merges is still
-   to be sized.
-2. **Ceilings.** Where the per-operation ceilings live (environment settings or a small table) and
+1. **Before-state format.** **Settled for merges** in
+   [`stylebook-cleanup-api-ledger.md`](stylebook-cleanup-api-ledger.md): a pre-image of the rows a
+   merge can touch, undone automatically only when those rows are still as the merge left them.
+   Each later operation adds its own section there before it is built. Hard deletions record their
+   before-state but are not undoable (D43).
+2. **Ceilings.** **Settled:** environment settings with defaults (see the ledger note). Original question: where the per-operation ceilings live (environment settings or a small table) and
    their starting values, sized from the 2024 counts, with smaller values for retirements and
    deletions.
 3. **Key hardening.** A service key with `cleanup:apply` can change any Stylebook in its
@@ -394,8 +394,7 @@ tool that ran it.
 6. **Reindex adapter and volume.** Decided in phase A: two thin adapters. Each app already owns its
    Celery producer (`stylebook-api` `semantic_reindex.py`, `core-api` `run_enqueue.py`, `agate-api`),
    and the shared library supplies only the affected-article scopes and the task name, so a shared
-   module would put a queue client in the library. `core-api` gets its adapter in phase C slice 1
-   (it satisfies `ReindexEntity` in `backfield_entities/cleanup/apply_merge.py`). Still open: whether
+   module would put a queue client in the library. `core-api` has its adapter (built in phase C slice 1; it satisfies `ReindexEntity` in `backfield_entities/cleanup/apply_merge.py`). Still open: whether
    a large run needs throttled enqueueing.
 7. **Capability versioning.** The preview contract version in `capabilities` is the starting
    point. Still open: whether features are also advertised individually, so an older instance and a

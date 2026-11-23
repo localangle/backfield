@@ -15,6 +15,7 @@ ActivitySource = Literal[
     "manual_ui",
     "cleanup_check",
     "cleanup_ai",
+    "cleanup_api",
     "candidate_ai",
     "ingest_pipeline",
     "connections",

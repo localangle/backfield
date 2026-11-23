@@ -9,7 +9,8 @@ This is a **preview**. It is tagged `cleanup-preview`, so it is left out of `/pu
 versions: check `contract_version` in `capabilities`. The design is in the Stylebook cleanup API plan
 under `docs/plan/`; this page describes what is built.
 
-There are no apply routes yet. `capabilities.operations` is an empty list until they exist.
+Merges are the only operation you can apply so far. `capabilities.operations` lists what this
+instance supports for your key (empty without `cleanup:apply`).
 
 ## Base path and access
 
@@ -18,7 +19,8 @@ There are no apply routes yet. `capabilities.operations` is an empty list until 
 ```
 
 The Stylebook is always named in the path and must belong to the key's organization (otherwise
-`404`). Reads need the `cleanup:read` scope, which any project key can hold. A key without it gets
+`404`). Reads need the `cleanup:read` scope, which any project key can hold. Changes need `cleanup:apply`,
+which only service keys can hold (it includes `cleanup:read`). A key without it gets
 `403`. See [`public.md`](public.md) for keys and scopes.
 
 The keyed contract is served at `GET …/cleanup/openapi.json` and committed as
@@ -44,6 +46,50 @@ The keyed contract is served at `GET …/cleanup/openapi.json` and committed as
 | `GET /candidates/{entity}` | The candidate queue. Also `/count` (per project) and `/types` (kinds for filtering). |
 | `GET /candidates/{entity}/{candidate_id}/evidence` | Article snippets and ranked catalog matches for one candidate. |
 | `GET /dismissals` | Issues editors set aside, optionally for one `check_id`. |
+| `GET /{entity}/{id}/resolution` | Where a merged-away id went. A live id resolves to itself. |
+| `GET /runs`, `GET /runs/{run_id}` | Runs in this Stylebook, newest first, with applied counts by operation. |
+| `GET /runs/{run_id}/actions` | What was applied in a run, oldest first. Read it after a crash to see what landed. |
+| `GET /actions/{action_id}` | One applied action with the records as they were before the change. |
+
+## Applying changes
+
+Changes are grouped into **runs** and sent as batches of **items**. Every apply route follows the
+same shape.
+
+1. `POST /runs` with an optional `label` and your own `client_run_ref`. Nothing can be applied
+   without an open run.
+2. `POST /{entity}/merges` with `run_id`, `dry_run`, and up to 100 `items`. Each item has your own
+   `item_id`, the `source_id` to merge away, and the `target_id` that survives. Optional:
+   `resolved_type` (people and organizations), `geometry_winner` (locations), and `provenance`,
+   which is stored exactly as given and never interpreted.
+3. `POST /runs/{run_id}/close` with `closed`, or `aborted` to stop further changes at once.
+
+**`dry_run` defaults to `true`.** A dry run does the real work, reports it, and rolls it back, so
+`would_apply` means an apply would have succeeded at that moment.
+
+**Each item stands alone.** The response gives every item a `status`: `would_apply`, `applied`,
+`noop`, or `error`. An `error` has a `reason` code and a plain-language `message`; the others in
+the batch are unaffected. Reason codes: `run_not_open`, `ceiling_reached`, `not_found`,
+`same_canonical`, `guard_refused` (the same checks the Stylebook app makes, such as different place
+kinds or conflicting metadata), `ledger_failed`, and `failed`. A repeat of a merge that already
+happened is a `noop` with reason `already_merged`, so retrying is safe.
+
+**What a merge does.** The source's aliases, its label (as a reviewed alias), metadata, connections,
+and linked records all move to the survivor. A location's geography is kept on the survivor unless
+you pass `geometry_winner: "source"`; geography the survivor did not take is returned in
+`unapplied_source_geometry`. The old id is recorded so `resolution` can follow it, a merge event is
+emitted, and a search re-index is queued for each affected record (`reindex_queued`). Activity
+records the actor as an agent, with the run, your item id, your provenance, and the key's name.
+
+**The ledger.** Every applied item writes one action in the same transaction as the change. If the
+action cannot be written, the change is undone and the item reports `ledger_failed`. An action holds
+the request, the result, and the records as they were before (see
+[the ledger design note](../plan/stylebook-cleanup-api-ledger.md)). Dry runs, no-ops, and refused
+items write nothing. There is no undo route yet.
+
+**Limits.** An operator sets how many actions of each kind one run may apply
+(`capabilities.limits.run_ceilings`). Past it, items return `ceiling_reached`; open a new run to
+continue. See [runtime configuration](../operations/runtime-configuration.md).
 
 ## Conventions
 
@@ -108,7 +154,6 @@ to 20 sample ids.
 
 ## Not built yet
 
-- Apply routes (merges, edits, aliases, dismissals, retirements, deletions), runs, and the action
-  ledger.
-- Dismissal reason, actor run, and `resolution` lookups; they need the ledger tables.
+- Edits, aliases, dismissals, retirements, and deletions.
+- Dismissal reason and actor run on `GET /dismissals`.
 - Candidate decisions, mention links, relations, and undo (the second release).

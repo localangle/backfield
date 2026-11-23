@@ -7,6 +7,7 @@ from typing import Any
 
 from backfield_auth.gate import SCOPE_CLEANUP_APPLY, SCOPE_CLEANUP_READ
 from backfield_db import BackfieldProject
+from backfield_entities.cleanup.ledger import ActionCaller
 from backfield_entities.public.stylebook_scope import resolve_public_stylebook_id
 from fastapi import Depends, HTTPException, status
 from sqlmodel import Session
@@ -30,6 +31,17 @@ def require_queue_scope_allowed(auth: dict[str, Any], scope: str) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Stylebook-wide queues need a service key.",
         )
+
+
+def action_caller(auth: dict[str, Any]) -> ActionCaller:
+    """Who to record on the ledger: the key's id and label, or the shared service token."""
+    if auth["type"] == "api_key":
+        credential = auth["credential"]
+        return ActionCaller(
+            credential_id=int(credential.id),
+            credential_label=credential.label or f"key {credential.key_prefix}",
+        )
+    return ActionCaller(credential_id=None, credential_label="service token")
 
 
 @dataclass(frozen=True)

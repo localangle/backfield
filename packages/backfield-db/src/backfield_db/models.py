@@ -432,6 +432,112 @@ class StylebookActivity(SQLModel, table=True):
     )
 
 
+class StylebookCleanupRun(SQLModel, table=True):
+    """A caller-opened grouping of cleanup actions, for attribution, the ledger, and undo."""
+
+    __tablename__ = "stylebook_cleanup_run"
+    __table_args__ = (Index("ix_stylebook_cleanup_run_stylebook_status", "stylebook_id", "status"),)
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    label: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    client_run_ref: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+        description="The caller's own reference for the run, stored as given.",
+    )
+    status: str = Field(
+        default="open",
+        sa_column=Column(Text, nullable=False, server_default="open"),
+        description="open, closed, or aborted.",
+    )
+    credential_id: int | None = Field(
+        default=None, foreign_key="backfield_api_credential.id", index=True
+    )
+    credential_label: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    closed_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+
+
+class StylebookCleanupAction(SQLModel, table=True):
+    """Ledger row for one applied cleanup item, written in the same transaction as the change."""
+
+    __tablename__ = "stylebook_cleanup_action"
+    __table_args__ = (
+        Index("ix_stylebook_cleanup_action_run_created", "run_id", "created_at"),
+        Index("ix_stylebook_cleanup_action_stylebook_created", "stylebook_id", "created_at"),
+        Index(
+            "ix_stylebook_cleanup_action_subject",
+            "stylebook_id",
+            "entity_type",
+            "canonical_id",
+        ),
+    )
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    run_id: str = Field(foreign_key="stylebook_cleanup_run.id")
+    stylebook_id: int = Field(foreign_key="stylebook.id")
+    operation: str = Field(sa_column=Column(Text, nullable=False))
+    entity_type: str = Field(sa_column=Column(Text, nullable=False))
+    canonical_id: str = Field(
+        sa_column=Column(Text, nullable=False),
+        description="The canonical the operation acted on (a merge's source).",
+    )
+    related_canonical_id: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+        description="The second canonical, when there is one (a merge's survivor).",
+    )
+    client_item_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    provenance_json: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(JSON, nullable=True)
+    )
+    credential_id: int | None = Field(default=None, foreign_key="backfield_api_credential.id")
+    credential_label: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    request_json: dict[str, Any] = Field(sa_column=Column(JSON, nullable=False))
+    result_json: dict[str, Any] = Field(sa_column=Column(JSON, nullable=False))
+    before_state_json: dict[str, Any] = Field(sa_column=Column(JSON, nullable=False))
+    reindex_queued: bool = Field(
+        default=False, sa_column=Column(Boolean, nullable=False, server_default="false")
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    undone_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+
+
+class StylebookCanonicalRedirect(SQLModel, table=True):
+    """`merged_into`: where a merged-away canonical id went, so old ids still resolve."""
+
+    __tablename__ = "stylebook_canonical_redirect"
+    __table_args__ = (
+        UniqueConstraint(
+            "stylebook_id", "entity_type", "old_id", name="uq_stylebook_canonical_redirect_old"
+        ),
+        Index("ix_stylebook_canonical_redirect_new", "stylebook_id", "entity_type", "new_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id")
+    entity_type: str = Field(sa_column=Column(Text, nullable=False))
+    old_id: str = Field(sa_column=Column(Text, nullable=False))
+    new_id: str = Field(sa_column=Column(Text, nullable=False))
+    action_id: str | None = Field(
+        default=None,
+        foreign_key="stylebook_cleanup_action.id",
+        description="The ledger row that made the merge; empty for merges made in the app.",
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
 class StylebookCleanupDismissal(SQLModel, table=True):
     """Editor dismissal of a cleanup issue (duplicate pair or list item)."""
 
@@ -1192,8 +1298,7 @@ class StylebookConnectionEvidence(SQLModel, table=True):
             name="ck_stylebook_conn_evidence_currentness",
         ),
         CheckConstraint(
-            "currentness_review_source IN "
-            "('unreviewed', 'llm', 'manual', 'deterministic')",
+            "currentness_review_source IN ('unreviewed', 'llm', 'manual', 'deterministic')",
             name="ck_stylebook_conn_evidence_review_source",
         ),
         Index("ix_stylebook_conn_evidence_connection", "connection_id", "created_at"),
@@ -1826,7 +1931,7 @@ class SubstrateLocationMentionOccurrence(SQLModel, table=True):
     location_mention_id: int = Field(foreign_key="substrate_location_mention.id", index=True)
     source_kind: str = Field(
         default="system_extraction",
-        sa_column=Column(Text, nullable=False, server_default="system_extraction")
+        sa_column=Column(Text, nullable=False, server_default="system_extraction"),
     )
     source_details_json: dict | None = Field(
         default=None,
@@ -2393,9 +2498,7 @@ class AgateProcessedItem(SQLModel, table=True):
     """Per-S3-object execution unit for S3Input batch runs (parent ``agate_run``)."""
 
     __tablename__ = "agate_processed_item"
-    __table_args__ = (
-        Index("ix_agate_processed_item_run_status", "run_id", "status"),
-    )
+    __table_args__ = (Index("ix_agate_processed_item_run_status", "run_id", "status"),)
 
     id: int | None = Field(default=None, primary_key=True)
     run_id: str = Field(foreign_key="agate_run.id")

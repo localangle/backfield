@@ -14,6 +14,7 @@ from backfield_db import (
     Stylebook,
     SubstrateArticle,
 )
+from backfield_entities.canonical.link import CANONICAL_LINK_LINKED
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from backfield_entities.cleanup.entity_models import EntityName, cleanup_entity_models
 from core_api.deps import get_session
@@ -198,7 +199,12 @@ def seed_entity(
     session.add(canonical)
     session.flush()
     substrate_id = seed_substrate(
-        session, entity, canonical_id=str(canonical.id), project_id=project_id, name=label
+        session,
+        entity,
+        canonical_id=str(canonical.id),
+        project_id=project_id,
+        name=label,
+        link_status=CANONICAL_LINK_LINKED,
     )
     for alias in aliases:
         session.add(

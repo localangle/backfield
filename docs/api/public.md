@@ -271,7 +271,7 @@ always named in the path and must belong to the key's organization. The app's ow
 lists them. The design is tracked in the Stylebook cleanup API plan under `docs/plan/`.
 
 The read routes (export, evidence, compare, checks, candidates, dismissals, integrity, capabilities)
-are built; there are no apply routes yet. See [`cleanup.md`](cleanup.md) for the route list,
+and the first apply route (merges, with runs and an action ledger) are built. See [`cleanup.md`](cleanup.md) for the route list,
 conventions, and the keyed contract.
 
 ## Related documentation

@@ -84,6 +84,7 @@ Intent and decision records for features not currently scheduled:
 - [`plan/stylebook-maintenance-job-catalog.md`](plan/stylebook-maintenance-job-catalog.md) — discrete reusable jobs proposed for future Stylebook maintenance skills, functions, APIs, and pipelines
 - [`plan/stylebook-cleanup-toolkit.md`](plan/stylebook-cleanup-toolkit.md) — plan for ingest prevention and the outside cleanup toolkit (skills, engine, MCP)
 - [`plan/stylebook-cleanup-api.md`](plan/stylebook-cleanup-api.md) — plan for the keyed cleanup API: credentials, route catalog, code placement, and preview launch
+- [`plan/stylebook-cleanup-api-ledger.md`](plan/stylebook-cleanup-api-ledger.md) — runs, the action ledger, before-state, ceilings, and `merged_into` for the cleanup API
 - [`plan/stylebook-cleanup-api-execution.md`](plan/stylebook-cleanup-api-execution.md) — draft execution plan for the cleanup API, by phase
 - [`plan/stylebook-autonomous-year-cleanup.md`](plan/stylebook-autonomous-year-cleanup.md) — guarded autonomous runbook for the next full-year, cross-entity cleanup experiment
 

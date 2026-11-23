@@ -21,6 +21,9 @@ from backfield_entities.cleanup.dismissals_read import DismissalPage
 from backfield_entities.cleanup.evidence import BatchEvidence, CanonicalEvidence, PairComparison
 from backfield_entities.cleanup.export import CleanupExportPage
 from backfield_entities.cleanup.integrity import IntegrityReport
+from backfield_entities.cleanup.merge_items import MergeResponse
+from backfield_entities.cleanup.redirects import CanonicalResolution
+from backfield_entities.cleanup.runs import ActionOut, ActionPage, RunOut, RunPage
 from fastapi import APIRouter
 
 from core_api.routers.public.cleanup.candidates import (
@@ -47,6 +50,16 @@ from core_api.routers.public.cleanup.evidence import (
     post_cleanup_evidence,
 )
 from core_api.routers.public.cleanup.export import get_cleanup_export
+from core_api.routers.public.cleanup.merges import post_cleanup_merges
+from core_api.routers.public.cleanup.resolution import get_cleanup_resolution
+from core_api.routers.public.cleanup.runs import (
+    get_cleanup_action,
+    get_cleanup_run,
+    get_cleanup_run_actions,
+    get_cleanup_runs,
+    post_cleanup_run,
+    post_cleanup_run_close,
+)
 from core_api.routers.public.openapi import CLEANUP_PREVIEW_TAG
 
 router = APIRouter(
@@ -75,6 +88,13 @@ router.get("/candidates/{entity}/{candidate_id}/evidence", response_model=Candid
 
 router.get("/dismissals", response_model=DismissalPage)(get_cleanup_dismissals)
 
+router.post("/runs", response_model=RunOut)(post_cleanup_run)
+router.get("/runs", response_model=RunPage)(get_cleanup_runs)
+router.get("/runs/{run_id}", response_model=RunOut)(get_cleanup_run)
+router.post("/runs/{run_id}/close", response_model=RunOut)(post_cleanup_run_close)
+router.get("/runs/{run_id}/actions", response_model=ActionPage)(get_cleanup_run_actions)
+router.get("/actions/{action_id}", response_model=ActionOut)(get_cleanup_action)
+
 router.get("/{entity}/export", response_model=CleanupExportPage)(get_cleanup_export)
 router.get("/{entity}/integrity", response_model=IntegrityReport)(get_cleanup_integrity)
 router.get("/{entity}/{canonical_id}/evidence", response_model=CanonicalEvidence)(
@@ -84,3 +104,7 @@ router.post("/{entity}/evidence", response_model=BatchEvidence)(post_cleanup_evi
 router.get("/{entity}/{canonical_id}/compare/{other_id}", response_model=PairComparison)(
     get_cleanup_compare
 )
+router.get("/{entity}/{canonical_id}/resolution", response_model=CanonicalResolution)(
+    get_cleanup_resolution
+)
+router.post("/{entity}/merges", response_model=MergeResponse)(post_cleanup_merges)
