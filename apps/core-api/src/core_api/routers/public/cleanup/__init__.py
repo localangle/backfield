@@ -39,6 +39,7 @@ from core_api.routers.public.cleanup.checks import (
     get_cleanup_checks,
     post_cleanup_check_run,
 )
+from core_api.routers.public.cleanup.contract import get_cleanup_openapi
 from core_api.routers.public.cleanup.dismissals import get_cleanup_dismissals, get_cleanup_integrity
 from core_api.routers.public.cleanup.evidence import (
     get_cleanup_compare,
@@ -54,6 +55,7 @@ router = APIRouter(
 )
 
 router.get("/capabilities", response_model=CleanupCapabilitiesOut)(get_cleanup_capabilities)
+router.get("/openapi.json", include_in_schema=False)(get_cleanup_openapi)
 
 # Fixed-prefix routes come before the `/{entity}/...` routes so they are never read as an entity.
 router.get("/checks", response_model=CheckListOut)(get_cleanup_checks)

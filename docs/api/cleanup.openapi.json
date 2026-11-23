@@ -1,0 +1,6195 @@
+{
+  "components": {
+    "schemas": {
+      "BatchEvidence": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CanonicalEvidence"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "missing_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "missing_ids"
+        ],
+        "title": "BatchEvidence",
+        "type": "object"
+      },
+      "BatchEvidenceRequest": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 25,
+            "minItems": 1,
+            "title": "Ids",
+            "type": "array"
+          },
+          "snippet_chars": {
+            "default": 300,
+            "minimum": 0.0,
+            "title": "Snippet Chars",
+            "type": "integer"
+          },
+          "snippet_limit": {
+            "default": 5,
+            "maximum": 50.0,
+            "minimum": 0.0,
+            "title": "Snippet Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "title": "BatchEvidenceRequest",
+        "type": "object"
+      },
+      "CandidateCounts": {
+        "properties": {
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateProjectCount"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "projects"
+        ],
+        "title": "CandidateCounts",
+        "type": "object"
+      },
+      "CandidateEvidence": {
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/CandidateItem"
+          },
+          "matches": {
+            "description": "Ranked catalog matches, best first.",
+            "items": {
+              "$ref": "#/components/schemas/CatalogMatch"
+            },
+            "title": "Matches",
+            "type": "array"
+          },
+          "snippets": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceSnippet"
+            },
+            "title": "Snippets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "candidate",
+          "snippets",
+          "matches"
+        ],
+        "title": "CandidateEvidence",
+        "type": "object"
+      },
+      "CandidateItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "entity": {
+            "title": "Entity",
+            "type": "string"
+          },
+          "id": {
+            "description": "Id of the project-level record.",
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          },
+          "project_slug": {
+            "title": "Project Slug",
+            "type": "string"
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CandidateRecommendation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "review_reasons": {
+            "description": "Why the record needs a decision, as recorded at ingest.",
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "object"
+            },
+            "title": "Review Reasons",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "deferred"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "entity",
+          "project_slug",
+          "project_name",
+          "name",
+          "kind",
+          "status",
+          "created_at",
+          "review_reasons"
+        ],
+        "title": "CandidateItem",
+        "type": "object"
+      },
+      "CandidatePage": {
+        "properties": {
+          "entity": {
+            "title": "Entity",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "queue_scope": {
+            "enum": [
+              "project",
+              "stylebook"
+            ],
+            "title": "Queue Scope",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "deferred"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entity",
+          "queue_scope",
+          "status",
+          "total",
+          "items"
+        ],
+        "title": "CandidatePage",
+        "type": "object"
+      },
+      "CandidateProjectCount": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          },
+          "project_slug": {
+            "title": "Project Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_slug",
+          "project_name",
+          "count"
+        ],
+        "title": "CandidateProjectCount",
+        "type": "object"
+      },
+      "CandidateRecommendation": {
+        "description": "The ingest pipeline's suggested action for a candidate, when it made one.",
+        "properties": {
+          "adjudication_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adjudication Confidence"
+          },
+          "adjudication_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adjudication Model"
+          },
+          "adjudication_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adjudication Outcome"
+          },
+          "adjudication_rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adjudication Rationale"
+          },
+          "canonical_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Id"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "suggested_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Action"
+          }
+        },
+        "title": "CandidateRecommendation",
+        "type": "object"
+      },
+      "CandidateTypes": {
+        "properties": {
+          "types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "types"
+        ],
+        "title": "CandidateTypes",
+        "type": "object"
+      },
+      "CanonicalEvidence": {
+        "properties": {
+          "activity": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceActivity"
+            },
+            "title": "Activity",
+            "type": "array"
+          },
+          "aliases": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceAlias"
+            },
+            "title": "Aliases",
+            "type": "array"
+          },
+          "connections": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceConnection"
+            },
+            "title": "Connections",
+            "type": "array"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocationExportDetails"
+              },
+              {
+                "$ref": "#/components/schemas/PersonExportDetails"
+              },
+              {
+                "$ref": "#/components/schemas/OrganizationExportDetails"
+              }
+            ],
+            "title": "Details"
+          },
+          "entity": {
+            "title": "Entity",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "linked_records": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceLinkedRecord"
+            },
+            "title": "Linked Records",
+            "type": "array"
+          },
+          "mention_count": {
+            "title": "Mention Count",
+            "type": "integer"
+          },
+          "meta": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceMeta"
+            },
+            "title": "Meta",
+            "type": "array"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "snippets": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceSnippet"
+            },
+            "title": "Snippets",
+            "type": "array"
+          },
+          "story_count": {
+            "title": "Story Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "entity",
+          "label",
+          "slug",
+          "kind",
+          "mention_count",
+          "story_count",
+          "details",
+          "aliases",
+          "meta",
+          "connections",
+          "activity",
+          "linked_records",
+          "snippets"
+        ],
+        "title": "CanonicalEvidence",
+        "type": "object"
+      },
+      "CapabilityCheck": {
+        "properties": {
+          "algorithm_version": {
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "entity": {
+            "enum": [
+              "locations",
+              "people",
+              "organizations"
+            ],
+            "title": "Entity",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "entity",
+          "kind",
+          "algorithm_version"
+        ],
+        "title": "CapabilityCheck",
+        "type": "object"
+      },
+      "CatalogMatch": {
+        "properties": {
+          "canonical_id": {
+            "title": "Canonical Id",
+            "type": "string"
+          },
+          "formatted_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Formatted Address"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "canonical_id",
+          "label",
+          "kind"
+        ],
+        "title": "CatalogMatch",
+        "type": "object"
+      },
+      "CheckListOut": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CheckSummary"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "queue_scope": {
+            "enum": [
+              "project",
+              "stylebook"
+            ],
+            "title": "Queue Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "queue_scope",
+          "checks"
+        ],
+        "title": "CheckListOut",
+        "type": "object"
+      },
+      "CheckResultItem": {
+        "properties": {
+          "canonical_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Canonical Ids",
+            "type": "array"
+          },
+          "item_key": {
+            "title": "Item Key",
+            "type": "string"
+          },
+          "item_kind": {
+            "enum": [
+              "cluster",
+              "list"
+            ],
+            "title": "Item Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "pair_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pair Keys",
+            "type": "array"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the item was flagged. Shape depends on the check.",
+            "title": "Payload"
+          }
+        },
+        "required": [
+          "ordinal",
+          "item_kind",
+          "item_key",
+          "label",
+          "canonical_ids",
+          "pair_keys",
+          "payload"
+        ],
+        "title": "CheckResultItem",
+        "type": "object"
+      },
+      "CheckResultsPage": {
+        "properties": {
+          "algorithm_version": {
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When that run finished (the results' watermark).",
+            "title": "As Of"
+          },
+          "check_id": {
+            "title": "Check Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CheckResultItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "queue_scope": {
+            "enum": [
+              "project",
+              "stylebook"
+            ],
+            "title": "Queue Scope",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The finished run these results come from.",
+            "title": "Run Id"
+          },
+          "total": {
+            "description": "Open results matching the filters, before paging.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "check_id",
+          "algorithm_version",
+          "queue_scope",
+          "run_id",
+          "as_of",
+          "total",
+          "items"
+        ],
+        "title": "CheckResultsPage",
+        "type": "object"
+      },
+      "CheckRunOut": {
+        "properties": {
+          "algorithm_version": {
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "candidate_count": {
+            "title": "Candidate Count",
+            "type": "integer"
+          },
+          "check_id": {
+            "title": "Check Id",
+            "type": "string"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "check_id",
+          "status",
+          "algorithm_version",
+          "candidate_count",
+          "created_at"
+        ],
+        "title": "CheckRunOut",
+        "type": "object"
+      },
+      "CheckSummary": {
+        "properties": {
+          "algorithm_version": {
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "entity": {
+            "enum": [
+              "locations",
+              "people",
+              "organizations"
+            ],
+            "title": "Entity",
+            "type": "string"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "cluster",
+              "list"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "open_count": {
+            "description": "Open results in the last finished run.",
+            "title": "Open Count",
+            "type": "integer"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "status": {
+            "description": "`never_run`, `queued`, `running`, `succeeded` or `failed`.",
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "entity",
+          "kind",
+          "algorithm_version",
+          "status",
+          "open_count"
+        ],
+        "title": "CheckSummary",
+        "type": "object"
+      },
+      "CleanupCapabilitiesOut": {
+        "properties": {
+          "can_apply": {
+            "title": "Can Apply",
+            "type": "boolean"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CapabilityCheck"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "contract_version": {
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "entities": {
+            "items": {
+              "enum": [
+                "locations",
+                "people",
+                "organizations"
+              ],
+              "type": "string"
+            },
+            "title": "Entities",
+            "type": "array"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/CleanupLimits"
+          },
+          "operations": {
+            "description": "Apply operations this instance supports.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "queue_scopes": {
+            "description": "Queue scopes this key may request.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Queue Scopes",
+            "type": "array"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "stylebook_slug": {
+            "title": "Stylebook Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract_version",
+          "stylebook_slug",
+          "scopes",
+          "can_apply",
+          "entities",
+          "checks",
+          "queue_scopes",
+          "operations",
+          "limits"
+        ],
+        "title": "CleanupCapabilitiesOut",
+        "type": "object"
+      },
+      "CleanupExportItem": {
+        "properties": {
+          "alias_count": {
+            "description": "Aliases that are not suppressed.",
+            "title": "Alias Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocationExportDetails"
+              },
+              {
+                "$ref": "#/components/schemas/PersonExportDetails"
+              },
+              {
+                "$ref": "#/components/schemas/OrganizationExportDetails"
+              }
+            ],
+            "title": "Details"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Place kind, person type or organization type.",
+            "title": "Kind"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "mention_count": {
+            "description": "Active mentions. Counts only mentions inside the date range when one is set.",
+            "title": "Mention Count",
+            "type": "integer"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "story_count": {
+            "description": "Distinct articles behind those mentions.",
+            "title": "Story Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "slug",
+          "mention_count",
+          "story_count",
+          "alias_count",
+          "created_at",
+          "updated_at",
+          "details"
+        ],
+        "title": "CleanupExportItem",
+        "type": "object"
+      },
+      "CleanupExportPage": {
+        "properties": {
+          "entity": {
+            "enum": [
+              "locations",
+              "people",
+              "organizations"
+            ],
+            "title": "Entity",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CleanupExportItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pass as `cursor` to fetch the next page; null on the last page.",
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "entity",
+          "items"
+        ],
+        "title": "CleanupExportPage",
+        "type": "object"
+      },
+      "CleanupLimits": {
+        "properties": {
+          "evidence_batch_max": {
+            "title": "Evidence Batch Max",
+            "type": "integer"
+          },
+          "export_max_limit": {
+            "title": "Export Max Limit",
+            "type": "integer"
+          },
+          "snippet_max_chars": {
+            "description": "0 means this instance returns no snippet text.",
+            "title": "Snippet Max Chars",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "export_max_limit",
+          "evidence_batch_max",
+          "snippet_max_chars"
+        ],
+        "title": "CleanupLimits",
+        "type": "object"
+      },
+      "DismissalItem": {
+        "properties": {
+          "canonical_ids": {
+            "description": "The canonicals the dismissal covers.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Canonical Ids",
+            "type": "array"
+          },
+          "check_id": {
+            "title": "Check Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By User Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "pair_key": {
+            "title": "Pair Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "check_id",
+          "pair_key",
+          "canonical_ids",
+          "created_by_user_id",
+          "created_at"
+        ],
+        "title": "DismissalItem",
+        "type": "object"
+      },
+      "DismissalPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DismissalItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DismissalPage",
+        "type": "object"
+      },
+      "EvidenceActivity": {
+        "properties": {
+          "actor_type": {
+            "title": "Actor Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "related_entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Related Entity Id"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "event_type",
+          "source",
+          "actor_type",
+          "related_entity_id",
+          "payload"
+        ],
+        "title": "EvidenceActivity",
+        "type": "object"
+      },
+      "EvidenceAlias": {
+        "properties": {
+          "alias_text": {
+            "title": "Alias Text",
+            "type": "string"
+          },
+          "provenance": {
+            "title": "Provenance",
+            "type": "string"
+          },
+          "suppressed": {
+            "title": "Suppressed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "alias_text",
+          "provenance",
+          "suppressed"
+        ],
+        "title": "EvidenceAlias",
+        "type": "object"
+      },
+      "EvidenceConnection": {
+        "properties": {
+          "currentness": {
+            "title": "Currentness",
+            "type": "string"
+          },
+          "direction": {
+            "description": "`outgoing` or `incoming`, relative to this canonical.",
+            "title": "Direction",
+            "type": "string"
+          },
+          "nature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nature"
+          },
+          "other_entity_id": {
+            "title": "Other Entity Id",
+            "type": "string"
+          },
+          "other_entity_type": {
+            "title": "Other Entity Type",
+            "type": "string"
+          },
+          "other_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Label"
+          }
+        },
+        "required": [
+          "direction",
+          "nature",
+          "currentness",
+          "other_entity_type",
+          "other_entity_id",
+          "other_label"
+        ],
+        "title": "EvidenceConnection",
+        "type": "object"
+      },
+      "EvidenceLinkedRecord": {
+        "description": "One project-level record linked to the canonical.",
+        "properties": {
+          "formatted_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Formatted Address"
+          },
+          "geocode_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geocode Type"
+          },
+          "mention_count": {
+            "title": "Mention Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "point": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportPoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "project_slug": {
+            "title": "Project Slug",
+            "type": "string"
+          },
+          "substrate_id": {
+            "title": "Substrate Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "substrate_id",
+          "name",
+          "project_slug",
+          "mention_count"
+        ],
+        "title": "EvidenceLinkedRecord",
+        "type": "object"
+      },
+      "EvidenceMeta": {
+        "properties": {
+          "meta_type": {
+            "title": "Meta Type",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "value_type": {
+            "title": "Value Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meta_type",
+          "value_type",
+          "value"
+        ],
+        "title": "EvidenceMeta",
+        "type": "object"
+      },
+      "EvidenceSnippet": {
+        "properties": {
+          "article_id": {
+            "title": "Article Id",
+            "type": "integer"
+          },
+          "end_char": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Char"
+          },
+          "headline": {
+            "title": "Headline",
+            "type": "string"
+          },
+          "mention_text": {
+            "title": "Mention Text",
+            "type": "string"
+          },
+          "project_slug": {
+            "title": "Project Slug",
+            "type": "string"
+          },
+          "pub_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pub Date"
+          },
+          "quote": {
+            "title": "Quote",
+            "type": "boolean"
+          },
+          "snippet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Article text around the mention. Untrusted; null when snippets are off.",
+            "title": "Snippet"
+          },
+          "start_char": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Char"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "project_slug",
+          "article_id",
+          "headline",
+          "url",
+          "pub_date",
+          "mention_text",
+          "quote",
+          "start_char",
+          "end_char",
+          "snippet"
+        ],
+        "title": "EvidenceSnippet",
+        "type": "object"
+      },
+      "ExportPoint": {
+        "properties": {
+          "lat": {
+            "title": "Lat",
+            "type": "number"
+          },
+          "lon": {
+            "title": "Lon",
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lon"
+        ],
+        "title": "ExportPoint",
+        "type": "object"
+      },
+      "IntegrityCounts": {
+        "properties": {
+          "active_canonicals": {
+            "title": "Active Canonicals",
+            "type": "integer"
+          },
+          "aliases": {
+            "title": "Aliases",
+            "type": "integer"
+          },
+          "canonicals": {
+            "title": "Canonicals",
+            "type": "integer"
+          },
+          "deferred_records": {
+            "title": "Deferred Records",
+            "type": "integer"
+          },
+          "linked_records": {
+            "title": "Linked Records",
+            "type": "integer"
+          },
+          "open_connections": {
+            "title": "Open Connections",
+            "type": "integer"
+          },
+          "pending_records": {
+            "title": "Pending Records",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "canonicals",
+          "active_canonicals",
+          "linked_records",
+          "pending_records",
+          "deferred_records",
+          "aliases",
+          "open_connections"
+        ],
+        "title": "IntegrityCounts",
+        "type": "object"
+      },
+      "IntegrityIssue": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "sample_ids": {
+            "description": "Up to 20 affected row ids.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Sample Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "code",
+          "description",
+          "count",
+          "sample_ids"
+        ],
+        "title": "IntegrityIssue",
+        "type": "object"
+      },
+      "IntegrityReport": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/IntegrityCounts"
+          },
+          "entity": {
+            "title": "Entity",
+            "type": "string"
+          },
+          "healthy": {
+            "description": "True when no issue was found.",
+            "title": "Healthy",
+            "type": "boolean"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/IntegrityIssue"
+            },
+            "title": "Issues",
+            "type": "array"
+          }
+        },
+        "required": [
+          "entity",
+          "healthy",
+          "counts",
+          "issues"
+        ],
+        "title": "IntegrityReport",
+        "type": "object"
+      },
+      "JsonValue": {},
+      "LocationExportDetails": {
+        "properties": {
+          "city_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City Name"
+          },
+          "country_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Code"
+          },
+          "district_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "District Kind"
+          },
+          "district_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "District Number"
+          },
+          "formatted_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Formatted Address"
+          },
+          "geometry_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry Type"
+          },
+          "point": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportPoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subdivision_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subdivision Code"
+          }
+        },
+        "title": "LocationExportDetails",
+        "type": "object"
+      },
+      "OrganizationExportDetails": {
+        "description": "Organizations carry no kind-specific fields beyond ``kind`` today.",
+        "properties": {},
+        "title": "OrganizationExportDetails",
+        "type": "object"
+      },
+      "PairComparison": {
+        "properties": {
+          "connected": {
+            "description": "An open connection links the two directly.",
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "left": {
+            "$ref": "#/components/schemas/CanonicalEvidence"
+          },
+          "right": {
+            "$ref": "#/components/schemas/CanonicalEvidence"
+          },
+          "same_kind": {
+            "title": "Same Kind",
+            "type": "boolean"
+          },
+          "shared_alias_texts": {
+            "description": "Aliases both canonicals carry (normalized).",
+            "items": {
+              "type": "string"
+            },
+            "title": "Shared Alias Texts",
+            "type": "array"
+          },
+          "shared_story_count": {
+            "description": "Articles with active mentions of both.",
+            "title": "Shared Story Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "left",
+          "right",
+          "same_kind",
+          "shared_alias_texts",
+          "shared_story_count",
+          "connected"
+        ],
+        "title": "PairComparison",
+        "type": "object"
+      },
+      "PersonExportDetails": {
+        "properties": {
+          "affiliation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Affiliation"
+          },
+          "public_figure": {
+            "default": false,
+            "title": "Public Figure",
+            "type": "boolean"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "PersonExportDetails",
+        "type": "object"
+      },
+      "PublicErrorDetail": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "details": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "PublicErrorDetail",
+        "type": "object"
+      },
+      "PublicErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/PublicErrorDetail"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "request_id"
+        ],
+        "title": "PublicErrorResponse",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "ProjectApiKey": {
+        "bearerFormat": "Backfield project API key",
+        "description": "Project-scoped Backfield API key.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Keyed read surface for Stylebook cleanup tools. Preview: the contract can change between versions; check `contract_version` in `capabilities`.",
+    "title": "Backfield Cleanup API (preview)",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/candidates/{entity}": {
+      "get": {
+        "description": "Candidates still waiting for a link decision, ordered like the Stylebook queue.",
+        "operationId": "get_cleanup_candidates_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup_candidates__entity__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity",
+            "required": true,
+            "schema": {
+              "enum": [
+                "locations",
+                "people",
+                "organizations"
+              ],
+              "title": "Entity",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          },
+          {
+            "description": "`project` is the key's project. `stylebook` covers every project (service keys).",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "project",
+              "description": "`project` is the key's project. `stylebook` covers every project (service keys).",
+              "enum": [
+                "project",
+                "stylebook"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "open",
+              "enum": [
+                "open",
+                "deferred"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Match the record's name.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Match the record's name.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Place kind, person type or org type.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Place kind, person type or org type.",
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "needs_review",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Needs Review"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mentioned_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mentioned From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mentioned_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mentioned To"
+            }
+          },
+          {
+            "description": "`next_cursor` from the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`next_cursor` from the previous page.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidatePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Get Cleanup Candidates",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/candidates/{entity}/count": {
+      "get": {
+        "description": "How many candidates are waiting, per project.",
+        "operationId": "get_cleanup_candidate_count_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup_candidates__entity__count_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity",
+            "required": true,
+            "schema": {
+              "enum": [
+                "locations",
+                "people",
+                "organizations"
+              ],
+              "title": "Entity",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          },
+          {
+            "description": "`project` is the key's project. `stylebook` covers every project (service keys).",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "project",
+              "description": "`project` is the key's project. `stylebook` covers every project (service keys).",
+              "enum": [
+                "project",
+                "stylebook"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "open",
+              "enum": [
+                "open",
+                "deferred"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "needs_review",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Needs Review"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mentioned_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mentioned From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mentioned_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mentioned To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateCounts"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Get Cleanup Candidate Count",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/candidates/{entity}/types": {
+      "get": {
+        "description": "Kinds that can be used to filter the queue.",
+        "operationId": "get_cleanup_candidate_types_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup_candidates__entity__types_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity",
+            "required": true,
+            "schema": {
+              "enum": [
+                "locations",
+                "people",
+                "organizations"
+              ],
+              "title": "Entity",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          },
+          {
+            "description": "`project` is the key's project. `stylebook` covers every project (service keys).",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "project",
+              "description": "`project` is the key's project. `stylebook` covers every project (service keys).",
+              "enum": [
+                "project",
+                "stylebook"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "open",
+              "enum": [
+                "open",
+                "deferred"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateTypes"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Get Cleanup Candidate Types",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/candidates/{entity}/{candidate_id}/evidence": {
+      "get": {
+        "description": "Article context and ranked catalog matches for one candidate.",
+        "operationId": "get_cleanup_candidate_evidence_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup_candidates__entity___candidate_id__evidence_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity",
+            "required": true,
+            "schema": {
+              "enum": [
+                "locations",
+                "people",
+                "organizations"
+              ],
+              "title": "Entity",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "candidate_id",
+            "required": true,
+            "schema": {
+              "title": "Candidate Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          },
+          {
+            "description": "`project` is the key's project. `stylebook` covers every project (service keys).",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "project",
+              "description": "`project` is the key's project. `stylebook` covers every project (service keys).",
+              "enum": [
+                "project",
+                "stylebook"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "snippet_limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "maximum": 50,
+              "minimum": 0,
+              "title": "Snippet Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "snippet_chars",
+            "required": false,
+            "schema": {
+              "default": 300,
+              "minimum": 0,
+              "title": "Snippet Chars",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateEvidence"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Get Cleanup Candidate Evidence",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/capabilities": {
+      "get": {
+        "description": "Return the preview contract version and what the calling key may do.",
+        "operationId": "get_cleanup_capabilities_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup_capabilities_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CleanupCapabilitiesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Get Cleanup Capabilities",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/checks": {
+      "get": {
+        "description": "Every check with its algorithm version, latest status and open count.",
+        "operationId": "get_cleanup_checks_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup_checks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          },
+          {
+            "description": "`project` limits list checks to the key's project. `stylebook` covers every project and needs a service key.",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "project",
+              "description": "`project` limits list checks to the key's project. `stylebook` covers every project and needs a service key.",
+              "enum": [
+                "project",
+                "stylebook"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Minimum full-name similarity for near-duplicate clusters.",
+            "in": "query",
+            "name": "similarity_threshold",
+            "required": false,
+            "schema": {
+              "default": 0.72,
+              "description": "Minimum full-name similarity for near-duplicate clusters.",
+              "maximum": 0.95,
+              "minimum": 0.5,
+              "title": "Similarity Threshold",
+              "type": "number"
+            }
+          },
+          {
+            "description": "Minimum primary-name similarity (text before the first comma).",
+            "in": "query",
+            "name": "head_similarity_threshold",
+            "required": false,
+            "schema": {
+              "default": 0.75,
+              "description": "Minimum primary-name similarity (text before the first comma).",
+              "maximum": 0.95,
+              "minimum": 0.5,
+              "title": "Head Similarity Threshold",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Get Cleanup Checks",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/checks/{check_id}/results": {
+      "get": {
+        "description": "Open results from the last finished run, with the run's algorithm version and time.",
+        "operationId": "get_cleanup_check_results_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup_checks__check_id__results_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "title": "Check Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          },
+          {
+            "description": "`next_cursor` from the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`next_cursor` from the previous page.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter results by label text.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter results by label text.",
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mentioned_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mentioned From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mentioned_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mentioned To"
+            }
+          },
+          {
+            "description": "`project` limits list checks to the key's project. `stylebook` covers every project and needs a service key.",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "project",
+              "description": "`project` limits list checks to the key's project. `stylebook` covers every project and needs a service key.",
+              "enum": [
+                "project",
+                "stylebook"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Minimum full-name similarity for near-duplicate clusters.",
+            "in": "query",
+            "name": "similarity_threshold",
+            "required": false,
+            "schema": {
+              "default": 0.72,
+              "description": "Minimum full-name similarity for near-duplicate clusters.",
+              "maximum": 0.95,
+              "minimum": 0.5,
+              "title": "Similarity Threshold",
+              "type": "number"
+            }
+          },
+          {
+            "description": "Minimum primary-name similarity (text before the first comma).",
+            "in": "query",
+            "name": "head_similarity_threshold",
+            "required": false,
+            "schema": {
+              "default": 0.75,
+              "description": "Minimum primary-name similarity (text before the first comma).",
+              "maximum": 0.95,
+              "minimum": 0.5,
+              "title": "Head Similarity Threshold",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckResultsPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Get Cleanup Check Results",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/checks/{check_id}/runs": {
+      "post": {
+        "description": "Start a check run for the scope, or return the one already running.",
+        "operationId": "post_cleanup_check_run_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup_checks__check_id__runs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "title": "Check Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          },
+          {
+            "description": "`project` limits list checks to the key's project. `stylebook` covers every project and needs a service key.",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "project",
+              "description": "`project` limits list checks to the key's project. `stylebook` covers every project and needs a service key.",
+              "enum": [
+                "project",
+                "stylebook"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Minimum full-name similarity for near-duplicate clusters.",
+            "in": "query",
+            "name": "similarity_threshold",
+            "required": false,
+            "schema": {
+              "default": 0.72,
+              "description": "Minimum full-name similarity for near-duplicate clusters.",
+              "maximum": 0.95,
+              "minimum": 0.5,
+              "title": "Similarity Threshold",
+              "type": "number"
+            }
+          },
+          {
+            "description": "Minimum primary-name similarity (text before the first comma).",
+            "in": "query",
+            "name": "head_similarity_threshold",
+            "required": false,
+            "schema": {
+              "default": 0.75,
+              "description": "Minimum primary-name similarity (text before the first comma).",
+              "maximum": 0.95,
+              "minimum": 0.5,
+              "title": "Head Similarity Threshold",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Post Cleanup Check Run",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/checks/{check_id}/runs/latest": {
+      "get": {
+        "description": "Status of the newest run for the scope; 404 when the check has never run.",
+        "operationId": "get_cleanup_check_latest_run_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup_checks__check_id__runs_latest_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "title": "Check Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          },
+          {
+            "description": "`project` limits list checks to the key's project. `stylebook` covers every project and needs a service key.",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "project",
+              "description": "`project` limits list checks to the key's project. `stylebook` covers every project and needs a service key.",
+              "enum": [
+                "project",
+                "stylebook"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Minimum full-name similarity for near-duplicate clusters.",
+            "in": "query",
+            "name": "similarity_threshold",
+            "required": false,
+            "schema": {
+              "default": 0.72,
+              "description": "Minimum full-name similarity for near-duplicate clusters.",
+              "maximum": 0.95,
+              "minimum": 0.5,
+              "title": "Similarity Threshold",
+              "type": "number"
+            }
+          },
+          {
+            "description": "Minimum primary-name similarity (text before the first comma).",
+            "in": "query",
+            "name": "head_similarity_threshold",
+            "required": false,
+            "schema": {
+              "default": 0.75,
+              "description": "Minimum primary-name similarity (text before the first comma).",
+              "maximum": 0.95,
+              "minimum": 0.5,
+              "title": "Head Similarity Threshold",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Get Cleanup Check Latest Run",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/dismissals": {
+      "get": {
+        "description": "Issues editors set aside, so a client does not raise them again.",
+        "operationId": "get_cleanup_dismissals_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup_dismissals_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only dismissals for this check.",
+            "in": "query",
+            "name": "check_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only dismissals for this check.",
+              "title": "Check Id"
+            }
+          },
+          {
+            "description": "`next_cursor` from the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`next_cursor` from the previous page.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DismissalPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Get Cleanup Dismissals",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/{entity}/evidence": {
+      "post": {
+        "description": "Evidence for several canonicals at once. A POST only because of the id list; read-only.",
+        "operationId": "post_cleanup_evidence_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup__entity__evidence_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity",
+            "required": true,
+            "schema": {
+              "enum": [
+                "locations",
+                "people",
+                "organizations"
+              ],
+              "title": "Entity",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchEvidenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchEvidence"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Post Cleanup Evidence",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/{entity}/export": {
+      "get": {
+        "description": "Page through every active canonical of one kind, with mention and alias counts.",
+        "operationId": "get_cleanup_export_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup__entity__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity",
+            "required": true,
+            "schema": {
+              "enum": [
+                "locations",
+                "people",
+                "organizations"
+              ],
+              "title": "Entity",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          },
+          {
+            "description": "`next_cursor` from the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`next_cursor` from the previous page.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Only canonicals changed at or after this time.",
+            "in": "query",
+            "name": "updated_since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only canonicals changed at or after this time.",
+              "title": "Updated Since"
+            }
+          },
+          {
+            "description": "Only canonicals with an active mention published on or after.",
+            "in": "query",
+            "name": "mentioned_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only canonicals with an active mention published on or after.",
+              "title": "Mentioned From"
+            }
+          },
+          {
+            "description": "Only canonicals with an active mention published on or before.",
+            "in": "query",
+            "name": "mentioned_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only canonicals with an active mention published on or before.",
+              "title": "Mentioned To"
+            }
+          },
+          {
+            "description": "Place kind, person type or org type.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Place kind, person type or org type.",
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CleanupExportPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Get Cleanup Export",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/{entity}/integrity": {
+      "get": {
+        "description": "Read-only report on the catalog's own invariants for one kind of entity.",
+        "operationId": "get_cleanup_integrity_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup__entity__integrity_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity",
+            "required": true,
+            "schema": {
+              "enum": [
+                "locations",
+                "people",
+                "organizations"
+              ],
+              "title": "Entity",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrityReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Get Cleanup Integrity",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/{entity}/{canonical_id}/compare/{other_id}": {
+      "get": {
+        "description": "Evidence for any pair of canonicals, including pairs no check surfaced.",
+        "operationId": "get_cleanup_compare_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup__entity___canonical_id__compare__other_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity",
+            "required": true,
+            "schema": {
+              "enum": [
+                "locations",
+                "people",
+                "organizations"
+              ],
+              "title": "Entity",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "canonical_id",
+            "required": true,
+            "schema": {
+              "title": "Canonical Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "other_id",
+            "required": true,
+            "schema": {
+              "title": "Other Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Most snippets to return per canonical; 0 returns none.",
+            "in": "query",
+            "name": "snippet_limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "description": "Most snippets to return per canonical; 0 returns none.",
+              "maximum": 50,
+              "minimum": 0,
+              "title": "Snippet Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Longest snippet in characters. The instance may cap this lower.",
+            "in": "query",
+            "name": "snippet_chars",
+            "required": false,
+            "schema": {
+              "default": 300,
+              "description": "Longest snippet in characters. The instance may cap this lower.",
+              "minimum": 0,
+              "title": "Snippet Chars",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairComparison"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Get Cleanup Compare",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/{entity}/{canonical_id}/evidence": {
+      "get": {
+        "description": "Aliases, metadata, connections, activity, linked records and snippets for one canonical.",
+        "operationId": "get_cleanup_evidence_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup__entity___canonical_id__evidence_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity",
+            "required": true,
+            "schema": {
+              "enum": [
+                "locations",
+                "people",
+                "organizations"
+              ],
+              "title": "Entity",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "canonical_id",
+            "required": true,
+            "schema": {
+              "title": "Canonical Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Most snippets to return per canonical; 0 returns none.",
+            "in": "query",
+            "name": "snippet_limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "description": "Most snippets to return per canonical; 0 returns none.",
+              "maximum": 50,
+              "minimum": 0,
+              "title": "Snippet Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Longest snippet in characters. The instance may cap this lower.",
+            "in": "query",
+            "name": "snippet_chars",
+            "required": false,
+            "schema": {
+              "default": 300,
+              "description": "Longest snippet in characters. The instance may cap this lower.",
+              "minimum": 0,
+              "title": "Snippet Chars",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanonicalEvidence"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Get Cleanup Evidence",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "description": "Production",
+      "url": "https://api.{organization_slug}.backfield.news",
+      "variables": {
+        "organization_slug": {
+          "default": "your-organization",
+          "description": "Backfield organization slug."
+        }
+      }
+    },
+    {
+      "description": "Local development",
+      "url": "http://127.0.0.1:8004"
+    }
+  ]
+}

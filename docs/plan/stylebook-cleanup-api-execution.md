@@ -94,6 +94,26 @@ from A.2.
 
 **Branch:** `feat/cleanup-api-reads`. **Size:** large. Detail the task list when A is merged.
 
+**Status (2026-11-23):** B.1 to B.9 built on `feat/cleanup-shared-merge` (the single working branch
+the user chose), documented in [`docs/api/cleanup.md`](../api/cleanup.md). Differences from the task
+text:
+- The date-filter spike (B.2) found the existing `substrate_article.pub_date` index enough: about
+  140 ms for a full year over 270,000 mentions. No index added.
+- Export `updated_since` is only trustworthy if canonicals bump `updated_at`. They did not (a server
+  default only), so the three canonical models now set `onupdate`. This is application-level and
+  needs no migration. Alias, metadata, and link changes still do not touch the canonical row.
+- Evidence is a new assembler in `backfield_entities/cleanup/evidence.py`. The `entities/*/review.py`
+  modules did not carry what it needs.
+- Candidates (B.7): rather than moving the `stylebook-api` candidate code, a new generic library
+  module (`cleanup/candidates.py`) re-implements the queue filters and ordering for all three kinds
+  and returns the review reasons as data. The `stylebook-api` routes are untouched. The cost is two
+  copies of the filter logic until C2 moves the UI onto the library; tests pin the keyed behavior.
+- Dismissals are listed without reason or run: those columns do not exist until phase C slice 2.
+- `capabilities` lists no ceilings or operator repairs, because neither exists yet; `operations` is
+  empty.
+- `POST …/checks/{id}/runs` needs only `cleanup:read` (it starts a computation, not a catalog
+  change). User keys can only use the project queue scope; `scope=stylebook` needs a service key.
+
 Order:
 1. **Schemas first.** Pydantic models for every read response (strict types, no loose dicts), the shared cursor and error shape, and the operation-class names used later by ceilings.
 2. **Date filter spike.** Run `EXPLAIN ANALYZE` on the mention-to-article-to-canonical join with `substrate_article.pub_date` on realistic data; add an index only if the plan needs one (new indexes use the db-change skill).

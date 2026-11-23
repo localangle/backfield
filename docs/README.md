@@ -26,6 +26,7 @@ Authenticated HTTP surfaces and review contracts:
 - [`api/core.md`](api/core.md) — sessions, tenancy, credentials, AI configuration
 - [`api/agate.md`](api/agate.md) — runs, processed items, node metadata, persistence
 - [`api/stylebook.md`](api/stylebook.md) — catalogs, entities, candidates, bundles
+- [`api/cleanup.md`](api/cleanup.md) — preview keyed cleanup reads for outside cleanup tools
 - [`api/processed-item-review.md`](api/processed-item-review.md) — review overlays and domains
 
 ## Contributors

@@ -84,7 +84,10 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
 
 
 def _create_key(client: TestClient, *, credential_type: str, scopes: list[str]) -> dict[str, str]:
-    seed_first_admin(client, "cleanup-admin@example.com", "cleanup-secret")
+    try:
+        seed_first_admin(client, "cleanup-admin@example.com", "cleanup-secret")
+    except RuntimeError:
+        pass  # a previous call in the same test already created the admin
     client.post(
         "/v1/auth/login",
         json={"email": "cleanup-admin@example.com", "password": "cleanup-secret"},
@@ -108,12 +111,18 @@ def test_capabilities_for_read_only_key(client: TestClient) -> None:
     headers = _create_key(client, credential_type="user", scopes=["cleanup:read"])
     r = client.get(CAPABILITIES_URL.format(slug="default"), headers=headers)
     assert r.status_code == 200
-    assert r.json() == {
-        "contract_version": "preview-1",
-        "stylebook_slug": "default",
-        "scopes": ["read", "cleanup:read"],
-        "can_apply": False,
-    }
+    body = r.json()
+    assert body["contract_version"] == "preview-1"
+    assert body["stylebook_slug"] == "default"
+    assert body["scopes"] == ["read", "cleanup:read"]
+    assert body["can_apply"] is False
+    assert body["entities"] == ["locations", "people", "organizations"]
+    assert body["queue_scopes"] == ["project"]
+    assert body["operations"] == []
+    assert {c["id"] for c in body["checks"]} >= {"duplicate-locations", "mismatched-people"}
+    assert all(c["algorithm_version"].startswith(c["id"]) for c in body["checks"])
+    assert body["limits"]["export_max_limit"] == 1000
+    assert body["limits"]["snippet_max_chars"] == 500
 
 
 def test_capabilities_for_apply_key(client: TestClient) -> None:
@@ -121,6 +130,7 @@ def test_capabilities_for_apply_key(client: TestClient) -> None:
     r = client.get(CAPABILITIES_URL.format(slug="default"), headers=headers)
     assert r.status_code == 200
     assert r.json()["can_apply"] is True
+    assert r.json()["queue_scopes"] == ["project", "stylebook"]
 
 
 def test_capabilities_rejects_unknown_and_foreign_stylebooks(client: TestClient) -> None:
@@ -158,3 +168,21 @@ def test_preview_filter_keeps_untagged_operations_and_drops_empty_paths() -> Non
 
     only_preview: dict[str, Any] = {"get": {"tags": [CLEANUP_PREVIEW_TAG]}}
     assert _without_preview_operations(only_preview) is None
+
+
+def test_keyed_cleanup_contract_needs_cleanup_read_and_lists_only_cleanup_routes(
+    client: TestClient,
+) -> None:
+    url = "/public/v1/projects/general/stylebooks/default/cleanup/openapi.json"
+    assert client.get(url).status_code == 401
+
+    no_scope = _create_key(client, credential_type="user", scopes=[])
+    assert client.get(url, headers=no_scope).status_code == 403
+
+    headers = _create_key(client, credential_type="user", scopes=["cleanup:read"])
+    r = client.get(url, headers=headers)
+    assert r.status_code == 200
+    paths = r.json()["paths"]
+    assert paths
+    assert all("/cleanup/" in path for path in paths)
+    assert not any(path.endswith("/openapi.json") for path in paths)

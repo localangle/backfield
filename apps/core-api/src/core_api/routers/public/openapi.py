@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from copy import deepcopy
 from typing import Any
 
@@ -56,19 +57,26 @@ def _without_preview_operations(path_item: dict[str, Any]) -> dict[str, Any] | N
     return kept if kept_any_operation else None
 
 
-def build_public_openapi(schema: dict[str, Any]) -> dict[str, Any]:
-    """Return a deterministic, consumer-only OpenAPI document."""
-    paths = schema.get("paths") or {}
-    public_paths: dict[str, Any] = {}
-    for path, item in paths.items():
-        if not (
-            isinstance(path, str) and path.startswith(PUBLIC_PREFIX) and path != PUBLIC_SCHEMA_PATH
-        ):
+def _only_preview_operations(path_item: dict[str, Any]) -> dict[str, Any] | None:
+    """Keep preview-tagged operations; return None when none are left on the path."""
+    kept: dict[str, Any] = {}
+    kept_any_operation = False
+    for key, value in path_item.items():
+        if key not in _HTTP_METHODS:
+            kept[key] = value
             continue
-        visible_item = _without_preview_operations(deepcopy(item))
-        if visible_item is not None:
-            public_paths[path] = visible_item
-    sorted_paths = dict(sorted(public_paths.items()))
+        tags = set(value.get("tags") or []) if isinstance(value, dict) else set()
+        if tags & HIDDEN_PREVIEW_TAGS:
+            kept[key] = value
+            kept_any_operation = True
+    return kept if kept_any_operation else None
+
+
+def _document(
+    schema: dict[str, Any], paths: dict[str, Any], *, title: str, description: str
+) -> dict[str, Any]:
+    """Wrap sorted paths with the servers, security scheme and reachable schemas."""
+    sorted_paths = dict(sorted(paths.items()))
     source_components = schema.get("components") or {}
     source_schemas = source_components.get("schemas") or {}
     components = {
@@ -84,11 +92,7 @@ def build_public_openapi(schema: dict[str, Any]) -> dict[str, Any]:
     }
     return {
         "openapi": schema.get("openapi", "3.1.0"),
-        "info": {
-            "title": "Backfield Public API",
-            "version": "1.0.0",
-            "description": "Stable consumer API for project-scoped Backfield data and runs.",
-        },
+        "info": {"title": title, "version": "1.0.0", "description": description},
         "servers": [
             {
                 "url": "https://api.{organization_slug}.backfield.news",
@@ -105,3 +109,42 @@ def build_public_openapi(schema: dict[str, Any]) -> dict[str, Any]:
         "paths": sorted_paths,
         "components": components,
     }
+
+
+def _public_paths(
+    schema: dict[str, Any], *, keep: Callable[[dict[str, Any]], dict[str, Any] | None]
+) -> dict[str, Any]:
+    paths = schema.get("paths") or {}
+    selected: dict[str, Any] = {}
+    for path, item in paths.items():
+        if not (
+            isinstance(path, str) and path.startswith(PUBLIC_PREFIX) and path != PUBLIC_SCHEMA_PATH
+        ):
+            continue
+        visible_item = keep(deepcopy(item))
+        if visible_item is not None:
+            selected[path] = visible_item
+    return selected
+
+
+def build_public_openapi(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return a deterministic, consumer-only OpenAPI document."""
+    return _document(
+        schema,
+        _public_paths(schema, keep=_without_preview_operations),
+        title="Backfield Public API",
+        description="Stable consumer API for project-scoped Backfield data and runs.",
+    )
+
+
+def build_cleanup_openapi(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return the preview cleanup contract: only the cleanup-preview operations."""
+    return _document(
+        schema,
+        _public_paths(schema, keep=_only_preview_operations),
+        title="Backfield Cleanup API (preview)",
+        description=(
+            "Keyed read surface for Stylebook cleanup tools. Preview: the contract can change "
+            "between versions; check `contract_version` in `capabilities`."
+        ),
+    )

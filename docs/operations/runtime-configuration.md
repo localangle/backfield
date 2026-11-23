@@ -90,6 +90,11 @@ equivalent to an unset value and can mask a safe local default with an unusable 
 - `BACKFIELD_PUBLIC_RATE_LIMIT_SEARCH_PER_MINUTE`: semantic/geographic search limit per API key;
   defaults to 60.
 - `BACKFIELD_PUBLIC_RATE_LIMIT_RUNS_PER_MINUTE`: public run-trigger limit per API key; defaults to 5.
+- `BACKFIELD_PUBLIC_RATE_LIMIT_CLEANUP_EXPORT_PER_MINUTE`: limit for the preview cleanup canonical
+  export per API key; defaults to 30.
+- `BACKFIELD_CLEANUP_SNIPPET_MAX_CHARS`: longest article snippet the preview cleanup evidence
+  routes may return, whatever a caller asks for; defaults to 500. `0` turns snippet text off (the
+  mention text and article references are still returned).
 - `CELERY_QUEUE`: queue name; defaults to `agate`.
 - `CELERY_WORKER_CONCURRENCY`: prefork child count; defaults to 16 in the worker image and Compose.
 - `CELERY_PREFETCH_MULTIPLIER`: defaults to 1.

@@ -286,3 +286,52 @@ def test_candidate_evidence_404s_for_other_projects_and_linked_records(
         == 404
     )
     assert cleanup_client.get(f"{QUEUE_URL}/999999/evidence", headers=headers).status_code == 404
+
+
+def test_queue_matches_the_stylebook_ui_filters_and_order(
+    cleanup_client, cleanup_world, cleanup_session
+) -> None:
+    """Parity: the keyed queue lists the same records, in the same order, as the UI queue."""
+    from sqlmodel import select
+    from stylebook_api.entities.location import candidates as location_ui
+    from stylebook_api.entities.organization import candidates as organization_ui
+    from stylebook_api.entities.person import candidates as person_ui
+
+    headers = create_cleanup_key(cleanup_client)
+    ui_by_entity = {
+        "locations": (location_ui.open_candidate_filters, location_ui.SubstrateLocation),
+        "people": (person_ui.open_candidate_filters, person_ui.SubstratePerson),
+        "organizations": (
+            organization_ui.open_candidate_filters,
+            organization_ui.SubstrateOrganization,
+        ),
+    }
+    sort_key = {
+        "locations": lambda row: (row.normalized_name, row.id),
+        "people": lambda row: (row.sort_key or row.normalized_name, row.id),
+        "organizations": lambda row: (row.normalized_name.lower(), row.id),
+    }
+    for entity, (open_filters, model) in ui_by_entity.items():
+        for name, kind in (("Zed Co", "a"), ("Alpha Co", "b"), ("Mid Co", "a")):
+            _candidate(cleanup_session, cleanup_world, name, kind=kind, entity=entity)
+        _candidate(
+            cleanup_session, cleanup_world, "Parked Co", status=CANONICAL_LINK_WAIVED, entity=entity
+        )
+
+        for params in ({}, {"q": "co"}, {"kind": "a"}):
+            ui_rows = cleanup_session.exec(
+                select(model).where(
+                    *open_filters(
+                        cleanup_world.project_id,
+                        needs_review=None,
+                        q=params.get("q"),
+                        type_filter=params.get("kind"),
+                    )
+                )
+            ).all()
+            expected = [int(r.id) for r in sorted(ui_rows, key=sort_key[entity])]
+            body = cleanup_client.get(
+                f"{CLEANUP_BASE}/candidates/{entity}", headers=headers, params=params
+            ).json()
+            assert [i["id"] for i in body["items"]] == expected, (entity, params)
+            assert expected, (entity, params)

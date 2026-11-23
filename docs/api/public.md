@@ -270,8 +270,9 @@ Playground until they graduate (the Playground rule above does not apply to them
 always named in the path and must belong to the key's organization. The app's own `/openapi.json`
 lists them. The design is tracked in the Stylebook cleanup API plan under `docs/plan/`.
 
-Today the only route is `GET …/cleanup/capabilities` (contract version, the key's scopes, whether it
-can apply changes).
+The read routes (export, evidence, compare, checks, candidates, dismissals, integrity, capabilities)
+are built; there are no apply routes yet. See [`cleanup.md`](cleanup.md) for the route list,
+conventions, and the keyed contract.
 
 ## Related documentation
 

@@ -58,6 +58,10 @@ def _limit_for_request(request: Request) -> tuple[str, int]:
     path = request.url.path
     if request.method == "POST" and path.endswith("/runs"):
         return "runs", int(os.getenv("BACKFIELD_PUBLIC_RATE_LIMIT_RUNS_PER_MINUTE", "5"))
+    if "/cleanup/" in path and path.endswith("/export"):
+        return "cleanup-export", int(
+            os.getenv("BACKFIELD_PUBLIC_RATE_LIMIT_CLEANUP_EXPORT_PER_MINUTE", "30")
+        )
     if any(marker in path for marker in ("semantic-search", "geo-search", "geo-cells")):
         return "search", int(os.getenv("BACKFIELD_PUBLIC_RATE_LIMIT_SEARCH_PER_MINUTE", "60"))
     return "read", int(os.getenv("BACKFIELD_PUBLIC_RATE_LIMIT_READS_PER_MINUTE", "600"))

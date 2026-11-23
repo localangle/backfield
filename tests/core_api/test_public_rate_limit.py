@@ -156,3 +156,14 @@ def test_rate_limit_fails_open_on_redis_error(
 
     assert decision is None
     assert "public_rate_limit_redis_error" in caplog.text
+
+
+def test_cleanup_export_has_its_own_bucket(monkeypatch: pytest.MonkeyPatch) -> None:
+    export_path = "/public/v1/projects/p/stylebooks/s/cleanup/locations/export"
+    assert rate_limit._limit_for_request(_request(export_path)) == ("cleanup-export", 30)
+
+    monkeypatch.setenv("BACKFIELD_PUBLIC_RATE_LIMIT_CLEANUP_EXPORT_PER_MINUTE", "7")
+    assert rate_limit._limit_for_request(_request(export_path)) == ("cleanup-export", 7)
+
+    evidence_path = "/public/v1/projects/p/stylebooks/s/cleanup/locations/abc/evidence"
+    assert rate_limit._limit_for_request(_request(evidence_path))[0] == "read"
