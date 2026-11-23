@@ -17,8 +17,10 @@ from backfield_entities.cleanup.check_reads import (
     CheckResultsPage,
     CheckRunOut,
 )
+from backfield_entities.cleanup.dismissals_read import DismissalPage
 from backfield_entities.cleanup.evidence import BatchEvidence, CanonicalEvidence, PairComparison
 from backfield_entities.cleanup.export import CleanupExportPage
+from backfield_entities.cleanup.integrity import IntegrityReport
 from fastapi import APIRouter
 
 from core_api.routers.public.cleanup.candidates import (
@@ -37,6 +39,7 @@ from core_api.routers.public.cleanup.checks import (
     get_cleanup_checks,
     post_cleanup_check_run,
 )
+from core_api.routers.public.cleanup.dismissals import get_cleanup_dismissals, get_cleanup_integrity
 from core_api.routers.public.cleanup.evidence import (
     get_cleanup_compare,
     get_cleanup_evidence,
@@ -68,7 +71,10 @@ router.get("/candidates/{entity}/{candidate_id}/evidence", response_model=Candid
     get_cleanup_candidate_evidence
 )
 
+router.get("/dismissals", response_model=DismissalPage)(get_cleanup_dismissals)
+
 router.get("/{entity}/export", response_model=CleanupExportPage)(get_cleanup_export)
+router.get("/{entity}/integrity", response_model=IntegrityReport)(get_cleanup_integrity)
 router.get("/{entity}/{canonical_id}/evidence", response_model=CanonicalEvidence)(
     get_cleanup_evidence
 )
