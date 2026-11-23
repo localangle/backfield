@@ -507,6 +507,32 @@ def _shared_story_count(
     return len(article_ids(left_id) & article_ids(right_id))
 
 
+def _directly_connected(
+    session: Session, models: CleanupEntityModels, stylebook_id: int, left_id: str, right_id: str
+) -> bool:
+    """True when an open connection joins the two canonicals, in either direction."""
+    kind = models.singular
+    found = session.exec(
+        select(StylebookConnection.id)
+        .where(
+            StylebookConnection.stylebook_id == stylebook_id,
+            StylebookConnection.closed_at.is_(None),
+            or_(
+                (StylebookConnection.from_entity_type == kind)
+                & (StylebookConnection.from_entity_id == left_id)
+                & (StylebookConnection.to_entity_type == kind)
+                & (StylebookConnection.to_entity_id == right_id),
+                (StylebookConnection.from_entity_type == kind)
+                & (StylebookConnection.from_entity_id == right_id)
+                & (StylebookConnection.to_entity_type == kind)
+                & (StylebookConnection.to_entity_id == left_id),
+            ),
+        )
+        .limit(1)
+    ).first()
+    return found is not None
+
+
 def compare_canonicals(
     session: Session,
     models: CleanupEntityModels,
@@ -533,5 +559,5 @@ def compare_canonicals(
         same_kind=(left.kind or "").lower() == (right.kind or "").lower(),
         shared_alias_texts=sorted(left_aliases & right_aliases),
         shared_story_count=_shared_story_count(session, models, left_id, right_id),
-        connected=any(c.other_entity_id == right_id for c in left.connections),
+        connected=_directly_connected(session, models, stylebook_id, left_id, right_id),
     )

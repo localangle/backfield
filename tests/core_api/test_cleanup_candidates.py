@@ -195,6 +195,37 @@ def test_queue_is_project_scoped_unless_service_key_asks_for_the_stylebook(
     }
 
 
+def test_stylebook_scope_is_denied_on_every_queue_read_for_a_user_key(
+    cleanup_client, cleanup_world, cleanup_session
+) -> None:
+    headers = create_cleanup_key(cleanup_client)
+    candidate_id = _candidate(cleanup_session, cleanup_world, "Mine")
+    params = {"scope": "stylebook"}
+
+    for url in (QUEUE_URL, f"{QUEUE_URL}/count", f"{QUEUE_URL}/types"):
+        assert cleanup_client.get(url, headers=headers, params=params).status_code == 403, url
+    evidence = cleanup_client.get(
+        f"{QUEUE_URL}/{candidate_id}/evidence", headers=headers, params=params
+    )
+    assert evidence.status_code == 403
+
+
+def test_search_treats_percent_and_underscore_as_plain_text(
+    cleanup_client, cleanup_world, cleanup_session
+) -> None:
+    headers = create_cleanup_key(cleanup_client)
+    _candidate(cleanup_session, cleanup_world, "100% Dairy", entity="organizations")
+    _candidate(cleanup_session, cleanup_world, "Alpha Co", entity="organizations")
+    _candidate(cleanup_session, cleanup_world, "Under_score Inc", entity="organizations")
+    url = f"{CLEANUP_BASE}/candidates/organizations"
+
+    percent = cleanup_client.get(url, headers=headers, params={"q": "%"}).json()
+    underscore = cleanup_client.get(url, headers=headers, params={"q": "_"}).json()
+
+    assert [i["name"] for i in percent["items"]] == ["100% Dairy"]
+    assert [i["name"] for i in underscore["items"]] == ["Under_score Inc"]
+
+
 def test_count_for_own_project(cleanup_client, cleanup_world, cleanup_session) -> None:
     headers = create_cleanup_key(cleanup_client)
     _candidate(cleanup_session, cleanup_world, "One")

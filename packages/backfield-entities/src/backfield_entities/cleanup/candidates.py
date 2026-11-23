@@ -129,6 +129,18 @@ def stylebook_project_ids(
     return [int(row) for row in rows if row is not None]
 
 
+LIKE_ESCAPE = "\\"
+
+
+def _escape_like(text: str) -> str:
+    """Make `%` and `_` in a search term match themselves."""
+    return (
+        text.replace(LIKE_ESCAPE, LIKE_ESCAPE * 2)
+        .replace("%", f"{LIKE_ESCAPE}%")
+        .replace("_", f"{LIKE_ESCAPE}_")
+    )
+
+
 def _name_filter(models: CleanupEntityModels, q: str) -> Any:
     substrate = models.substrate
     if models.name == "locations":
@@ -137,8 +149,11 @@ def _name_filter(models: CleanupEntityModels, q: str) -> Any:
             name_column=col(substrate.name),
             normalized_name_column=col(substrate.normalized_name),
         )
-    term = f"%{q.strip()}%"
-    return or_(col(substrate.name).ilike(term), col(substrate.normalized_name).ilike(term))
+    term = f"%{_escape_like(q.strip())}%"
+    return or_(
+        col(substrate.name).ilike(term, escape=LIKE_ESCAPE),
+        col(substrate.normalized_name).ilike(term, escape=LIKE_ESCAPE),
+    )
 
 
 def _sort_column(models: CleanupEntityModels) -> Any:

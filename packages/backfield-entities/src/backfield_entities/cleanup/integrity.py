@@ -58,18 +58,20 @@ def _issue(
     count = _count(session, statement)
     if count == 0:
         return None
-    samples = session.exec(statement.limit(SAMPLE_SIZE)).all()
+    # Order by the selected id so the same data always yields the same samples.
+    first_column = list(statement.selected_columns)[0]
+    samples = session.exec(statement.order_by(first_column).limit(SAMPLE_SIZE)).all()
     return IntegrityIssue(
         code=code, description=description, count=count, sample_ids=[str(s) for s in samples]
     )
 
 
-def _stylebook_project_ids(session: Session, stylebook_id: int) -> Any:
+def _stylebook_project_ids(stylebook_id: int) -> Any:
     return select(BackfieldProject.id).where(BackfieldProject.stylebook_id == stylebook_id)
 
 
 def _link_state_statements(
-    models: CleanupEntityModels, stylebook_id: int, project_ids: Any
+    models: CleanupEntityModels, project_ids: Any
 ) -> list[tuple[str, str, Any]]:
     substrate = models.substrate
     link = models.column(substrate, models.substrate_canonical_column)
@@ -237,9 +239,9 @@ def build_integrity_report(
     session: Session, models: CleanupEntityModels, *, stylebook_id: int
 ) -> IntegrityReport:
     """Run every invariant check for one entity kind in a Stylebook."""
-    project_ids = _stylebook_project_ids(session, stylebook_id)
+    project_ids = _stylebook_project_ids(stylebook_id)
     checks = [
-        *_link_state_statements(models, stylebook_id, project_ids),
+        *_link_state_statements(models, project_ids),
         _cross_stylebook_statement(models, stylebook_id),
         *_primary_record_statements(models, stylebook_id),
         _connection_statement(models, stylebook_id),

@@ -167,7 +167,6 @@ def _summary(
     check: CleanupCheckDef,
     *,
     scope: CleanupRunScope,
-    queue_scope: QueueScope,
 ) -> CheckSummary:
     scope_hash = cleanup_scope_hash(scope)
     latest = get_latest_cleanup_check_run(
@@ -214,7 +213,7 @@ def list_checks(
     return CheckListOut(
         queue_scope=queue_scope,
         checks=[
-            _summary(session, check, scope=scope_for_check(check.id), queue_scope=queue_scope)
+            _summary(session, check, scope=scope_for_check(check.id))
             for check in STYLEBOOK_CLEANUP_CHECKS
         ],
     )

@@ -39,6 +39,8 @@ The UI build targets install locked dependencies before running the production b
 - `tests/entities/`: entity-domain tests
 - `tests/contracts/`: cross-service schema, index, and runtime contract checks
 - `tests/worker/`: worker behavior
+- `tests/test_cleanup_openapi_contract.py`: fails when `docs/api/cleanup.openapi.json` is stale;
+  regenerate with `uv run python scripts/export_cleanup_openapi.py`
 - `tests/smoke/`: live-stack and specialized smoke harnesses
 
 Shared root-test fixtures live in `tests/conftest.py`.

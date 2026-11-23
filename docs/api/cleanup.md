@@ -49,7 +49,9 @@ The keyed contract is served at `GET …/cleanup/openapi.json` and committed as
 
 **Paging.** Lists return `next_cursor`; pass it back as `cursor`. A cursor is opaque. A bad cursor is
 a `400`. Export pages by canonical id, so a changing catalog never repeats or skips a row. Queues
-page by position, so work done between pages can shift them.
+(candidates and check results) page by position, so resolving items between pages shifts the rest
+up and a later page can skip some. A tool that works through a queue should refetch from the start
+after each batch rather than continuing a stale cursor.
 
 **Errors.** The same JSON error body as the rest of `/public/v1`. `400` for bad cursors or a pair of
 identical ids, `403` for a missing scope, `404` for an unknown Stylebook, canonical, candidate, or
@@ -59,8 +61,13 @@ queued.
 **Project scope for queues.** Check results and candidate queues cover the key's own project by
 default (`scope=project`). `scope=stylebook` covers every project assigned to the Stylebook and needs
 a service key (`403` otherwise). Evidence is Stylebook-wide and each snippet carries its
-`project_slug`, because a merge affects every project's mentions. Checks run for a scope are cached and
+`project_slug`, because a merge affects every project's mentions. This is deliberate: a key bound
+to one project can read snippets, mention text, and counts from the other projects assigned to the
+same Stylebook. Only issue cleanup keys to people who may see that material. Checks run for a scope are cached and
 shared with the Stylebook UI when the scope and similarity thresholds match.
+
+**Candidate filters.** `needs_review=true` applies to the open queue only. `q` matches names as
+plain text (`%` and `_` have no special meaning). `kind` is an exact match.
 
 **Date filters.** `mentioned_from` and `mentioned_to` (article publication dates) apply to export,
 check results, and candidate reads. On export they also limit `mention_count` and `story_count` to
@@ -80,7 +87,8 @@ snippet text while still returning mention text and article references). The eff
 `capabilities.limits`.
 
 **Rate limits.** The export has its own bucket (`BACKFIELD_PUBLIC_RATE_LIMIT_CLEANUP_EXPORT_PER_MINUTE`,
-default 30). Everything else uses the standard read bucket. See
+default 30). Everything else, including starting a check run, uses the standard read bucket.
+Starting a run returns the run already in flight for the same scope rather than queuing another. See
 [runtime configuration](../operations/runtime-configuration.md).
 
 ## Integrity report

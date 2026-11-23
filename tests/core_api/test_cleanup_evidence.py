@@ -276,3 +276,51 @@ def test_compare_rejects_identical_and_unknown_ids(
 
     assert same.status_code == 400
     assert unknown.status_code == 404
+
+
+def test_compare_sees_a_direct_connection_beyond_the_evidence_connection_limit(
+    cleanup_client, cleanup_world, cleanup_session
+) -> None:
+    headers = create_cleanup_key(cleanup_client)
+    left = _seed_springfield(cleanup_session, cleanup_world)
+    right = seed_entity(
+        cleanup_session,
+        "locations",
+        stylebook_id=cleanup_world.stylebook_id,
+        project_id=cleanup_world.project_id,
+        label="Shelbyville",
+        kind="city",
+    )
+    for number in range(60):
+        cleanup_session.add(
+            StylebookConnection(
+                project_id=cleanup_world.project_id,
+                stylebook_id=cleanup_world.stylebook_id,
+                from_entity_type="location",
+                from_entity_id=left.canonical_id,
+                to_entity_type="organization",
+                to_entity_id=f"org-{number}",
+                nature="near",
+            )
+        )
+    # Created last, so it falls outside the evidence package's connection list.
+    cleanup_session.add(
+        StylebookConnection(
+            project_id=cleanup_world.project_id,
+            stylebook_id=cleanup_world.stylebook_id,
+            from_entity_type="location",
+            from_entity_id=right.canonical_id,
+            to_entity_type="location",
+            to_entity_id=left.canonical_id,
+            nature="near",
+        )
+    )
+    cleanup_session.commit()
+
+    r = cleanup_client.get(
+        f"{CLEANUP_BASE}/locations/{left.canonical_id}/compare/{right.canonical_id}",
+        headers=headers,
+    )
+
+    assert r.status_code == 200, r.text
+    assert r.json()["connected"] is True

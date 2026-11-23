@@ -167,3 +167,10 @@ def test_cleanup_export_has_its_own_bucket(monkeypatch: pytest.MonkeyPatch) -> N
 
     evidence_path = "/public/v1/projects/p/stylebooks/s/cleanup/locations/abc/evidence"
     assert rate_limit._limit_for_request(_request(evidence_path))[0] == "read"
+
+
+def test_cleanup_check_run_start_uses_the_read_bucket_not_the_run_trigger_bucket() -> None:
+    cleanup_run = "/public/v1/projects/p/stylebooks/s/cleanup/checks/some-check/runs"
+    agate_run = "/public/v1/projects/p/flows/f/runs"
+    assert rate_limit._limit_for_request(_request(cleanup_run, method="POST")) == ("read", 600)
+    assert rate_limit._limit_for_request(_request(agate_run, method="POST"))[0] == "runs"

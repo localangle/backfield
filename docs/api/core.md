@@ -73,7 +73,7 @@ Routes under `/v1/projects/{project_id}/api-keys` list, create, and revoke proje
 - Members may create, list, and revoke only their own read-only keys for projects they can
   currently access.
 - Organization admins may list and revoke every project key in their active organization.
-- Service keys require organization-admin authority and may receive `runs:trigger` and `cleanup:apply`. Any key may receive `cleanup:read`; `cleanup:apply` always includes it.
+- Service keys require organization-admin authority and may receive `runs:trigger` and `cleanup:apply`. Any key may receive `cleanup:read`; `cleanup:apply` always includes it. See [`cleanup.md`](cleanup.md) for the preview cleanup routes these scopes guard.
 - Trusted service-token operators retain cross-organization key-management authority.
 - Lists retain revoked-key metadata without returning key secrets.
 - Every personal-key use reloads the owner, organization membership, project access, and project
