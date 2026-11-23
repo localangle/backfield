@@ -23,6 +23,15 @@ def is_service_principal(auth: dict[str, Any]) -> bool:
     return auth["type"] == "service" or auth.get("credential_type") == "service"
 
 
+def require_queue_scope_allowed(auth: dict[str, Any], scope: str) -> None:
+    """Stylebook-wide queues are for service principals; other keys see their own project."""
+    if scope == "stylebook" and not is_service_principal(auth):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Stylebook-wide queues need a service key.",
+        )
+
+
 @dataclass(frozen=True)
 class CleanupContext:
     """The authenticated caller, project, and Stylebook a cleanup route works on."""

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
 
 from backfield_entities.cleanup.check_reads import (
     DEFAULT_FULL_SIMILARITY_THRESHOLD,
@@ -34,8 +33,8 @@ from core_api.deps import get_session
 from core_api.routers.public.cleanup.deps import (
     CleanupContext,
     get_cleanup_context,
-    is_service_principal,
     require_cleanup_read,
+    require_queue_scope_allowed,
 )
 from core_api.run_enqueue import enqueue_worker_task
 
@@ -72,14 +71,6 @@ class CheckScopeParams:
         self.head_similarity_threshold = head_similarity_threshold
 
 
-def _require_scope_allowed(auth: dict[str, Any], scope: QueueScope) -> None:
-    if scope == "stylebook" and not is_service_principal(auth):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Stylebook-wide queues need a service key.",
-        )
-
-
 def _run_scope(context: CleanupContext, params: CheckScopeParams, check_id: str) -> CleanupRunScope:
     return build_run_scope(
         check_id=check_id,
@@ -107,7 +98,7 @@ def get_cleanup_checks(
     params: CheckScopeParams = Depends(),
 ) -> CheckListOut:
     """Every check with its algorithm version, latest status and open count."""
-    _require_scope_allowed(auth, params.scope)
+    require_queue_scope_allowed(auth, params.scope)
     return list_checks(
         session,
         queue_scope=params.scope,
@@ -128,7 +119,7 @@ def get_cleanup_check_results(
     mentioned_to: date | None = Query(default=None),
 ) -> CheckResultsPage:
     """Open results from the last finished run, with the run's algorithm version and time."""
-    _require_scope_allowed(auth, params.scope)
+    require_queue_scope_allowed(auth, params.scope)
     check = _check_or_404(check_id)
     try:
         return get_check_results(
@@ -153,7 +144,7 @@ def post_cleanup_check_run(
     params: CheckScopeParams = Depends(),
 ) -> CheckRunOut:
     """Start a check run for the scope, or return the one already running."""
-    _require_scope_allowed(auth, params.scope)
+    require_queue_scope_allowed(auth, params.scope)
     check = _check_or_404(check_id)
     try:
         return start_check_run(
@@ -177,7 +168,7 @@ def get_cleanup_check_latest_run(
     params: CheckScopeParams = Depends(),
 ) -> CheckRunOut:
     """Status of the newest run for the scope; 404 when the check has never run."""
-    _require_scope_allowed(auth, params.scope)
+    require_queue_scope_allowed(auth, params.scope)
     check = _check_or_404(check_id)
     run = latest_check_run(session, check, scope=_run_scope(context, params, check.id))
     if run is None:

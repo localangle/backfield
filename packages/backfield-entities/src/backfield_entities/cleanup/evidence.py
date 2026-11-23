@@ -8,6 +8,7 @@ article text; callers must never treat it as instructions.
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Any
 
 from backfield_db import (
     BackfieldProject,
@@ -342,16 +343,29 @@ def _linked_records(
     return sorted(records, key=lambda r: (-r.mention_count, r.substrate_id))
 
 
-def _snippet_evidence(
+def _canonical_snippets(
     session: Session,
     models: CleanupEntityModels,
     *,
     canonical_id: str,
     controls: SnippetControls,
 ) -> list[EvidenceSnippet]:
+    substrate_canonical = models.column(models.substrate, models.substrate_canonical_column)
+    return fetch_snippets(
+        session, models, condition=substrate_canonical == canonical_id, controls=controls
+    )
+
+
+def fetch_snippets(
+    session: Session,
+    models: CleanupEntityModels,
+    *,
+    condition: Any,
+    controls: SnippetControls,
+) -> list[EvidenceSnippet]:
+    """Snippets for the project-level records that ``condition`` selects, newest article first."""
     if controls.snippet_limit <= 0:
         return []
-    substrate_canonical = models.column(models.substrate, models.substrate_canonical_column)
     mention_substrate = models.column(models.mention, models.mention_substrate_column)
     occurrence_mention = models.column(models.occurrence, models.occurrence_mention_column)
     occurrence = models.occurrence
@@ -361,7 +375,7 @@ def _snippet_evidence(
         .join(models.substrate, mention_substrate == models.substrate.id)
         .join(SubstrateArticle, SubstrateArticle.id == models.mention.article_id)
         .where(
-            substrate_canonical == canonical_id,
+            condition,
             models.mention.deleted == False,  # noqa: E712
             occurrence.suppressed == False,  # noqa: E712
         )
@@ -443,7 +457,7 @@ def get_canonical_evidence(
             session, models, stylebook_id=stylebook_id, canonical_id=canonical_id
         ),
         linked_records=_linked_records(session, models, canonical_id),
-        snippets=_snippet_evidence(session, models, canonical_id=canonical_id, controls=controls),
+        snippets=_canonical_snippets(session, models, canonical_id=canonical_id, controls=controls),
     )
 
 

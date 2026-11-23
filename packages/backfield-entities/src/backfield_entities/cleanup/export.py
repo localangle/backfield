@@ -93,9 +93,7 @@ class ExportFilters(BaseModel):
     kind: str | None = None
 
 
-def _mention_article_conditions(
-    models: CleanupEntityModels, filters: ExportFilters
-) -> list[object]:
+def mention_article_conditions(models: CleanupEntityModels, filters: ExportFilters) -> list[object]:
     """WHERE fragments restricting mentions to active ones inside the date range."""
     conditions: list[object] = [models.mention.deleted == False]  # noqa: E712
     if filters.mentioned_from is not None:
@@ -116,7 +114,7 @@ def _has_mention_in_range(models: CleanupEntityModels, filters: ExportFilters) -
         .join(SubstrateArticle, SubstrateArticle.id == models.mention.article_id)
         .where(
             substrate_canonical == models.canonical.id,
-            *_mention_article_conditions(models, filters),
+            *mention_article_conditions(models, filters),
         )
     )
 
@@ -143,7 +141,7 @@ def canonical_mention_counts(
         .join(SubstrateArticle, SubstrateArticle.id == models.mention.article_id)
         .where(
             col(substrate_canonical).in_(canonical_ids),
-            *_mention_article_conditions(models, filters),
+            *mention_article_conditions(models, filters),
         )
         .group_by(substrate_canonical)
     ).all()
@@ -172,7 +170,7 @@ def canonical_ids_mentioned_in_range(
             .join(SubstrateArticle, SubstrateArticle.id == models.mention.article_id)
             .where(
                 col(substrate_canonical).in_(chunk),
-                *_mention_article_conditions(models, filters),
+                *mention_article_conditions(models, filters),
             )
             .distinct()
         ).all()

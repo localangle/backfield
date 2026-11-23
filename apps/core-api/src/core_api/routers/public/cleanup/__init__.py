@@ -6,6 +6,12 @@ Routes here carry the `cleanup-preview` tag, so they stay out of the published c
 
 from __future__ import annotations
 
+from backfield_entities.cleanup.candidates import (
+    CandidateCounts,
+    CandidateEvidence,
+    CandidatePage,
+    CandidateTypes,
+)
 from backfield_entities.cleanup.check_reads import (
     CheckListOut,
     CheckResultsPage,
@@ -15,6 +21,12 @@ from backfield_entities.cleanup.evidence import BatchEvidence, CanonicalEvidence
 from backfield_entities.cleanup.export import CleanupExportPage
 from fastapi import APIRouter
 
+from core_api.routers.public.cleanup.candidates import (
+    get_cleanup_candidate_count,
+    get_cleanup_candidate_evidence,
+    get_cleanup_candidate_types,
+    get_cleanup_candidates,
+)
 from core_api.routers.public.cleanup.capabilities import (
     CleanupCapabilitiesOut,
     get_cleanup_capabilities,
@@ -39,6 +51,23 @@ router = APIRouter(
 )
 
 router.get("/capabilities", response_model=CleanupCapabilitiesOut)(get_cleanup_capabilities)
+
+# Fixed-prefix routes come before the `/{entity}/...` routes so they are never read as an entity.
+router.get("/checks", response_model=CheckListOut)(get_cleanup_checks)
+router.get("/checks/{check_id}/results", response_model=CheckResultsPage)(get_cleanup_check_results)
+router.post("/checks/{check_id}/runs", response_model=CheckRunOut)(post_cleanup_check_run)
+router.get("/checks/{check_id}/runs/latest", response_model=CheckRunOut)(
+    get_cleanup_check_latest_run
+)
+router.get("/candidates/{entity}", response_model=CandidatePage)(get_cleanup_candidates)
+router.get("/candidates/{entity}/count", response_model=CandidateCounts)(
+    get_cleanup_candidate_count
+)
+router.get("/candidates/{entity}/types", response_model=CandidateTypes)(get_cleanup_candidate_types)
+router.get("/candidates/{entity}/{candidate_id}/evidence", response_model=CandidateEvidence)(
+    get_cleanup_candidate_evidence
+)
+
 router.get("/{entity}/export", response_model=CleanupExportPage)(get_cleanup_export)
 router.get("/{entity}/{canonical_id}/evidence", response_model=CanonicalEvidence)(
     get_cleanup_evidence
@@ -46,10 +75,4 @@ router.get("/{entity}/{canonical_id}/evidence", response_model=CanonicalEvidence
 router.post("/{entity}/evidence", response_model=BatchEvidence)(post_cleanup_evidence)
 router.get("/{entity}/{canonical_id}/compare/{other_id}", response_model=PairComparison)(
     get_cleanup_compare
-)
-router.get("/checks", response_model=CheckListOut)(get_cleanup_checks)
-router.get("/checks/{check_id}/results", response_model=CheckResultsPage)(get_cleanup_check_results)
-router.post("/checks/{check_id}/runs", response_model=CheckRunOut)(post_cleanup_check_run)
-router.get("/checks/{check_id}/runs/latest", response_model=CheckRunOut)(
-    get_cleanup_check_latest_run
 )

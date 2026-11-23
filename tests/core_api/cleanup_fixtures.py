@@ -154,20 +154,28 @@ def seed_substrate(
     session: Session,
     entity: EntityName,
     *,
-    canonical_id: str,
+    canonical_id: str | None,
     project_id: int,
     name: str,
+    kind: str | None = None,
+    link_status: str | None = None,
+    review_reasons: list[dict] | None = None,
 ) -> int:
-    """Insert a project-level record linked to a canonical; return its id."""
+    """Insert a project-level record, linked to a canonical unless ``canonical_id`` is None."""
     models = cleanup_entity_models(entity)
     substrate = models.substrate(
         project_id=project_id,
         name=name,
         normalized_name=name.lower(),
+        canonical_review_reasons_json=review_reasons,
         **{models.substrate_canonical_column: canonical_id},
     )
+    if kind is not None:
+        setattr(substrate, models.kind_column, kind)
+    if link_status is not None:
+        substrate.canonical_link_status = link_status
     session.add(substrate)
-    session.flush()
+    session.commit()
     return int(substrate.id)
 
 
