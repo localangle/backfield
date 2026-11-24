@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from backfield_entities.cleanup.entity_models import EntityName, cleanup_entity_models
-from backfield_entities.cleanup.redirects import CanonicalResolution, resolve_canonical
+from backfield_entities.cleanup.redirects import (
+    CanonicalResolution,
+    resolve_canonical,
+    was_deleted_by_cleanup_run,
+)
 from fastapi import Depends
 from sqlmodel import Session
 
@@ -24,8 +28,10 @@ def get_cleanup_resolution(
 ) -> CanonicalResolution:
     """Follow a merged-away id to the canonical that replaced it.
 
-    A canonical that still exists resolves to itself. An id that never existed also resolves to
-    itself, with `merged` false, so check the canonical before trusting the answer.
+    A canonical that still exists resolves to itself. An id deleted by a cleanup run comes back with
+    `deleted` true (a merged id whose survivor was later deleted does too). An id that never
+    existed, or was deleted some other way, resolves to itself with `merged` false, so check the
+    canonical before trusting the answer.
     """
     models = cleanup_entity_models(entity)
     existing = session.get(models.canonical, canonical_id)
@@ -36,9 +42,18 @@ def get_cleanup_resolution(
             resolved_id=canonical_id,
             merged=False,
         )
-    return resolve_canonical(
+    resolution = resolve_canonical(
         session,
         stylebook_id=context.stylebook_id,
         entity_type=models.singular,
         canonical_id=canonical_id,
     )
+    resolved = session.get(models.canonical, resolution.resolved_id)
+    if resolved is None and was_deleted_by_cleanup_run(
+        session,
+        stylebook_id=context.stylebook_id,
+        entity_type=models.singular,
+        canonical_id=resolution.resolved_id,
+    ):
+        return resolution.model_copy(update={"deleted": True})
+    return resolution

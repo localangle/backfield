@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from backfield_db import StylebookCanonicalRedirect
-from pydantic import BaseModel
+from backfield_db import StylebookCanonicalRedirect, StylebookCleanupAction
+from pydantic import BaseModel, Field
 from sqlalchemy import update
 from sqlmodel import Session, col, select
 
@@ -17,6 +17,10 @@ class CanonicalResolution(BaseModel):
     requested_id: str
     resolved_id: str
     merged: bool
+    deleted: bool = Field(
+        default=False,
+        description="The canonical was deleted by a cleanup run (a live id is never `deleted`).",
+    )
 
 
 def record_redirect(
@@ -89,4 +93,21 @@ def resolve_canonical(
         requested_id=canonical_id,
         resolved_id=current,
         merged=current != canonical_id,
+    )
+
+
+def was_deleted_by_cleanup_run(
+    session: Session, *, stylebook_id: int, entity_type: str, canonical_id: str
+) -> bool:
+    """True when a cleanup run's ledger holds a deletion of this canonical id."""
+    return (
+        session.exec(
+            select(StylebookCleanupAction.id).where(
+                StylebookCleanupAction.stylebook_id == stylebook_id,
+                StylebookCleanupAction.operation == "deletion",
+                StylebookCleanupAction.entity_type == entity_type,
+                StylebookCleanupAction.canonical_id == canonical_id,
+            )
+        ).first()
+        is not None
     )

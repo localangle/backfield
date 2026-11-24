@@ -883,3 +883,80 @@ def test_candidate_ai_review_start(
         f"/v1/stylebooks/default/candidates/ai-review/{body['id']}/cancel",
     )
     assert cancel_again.status_code == 400
+
+
+def test_list_canonical_people_hides_inactive_by_default(
+    editor_client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    with Session(stylebook_test_engine) as session:
+        project = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")
+        ).one()
+        workspace = session.get(BackfieldWorkspace, int(project.workspace_id))  # type: ignore[arg-type]
+        stylebook_id = int(workspace.stylebook_id)
+        for label, status in (("Active Person", "active"), ("Inactive Person", "inactive")):
+            session.add(
+                StylebookPersonCanonical(
+                    stylebook_id=stylebook_id,
+                    label=label,
+                    slug=label.lower().replace(" ", "-"),
+                    status=status,
+                )
+            )
+        session.commit()
+
+    default = editor_client.get("/v1/stylebooks/default/canonical-people")
+    inactive = editor_client.get("/v1/stylebooks/default/canonical-people?status=inactive")
+    everything = editor_client.get("/v1/stylebooks/default/canonical-people?status=all")
+
+    assert [row["label"] for row in default.json()["canonicals"]] == ["Active Person"]
+    assert [row["label"] for row in inactive.json()["canonicals"]] == ["Inactive Person"]
+    assert {row["label"] for row in everything.json()["canonicals"]} == {
+        "Active Person",
+        "Inactive Person",
+    }
+
+
+def test_delete_canonical_person_requeues_linked_people_and_closes_connections(
+    admin_client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    with Session(stylebook_test_engine) as session:
+        stylebook = session.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        canonical = StylebookPersonCanonical(
+            stylebook_id=int(stylebook.id), label="Jane Doe", slug="jane-doe"
+        )
+        session.add(canonical)
+        session.commit()
+        canonical_id = str(canonical.id)
+        project = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")
+        ).one()
+        person_id = _add_pending_person(
+            session,
+            project_id=int(project.id),
+            name="Jane Doe",
+            normalized_name="jane doe",
+            fingerprint="jane-doe-delete",
+        )
+        person = session.get(SubstratePerson, person_id)
+        person.stylebook_person_canonical_id = canonical_id
+        person.canonical_link_status = CANONICAL_LINK_LINKED
+        session.add(person)
+        session.commit()
+
+    response = admin_client.delete(f"/v1/stylebooks/default/canonical-people/{canonical_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "message": "deleted",
+        "id": canonical_id,
+        "unlinked_substrate_count": 1,
+    }
+    with Session(stylebook_test_engine) as session:
+        assert session.get(StylebookPersonCanonical, canonical_id) is None
+        released = session.get(SubstratePerson, person_id)
+        assert released.stylebook_person_canonical_id is None
+        assert released.canonical_link_status == CANONICAL_LINK_PENDING
+        assert released.canonical_review_reasons_json[0]["code"] == (
+            "reset_pending_after_canonical_deleted"
+        )

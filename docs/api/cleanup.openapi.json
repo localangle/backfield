@@ -913,6 +913,12 @@
       "CanonicalResolution": {
         "description": "Where a canonical id leads: itself, or the survivor it was merged into.",
         "properties": {
+          "deleted": {
+            "default": false,
+            "description": "The canonical was deleted by a cleanup run (a live id is never `deleted`).",
+            "title": "Deleted",
+            "type": "boolean"
+          },
           "entity_type": {
             "title": "Entity Type",
             "type": "string"
@@ -1600,6 +1606,97 @@
           }
         },
         "title": "CloseRunRequest",
+        "type": "object"
+      },
+      "DeletionApplyItem": {
+        "properties": {
+          "canonical_id": {
+            "minLength": 1,
+            "title": "Canonical Id",
+            "type": "string"
+          },
+          "item_id": {
+            "description": "Your own id for this item; echoed back and stored with the action.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "mention_disposition": {
+            "default": "refuse",
+            "description": "What to do with records still linked to it. `refuse` stops if any are linked; `requeue` returns them to the review queue; `waive` marks them as not needing a record.",
+            "enum": [
+              "refuse",
+              "requeue",
+              "waive"
+            ],
+            "title": "Mention Disposition",
+            "type": "string"
+          },
+          "mention_reason_code": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why, as a short code of your choosing. Stored on each released record.",
+            "title": "Mention Reason Code"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Anything you want stored with the action, as given.",
+            "title": "Provenance"
+          }
+        },
+        "required": [
+          "item_id",
+          "canonical_id"
+        ],
+        "title": "DeletionApplyItem",
+        "type": "object"
+      },
+      "DeletionRequestBody": {
+        "properties": {
+          "dry_run": {
+            "default": true,
+            "description": "Report what would happen without changing anything.",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DeletionApplyItem"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "run_id": {
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "items"
+        ],
+        "title": "DeletionRequestBody",
         "type": "object"
       },
       "DismissalApplyItem": {
@@ -2676,6 +2773,24 @@
         "type": "object"
       },
       "JsonValue": {},
+      "LinkedRecordRef": {
+        "properties": {
+          "project_id": {
+            "title": "Project Id",
+            "type": "integer"
+          },
+          "record_id": {
+            "title": "Record Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "record_id"
+        ],
+        "title": "LinkedRecordRef",
+        "type": "object"
+      },
       "LocationExportDetails": {
         "properties": {
           "city_name": {
@@ -3198,6 +3313,269 @@
           "request_id"
         ],
         "title": "PublicErrorResponse",
+        "type": "object"
+      },
+      "RemovalApplyResult": {
+        "properties": {
+          "action_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The ledger row, once applied.",
+            "title": "Action Id"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Plain-language detail, such as what a guard refused.",
+            "title": "Message"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A reason code for noop and error results.",
+            "title": "Reason"
+          },
+          "reindex_queued": {
+            "default": false,
+            "title": "Reindex Queued",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "would_apply",
+              "applied",
+              "noop",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RemovalSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "item_id",
+          "status"
+        ],
+        "title": "RemovalApplyResult",
+        "type": "object"
+      },
+      "RemovalResponse": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/ApplyCounts"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RemovalApplyResult"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "dry_run",
+          "counts",
+          "items"
+        ],
+        "title": "RemovalResponse",
+        "type": "object"
+      },
+      "RemovalSummary": {
+        "properties": {
+          "action": {
+            "enum": [
+              "retire",
+              "reinstate",
+              "delete"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "canonical_id": {
+            "title": "Canonical Id",
+            "type": "string"
+          },
+          "canonical_label": {
+            "title": "Canonical Label",
+            "type": "string"
+          },
+          "connections_closed": {
+            "title": "Connections Closed",
+            "type": "integer"
+          },
+          "mention_disposition": {
+            "enum": [
+              "refuse",
+              "requeue",
+              "waive"
+            ],
+            "title": "Mention Disposition",
+            "type": "string"
+          },
+          "released_record_count": {
+            "description": "Linked project records that were released from the canonical.",
+            "title": "Released Record Count",
+            "type": "integer"
+          },
+          "released_records": {
+            "items": {
+              "$ref": "#/components/schemas/LinkedRecordRef"
+            },
+            "title": "Released Records",
+            "type": "array"
+          }
+        },
+        "required": [
+          "canonical_id",
+          "canonical_label",
+          "action",
+          "mention_disposition",
+          "released_record_count",
+          "released_records",
+          "connections_closed"
+        ],
+        "title": "RemovalSummary",
+        "type": "object"
+      },
+      "RetirementApplyItem": {
+        "properties": {
+          "action": {
+            "default": "retire",
+            "description": "`retire` makes it inactive; `reinstate` makes it active.",
+            "enum": [
+              "retire",
+              "reinstate"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "canonical_id": {
+            "minLength": 1,
+            "title": "Canonical Id",
+            "type": "string"
+          },
+          "item_id": {
+            "description": "Your own id for this item; echoed back and stored with the action.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "mention_disposition": {
+            "default": "refuse",
+            "description": "What to do with records still linked to it. `refuse` stops if any are linked; `requeue` returns them to the review queue; `waive` marks them as not needing a record.",
+            "enum": [
+              "refuse",
+              "requeue",
+              "waive"
+            ],
+            "title": "Mention Disposition",
+            "type": "string"
+          },
+          "mention_reason_code": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why, as a short code of your choosing. Stored on each released record.",
+            "title": "Mention Reason Code"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Anything you want stored with the action, as given.",
+            "title": "Provenance"
+          }
+        },
+        "required": [
+          "item_id",
+          "canonical_id"
+        ],
+        "title": "RetirementApplyItem",
+        "type": "object"
+      },
+      "RetirementRequestBody": {
+        "properties": {
+          "dry_run": {
+            "default": true,
+            "description": "Report what would happen without changing anything.",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RetirementApplyItem"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "run_id": {
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "items"
+        ],
+        "title": "RetirementRequestBody",
         "type": "object"
       },
       "RunOut": {
@@ -8178,6 +8556,250 @@
         ]
       }
     },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/{entity}/deletions": {
+      "post": {
+        "description": "Delete a record for good.\n\nIts aliases and metadata go with it, its open connections are closed, and a deleted event is\nemitted. Records still linked to it are handled by `mention_disposition`: `refuse` (the default)\nstops if any are linked, `requeue` returns them to the review queue, `waive` marks them as not\nneeding a record. What it was is kept in the run's ledger, but there is no undo. `dry_run` (the\ndefault) changes nothing. Each item succeeds or fails on its own.",
+        "operationId": "post_cleanup_deletions_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup__entity__deletions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity",
+            "required": true,
+            "schema": {
+              "enum": [
+                "locations",
+                "people",
+                "organizations"
+              ],
+              "title": "Entity",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeletionRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemovalResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Post Cleanup Deletions",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
     "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/{entity}/edits": {
       "post": {
         "description": "Change a record's name, kind or other details.\n\nChanging the name keeps the old name as an alias. Locations can also set or clear their\ngeography and copy it onto the saved places that should follow it. `dry_run` (the default)\nchanges nothing. Each item succeeds or fails on its own.",
@@ -9483,6 +10105,250 @@
         ]
       }
     },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/{entity}/retirements": {
+      "post": {
+        "description": "Retire a record, or bring a retired one back.\n\nA retired record is inactive: it stops matching new mentions and drops out of public lists, and\nits open connections are closed. Records still linked to it are handled by\n`mention_disposition`: `refuse` (the default) stops if any are linked, `requeue` returns them to\nthe review queue, `waive` marks them as not needing a record. `reinstate` makes it active again;\nit does not relink anything. `dry_run` (the default) changes nothing. Each item succeeds or\nfails on its own.",
+        "operationId": "post_cleanup_retirements_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup__entity__retirements_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity",
+            "required": true,
+            "schema": {
+              "enum": [
+                "locations",
+                "people",
+                "organizations"
+              ],
+              "title": "Entity",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetirementRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemovalResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Post Cleanup Retirements",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
     "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/{entity}/{canonical_id}/compare/{other_id}": {
       "get": {
         "description": "Evidence for any pair of canonicals, including pairs no check surfaced.",
@@ -10034,7 +10900,7 @@
     },
     "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/{entity}/{canonical_id}/resolution": {
       "get": {
-        "description": "Follow a merged-away id to the canonical that replaced it.\n\nA canonical that still exists resolves to itself. An id that never existed also resolves to\nitself, with `merged` false, so check the canonical before trusting the answer.",
+        "description": "Follow a merged-away id to the canonical that replaced it.\n\nA canonical that still exists resolves to itself. An id deleted by a cleanup run comes back with\n`deleted` true (a merged id whose survivor was later deleted does too). An id that never\nexisted, or was deleted some other way, resolves to itself with `merged` false, so check the\ncanonical before trusting the answer.",
         "operationId": "get_cleanup_resolution_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup__entity___canonical_id__resolution_get",
         "parameters": [
           {

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Cleanup API smoke: open a run, dry-run then apply one merge, then an alias, an edit and a
-dismissal on the survivor, and read the ledger back.
+dismissal on the survivor, retire, reinstate and delete a third place, and read the ledger back.
 
 Uses only throwaway "Smoke cleanup ..." places, a throwaway service key, and removes them
 afterwards (set SMOKE_KEEP_DATA=1 to keep them for inspection).
@@ -130,16 +130,62 @@ def _apply_survivor_changes(
     log("Alias, rename (old name kept) and dismissal applied and read back.")
 
 
+def _apply_removals(
+    api: httpx.Client, base: str, *, run_id: str, survivor_id: str, spare_id: str
+) -> None:
+    """Refuse to retire a place with linked records, then retire, reinstate and delete a spare."""
+    refused = assert_object(
+        api.post(
+            f"{base}/locations/retirements",
+            json={
+                "run_id": run_id,
+                "dry_run": False,
+                "items": [{"item_id": "refuse", "canonical_id": survivor_id}],
+            },
+        ),
+        "retire with linked records",
+    )["items"][0]
+    _expect(
+        refused["status"] == "error" and refused["reason"] == "linked_records_present",
+        f"expected a refusal: {refused!r}",
+    )
+
+    retire = f"{base}/locations/retirements"
+    _apply_one(api, retire, run_id, {"item_id": "retire", "canonical_id": spare_id})
+    with smoke_db_session() as session:
+        place = session.get(StylebookLocationCanonical, spare_id)
+        _expect(place is not None and place.status == "inactive", "retire did not stick")
+    _apply_one(
+        api,
+        retire,
+        run_id,
+        {"item_id": "reinstate", "canonical_id": spare_id, "action": "reinstate"},
+    )
+    with smoke_db_session() as session:
+        place = session.get(StylebookLocationCanonical, spare_id)
+        _expect(place is not None and place.status == "active", "reinstate did not stick")
+
+    _apply_one(
+        api, f"{base}/locations/deletions", run_id, {"item_id": "delete", "canonical_id": spare_id}
+    )
+    with smoke_db_session() as session:
+        _expect(session.get(StylebookLocationCanonical, spare_id) is None, "delete did not stick")
+    resolution = assert_object(api.get(f"{base}/locations/{spare_id}/resolution"), "resolution")
+    _expect(resolution["deleted"] is True, f"resolution after delete: {resolution!r}")
+    log("Refusal, retire, reinstate and delete applied and read back.")
+
+
 def _remove_smoke_rows(
     *,
     stylebook_id: int,
     run_id: str | None,
     source_id: str | None,
     target_id: str | None,
+    spare_id: str | None,
     substrate_id: int | None,
 ) -> None:
     """Remove everything the scenario created, in foreign-key order."""
-    place_ids = [value for value in (source_id, target_id) if value]
+    place_ids = [value for value in (source_id, target_id, spare_id) if value]
     with smoke_db_session() as session:
         if place_ids:
             session.exec(
@@ -218,6 +264,7 @@ def main() -> int:
     run_id: str | None = None
     source_id: str | None = None
     target_id: str | None = None
+    spare_id: str | None = None
     substrate_id: int | None = None
     try:
         with (
@@ -230,6 +277,7 @@ def main() -> int:
             target_id = _create_place(
                 sb, stylebook_slug, ctx.project_slug, f"Smoke cleanup B {tag}"
             )
+            spare_id = _create_place(sb, stylebook_slug, ctx.project_slug, f"Smoke cleanup C {tag}")
             with smoke_db_session() as session:
                 substrate = SubstrateLocation(
                     project_id=ctx.project_id,
@@ -260,9 +308,16 @@ def main() -> int:
             capabilities = assert_object(api.get(f"{base}/capabilities"), "capabilities")
             _expect(capabilities.get("contract_version") == "preview-1", f"{capabilities!r}")
             operations = capabilities.get("operations", [])
-            for operation in ("merges", "edits", "aliases", "dismissals"):
+            for operation in (
+                "merges",
+                "edits",
+                "aliases",
+                "dismissals",
+                "retirements",
+                "deletions",
+            ):
                 _expect(operation in operations, f"{operation} missing: {capabilities!r}")
-            log("Capabilities advertise merges, edits, aliases and dismissals.")
+            log("Capabilities advertise every cleanup operation.")
 
             run = assert_object(
                 api.post(f"{base}/runs", json={"label": f"smoke {tag}", "client_run_ref": tag}),
@@ -346,6 +401,8 @@ def main() -> int:
 
             _apply_survivor_changes(api, base, run_id=run_id, survivor_id=target_id, tag=tag)
 
+            _apply_removals(api, base, run_id=run_id, survivor_id=target_id, spare_id=spare_id)
+
             closed = assert_object(
                 api.post(f"{base}/runs/{run_id}/close", json={"status": "closed"}), "close run"
             )
@@ -362,6 +419,7 @@ def main() -> int:
                 run_id=run_id,
                 source_id=source_id,
                 target_id=target_id,
+                spare_id=spare_id,
                 substrate_id=substrate_id,
             )
             if credential_id is not None:

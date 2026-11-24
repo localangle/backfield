@@ -26,6 +26,7 @@ from backfield_entities.cleanup.export import CleanupExportPage
 from backfield_entities.cleanup.integrity import IntegrityReport
 from backfield_entities.cleanup.merge_items import MergeResponse
 from backfield_entities.cleanup.redirects import CanonicalResolution
+from backfield_entities.cleanup.removal_items import RemovalResponse
 from backfield_entities.cleanup.runs import ActionOut, ActionPage, RunOut, RunPage
 from fastapi import APIRouter
 
@@ -47,6 +48,7 @@ from core_api.routers.public.cleanup.checks import (
     post_cleanup_check_run,
 )
 from core_api.routers.public.cleanup.contract import get_cleanup_openapi
+from core_api.routers.public.cleanup.deletions import post_cleanup_deletions
 from core_api.routers.public.cleanup.dismissals import (
     get_cleanup_dismissals,
     get_cleanup_integrity,
@@ -61,6 +63,7 @@ from core_api.routers.public.cleanup.evidence import (
 from core_api.routers.public.cleanup.export import get_cleanup_export
 from core_api.routers.public.cleanup.merges import post_cleanup_merges
 from core_api.routers.public.cleanup.resolution import get_cleanup_resolution
+from core_api.routers.public.cleanup.retirements import post_cleanup_retirements
 from core_api.routers.public.cleanup.runs import (
     get_cleanup_action,
     get_cleanup_run,
@@ -120,3 +123,5 @@ router.get("/{entity}/{canonical_id}/resolution", response_model=CanonicalResolu
 router.post("/{entity}/merges", response_model=MergeResponse)(post_cleanup_merges)
 router.post("/{entity}/aliases", response_model=AliasResponse)(post_cleanup_aliases)
 router.post("/{entity}/edits", response_model=EditResponse)(post_cleanup_edits)
+router.post("/{entity}/retirements", response_model=RemovalResponse)(post_cleanup_retirements)
+router.post("/{entity}/deletions", response_model=RemovalResponse)(post_cleanup_deletions)

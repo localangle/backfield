@@ -38,8 +38,9 @@ Stylebook-scoped families under `/v1/stylebooks/{stylebook_slug}` provide list/s
 - `/canonical-organizations`
 
 Canonical identifiers are UUID strings. Catalog responses expose immutable slugs for stable links. Project filters narrow mention and evidence counts without changing catalog ownership.
-Canonical organization lists return active records by default; use `status=inactive`
-for retained audit rows or `status=all` for both.
+Canonical location, person, and organization lists return active records by default; use
+`status=inactive` for retained audit rows or `status=all` for both. The location `PATCH` does not
+accept `status`; records are retired through the cleanup API.
 
 Location geometry uses GeoJSON `Point`, `Polygon`, or `MultiPolygon` with longitude-latitude coordinate order. Canonical and saved-place geometry PATCH routes write GeoJSON together with PostGIS `geometry`, `geometry_type`, and H3 (article geo-search requires PostGIS; a write that cannot bind PostGIS is rejected rather than leaving GeoJSON/H3 updated alone). Editors can copy a canonical location’s current geography onto selected linked saved places with `POST /v1/stylebooks/{stylebook_slug}/canonical-locations/{id}/geometry/apply-to-substrates`. That write marks those saved places so later ingest does not replace the editorial shape, and it deletes matching project geocode-cache rows.
 

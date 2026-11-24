@@ -17,21 +17,19 @@ from backfield_db import (
 )
 from backfield_entities.activity import (
     EVENT_CANONICAL_CREATED,
-    EVENT_CANONICAL_DELETED,
     EVENT_CANONICAL_UPDATED,
     log_stylebook_activity_safe,
 )
-from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
 from backfield_entities.catalog.search import catalog_label_alias_ilike_filter
 from backfield_entities.cleanup.edit_ops import UI_RENAME_ALIAS_PROVENANCE, apply_field_edits
 from backfield_entities.cleanup.entity_models import cleanup_entity_models
-from backfield_entities.connections.lifecycle import close_open_connections_for_canonical
+from backfield_entities.cleanup.removal_ops import RemovalActivity, delete_canonical
 from backfield_entities.entities.organization.persist import create_standalone_canonical
 from backfield_entities.entities.organization.types import (
     ORGANIZATION_TYPE_VALUES,
     normalize_organization_type,
 )
-from backfield_events import record_canonical_deleted, record_canonical_updated
+from backfield_events import record_canonical_updated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import case, exists, literal
@@ -650,52 +648,23 @@ def delete_canonical_organization(
     if canon is None or int(canon.stylebook_id) != int(sb.id):
         raise HTTPException(status_code=404, detail="Canonical organization not found")
 
-    linked = session.exec(
-        select(SubstrateOrganization).where(
-            SubstrateOrganization.stylebook_organization_canonical_id == str(canon.id),
-        )
-    ).all()
-    for organization in linked:
-        organization.stylebook_organization_canonical_id = None
-        organization.canonical_link_status = CANONICAL_LINK_PENDING
-        organization.canonical_review_reasons_json = [
-            {
-                "code": "reset_pending_after_canonical_deleted",
-                "deleted_canonical_id": str(canon.id),
-            }
-        ]
-        session.add(organization)
-
-    log_stylebook_activity_safe(
+    outcome = delete_canonical(
         session,
+        cleanup_entity_models("organizations"),
+        canon,
         stylebook_id=int(sb.id),
-        actor_type="user",
-        actor_user_id=_created_by_user_id(auth),
-        source="manual_ui",
-        event_type=EVENT_CANONICAL_DELETED,
-        entity_type="organization",
-        entity_id=str(canon.id),
-        entity_label=str(canon.label),
-        payload_json={"unlinked_substrate_count": len(linked)},
+        organization_id=int(sb.organization_id),
+        activity=RemovalActivity(
+            actor_type="user",
+            actor_user_id=_created_by_user_id(auth),
+            source="manual_ui",
+        ),
     )
-    record_canonical_deleted(
-        session,
-        stylebook_id=int(sb.id),
-        entity_type="organization",
-        canonical_id=str(canon.id),
-        label=str(canon.label),
-    )
-    close_open_connections_for_canonical(
-        session,
-        entity_type="organization",
-        canonical_id=str(canon.id),
-    )
-    session.delete(canon)
     session.commit()
     return {
         "message": "deleted",
-        "id": str(canon.id),
-        "unlinked_substrate_count": len(linked),
+        "id": outcome.canonical_id,
+        "unlinked_substrate_count": len(outcome.released_records),
     }
 
 

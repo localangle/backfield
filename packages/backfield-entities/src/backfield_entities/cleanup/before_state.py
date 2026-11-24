@@ -129,6 +129,36 @@ def _child_rows(session: Session, model: type[Any], column: Any, canonical_id: s
     return list(session.exec(select(model).where(column == canonical_id).order_by(model.id)).all())
 
 
+def capture_canonical_before_state(
+    session: Session,
+    models: CleanupEntityModels,
+    *,
+    stylebook_id: int,
+    organization_id: int,
+    canonical_id: str,
+) -> SourceBeforeState:
+    """Pre-image of one canonical and everything that hangs off it (the caller checks it exists)."""
+    canonical = session.get(models.canonical, canonical_id)
+    if canonical is None:
+        raise LookupError("canonical not found")
+    alias_column = models.column(models.alias, models.alias_canonical_column)
+    meta_column = models.column(models.meta, models.meta_canonical_column)
+    project_ids = _organization_project_ids(session, organization_id)
+    return SourceBeforeState(
+        canonical=row_to_json(canonical),
+        aliases=[
+            row_to_json(r) for r in _child_rows(session, models.alias, alias_column, canonical_id)
+        ],
+        meta=[row_to_json(r) for r in _child_rows(session, models.meta, meta_column, canonical_id)],
+        linked_records=_linked_records(
+            session, models, project_ids=project_ids, canonical_id=canonical_id
+        ),
+        connections=_connections_with_evidence(
+            session, models, stylebook_id=stylebook_id, canonical_id=canonical_id
+        ),
+    )
+
+
 def capture_merge_before_state(
     session: Session,
     models: CleanupEntityModels,
@@ -139,33 +169,21 @@ def capture_merge_before_state(
     target_canonical_id: str,
 ) -> MergeBeforeState:
     """Pre-image of a merge. Both canonicals must exist in the Stylebook (the caller checks)."""
-    source = session.get(models.canonical, source_canonical_id)
     target = session.get(models.canonical, target_canonical_id)
-    if source is None or target is None:
+    if target is None:
         raise LookupError("canonical not found")
     alias_column = models.column(models.alias, models.alias_canonical_column)
     meta_column = models.column(models.meta, models.meta_canonical_column)
-    project_ids = _organization_project_ids(session, organization_id)
     target_aliases = _child_rows(session, models.alias, alias_column, target_canonical_id)
     target_meta = _child_rows(session, models.meta, meta_column, target_canonical_id)
     return MergeBeforeState(
         entity_type=models.singular,
-        source=SourceBeforeState(
-            canonical=row_to_json(source),
-            aliases=[
-                row_to_json(r)
-                for r in _child_rows(session, models.alias, alias_column, source_canonical_id)
-            ],
-            meta=[
-                row_to_json(r)
-                for r in _child_rows(session, models.meta, meta_column, source_canonical_id)
-            ],
-            linked_records=_linked_records(
-                session, models, project_ids=project_ids, canonical_id=source_canonical_id
-            ),
-            connections=_connections_with_evidence(
-                session, models, stylebook_id=stylebook_id, canonical_id=source_canonical_id
-            ),
+        source=capture_canonical_before_state(
+            session,
+            models,
+            stylebook_id=stylebook_id,
+            organization_id=organization_id,
+            canonical_id=source_canonical_id,
         ),
         target=TargetBeforeState(
             canonical=row_to_json(target),

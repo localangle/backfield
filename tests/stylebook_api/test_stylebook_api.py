@@ -258,6 +258,31 @@ def editor_client(
         app.dependency_overrides.pop(get_auth_dep, None)
 
 
+@pytest.fixture
+def admin_client(
+    _stylebook_test_stack: tuple[TestClient, Engine],
+) -> Generator[TestClient, None, None]:
+    """Client authenticated as an organization admin in org 1."""
+    client, engine = _stylebook_test_stack
+    with Session(engine) as s:
+        user = BackfieldUser(email="org-admin@example.com", password_hash="x")
+        s.add(user)
+        s.commit()
+        user_id = int(user.id)  # type: ignore[arg-type]
+
+    def _get_auth_override() -> dict[str, Any]:
+        with Session(engine) as s:
+            u = s.get(BackfieldUser, user_id)
+            assert u is not None
+            return _session_auth_for_user(u, org_id=1, org_role="org_admin")
+
+    app.dependency_overrides[get_auth_dep] = _get_auth_override
+    try:
+        yield client
+    finally:
+        app.dependency_overrides.pop(get_auth_dep, None)
+
+
 def test_stylebook_candidate_inbox_combines_accessible_projects(
     editor_client: TestClient,
     stylebook_test_engine: Engine,
@@ -1308,6 +1333,52 @@ def test_patch_canonical_location_updates_location_type_and_formatted_address(
     cleared = r4.json()
     assert cleared.get("location_type") is None
     assert cleared.get("formatted_address") is None
+
+
+def test_patch_canonical_location_rejects_status(editor_client: TestClient) -> None:
+    created = editor_client.post(
+        "/v1/stylebooks/default/canonical-locations", json={"label": "Status Probe"}
+    )
+    cid = str(created.json()["id"])
+
+    response = editor_client.patch(
+        f"/v1/stylebooks/default/canonical-locations/{cid}", json={"status": "inactive"}
+    )
+
+    assert response.status_code == 422
+
+
+def test_list_canonical_locations_hides_inactive_by_default(
+    editor_client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    with Session(stylebook_test_engine) as session:
+        project = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")
+        ).one()
+        workspace = session.get(BackfieldWorkspace, int(project.workspace_id))  # type: ignore[arg-type]
+        stylebook_id = int(workspace.stylebook_id)
+        for label, status in (("Live Place", "active"), ("Retired Place", "inactive")):
+            session.add(
+                StylebookLocationCanonical(
+                    stylebook_id=stylebook_id,
+                    label=label,
+                    slug=label.lower().replace(" ", "-"),
+                    location_type="place",
+                    status=status,
+                )
+            )
+        session.commit()
+
+    default = editor_client.get("/v1/stylebooks/default/canonical-locations")
+    inactive = editor_client.get("/v1/stylebooks/default/canonical-locations?status=inactive")
+    everything = editor_client.get("/v1/stylebooks/default/canonical-locations?status=all")
+
+    assert [row["label"] for row in default.json()["canonicals"]] == ["Live Place"]
+    assert [row["label"] for row in inactive.json()["canonicals"]] == ["Retired Place"]
+    assert {row["label"] for row in everything.json()["canonicals"]} == {
+        "Live Place",
+        "Retired Place",
+    }
 
 
 @pytest.mark.parametrize(

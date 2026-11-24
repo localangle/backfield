@@ -4,20 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from backfield_db import (
-    BackfieldProject,
-    StylebookLocationCanonical,
-    SubstrateLocation,
-)
-from backfield_events import record_canonical_deleted, suppress_canonical_evidence_events
-from sqlmodel import Session, col, select
+from backfield_db import StylebookLocationCanonical
+from sqlmodel import Session
 
-from backfield_entities.activity import (
-    EVENT_CANONICAL_DELETED,
-    log_stylebook_activity_safe,
-)
-from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
-from backfield_entities.connections.lifecycle import close_open_connections_for_canonical
+from backfield_entities.cleanup.entity_models import cleanup_entity_models
+from backfield_entities.cleanup.removal_ops import RemovalActivity, delete_canonical
 
 
 @dataclass(frozen=True)
@@ -42,77 +33,29 @@ def delete_location_canonical_and_requeue(
 
     Matches Stylebook UI delete semantics: linked substrates across all org
     projects are unlinked (``canonical_id=None``, ``canonical_link_status=pending``)
-    with review reason ``reset_pending_after_canonical_deleted``.
+    with review reason ``reset_pending_after_canonical_deleted``. The work is shared with the
+    other entity kinds and the cleanup API (``cleanup/removal_ops.py``).
     """
     canon = session.get(StylebookLocationCanonical, canonical_id)
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise LookupError("Canonical location not found")
-
-    # The delete event subsumes the per-substrate evidence changes below.
-    suppress_canonical_evidence_events(
+    outcome = delete_canonical(
         session,
-        entity_type="location",
-        canonical_ids=[str(canon.id)],
-    )
-
-    pid_rows = session.exec(
-        select(BackfieldProject.id).where(
-            BackfieldProject.organization_id == int(organization_id)
-        )
-    ).all()
-    project_ids = [int(r) for r in pid_rows if r is not None]
-    linked = session.exec(
-        select(SubstrateLocation).where(
-            col(SubstrateLocation.project_id).in_(project_ids),
-            SubstrateLocation.stylebook_location_canonical_id == str(canon.id),
-        )
-    ).all() if project_ids else []
-
-    linked_ids = sorted(int(loc.id) for loc in linked if loc.id is not None)
-    if expected_substrate_ids is not None and linked_ids != sorted(expected_substrate_ids):
-        raise ValueError("stale_preview: linked substrates changed")
-
-    for loc in linked:
-        loc.stylebook_location_canonical_id = None
-        loc.canonical_link_status = CANONICAL_LINK_PENDING
-        loc.canonical_review_reasons_json = [
-            {
-                "code": "reset_pending_after_canonical_deleted",
-                "deleted_canonical_id": str(canon.id),
-            }
-        ]
-        session.add(loc)
-
-    deleted_id = str(canon.id)
-    label = str(canon.label)
-    log_stylebook_activity_safe(
-        session,
+        cleanup_entity_models("locations"),
+        canon,
         stylebook_id=int(stylebook_id),
-        actor_type="user" if actor_user_id is not None else "system",
-        actor_user_id=actor_user_id,
-        source=source,  # type: ignore[arg-type]
-        event_type=EVENT_CANONICAL_DELETED,
-        entity_type="location",
-        entity_id=deleted_id,
-        entity_label=label,
-        payload_json={"unlinked_substrate_count": len(linked_ids)},
+        organization_id=int(organization_id),
+        activity=RemovalActivity(
+            actor_type="user" if actor_user_id is not None else "system",
+            actor_user_id=actor_user_id,
+            source=source,
+        ),
+        expected_record_ids=expected_substrate_ids,
     )
-    record_canonical_deleted(
-        session,
-        stylebook_id=int(stylebook_id),
-        entity_type="location",
-        canonical_id=deleted_id,
-        label=label,
-    )
-    close_open_connections_for_canonical(
-        session,
-        entity_type="location",
-        canonical_id=deleted_id,
-    )
-    session.delete(canon)
+    record_ids = sorted(record_id for _, record_id in outcome.released_records)
     return DeleteCanonicalAndRequeueResult(
-        canonical_id=deleted_id,
-        label=label,
-        unlinked_substrate_ids=linked_ids,
-        unlinked_substrate_count=len(linked_ids),
+        canonical_id=outcome.canonical_id,
+        label=outcome.label,
+        unlinked_substrate_ids=record_ids,
+        unlinked_substrate_count=len(record_ids),
     )

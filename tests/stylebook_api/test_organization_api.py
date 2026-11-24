@@ -616,3 +616,44 @@ def test_import_csv_organizations_partial_failure(
     assert body["failed_count"] == 1
     assert len(body["failed"]) == 1
     assert body["failed"][0]["row_index"] == 1
+
+
+def test_delete_canonical_organization_requeues_linked_organizations(
+    admin_client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    with Session(stylebook_test_engine) as session:
+        stylebook = session.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        canonical = StylebookOrganizationCanonical(
+            stylebook_id=int(stylebook.id), label="Acme Corporation", slug="acme-corporation"
+        )
+        session.add(canonical)
+        session.commit()
+        canonical_id = str(canonical.id)
+        project = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")
+        ).one()
+        organization = SubstrateOrganization(
+            project_id=int(project.id),
+            name="Acme Corporation",
+            normalized_name="acme corporation",
+            identity_fingerprint="acme-delete",
+            stylebook_organization_canonical_id=canonical_id,
+            canonical_link_status="linked",
+        )
+        session.add(organization)
+        session.commit()
+        organization_id = int(organization.id)
+
+    response = admin_client.delete(f"/v1/stylebooks/default/canonical-organizations/{canonical_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "message": "deleted",
+        "id": canonical_id,
+        "unlinked_substrate_count": 1,
+    }
+    with Session(stylebook_test_engine) as session:
+        assert session.get(StylebookOrganizationCanonical, canonical_id) is None
+        released = session.get(SubstrateOrganization, organization_id)
+        assert released.stylebook_organization_canonical_id is None
+        assert released.canonical_link_status == "pending"

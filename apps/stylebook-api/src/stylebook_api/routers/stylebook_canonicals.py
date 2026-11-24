@@ -30,7 +30,7 @@ from backfield_entities.entities.location.persist import create_standalone_canon
 from backfield_entities.geo.geometry_bind import GeometryBindError, assign_geojson_geometry
 from backfield_events import record_canonical_updated
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import case, literal
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, func, select
@@ -114,10 +114,13 @@ class CreateCanonicalLocationBody(BaseModel):
 
 
 class PatchCanonicalLocationBody(BaseModel):
+    # Retiring a location is not an edit; it goes through the same retirement as people and
+    # organizations, so a `status` here is refused instead of silently ignored.
+    model_config = ConfigDict(extra="forbid")
+
     label: str | None = None
     location_type: str | None = None
     formatted_address: str | None = None
-    status: str | None = None
 
 
 class PatchCanonicalGeometryBody(BaseModel):
@@ -140,9 +143,15 @@ class ApplyCanonicalGeometryResponse(BaseModel):
 
 
 def _canonical_filters(
-    *, stylebook_id: int, q: str | None, type_filter: str | None
+    *,
+    stylebook_id: int,
+    status: Literal["active", "inactive", "all"],
+    q: str | None,
+    type_filter: str | None,
 ) -> list[ColumnElement[bool]]:
     filters: list[ColumnElement[bool]] = [StylebookLocationCanonical.stylebook_id == stylebook_id]
+    if status != "all":
+        filters.append(StylebookLocationCanonical.status == status)
     q_text = (q or "").strip()
     if q_text:
         filters.append(
@@ -294,6 +303,10 @@ def list_canonical_locations(
         ),
     ),
     q: str | None = None,
+    status: Literal["active", "inactive", "all"] = Query(
+        "active",
+        description="Canonical status to list. Active records are shown by default.",
+    ),
     type_filter: str | None = Query(None),
     min_mentions: int = Query(
         0,
@@ -324,7 +337,9 @@ def list_canonical_locations(
         organization_id=int(sb.organization_id),
     )
 
-    filters = list(_canonical_filters(stylebook_id=int(sb.id), q=q, type_filter=type_filter))
+    filters = list(
+        _canonical_filters(stylebook_id=int(sb.id), status=status, q=q, type_filter=type_filter)
+    )
     if min_mentions > 0:
         filters.append(
             col(StylebookLocationCanonical.id).in_(_min_mentions_subquery(
@@ -541,13 +556,11 @@ def patch_canonical_location(
             session,
             cleanup_entity_models("locations"),
             canon,
-            {name: value for name, value in updates.items() if name != "status"},
+            updates,
             old_label_alias_provenance=UI_RENAME_ALIAS_PROVENANCE,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if "status" in updates and updates["status"] is not None:
-        canon.status = str(updates["status"]).strip().lower()
 
     log_stylebook_activity_safe(
         session,

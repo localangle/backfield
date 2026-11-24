@@ -11,7 +11,7 @@ and apply routes are not offered there. The contract can change between
 versions: check `contract_version` in `capabilities`. The design is in the Stylebook cleanup API plan
 under `docs/plan/`; this page describes what is built.
 
-You can apply merges, edits, aliases, and dismissals so far. `capabilities.operations` lists what
+You can apply merges, edits, aliases, dismissals, retirements, and deletions so far. `capabilities.operations` lists what
 this instance supports for your key (empty without `cleanup:apply`).
 
 ## Base path and access
@@ -50,7 +50,7 @@ committed as
 | `GET /candidates/{entity}` | The candidate queue. Also `/count` (per project) and `/types` (kinds for filtering). |
 | `GET /candidates/{entity}/{candidate_id}/evidence` | Article snippets and ranked catalog matches for one candidate. |
 | `GET /dismissals` | Issues set aside, optionally for one `check_id`, with the reason and run when a cleanup run set them aside. |
-| `GET /{entity}/{id}/resolution` | Where a merged-away id went. A live id resolves to itself. |
+| `GET /{entity}/{id}/resolution` | Where a merged-away id went, or that a cleanup run deleted it (`deleted`). A live id resolves to itself. |
 | `GET /runs`, `GET /runs/{run_id}` | Runs in this Stylebook, newest first, with applied counts by operation. |
 | `GET /runs/{run_id}/actions` | What was applied in a run, oldest first. Read it after a crash to see what landed. |
 | `GET /actions/{action_id}` | One applied action with the records as they were before the change. |
@@ -71,6 +71,8 @@ same shape.
 | `POST /{entity}/merges` | `source_id` to merge away and the `target_id` that survives. Optional: `resolved_type` (people and organizations) and `geometry_winner` (locations). |
 | `POST /{entity}/edits` | `canonical_id` and `changes` (see below). Optional: `apply_geometry_to_saved_places` (locations). |
 | `POST /{entity}/aliases` | `canonical_id`, `action` (`add` or `suppress`) and `alias_text`. |
+| `POST /{entity}/retirements` | `canonical_id`. Optional: `action` (`retire`, the default, or `reinstate`), `mention_disposition`, `mention_reason_code`. |
+| `POST /{entity}/deletions` | `canonical_id`. Optional: `mention_disposition`, `mention_reason_code`. |
 | `POST /dismissals` | `check_id`, `action` (`dismiss` or `reopen`), and the result: `left_id` and `right_id` for a duplicate check, or `canonical_id` for a check that lists single records. Optional: `reason_code`. |
 3. `POST /runs/{run_id}/close` with `closed`, or `aborted` to stop further changes at once.
 
@@ -80,10 +82,11 @@ same shape.
 **Each item stands alone.** The response gives every item a `status`: `would_apply`, `applied`,
 `noop`, or `error`. An `error` has a `reason` code and a plain-language `message`; the others in
 the batch are unaffected. Reason codes: `run_not_open`, `ceiling_reached`, `not_found`,
-`same_canonical`, `guard_refused` (the same checks the Stylebook app makes, such as different place
+`same_canonical`, `linked_records_present`, `guard_refused` (the same checks the Stylebook app makes, such as different place
 kinds or conflicting metadata), `invalid_item`, `unknown_check`, `ledger_failed`, and `failed`. A
 repeat of something that already happened is a `noop`, so retrying is safe: `already_merged`,
-`already_present`, `already_suppressed`, `already_dismissed`, `not_dismissed`, or `no_change`.
+`already_present`, `already_suppressed`, `already_dismissed`, `not_dismissed`, `already_inactive`,
+`already_active`, `already_deleted`, or `no_change`.
 
 **What a merge does.** The source's aliases, its label (as a reviewed alias), metadata, connections,
 and linked records all move to the survivor. A location's geography is kept on the survivor unless
@@ -112,6 +115,22 @@ come back if later processing links a mention with that exact name to the record
 **What a dismissal does.** A duplicate check is dismissed one pair at a time, never a whole
 cluster, so a dismissal never covers pairs the check did not propose. `reopen` deletes the
 dismissal (as the Stylebook app does); what it was is kept in the ledger and the activity feed.
+
+**What a retirement does.** The same for locations, people, and organizations. A retired record is
+inactive: it stops matching new mentions, drops out of the default lists (`status=inactive` or
+`status=all` shows it), and its open connections are closed. `reinstate` makes it active again; it
+does not reopen connections or relink mentions. Records still linked to it follow
+`mention_disposition`: `refuse` (the default) stops the item with `linked_records_present`,
+`requeue` returns them to the review queue, `waive` marks them as not needing a record. They are
+released with `mention_reason_code` (default `reset_pending_after_canonical_retired`, or `..._deleted`
+for a deletion) and a search re-index is queued for each (`reindex_queued`).
+
+**What a deletion does.** Removes the record for good, using the same release rules as a
+retirement. Its aliases and metadata go with it, its open connections are closed, and a deleted
+event is emitted. The ledger keeps a full snapshot of what it was (aliases, metadata, linked
+records, connections), but there is no undo route. After a deletion, `resolution` for that id
+returns `deleted: true`; repeating the deletion is a `noop` (`already_deleted`). Deleting is the
+same operation the Stylebook app's delete button performs.
 
 **The ledger.** Every applied item writes one action in the same transaction as the change. If the
 action cannot be written, the change is undone and the item reports `ledger_failed`. An action holds
@@ -186,5 +205,4 @@ to 20 sample ids.
 
 ## Not built yet
 
-- Retirements and deletions.
 - Candidate decisions, mention links, relations, and undo (the second release).

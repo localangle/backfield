@@ -199,7 +199,14 @@ review becomes unwieldy, split at a slice boundary (D44 allows it).
   emit a `canonical_updated` event.
 
 **Slice 3: retirements and deletions**
-- Extract the organization retirement pattern and the people removal pattern from the hand-cleanup scripts in `tmp/stylebook-agent-cleanup/` into library functions with `mention_disposition` and per-mention reason codes in one transaction. Note the UI's delete route refuses when linked mentions exist, which is exactly the `refuse` default, so UI behavior stays the same.
+- Extract the organization retirement pattern and the people removal pattern from the hand-cleanup scripts in `tmp/stylebook-agent-cleanup/` into library functions with `mention_disposition` and per-mention reason codes in one transaction. The UI delete routes do not refuse when linked mentions exist; they requeue them. The API default is `refuse` because an agent should have to choose.
+
+**Slice 3 status (2026-11-24):** Built on `feat/cleanup-shared-merge`. Decisions and differences:
+- **Consistency across types was the goal.** `cleanup/removal_ops.py` holds one `retire_canonical`, `reinstate_canonical` and `delete_canonical` for locations, people and organizations, and `removal_items.py` is the pipeline. The location delete wrapper and the person and organization UI delete routes now call the same function. People and organization deletes now also suppress the record's evidence events (locations already did).
+- **`mention_disposition`** is `refuse` (default), `requeue` or `waive`, with `mention_reason_code` defaulting to `reset_pending_after_canonical_{retired,deleted}`. `refuse` with linked records is `linked_records_present`.
+- **Retire** sets `inactive`, releases linked records, closes open connections, and emits `canonical_retired`. **Reinstate** sets `active` again and emits `canonical_reinstated`; it does not relink anything. Ceiling classes `retirement` and `deletion`.
+- **Delete** keeps a full snapshot in the ledger before-state (the canonical, aliases, metadata, linked records, connections) plus the released records. No undo is planned for it. `resolution` reports `deleted: true` when the ledger holds a deletion for the id; repeating a deletion is a `noop` (`already_deleted`).
+- **Stylebook app list and edit changes.** People and location lists take `status` (`active` default, `inactive`, `all`), like organizations. The location `PATCH` no longer accepts `status` (it returns `422`); retirement is an API operation, and there is no retire control in the app yet.
 
 **Tests per slice:** operation tests from the logged cases; guard parity with the UI; `dry_run`
 mutates nothing; ceilings return `ceiling_reached`; aborted run rejects applies; ledger failure fails

@@ -17,21 +17,19 @@ from backfield_db import (
 )
 from backfield_entities.activity import (
     EVENT_CANONICAL_CREATED,
-    EVENT_CANONICAL_DELETED,
     EVENT_CANONICAL_UPDATED,
     log_stylebook_activity_safe,
 )
-from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
 from backfield_entities.catalog.search import catalog_label_alias_ilike_filter
 from backfield_entities.cleanup.edit_ops import UI_RENAME_ALIAS_PROVENANCE, apply_field_edits
 from backfield_entities.cleanup.entity_models import cleanup_entity_models
-from backfield_entities.connections.lifecycle import close_open_connections_for_canonical
+from backfield_entities.cleanup.removal_ops import RemovalActivity, delete_canonical
 from backfield_entities.entities.person.persist import create_standalone_canonical
 from backfield_entities.entities.person.types import (
     PERSON_TYPE_VALUES,
     normalize_person_type,
 )
-from backfield_events import record_canonical_deleted, record_canonical_updated
+from backfield_events import record_canonical_updated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import case, exists, literal
@@ -199,6 +197,7 @@ def _linked_substrate_counts(
 def _canonical_filters(
     *,
     stylebook_id: int,
+    status: Literal["active", "inactive", "all"],
     q: str | None,
     type_filter: str | None,
     public_figure: bool | None,
@@ -208,6 +207,8 @@ def _canonical_filters(
     project_ids: list[int],
 ) -> list[ColumnElement[bool]]:
     filters: list[ColumnElement[bool]] = [StylebookPersonCanonical.stylebook_id == stylebook_id]
+    if status != "all":
+        filters.append(StylebookPersonCanonical.status == status)
     q_text = (q or "").strip()
     if q_text:
         filters.append(
@@ -365,6 +366,10 @@ def list_canonical_people(
         description="Optional project slug to filter evidence/counts.",
     ),
     q: str | None = None,
+    status: Literal["active", "inactive", "all"] = Query(
+        "active",
+        description="Canonical status to list. Active records are shown by default.",
+    ),
     type_filter: str | None = Query(None),
     public_figure: bool | None = Query(None),
     title_filter: str | None = Query(
@@ -405,6 +410,7 @@ def list_canonical_people(
 
     filters = _canonical_filters(
         stylebook_id=int(sb.id),
+        status=status,
         q=q,
         type_filter=type_filter,
         public_figure=public_figure,
@@ -689,52 +695,23 @@ def delete_canonical_person(
     if canon is None or int(canon.stylebook_id) != int(sb.id):
         raise HTTPException(status_code=404, detail="Canonical person not found")
 
-    linked = session.exec(
-        select(SubstratePerson).where(
-            SubstratePerson.stylebook_person_canonical_id == str(canon.id),
-        )
-    ).all()
-    for person in linked:
-        person.stylebook_person_canonical_id = None
-        person.canonical_link_status = CANONICAL_LINK_PENDING
-        person.canonical_review_reasons_json = [
-            {
-                "code": "reset_pending_after_canonical_deleted",
-                "deleted_canonical_id": str(canon.id),
-            }
-        ]
-        session.add(person)
-
-    log_stylebook_activity_safe(
+    outcome = delete_canonical(
         session,
+        cleanup_entity_models("people"),
+        canon,
         stylebook_id=int(sb.id),
-        actor_type="user",
-        actor_user_id=_created_by_user_id(auth),
-        source="manual_ui",
-        event_type=EVENT_CANONICAL_DELETED,
-        entity_type="person",
-        entity_id=str(canon.id),
-        entity_label=str(canon.label),
-        payload_json={"unlinked_substrate_count": len(linked)},
+        organization_id=int(sb.organization_id),
+        activity=RemovalActivity(
+            actor_type="user",
+            actor_user_id=_created_by_user_id(auth),
+            source="manual_ui",
+        ),
     )
-    record_canonical_deleted(
-        session,
-        stylebook_id=int(sb.id),
-        entity_type="person",
-        canonical_id=str(canon.id),
-        label=str(canon.label),
-    )
-    close_open_connections_for_canonical(
-        session,
-        entity_type="person",
-        canonical_id=str(canon.id),
-    )
-    session.delete(canon)
     session.commit()
     return {
         "message": "deleted",
-        "id": str(canon.id),
-        "unlinked_substrate_count": len(linked),
+        "id": outcome.canonical_id,
+        "unlinked_substrate_count": len(outcome.released_records),
     }
 
 

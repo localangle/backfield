@@ -23,7 +23,7 @@ from core_api.routers.public.cleanup.deps import (
 from core_api.routers.public.cleanup.settings import snippet_max_chars
 
 CLEANUP_CONTRACT_VERSION = "preview-1"
-SUPPORTED_OPERATIONS = ("merges", "dismissals", "aliases", "edits")
+SUPPORTED_OPERATIONS = ("merges", "dismissals", "aliases", "edits", "retirements", "deletions")
 
 
 class CapabilityCheck(BaseModel):
