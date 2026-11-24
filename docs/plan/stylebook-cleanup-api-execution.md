@@ -152,6 +152,10 @@ review becomes unwieldy, split at a slice boundary (D44 allows it).
   resolution, repeats the merge for `noop`, closes the run, and removes its rows.
 - `apply_merge` persists `merged_into` itself, so the Stylebook app's merge routes record redirects
   too (with no ledger row). A chain shortens on the next merge, so resolving is one lookup.
+- Merges made before the redirect table existed are backfilled from the activity log with
+  `backfield backfill-merge-redirects` (see `docs/operations/migrations.md`). On the dev database it
+  wrote 10,247 redirects; 384 old ids stay unresolved because their survivor was later merged away
+  by a script that wrote no activity event.
 - A dry run does the real merge inside the item's transaction and rolls it back, rather than
   duplicating the guards. The cost is one real merge's work per dry-run item.
 - A run that is not open makes each item an `error` (`run_not_open`), not a request-level failure.

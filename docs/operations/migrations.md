@@ -126,6 +126,22 @@ and `resume_cursor`; pass that value back through `--after-article-id` after an 
 control. Apply mode is idempotent: it reinforces existing endpoint+nature edges, skips article
 evidence already attached, and never closes existing edges.
 
+## Merge redirect backfill
+
+Merges made before `stylebook_canonical_redirect` existed left no redirect, so `resolution` could
+not follow their old ids. `backfield backfill-merge-redirects` rebuilds them from the
+`cleanup_merge` events in the Stylebook activity log. It defaults to dry-run:
+
+```bash
+backfield backfill-merge-redirects                      # report only
+backfield backfill-merge-redirects --stylebook-id 7 --apply
+```
+
+A redirect is written only when the old record is gone, the survivor still exists in the same
+Stylebook, and the old id has no redirect yet; a survivor that was merged away later is replaced by
+the final survivor. Merges that wrote no activity event, and merges whose survivor was later removed,
+are counted (`survivor missing`) but left alone. The command is idempotent.
+
 ## Local workflow
 
 With the Compose stack configuration:
