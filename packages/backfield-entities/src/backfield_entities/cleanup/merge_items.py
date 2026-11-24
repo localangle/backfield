@@ -7,9 +7,6 @@ an apply would do and writes nothing.
 
 from __future__ import annotations
 
-import logging
-
-from backfield_db import StylebookCleanupRun
 from pydantic import BaseModel, Field, JsonValue
 from sqlmodel import Session
 
@@ -21,33 +18,30 @@ from backfield_entities.cleanup.apply_merge import (
     apply_merge,
 )
 from backfield_entities.cleanup.before_state import capture_merge_before_state
-from backfield_entities.cleanup.ceilings import applied_count, ceiling_for
 from backfield_entities.cleanup.entity_models import CleanupEntityModels
 from backfield_entities.cleanup.envelope import (
     MAX_ITEM_ID_LENGTH,
     MAX_ITEMS_PER_REQUEST,
     REASON_ALREADY_MERGED,
-    REASON_CEILING_REACHED,
-    REASON_FAILED,
-    REASON_GUARD_REFUSED,
-    REASON_LEDGER_FAILED,
     REASON_NOT_FOUND,
-    REASON_RUN_NOT_OPEN,
     REASON_SAME_CANONICAL,
     ApplyCounts,
     ItemResult,
     count_statuses,
+)
+from backfield_entities.cleanup.item_driver import (
+    LedgerError,
+    ceiling_refusal,
+    process_items,
+    run_not_open_refusal,
 )
 from backfield_entities.cleanup.ledger import ActionCaller, record_action
 from backfield_entities.cleanup.redirects import link_redirect_to_action, resolve_canonical
 from backfield_entities.cleanup.runs import require_run
 from backfield_entities.entities.location.merge import GeometryWinner
 
-logger = logging.getLogger(__name__)
-
 OPERATION = "merge"
 ACTIVITY_SOURCE = "cleanup_api"
-_NOT_FOUND_MARKER = "not in this stylebook"
 
 
 class MergeItem(BaseModel):
@@ -137,9 +131,9 @@ def _precheck(
     item: MergeItem,
 ) -> MergeItemResult | None:
     """Everything that can end an item before any change is attempted; None means go ahead."""
-    run: StylebookCleanupRun = require_run(session, stylebook_id=stylebook_id, run_id=run_id)
-    if run.status != "open":
-        return _error(item, REASON_RUN_NOT_OPEN, f"The run is {run.status}.")
+    not_open = run_not_open_refusal(session, stylebook_id=stylebook_id, run_id=run_id)
+    if not_open is not None:
+        return _error(item, not_open.reason, not_open.message)
     if item.source_id == item.target_id:
         return _error(item, REASON_SAME_CANONICAL, "The source and the survivor are the same.")
     if not _exists(session, models, stylebook_id=stylebook_id, canonical_id=item.source_id):
@@ -159,12 +153,9 @@ def _precheck(
         return _error(item, REASON_NOT_FOUND, "The source canonical is not in this Stylebook.")
     if not _exists(session, models, stylebook_id=stylebook_id, canonical_id=item.target_id):
         return _error(item, REASON_NOT_FOUND, "The survivor canonical is not in this Stylebook.")
-    if applied_count(session, run_id=run_id, operation=OPERATION) >= ceiling_for(OPERATION):
-        return _error(
-            item,
-            REASON_CEILING_REACHED,
-            "This run has reached the limit for merges. Open a new run to continue.",
-        )
+    at_ceiling = ceiling_refusal(session, run_id=run_id, operation=OPERATION, noun="merges")
+    if at_ceiling is not None:
+        return _error(item, at_ceiling.reason, at_ceiling.message)
     return None
 
 
@@ -246,7 +237,7 @@ def _apply_item(
             action_id=str(action.id),
         )
     except Exception as exc:
-        raise _LedgerError from exc
+        raise LedgerError from exc
     return MergeItemResult(
         item_id=item.item_id,
         status="applied",
@@ -254,10 +245,6 @@ def _apply_item(
         reindex_queued=queued,
         summary=summary,
     )
-
-
-class _LedgerError(Exception):
-    """The ledger row could not be written, so the merge must not stand."""
 
 
 def apply_merge_items(
@@ -275,38 +262,23 @@ def apply_merge_items(
     Raises ``RunNotFoundError`` when the run is not in this Stylebook. Commits per item.
     """
     require_run(session, stylebook_id=stylebook_id, run_id=body.run_id)
-    results: list[MergeItemResult] = []
-    for item in body.items:
-        try:
-            result = _apply_item(
-                session,
-                models,
-                stylebook_id=stylebook_id,
-                organization_id=organization_id,
-                run_id=body.run_id,
-                item=item,
-                dry_run=body.dry_run,
-                caller=caller,
-                reindex=reindex,
-            )
-            if result.status == "applied":
-                session.commit()
-            else:
-                session.rollback()
-        except ValueError as exc:
-            session.rollback()
-            message = str(exc)
-            reason = REASON_NOT_FOUND if _NOT_FOUND_MARKER in message else REASON_GUARD_REFUSED
-            result = _error(item, reason, message)
-        except _LedgerError:
-            session.rollback()
-            logger.exception("Cleanup ledger write failed for item %s", item.item_id)
-            result = _error(item, REASON_LEDGER_FAILED, "The change was not saved.")
-        except Exception:
-            session.rollback()
-            logger.exception("Cleanup merge failed for item %s", item.item_id)
-            result = _error(item, REASON_FAILED, "The merge could not be completed.")
-        results.append(result)
+    results = process_items(
+        session,
+        items=body.items,
+        operation_noun="merge",
+        apply_one=lambda item: _apply_item(
+            session,
+            models,
+            stylebook_id=stylebook_id,
+            organization_id=organization_id,
+            run_id=body.run_id,
+            item=item,
+            dry_run=body.dry_run,
+            caller=caller,
+            reindex=reindex,
+        ),
+        error_result=_error,
+    )
     return MergeResponse(
         run_id=body.run_id,
         dry_run=body.dry_run,
