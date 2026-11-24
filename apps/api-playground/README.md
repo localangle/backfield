@@ -26,7 +26,7 @@ that mirrors the semantic color tokens, control dimensions, card treatment, prod
 focus states used by Agate and Stylebook. HTTP method badges, monospace paths, and response code
 blocks remain developer-tool-specific accents. The endpoint navigator groups and labels
 operations to match the Backfield API docs nav (Projects, Metadata, Articles, Mentions, People,
-Locations, Organizations, Other) and displays paths relative to
+Locations, Organizations, Other, Cleanup (preview)) and displays paths relative to
 `/public/v1/projects/{project_slug}`; request construction still uses the exact OpenAPI path.
 Response bodies keep Polygon and MultiPolygon coordinate objects collapsed by default, with
 geometry type and position count in the summary; expanding restores the full JSON, and copying
@@ -53,6 +53,12 @@ selecting a project loads the matching discovery endpoint with the tab-scoped pr
 populates dropdown choices. Every `meta` parameter uses the visual condition builder: each row
 combines a metadata type, an is / is not operator, and a searchable category multi-select; rows
 encode to the documented repeatable `meta` clause grammar shown in a live preview.
+Preview cleanup operations appear last, in a **Cleanup (preview)** group. The Playground loads that
+contract from `GET /public/v1/cleanup/openapi.json` next to the public one and merges the two; if
+it cannot be loaded, the public API still works. Only read operations are listed (opening and
+closing runs and merges are left out, so a service key in a browser tab cannot change data). Their
+`stylebook_slug` path field is a dropdown of the organization's Stylebooks, default first, and the
+choice carries across cleanup endpoints.
 The semantic-search and geo-cell batch request bodies use the same structured field controls.
 **Edit as JSON** remains available as a lossless escape hatch, and request-body properties are
 validated against their OpenAPI constraints before the request is sent. The public trigger-run

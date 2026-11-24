@@ -5,8 +5,13 @@ import { UserAccountMenu } from "@backfield/ui/UserAccountMenu"
 import EndpointExplorer from "./components/EndpointExplorer"
 import PlatformSidebar from "./components/PlatformSidebar"
 import NotFound from "./pages/NotFound"
-import { fetchPublicSchema } from "./lib/api"
-import { listOperations, type OpenApiDocument, type PlaygroundOperation } from "./lib/openapi"
+import { fetchCleanupSchema, fetchPublicSchema } from "./lib/api"
+import {
+  listOperations,
+  mergeOpenApiDocuments,
+  type OpenApiDocument,
+  type PlaygroundOperation,
+} from "./lib/openapi"
 import {
   deriveApiOrigin,
   derivePlaygroundOrigin,
@@ -175,6 +180,7 @@ function PlaygroundHome() {
     readSessionValue(ENDPOINT_FILTER_SESSION_STORAGE),
   )
   const [explorerProjectSlug, setExplorerProjectSlug] = useState("")
+  const [explorerStylebookSlug, setExplorerStylebookSlug] = useState("")
   // Endpoint groups start collapsed; users expand only what they need.
   const [expandedGroups, setExpandedGroups] =
     useState<Set<string>>(readExpandedGroups)
@@ -270,6 +276,21 @@ function PlaygroundHome() {
         ),
     [platformContext],
   )
+  // The default Stylebook comes first so cleanup requests start on the usual one.
+  const stylebookOptions = useMemo(
+    () =>
+      [...(platformContext?.stylebooks ?? [])]
+        .sort(
+          (left, right) =>
+            Number(right.is_default) - Number(left.is_default) ||
+            left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
+        )
+        .map((stylebook) => ({
+          value: stylebook.slug,
+          label: `${stylebook.name} (${stylebook.slug})`,
+        })),
+    [platformContext],
+  )
 
   function toggleGroup(groupName: string) {
     setExpandedGroups((current) => {
@@ -344,7 +365,13 @@ function PlaygroundHome() {
 
     setLoading(true)
     try {
-      const schema = await fetchPublicSchema(apiOrigin)
+      const [publicSchema, cleanupSchema] = await Promise.all([
+        fetchPublicSchema(apiOrigin),
+        fetchCleanupSchema(apiOrigin),
+      ])
+      const schema = cleanupSchema
+        ? mergeOpenApiDocuments(publicSchema, cleanupSchema)
+        : publicSchema
       const nextOperations = listOperations(schema)
       if (!nextOperations.length) {
         throw new Error("The OpenAPI document contains no supported operations.")
@@ -687,6 +714,9 @@ function PlaygroundHome() {
               projectOptions={projectOptions}
               projectSlug={explorerProjectSlug}
               onProjectSlugChange={setExplorerProjectSlug}
+              stylebookOptions={stylebookOptions}
+              stylebookSlug={explorerStylebookSlug || stylebookOptions[0]?.value || ""}
+              onStylebookSlugChange={setExplorerStylebookSlug}
               mapDefaultCenter={
                 platformContext?.mapDefaultViewport
                   ? {

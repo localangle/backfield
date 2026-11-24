@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 
 import publicOpenApi from "../../../../docs/api/public.openapi.json"
@@ -13,6 +16,8 @@ import {
   sectionsForOperation,
   type PresentationContext,
 } from "./presentation"
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../../..")
 
 const blockedContext: PresentationContext = {
   projectOptions: [],
@@ -266,5 +271,48 @@ describe("endpoint presentation contract", () => {
         expect(presentation.control).toBeTruthy()
       }
     }
+  })
+})
+
+describe("cleanup Stylebook choice", () => {
+  const cleanupOperation = listOperations(
+    parseOpenApiDocument(
+      JSON.parse(
+        readFileSync(join(repoRoot, "docs/api/cleanup.openapi.json"), "utf8"),
+      ),
+    ),
+  )[0]
+
+  it("offers the loaded Stylebooks next to the project, and says so when there are none", () => {
+    const withOptions = presentationForField(
+      cleanupOperation,
+      "stylebook_slug",
+      undefined,
+      undefined,
+      { ...blockedContext, stylebookOptions: [{ value: "default", label: "Default (default)" }] },
+      "path",
+    )
+    const without = presentationForField(
+      cleanupOperation,
+      "stylebook_slug",
+      undefined,
+      undefined,
+      blockedContext,
+      "path",
+    )
+
+    expect(withOptions).toMatchObject({
+      control: "select",
+      emptyLabel: "Select a Stylebook",
+      options: [{ value: "default", label: "Default (default)" }],
+    })
+    expect(without).toMatchObject({ control: "select", emptyLabel: "No Stylebooks available" })
+  })
+
+  it("puts the project and Stylebook in the first section", () => {
+    const sections = sectionsForOperation(cleanupOperation.parameters)
+
+    expect(sections[0]).toMatchObject({ id: "project" })
+    expect(sections[0].names).toEqual(["project_slug", "stylebook_slug"])
   })
 })

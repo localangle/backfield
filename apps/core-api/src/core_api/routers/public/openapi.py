@@ -8,6 +8,9 @@ from typing import Any
 
 PUBLIC_PREFIX = "/public/v1"
 PUBLIC_SCHEMA_PATH = f"{PUBLIC_PREFIX}/openapi.json"
+# The preview cleanup contract, readable without a key so the API Playground can list it. The
+# keyed copy under each Stylebook's `/cleanup/openapi.json` carries the same document.
+CLEANUP_SCHEMA_PATH = f"{PUBLIC_PREFIX}/cleanup/openapi.json"
 # Routes in preview carry this tag. They work and appear in the app's own schema, but stay out of
 # the consumer contract until they graduate.
 CLEANUP_PREVIEW_TAG = "cleanup-preview"

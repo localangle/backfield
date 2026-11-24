@@ -27,7 +27,11 @@ from core_api.routers.public.errors import (
     public_http_exception_handler,
     public_validation_exception_handler,
 )
-from core_api.routers.public.openapi import build_public_openapi
+from core_api.routers.public.openapi import (
+    CLEANUP_SCHEMA_PATH,
+    build_cleanup_openapi,
+    build_public_openapi,
+)
 
 configure_structured_logging("core-api")
 
@@ -84,6 +88,13 @@ app.add_exception_handler(RequestValidationError, public_validation_exception_ha
 def public_openapi() -> dict[str, object]:
     """Serve the standalone public API contract without authentication."""
     return build_public_openapi(app.openapi())
+
+
+@app.get(CLEANUP_SCHEMA_PATH, include_in_schema=False)
+def cleanup_openapi() -> dict[str, object]:
+    """Serve the preview cleanup contract (schema only, no data) without authentication."""
+    return build_cleanup_openapi(app.openapi())
+
 
 app.include_router(legacy_public_router.router, prefix="/v1")
 app.include_router(public_v1_router, prefix="/public/v1")

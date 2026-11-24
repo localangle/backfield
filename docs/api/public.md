@@ -265,8 +265,11 @@ remains available at `/openapi.json`.
 
 Routes under `/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup` are a
 **preview** for outside cleanup tools. They are tagged `cleanup-preview`, work with the scopes above,
-and are deliberately left out of `/public/v1/openapi.json`, `public.openapi.json`, and the API
-Playground until they graduate (the Playground rule above does not apply to them). The Stylebook is
+and are deliberately left out of `/public/v1/openapi.json` and `public.openapi.json` until they
+graduate. The API Playground lists their read operations under a separate **Cleanup (preview)**
+group, loaded from `GET /public/v1/cleanup/openapi.json` (no key needed; it is the schema only).
+Operations that change data (opening and closing runs, merges) are not shown in the Playground. The
+Stylebook is
 always named in the path and must belong to the key's organization. The app's own `/openapi.json`
 lists them. The design is tracked in the Stylebook cleanup API plan under `docs/plan/`.
 

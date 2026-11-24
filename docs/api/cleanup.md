@@ -4,8 +4,10 @@ A keyed read surface for outside Stylebook cleanup tools. A tool with no databas
 catalog, ask for evidence, read the check queues and candidate queues, and report on the catalog's
 own consistency. Backfield provides the reads; the tool decides what to do with them.
 
-This is a **preview**. It is tagged `cleanup-preview`, so it is left out of `/public/v1/openapi.json`,
-[`public.openapi.json`](public.openapi.json), and the API Playground. The contract can change between
+This is a **preview**. It is tagged `cleanup-preview`, so it is left out of `/public/v1/openapi.json`
+and [`public.openapi.json`](public.openapi.json). The API Playground lists the read operations under
+**Cleanup (preview)**, with a Stylebook dropdown next to the project; opening runs, closing runs,
+and merges are not offered there. The contract can change between
 versions: check `contract_version` in `capabilities`. The design is in the Stylebook cleanup API plan
 under `docs/plan/`; this page describes what is built.
 
@@ -23,7 +25,9 @@ The Stylebook is always named in the path and must belong to the key's organizat
 which only service keys can hold (it includes `cleanup:read`). A key without it gets
 `403`. See [`public.md`](public.md) for keys and scopes.
 
-The keyed contract is served at `GET …/cleanup/openapi.json` and committed as
+The contract is served with a key at `GET …/cleanup/openapi.json`, and without one at
+`GET /public/v1/cleanup/openapi.json` (the same schema, no data; the Playground loads it). It is
+committed as
 [`cleanup.openapi.json`](cleanup.openapi.json). Regenerate it with
 `uv run python scripts/export_cleanup_openapi.py`; a test fails when the file is out of date.
 

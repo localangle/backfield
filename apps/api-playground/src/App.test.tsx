@@ -182,6 +182,10 @@ describe("API key handling", () => {
     const fetchMock = vi.fn<typeof fetch>().mockImplementation((input) => {
       const response = sessionResponse(input)
       if (response) return Promise.resolve(response)
+      // The preview cleanup contract is optional; the public schema is the request held open.
+      if (String(input).endsWith("/public/v1/cleanup/openapi.json")) {
+        return Promise.resolve(new Response(null, { status: 404 }))
+      }
       return new Promise<Response>((resolve) => {
         resolveSchemaRequest = resolve
       })
@@ -218,6 +222,59 @@ describe("API key handling", () => {
     const endpointLink = document.querySelector(".endpoint-link")
     expect(endpointLink?.querySelector(".endpoint-summary")).toHaveTextContent("List and search")
     expect(endpointLink?.querySelector("code")).toHaveTextContent("/articles/search")
+  })
+
+  it("adds the preview cleanup operations with a Stylebook choice when the contract is served", async () => {
+    const cleanupSchema = {
+      openapi: "3.1.0",
+      info: { title: "Backfield Cleanup API (preview)", version: "1.0.0" },
+      paths: {
+        "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/capabilities": {
+          get: {
+            tags: ["cleanup-preview"],
+            summary: "Get Cleanup Capabilities",
+            parameters: [
+              { name: "project_slug", in: "path", required: true, schema: { type: "string" } },
+              { name: "stylebook_slug", in: "path", required: true, schema: { type: "string" } },
+            ],
+          },
+        },
+        "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/{entity}/merges": {
+          post: {
+            tags: ["cleanup-preview"],
+            summary: "Post Cleanup Merges",
+            parameters: [
+              { name: "project_slug", in: "path", required: true, schema: { type: "string" } },
+              { name: "stylebook_slug", in: "path", required: true, schema: { type: "string" } },
+              { name: "entity", in: "path", required: true, schema: { type: "string" } },
+            ],
+          },
+        },
+      },
+    }
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const response = sessionResponse(input)
+      if (response) return response
+      const body = String(input).endsWith("/public/v1/cleanup/openapi.json")
+        ? cleanupSchema
+        : schema
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(<App />)
+
+    expect(await screen.findByText("2 operations")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Cleanup (preview), 1 endpoint" }))
+    fireEvent.click(screen.getByText("Capabilities"))
+    const stylebookSelect = (await screen.findByLabelText(/stylebook_slug/)) as HTMLSelectElement
+    expect(stylebookSelect.tagName).toBe("SELECT")
+    expect(stylebookSelect).toHaveTextContent("Newsroom Stylebook (newsroom)")
+    expect(stylebookSelect.value).toBe("newsroom")
+    expect(screen.queryByText("Post Cleanup Merges")).not.toBeInTheDocument()
   })
 
   it("keeps the key for tab reloads without displaying or locally persisting it", async () => {

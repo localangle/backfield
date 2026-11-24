@@ -33,6 +33,25 @@ export async function fetchPublicSchema(origin: string): Promise<OpenApiDocument
   return parseOpenApiDocument(await response.json())
 }
 
+/**
+ * The preview cleanup contract. It is optional: an older server without it, or a failed request,
+ * leaves the Playground with the public API only.
+ */
+export async function fetchCleanupSchema(origin: string): Promise<OpenApiDocument | undefined> {
+  try {
+    const response = await fetch(`${origin}/public/v1/cleanup/openapi.json`, {
+      method: "GET",
+      credentials: "omit",
+      headers: { Accept: "application/json" },
+      referrerPolicy: "no-referrer",
+    })
+    if (!response.ok) return undefined
+    return parseOpenApiDocument(await response.json())
+  } catch {
+    return undefined
+  }
+}
+
 export async function fetchArticleMetaTypes(
   origin: string,
   projectSlug: string,

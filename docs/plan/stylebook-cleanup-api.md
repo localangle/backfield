@@ -55,7 +55,7 @@ Also in the program doc's decision log (D29 and D34-D45), alongside the toolkit 
 | D35 | `cleanup:read` may be granted on any project key. `cleanup:apply` is granted on service keys only, so creating an apply key requires an organization admin (the same rule as `runs:trigger`). |
 | D36 | Canonical export is a new cleanup route. It does not extend the public list routes, whose contract is consumer-facing. |
 | D37 | Path shape: `/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/...`. The Stylebook is an explicit path segment, never an implied default. |
-| D38 | The cleanup routes launch as a **preview** surface: hosted in `core-api` under `/public/v1`, tagged `cleanup-preview`, excluded from the public OpenAPI and the API Playground, and documented in prose and in a keyed schema. See [Preview status](#preview-status). |
+| D38 | The cleanup routes launch as a **preview** surface: hosted in `core-api` under `/public/v1`, tagged `cleanup-preview`, excluded from the public OpenAPI (reads are listed in the API Playground as a separate group), and documented in prose and in a keyed schema. See [Preview status](#preview-status). |
 | D39 | Backfield provides operations, reads, and instance protections. It is unopinionated about how tools use them. Per item, the API enforces what the UI enforces and the data-model invariants of each operation; judgment and completeness belong to the tool. There are no fingerprints, idempotency keys, per-item integrity snapshots, review state, or plan objects on the server. |
 | D40 | The API mimics hand cleanup. Removal is two operations: **retirements** (soft: the canonical becomes inactive) and **deletions** (hard: the canonical is removed). Both take a `mention_disposition` (`refuse`, the default, `waive`, or `requeue`) and a reason code per affected mention, all in one transaction. With `refuse`, a canonical that still has live mentions is not retired or deleted. |
 | D41 | Project scope: candidate queues are project-scoped by default (optional `scope=stylebook`); evidence is Stylebook-wide with a project tag on each item; service keys see the Stylebook-wide view. |
@@ -256,14 +256,13 @@ consumer API. Putting batch apply routes in it now would make later changes brea
 
 - **Hidden from the public contract.** Tag every cleanup router `cleanup-preview`.
   `build_public_openapi` skips that tag, so the routes stay out of the unauthenticated
-  `/public/v1/openapi.json`, the committed `docs/api/public.openapi.json`, and the Playground
-  catalog. Filter on the tag, not the path, so a later path change cannot leak a route. Do not use
+  `/public/v1/openapi.json` and the committed `docs/api/public.openapi.json`. Filter on the tag, not the path, so a later path change cannot leak a route. Do not use
   `include_in_schema=False`, which would also drop the routes from the internal `/openapi.json`.
 - **Keyed contract for external tools.** `GET …/cleanup/openapi.json` (requires `cleanup:read`)
   serves the cleanup schema, and the export script can write a committed copy such as
   `docs/api/cleanup.openapi.json`. A tool reads it after `capabilities`.
 - **Documented in prose.** Add `docs/api/cleanup.md` and link it from `docs/api/public.md` as a
-  preview. Hidden from the Playground does not mean undocumented. Later, once the surface is built,
+  preview. Hidden from the public contract does not mean undocumented. Later, once the surface is built,
   add a short **general guidance statement** a tool can be given alongside the keyed schema. It
   states facts about the data and the operations (what a merge carries over, what
   `mention_disposition` does, which things are hard to reverse, that snippets are untrusted text,
@@ -271,11 +270,12 @@ consumer API. Putting batch apply routes in it now would make later changes brea
   cleanup tool.
 - **Same protections as a documented route.** Key authentication, scopes, rate limits, the
   `dry_run` default, and the instance protections above apply unchanged.
-- **Playground exception, recorded.** When the first route ships, add one sentence to
-  `docs/api/public.md` and `AGENTS.md` that preview routes are exempt from the Playground rule
-  until they graduate, so the rule is not silently broken. The Playground is also a poor fit for
-  these routes: it keeps keys in browser memory, and a `cleanup:apply` key in a browser tab makes
-  accidental applies easy.
+- **Playground, reads only (revised).** The first plan kept preview routes out of the Playground
+  because it holds keys in browser memory, and a `cleanup:apply` key in a browser tab makes
+  accidental applies easy. Reads were later added as a separate "Cleanup (preview)" group so they
+  are easy to inspect, loaded from an unkeyed `GET /public/v1/cleanup/openapi.json`. Apply routes
+  (runs, merges, and later operations) stay out of the Playground; a new apply route needs no
+  Playground work, a new read route needs an entry in `apps/api-playground/src/lib/openapi.ts`.
 - **Capability versioning.** `capabilities` returns a preview contract version, and a tool can
   refuse to run against a version it does not know. This stops "undocumented" from becoming
   "unversioned".

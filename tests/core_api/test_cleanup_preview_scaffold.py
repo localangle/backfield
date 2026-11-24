@@ -186,3 +186,21 @@ def test_keyed_cleanup_contract_needs_cleanup_read_and_lists_only_cleanup_routes
     assert paths
     assert all("/cleanup/" in path for path in paths)
     assert not any(path.endswith("/openapi.json") for path in paths)
+
+
+def test_unkeyed_cleanup_contract_matches_the_keyed_one_and_stays_out_of_the_public_one(
+    client: TestClient,
+) -> None:
+    unkeyed = client.get("/public/v1/cleanup/openapi.json")
+    assert unkeyed.status_code == 200
+    assert unkeyed.json()["paths"]
+
+    headers = _create_key(client, credential_type="user", scopes=["cleanup:read"])
+    keyed = client.get(
+        "/public/v1/projects/general/stylebooks/default/cleanup/openapi.json", headers=headers
+    )
+    assert unkeyed.json() == keyed.json()
+
+    published = client.get("/public/v1/openapi.json").json()
+    assert "/public/v1/cleanup/openapi.json" not in published["paths"]
+    assert "/public/v1/cleanup/openapi.json" not in app.openapi()["paths"]

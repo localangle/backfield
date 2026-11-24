@@ -52,6 +52,10 @@ interface EndpointExplorerProps {
   projectOptions?: SelectOption[]
   projectSlug?: string
   onProjectSlugChange?: (projectSlug: string) => void
+  /** Stylebooks for cleanup operations, with the one chosen last carried across endpoints. */
+  stylebookOptions?: SelectOption[]
+  stylebookSlug?: string
+  onStylebookSlugChange?: (stylebookSlug: string) => void
   /** Org empty-map fallback when signed in; omit for continental US default. */
   mapDefaultCenter?: MapCenter
   mapDefaultZoom?: number
@@ -149,6 +153,9 @@ export default function EndpointExplorer({
   projectOptions = [],
   projectSlug = "",
   onProjectSlugChange,
+  stylebookOptions = [],
+  stylebookSlug = "",
+  onStylebookSlugChange,
   mapDefaultCenter,
   mapDefaultZoom,
 }: EndpointExplorerProps) {
@@ -169,6 +176,14 @@ export default function EndpointExplorer({
       projectSlug
     ) {
       initialValues["path:project_slug"] = projectSlug
+    }
+    if (
+      operation.parameters.some(
+        (parameter) => parameter.in === "path" && parameter.name === "stylebook_slug",
+      ) &&
+      stylebookSlug
+    ) {
+      initialValues["path:stylebook_slug"] = stylebookSlug
     }
     return initialValues
   })
@@ -332,6 +347,7 @@ export default function EndpointExplorer({
 
   const presentationContext: PresentationContext = {
     projectOptions,
+    stylebookOptions,
     articleFacets: articleFacetLoad,
     mentionFacets: mentionFacetLoad,
     metadataTypes: metadataTypeLoad,
@@ -549,6 +565,12 @@ export default function EndpointExplorer({
                             ) {
                               onProjectSlugChange?.(value)
                               setBodyText(initialBody)
+                            }
+                            if (
+                              parameter.in === "path" &&
+                              parameter.name === "stylebook_slug"
+                            ) {
+                              onStylebookSlugChange?.(value)
                             }
                             if (
                               parameter.in === "path" &&

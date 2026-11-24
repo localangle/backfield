@@ -109,6 +109,7 @@ const httpMethods = new Set<HttpMethod>([
 ])
 
 const publicProjectPrefix = "/public/v1/projects/{project_slug}"
+const cleanupPrefix = `${publicProjectPrefix}/stylebooks/{stylebook_slug}/cleanup`
 
 /** Top-level groups and order match the Backfield API docs nav (`mkdocs-api.yml`). */
 const groupOrder = [
@@ -120,6 +121,7 @@ const groupOrder = [
   "Locations",
   "Organizations",
   "Other",
+  "Cleanup (preview)",
 ] as const
 
 type DocsGroup = (typeof groupOrder)[number]
@@ -454,9 +456,49 @@ const docsPresentations: DocsPresentation[] = [
     order: 6,
     match: (method, displayPath) => method === "get" && displayPath === "/events",
   },
+
+  // Cleanup (preview): read operations only. Operations without an entry here (opening and
+  // closing runs, merges) stay out of the Playground.
+  ...cleanupReadPresentations(),
 ]
 
+/** Read-only cleanup operations, in the order the cleanup guide lists them. */
+function cleanupReadPresentations(): DocsPresentation[] {
+  const entries: Array<[HttpMethod, string, string]> = [
+    ["get", "Capabilities", "/cleanup/capabilities"],
+    ["get", "Export canonicals", "/cleanup/{entity}/export"],
+    ["get", "Get evidence", "/cleanup/{entity}/{canonical_id}/evidence"],
+    ["post", "Get evidence in batch", "/cleanup/{entity}/evidence"],
+    ["get", "Compare two canonicals", "/cleanup/{entity}/{canonical_id}/compare/{other_id}"],
+    ["get", "Integrity report", "/cleanup/{entity}/integrity"],
+    ["get", "Resolve a merged ID", "/cleanup/{entity}/{canonical_id}/resolution"],
+    ["get", "List checks", "/cleanup/checks"],
+    ["get", "List check results", "/cleanup/checks/{check_id}/results"],
+    ["post", "Start a check run", "/cleanup/checks/{check_id}/runs"],
+    ["get", "Get latest check run", "/cleanup/checks/{check_id}/runs/latest"],
+    ["get", "List candidates", "/cleanup/candidates/{entity}"],
+    ["get", "Count candidates", "/cleanup/candidates/{entity}/count"],
+    ["get", "List candidate types", "/cleanup/candidates/{entity}/types"],
+    ["get", "Get candidate evidence", "/cleanup/candidates/{entity}/{candidate_id}/evidence"],
+    ["get", "List dismissals", "/cleanup/dismissals"],
+    ["get", "List runs", "/cleanup/runs"],
+    ["get", "Get run", "/cleanup/runs/{run_id}"],
+    ["get", "List run actions", "/cleanup/runs/{run_id}/actions"],
+    ["get", "Get action", "/cleanup/actions/{action_id}"],
+  ]
+  return entries.map(([method, summary, path], order) => ({
+    group: "Cleanup (preview)",
+    summary,
+    order,
+    match: (candidateMethod, displayPath) =>
+      candidateMethod === method && displayPath === path,
+  }))
+}
+
 function compactPath(path: string): string {
+  if (path.startsWith(`${cleanupPrefix}/`)) {
+    return `/cleanup${path.slice(cleanupPrefix.length)}`
+  }
   if (!path.startsWith(publicProjectPrefix)) {
     return path.replace(/\/$/, "") || path
   }
@@ -479,7 +521,7 @@ function presentOperation(
   method: HttpMethod,
   displayPath: string,
   openApiSummary: string,
-): { group: string; summary: string; order: number } {
+): { group: string; summary: string; order: number; matched: boolean } {
   const matched = docsPresentations.find((presentation) =>
     presentation.match(method, displayPath),
   )
@@ -488,12 +530,14 @@ function presentOperation(
       group: matched.group,
       summary: matched.summary,
       order: matched.order,
+      matched: true,
     }
   }
   return {
     group: "Other",
     summary: friendlySummary(openApiSummary),
     order: 1000,
+    matched: false,
   }
 }
 
@@ -602,6 +646,29 @@ export function parseOpenApiDocument(value: unknown): OpenApiDocument {
   return value as unknown as OpenApiDocument
 }
 
+/**
+ * Combine two OpenAPI documents so one explorer can list both. Paths and schemas from `extra`
+ * are added; anything already in `base` wins, so the public contract is never overridden.
+ */
+export function mergeOpenApiDocuments(
+  base: OpenApiDocument,
+  extra: OpenApiDocument,
+): OpenApiDocument {
+  const baseComponents = isRecord(base.components) ? base.components : {}
+  const extraComponents = isRecord(extra.components) ? extra.components : {}
+  const baseSchemas = isRecord(baseComponents.schemas) ? baseComponents.schemas : {}
+  const extraSchemas = isRecord(extraComponents.schemas) ? extraComponents.schemas : {}
+  return {
+    ...base,
+    paths: { ...extra.paths, ...base.paths },
+    components: {
+      ...extraComponents,
+      ...baseComponents,
+      schemas: { ...extraSchemas, ...baseSchemas },
+    },
+  }
+}
+
 export function listOperations(document: OpenApiDocument): PlaygroundOperation[] {
   const operations: PlaygroundOperation[] = []
 
@@ -634,6 +701,9 @@ export function listOperations(document: OpenApiDocument): PlaygroundOperation[]
         displayPath,
         operation.summary ?? operation.operationId ?? `${method.toUpperCase()} ${path}`,
       )
+      if (displayPath.startsWith("/cleanup/") && !presentation.matched) {
+        continue
+      }
 
       operations.push({
         id: operation.operationId ?? `${method}:${path}`,

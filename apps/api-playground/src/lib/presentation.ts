@@ -34,6 +34,8 @@ export interface OptionLoad {
 
 export interface PresentationContext {
   projectOptions: SelectOption[]
+  /** Stylebooks for cleanup operations; omitted when none are loaded. */
+  stylebookOptions?: SelectOption[]
   articleFacets: OptionLoad
   mentionFacets: OptionLoad
   metadataTypes: OptionLoad
@@ -240,6 +242,17 @@ export function presentationForField(
         ? "Select a project"
         : "No projects available",
       options: context.projectOptions,
+      typeLabel: "String",
+      wide: true,
+    }
+  }
+
+  if (location === "path" && name === "stylebook_slug") {
+    const stylebookOptions = context.stylebookOptions ?? []
+    return {
+      control: "select",
+      emptyLabel: stylebookOptions.length ? "Select a Stylebook" : "No Stylebooks available",
+      options: stylebookOptions,
       typeLabel: "String",
       wide: true,
     }
@@ -483,7 +496,7 @@ function sectionForField(
   name: string,
   location: OpenApiParameter["in"] | "body",
 ): string {
-  if (name === "project_slug") return "project"
+  if (name === "project_slug" || name === "stylebook_slug") return "project"
   if (location === "header") return "headers"
   if (location === "path") return "resource"
   if (SEARCH_NAMES.has(name)) return "search"
@@ -523,6 +536,10 @@ export function sectionsForOperation(
     const section = sectionForField(parameter.name, parameter.in)
     groups.set(section, [...(groups.get(section) ?? []), parameter.name])
   }
+  // The project always comes before the Stylebook chosen within it.
+  groups
+    .get("project")
+    ?.sort((left, right) => Number(right === "project_slug") - Number(left === "project_slug"))
   return SECTION_ORDER.flatMap((id) => {
     const names = groups.get(id)
     if (!names?.length) return []
@@ -534,7 +551,17 @@ export function sectionsForOperation(
       names,
       wide: new Set(
         names.filter((name) =>
-          ["project_slug", "q", "query", "meta", "bbox", "cells", "include", "h3_cell"].includes(name),
+          [
+            "project_slug",
+            "stylebook_slug",
+            "q",
+            "query",
+            "meta",
+            "bbox",
+            "cells",
+            "include",
+            "h3_cell",
+          ].includes(name),
         ),
       ),
     }]
