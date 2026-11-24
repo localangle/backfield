@@ -20,6 +20,8 @@ from backfield_entities.activity import (
     log_stylebook_activity_safe,
 )
 from backfield_entities.catalog.search import catalog_label_alias_ilike_filter
+from backfield_entities.cleanup.edit_ops import UI_RENAME_ALIAS_PROVENANCE, apply_field_edits
+from backfield_entities.cleanup.entity_models import cleanup_entity_models
 from backfield_entities.entities.location.geometry_apply import (
     apply_canonical_geometry_to_substrates,
     suggest_substrate_for_geometry_apply,
@@ -534,22 +536,16 @@ def patch_canonical_location(
         raise HTTPException(status_code=404, detail="Canonical location not found")
 
     updates = body.model_dump(exclude_unset=True)
-    if "label" in updates and updates["label"] is not None:
-        canon.label = str(updates["label"]).strip()
-    if "location_type" in updates:
-        v = updates["location_type"]
-        if v is None:
-            canon.location_type = None
-        else:
-            s = str(v).strip().lower()
-            canon.location_type = s if s else None
-    if "formatted_address" in updates:
-        v = updates["formatted_address"]
-        if v is None:
-            canon.formatted_address = None
-        else:
-            s = str(v).strip()
-            canon.formatted_address = s if s else None
+    try:
+        apply_field_edits(
+            session,
+            cleanup_entity_models("locations"),
+            canon,
+            {name: value for name, value in updates.items() if name != "status"},
+            old_label_alias_provenance=UI_RENAME_ALIAS_PROVENANCE,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if "status" in updates and updates["status"] is not None:
         canon.status = str(updates["status"]).strip().lower()
 

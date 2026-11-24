@@ -1,14 +1,14 @@
 """Read access to cleanup dismissals for keyed clients.
 
-Reason, run and actor-run attribution arrive with the apply ledger; today a dismissal records the
-check, the pair (or single canonical) and who made it and when.
+A dismissal records the check, the pair (or single canonical), who made it and when, and, when a
+cleanup run made it, the reason the caller gave and the run (with the key behind it).
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from backfield_db import StylebookCleanupDismissal
+from backfield_db import StylebookCleanupDismissal, StylebookCleanupRun
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
@@ -24,6 +24,13 @@ class DismissalItem(BaseModel):
     pair_key: str
     canonical_ids: list[str] = Field(description="The canonicals the dismissal covers.")
     created_by_user_id: int | None
+    reason_code: str | None = Field(
+        default=None, description="Why it was set aside, as the caller gave it."
+    )
+    run_id: str | None = Field(default=None, description="The cleanup run that set it aside.")
+    credential_label: str | None = Field(
+        default=None, description="The key behind that run, when a run made the dismissal."
+    )
     created_at: datetime
 
 
@@ -34,6 +41,17 @@ class DismissalPage(BaseModel):
 
 class DismissalsCursor(BaseModel):
     after_id: int
+
+
+def _run_credential_labels(session: Session, run_ids: list[str]) -> dict[str, str | None]:
+    if not run_ids:
+        return {}
+    rows = session.exec(
+        select(StylebookCleanupRun.id, StylebookCleanupRun.credential_label).where(
+            col(StylebookCleanupRun.id).in_(set(run_ids))
+        )
+    ).all()
+    return {str(run_id): label for run_id, label in rows}
 
 
 def list_dismissals(
@@ -57,6 +75,7 @@ def list_dismissals(
         session.exec(statement.order_by(col(StylebookCleanupDismissal.id)).limit(limit + 1)).all()
     )
     page = rows[:limit]
+    run_labels = _run_credential_labels(session, [row.run_id for row in page if row.run_id])
     return DismissalPage(
         items=[
             DismissalItem(
@@ -65,6 +84,9 @@ def list_dismissals(
                 pair_key=str(row.pair_key),
                 canonical_ids=[part for part in str(row.pair_key).split("|") if part],
                 created_by_user_id=row.created_by_user_id,
+                reason_code=row.reason_code,
+                run_id=row.run_id,
+                credential_label=run_labels.get(str(row.run_id)) if row.run_id else None,
                 created_at=row.created_at,
             )
             for row in page

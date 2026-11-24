@@ -108,7 +108,7 @@ text:
   module (`cleanup/candidates.py`) re-implements the queue filters and ordering for all three kinds
   and returns the review reasons as data. The `stylebook-api` routes are untouched. The cost is two
   copies of the filter logic until C2 moves the UI onto the library; tests pin the keyed behavior.
-- Dismissals are listed without reason or run: those columns do not exist until phase C slice 2.
+- Dismissals were first listed without reason or run; slice 2 added both columns (see below).
 - `capabilities` lists no ceilings or operator repairs, because neither exists yet; `operations` is
   empty.
 - `POST …/checks/{id}/runs` needs only `cleanup:read` (it starts a computation, not a catalog
@@ -160,7 +160,7 @@ review becomes unwieldy, split at a slice boundary (D44 allows it).
   queue failure fails the item and the merge rolls back.
 - Not built here: `envelope.py`'s generic pipeline. The shared pieces (envelope models, ceilings,
   ledger, runs, redirects) are separate modules and `merge_items.py` is the first pipeline. Slice 2
-  decides whether a second pipeline justifies a shared driver.
+  did add a shared per-item driver (`cleanup/item_driver.py`); see below.
 1. Write the **before-state spec** (what each operation records so undo works) as a short design note before any code.
 2. Migration and models, `stylebook_` prefix: `stylebook_cleanup_run`, `stylebook_cleanup_action`, `stylebook_canonical_redirect`; indexes per the API plan.
 3. Library: `envelope`, `ceilings` (settings with defaults sized from the 2024 counts, smaller for retirements and deletions), `ledger` (same transaction, fail closed), `runs`.
@@ -170,6 +170,33 @@ review becomes unwieldy, split at a slice boundary (D44 allows it).
 **Slice 2: edits, aliases, dismissals**
 - `edits` over `geometry_apply.py` and the per-type `persist.py`; `aliases` over `editorial_aliases.py`.
 - `dismissals`: today they lack a reason, are Stylebook-wide, and cannot be listed or reopened (finding F11). This needs a migration for reason code and run id, a reopen path, and keeping the UI routes working.
+
+**Slice 2 status (2026-11-24):** Built on `feat/cleanup-shared-merge`. Decisions and differences:
+- `cleanup/item_driver.py` holds the per-item loop (commit on `applied`, roll back otherwise, map
+  library errors to reason codes). Merges, dismissals, aliases and edits all use it.
+- **Dismissals.** Migration `085_cleanup_dismissal_reason` adds `reason_code` and `run_id` (foreign
+  key to the run, indexed). Tried on a scratch Postgres database (upgrade, downgrade, upgrade).
+  `POST /dismissals` is not entity-scoped: the check says whether the item is a pair or a single
+  canonical. Pairs are dismissed one at a time, never whole clusters. `reopen` deletes the row, as
+  the Stylebook app does; history is in the ledger (before-state holds the deleted row) and the
+  activity feed (new event `cleanup_reopen`). `GET /dismissals` now returns reason, run and the
+  key's label. The UI create route is unchanged.
+- **Aliases.** `POST /{entity}/aliases` with `add` and `suppress`. Removing suppresses (the row
+  stays). `add` restores a suppressed name. Aliases use the fixed provenance `stylebook_cleanup_api`,
+  added to the trusted sets for locations and people and to the editorial set for organizations
+  (the only trust list organizations have). A record's own name cannot be suppressed. Known limit:
+  ingest re-seeding sets `suppressed` back to false, so a suppressed name can return if later
+  processing links a mention with that exact name.
+- **Edits.** `cleanup/edit_ops.py` is the one edit function; the three Stylebook app `PATCH` routes
+  call it. **Shared fix:** renaming a record now keeps the old name as an alias (provenance
+  `stylebook_ui_manual`, so link checks trust it), and a blank name is a `400`. Retirement
+  (`status`) stays in the location route and is not an API edit. Geometry is set or cleared in the
+  same call; `apply_geometry_to_saved_places` copies it onto linked saved places chosen by the
+  existing `suggest_substrate_for_geometry_apply` rule, skipping places that already match.
+  Before-state keeps the old fields, the old geometry columns, the alias rows touched, and the saved
+  places' old geometry and details. Edits do not queue a search re-index, matching the Stylebook app.
+- Alias and edit changes move the canonical's `updated_at`, so incremental `export` sees them, and
+  emit a `canonical_updated` event.
 
 **Slice 3: retirements and deletions**
 - Extract the organization retirement pattern and the people removal pattern from the hand-cleanup scripts in `tmp/stylebook-agent-cleanup/` into library functions with `mention_disposition` and per-mention reason codes in one transaction. Note the UI's delete route refuses when linked mentions exist, which is exactly the `refuse` default, so UI behavior stays the same.

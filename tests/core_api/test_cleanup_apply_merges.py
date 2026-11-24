@@ -501,7 +501,7 @@ def test_capabilities_list_merges_only_for_keys_that_can_apply(
     apply_caps = cleanup_client.get(f"{CLEANUP_BASE}/capabilities", headers=apply_headers).json()
     read_caps = cleanup_client.get(f"{CLEANUP_BASE}/capabilities", headers=read_headers).json()
 
-    assert apply_caps["operations"] == ["merges"]
+    assert apply_caps["operations"] == ["merges", "dismissals", "aliases", "edits"]
     assert read_caps["operations"] == []
     assert apply_caps["limits"]["run_ceilings"]["merge"] == 5000
     assert apply_caps["limits"]["run_ceilings"]["deletion"] == 200

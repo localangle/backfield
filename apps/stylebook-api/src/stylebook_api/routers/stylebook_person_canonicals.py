@@ -23,11 +23,12 @@ from backfield_entities.activity import (
 )
 from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
 from backfield_entities.catalog.search import catalog_label_alias_ilike_filter
+from backfield_entities.cleanup.edit_ops import UI_RENAME_ALIAS_PROVENANCE, apply_field_edits
+from backfield_entities.cleanup.entity_models import cleanup_entity_models
 from backfield_entities.connections.lifecycle import close_open_connections_for_canonical
 from backfield_entities.entities.person.persist import create_standalone_canonical
 from backfield_entities.entities.person.types import (
     PERSON_TYPE_VALUES,
-    derive_person_sort_key,
     normalize_person_type,
 )
 from backfield_events import record_canonical_deleted, record_canonical_updated
@@ -617,34 +618,16 @@ def patch_canonical_person(
         raise HTTPException(status_code=404, detail="Canonical person not found")
 
     updates = body.model_dump(exclude_unset=True)
-    if "label" in updates and updates["label"] is not None:
-        canon.label = str(updates["label"]).strip()
-    if "person_type" in updates:
-        v = updates["person_type"]
-        if v is None:
-            canon.person_type = None
-        else:
-            canon.person_type = normalize_person_type(str(v).strip() or None)
-    if "title" in updates:
-        v = updates["title"]
-        if v is None:
-            canon.title = None
-        else:
-            s = str(v).strip()
-            canon.title = s if s else None
-    if "affiliation" in updates:
-        v = updates["affiliation"]
-        if v is None:
-            canon.affiliation = None
-        else:
-            s = str(v).strip()
-            canon.affiliation = s if s else None
-    if "public_figure" in updates and updates["public_figure"] is not None:
-        canon.public_figure = bool(updates["public_figure"])
-    if "sort_key" in updates:
-        canon.sort_key = derive_person_sort_key(canon.label, explicit=updates["sort_key"])
-    elif "label" in updates and updates["label"] is not None:
-        canon.sort_key = derive_person_sort_key(canon.label)
+    try:
+        apply_field_edits(
+            session,
+            cleanup_entity_models("people"),
+            canon,
+            updates,
+            old_label_alias_provenance=UI_RENAME_ALIAS_PROVENANCE,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     log_stylebook_activity_safe(
         session,

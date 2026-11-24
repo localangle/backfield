@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Cleanup API smoke: open a run, dry-run then apply one merge, and read the ledger back.
+"""Cleanup API smoke: open a run, dry-run then apply one merge, then an alias, an edit and a
+dismissal on the survivor, and read the ledger back.
 
 Uses only throwaway "Smoke cleanup ..." places, a throwaway service key, and removes them
 afterwards (set SMOKE_KEEP_DATA=1 to keep them for inspection).
@@ -29,10 +30,12 @@ from backfield_db import (
     StylebookActivity,
     StylebookCanonicalRedirect,
     StylebookCleanupAction,
+    StylebookCleanupDismissal,
     StylebookCleanupRun,
     StylebookLocationCanonical,
     SubstrateLocation,
 )
+from sqlalchemy import or_
 from sqlmodel import col, delete
 
 AGATE_API_BASE = os.environ.get("AGATE_API_BASE", "http://localhost:8000")
@@ -61,6 +64,72 @@ def _create_place(client: httpx.Client, stylebook_slug: str, project_slug: str, 
     return str(created["id"])
 
 
+def _apply_one(api: httpx.Client, url: str, run_id: str, item: dict[str, Any]) -> dict[str, Any]:
+    """Apply one item for real and return its result, failing unless it was applied."""
+    response = assert_object(
+        api.post(url, json={"run_id": run_id, "dry_run": False, "items": [item]}), url
+    )
+    result: dict[str, Any] = response["items"][0]
+    _expect(result["status"] == "applied", f"{url}: {response!r}")
+    return result
+
+
+def _dismissals_for_run(api: httpx.Client, base: str, run_id: str) -> list[dict[str, Any]]:
+    """Page through the dismissals list (a real catalog has many) and keep this run's."""
+    found: list[dict[str, Any]] = []
+    cursor: str | None = None
+    while True:
+        params = {"limit": 200, **({"cursor": cursor} if cursor else {})}
+        page = assert_object(api.get(f"{base}/dismissals", params=params), "dismissals")
+        found.extend(item for item in page["items"] if item["run_id"] == run_id)
+        cursor = page["next_cursor"]
+        if cursor is None:
+            return found
+
+
+def _apply_survivor_changes(
+    api: httpx.Client, base: str, *, run_id: str, survivor_id: str, tag: str
+) -> None:
+    """An alias, a rename (which keeps the old name), and a dismissal on the merge survivor."""
+    old_name = f"Smoke cleanup B {tag}"
+    new_name = f"Smoke cleanup B renamed {tag}"
+    _apply_one(
+        api,
+        f"{base}/locations/aliases",
+        run_id,
+        {
+            "item_id": f"alias-{tag}",
+            "canonical_id": survivor_id,
+            "action": "add",
+            "alias_text": f"Smoke cleanup nickname {tag}",
+        },
+    )
+    edit = _apply_one(
+        api,
+        f"{base}/locations/edits",
+        run_id,
+        {"item_id": f"edit-{tag}", "canonical_id": survivor_id, "changes": {"label": new_name}},
+    )
+    _expect(edit["summary"]["old_name_kept_as_alias"] is True, f"rename: {edit!r}")
+    _apply_one(
+        api,
+        f"{base}/dismissals",
+        run_id,
+        {
+            "item_id": f"dismiss-{tag}",
+            "check_id": "missing-geometry-locations",
+            "canonical_id": survivor_id,
+            "reason_code": "smoke",
+        },
+    )
+    evidence = assert_object(api.get(f"{base}/locations/{survivor_id}/evidence"), "evidence")
+    names = {a["alias_text"] for a in evidence["aliases"] if not a["suppressed"]}
+    _expect({old_name, f"Smoke cleanup nickname {tag}"} <= names, f"aliases: {names!r}")
+    mine = _dismissals_for_run(api, base, run_id)
+    _expect(len(mine) == 1 and mine[0]["reason_code"] == "smoke", f"dismissals: {mine!r}")
+    log("Alias, rename (old name kept) and dismissal applied and read back.")
+
+
 def _remove_smoke_rows(
     *,
     stylebook_id: int,
@@ -81,10 +150,23 @@ def _remove_smoke_rows(
             )
         if run_id:
             session.exec(
+                delete(StylebookCleanupDismissal).where(StylebookCleanupDismissal.run_id == run_id)
+            )
+            session.exec(
                 delete(StylebookCleanupAction).where(StylebookCleanupAction.run_id == run_id)
             )
             session.exec(delete(StylebookCleanupRun).where(StylebookCleanupRun.id == run_id))
         if place_ids:
+            session.exec(
+                delete(StylebookActivity).where(
+                    StylebookActivity.stylebook_id == stylebook_id,
+                    StylebookActivity.source == "cleanup_api",
+                    or_(
+                        col(StylebookActivity.entity_id).in_(place_ids),
+                        col(StylebookActivity.related_entity_id).in_(place_ids),
+                    ),
+                )
+            )
             session.exec(
                 delete(StylebookActivity).where(
                     StylebookActivity.stylebook_id == stylebook_id,
@@ -177,8 +259,10 @@ def main() -> int:
         with httpx.Client(base_url=CORE_API_BASE, timeout=60.0, headers=bearer) as api:
             capabilities = assert_object(api.get(f"{base}/capabilities"), "capabilities")
             _expect(capabilities.get("contract_version") == "preview-1", f"{capabilities!r}")
-            _expect("merges" in capabilities.get("operations", []), f"{capabilities!r}")
-            log("Capabilities advertise merges.")
+            operations = capabilities.get("operations", [])
+            for operation in ("merges", "edits", "aliases", "dismissals"):
+                _expect(operation in operations, f"{operation} missing: {capabilities!r}")
+            log("Capabilities advertise merges, edits, aliases and dismissals.")
 
             run = assert_object(
                 api.post(f"{base}/runs", json={"label": f"smoke {tag}", "client_run_ref": tag}),
@@ -259,6 +343,8 @@ def main() -> int:
                 f"repeat: {repeat!r}",
             )
             log("Ledger, resolution, and repeat-merge noop check out.")
+
+            _apply_survivor_changes(api, base, run_id=run_id, survivor_id=target_id, tag=tag)
 
             closed = assert_object(
                 api.post(f"{base}/runs/{run_id}/close", json={"status": "closed"}), "close run"

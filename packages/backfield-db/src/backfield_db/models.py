@@ -564,6 +564,17 @@ class StylebookCleanupDismissal(SQLModel, table=True):
         foreign_key="backfield_user.id",
         index=True,
     )
+    reason_code: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+        description="Why it was dismissed, as the caller gave it; empty when no reason was given.",
+    )
+    run_id: str | None = Field(
+        default=None,
+        foreign_key="stylebook_cleanup_run.id",
+        index=True,
+        description="The cleanup run that made the dismissal; empty when an editor made it.",
+    )
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )

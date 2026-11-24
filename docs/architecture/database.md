@@ -123,7 +123,8 @@ shared entity rows are not trusted because sibling batch items may reuse the sam
 - Keyed cleanup API: `stylebook_cleanup_run` (a caller-opened grouping), `stylebook_cleanup_action`
   (the ledger: one row per applied item with its request, result, and before-state, written in the
   same transaction as the change), and `stylebook_canonical_redirect` (`merged_into`: a merged-away
-  canonical id to its survivor, unique per Stylebook, entity type, and old id). See
+  canonical id to its survivor, unique per Stylebook, entity type, and old id). A dismissal made by a
+  cleanup run also records `reason_code` and `run_id`. See
   [`../plan/stylebook-cleanup-api-ledger.md`](../plan/stylebook-cleanup-api-ledger.md).
 
 Canonical ids are UUID strings. Canonical slugs are unique within a Stylebook, and aliases are

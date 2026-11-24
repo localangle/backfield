@@ -167,6 +167,233 @@
         "title": "ActionPage",
         "type": "object"
       },
+      "AliasApplyItem": {
+        "properties": {
+          "action": {
+            "description": "`add` adds a name (or brings a suppressed one back); `suppress` removes it.",
+            "enum": [
+              "add",
+              "suppress"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "alias_text": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Alias Text",
+            "type": "string"
+          },
+          "canonical_id": {
+            "minLength": 1,
+            "title": "Canonical Id",
+            "type": "string"
+          },
+          "item_id": {
+            "description": "Your own id for this item; echoed back and stored with the action.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Anything you want stored with the action, as given.",
+            "title": "Provenance"
+          }
+        },
+        "required": [
+          "item_id",
+          "canonical_id",
+          "action",
+          "alias_text"
+        ],
+        "title": "AliasApplyItem",
+        "type": "object"
+      },
+      "AliasApplyResult": {
+        "properties": {
+          "action_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The ledger row, once applied.",
+            "title": "Action Id"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Plain-language detail, such as what a guard refused.",
+            "title": "Message"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A reason code for noop and error results.",
+            "title": "Reason"
+          },
+          "reindex_queued": {
+            "default": false,
+            "title": "Reindex Queued",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "would_apply",
+              "applied",
+              "noop",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AliasSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "item_id",
+          "status"
+        ],
+        "title": "AliasApplyResult",
+        "type": "object"
+      },
+      "AliasRequestBody": {
+        "properties": {
+          "dry_run": {
+            "default": true,
+            "description": "Report what would happen without changing anything.",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AliasApplyItem"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "run_id": {
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "items"
+        ],
+        "title": "AliasRequestBody",
+        "type": "object"
+      },
+      "AliasResponse": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/ApplyCounts"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AliasApplyResult"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "dry_run",
+          "counts",
+          "items"
+        ],
+        "title": "AliasResponse",
+        "type": "object"
+      },
+      "AliasSummary": {
+        "properties": {
+          "action": {
+            "enum": [
+              "add",
+              "suppress"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "alias_text": {
+            "title": "Alias Text",
+            "type": "string"
+          },
+          "canonical_id": {
+            "title": "Canonical Id",
+            "type": "string"
+          },
+          "canonical_label": {
+            "title": "Canonical Label",
+            "type": "string"
+          },
+          "rows_changed": {
+            "description": "Stored name forms that were added, restored or hidden.",
+            "title": "Rows Changed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "canonical_id",
+          "canonical_label",
+          "action",
+          "alias_text",
+          "rows_changed"
+        ],
+        "title": "AliasSummary",
+        "type": "object"
+      },
       "ApplyCounts": {
         "properties": {
           "applied": {
@@ -1375,6 +1602,178 @@
         "title": "CloseRunRequest",
         "type": "object"
       },
+      "DismissalApplyItem": {
+        "properties": {
+          "action": {
+            "default": "dismiss",
+            "description": "`dismiss` sets the result aside; `reopen` brings it back.",
+            "enum": [
+              "dismiss",
+              "reopen"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "canonical_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Checks that list single canonicals: the canonical.",
+            "title": "Canonical Id"
+          },
+          "check_id": {
+            "description": "The check the result came from.",
+            "minLength": 1,
+            "title": "Check Id",
+            "type": "string"
+          },
+          "item_id": {
+            "description": "Your own id for this item; echoed back and stored with the action.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "left_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Duplicate checks: one canonical of the pair.",
+            "title": "Left Id"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Anything you want stored with the action, as given.",
+            "title": "Provenance"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why, as a short code of your choosing. Stored as given.",
+            "title": "Reason Code"
+          },
+          "right_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Duplicate checks: the other canonical of the pair.",
+            "title": "Right Id"
+          }
+        },
+        "required": [
+          "item_id",
+          "check_id"
+        ],
+        "title": "DismissalApplyItem",
+        "type": "object"
+      },
+      "DismissalApplyResult": {
+        "properties": {
+          "action_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The ledger row, once applied.",
+            "title": "Action Id"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Plain-language detail, such as what a guard refused.",
+            "title": "Message"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A reason code for noop and error results.",
+            "title": "Reason"
+          },
+          "reindex_queued": {
+            "default": false,
+            "title": "Reindex Queued",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "would_apply",
+              "applied",
+              "noop",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DismissalSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "item_id",
+          "status"
+        ],
+        "title": "DismissalApplyResult",
+        "type": "object"
+      },
       "DismissalItem": {
         "properties": {
           "canonical_ids": {
@@ -1405,6 +1804,18 @@
             ],
             "title": "Created By User Id"
           },
+          "credential_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The key behind that run, when a run made the dismissal.",
+            "title": "Credential Label"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -1412,6 +1823,30 @@
           "pair_key": {
             "title": "Pair Key",
             "type": "string"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it was set aside, as the caller gave it.",
+            "title": "Reason Code"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The cleanup run that set it aside.",
+            "title": "Run Id"
           }
         },
         "required": [
@@ -1450,6 +1885,346 @@
           "items"
         ],
         "title": "DismissalPage",
+        "type": "object"
+      },
+      "DismissalRequestBody": {
+        "properties": {
+          "dry_run": {
+            "default": true,
+            "description": "Report what would happen without changing anything.",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DismissalApplyItem"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "run_id": {
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "items"
+        ],
+        "title": "DismissalRequestBody",
+        "type": "object"
+      },
+      "DismissalResponse": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/ApplyCounts"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DismissalApplyResult"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "dry_run",
+          "counts",
+          "items"
+        ],
+        "title": "DismissalResponse",
+        "type": "object"
+      },
+      "DismissalSummary": {
+        "properties": {
+          "action": {
+            "enum": [
+              "dismiss",
+              "reopen"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "canonical_ids": {
+            "description": "The canonicals the dismissal covers.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Canonical Ids",
+            "type": "array"
+          },
+          "check_id": {
+            "title": "Check Id",
+            "type": "string"
+          },
+          "entity_type": {
+            "title": "Entity Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "check_id",
+          "entity_type",
+          "action",
+          "canonical_ids"
+        ],
+        "title": "DismissalSummary",
+        "type": "object"
+      },
+      "EditApplyItem": {
+        "properties": {
+          "apply_geometry_to_saved_places": {
+            "default": false,
+            "description": "Locations only: also copy the record's geography onto the saved places linked to it that should follow it.",
+            "title": "Apply Geometry To Saved Places",
+            "type": "boolean"
+          },
+          "canonical_id": {
+            "minLength": 1,
+            "title": "Canonical Id",
+            "type": "string"
+          },
+          "changes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "The fields to change. Locations: `label`, `location_type`, `formatted_address`, `geometry`. People: `label`, `person_type`, `title`, `affiliation`, `public_figure`, `sort_key`. Organizations: `label`, `organization_type`. Changing `label` keeps the old name as an alias.",
+            "title": "Changes",
+            "type": "object"
+          },
+          "item_id": {
+            "description": "Your own id for this item; echoed back and stored with the action.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Anything you want stored with the action, as given.",
+            "title": "Provenance"
+          }
+        },
+        "required": [
+          "item_id",
+          "canonical_id"
+        ],
+        "title": "EditApplyItem",
+        "type": "object"
+      },
+      "EditApplyResult": {
+        "properties": {
+          "action_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The ledger row, once applied.",
+            "title": "Action Id"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Plain-language detail, such as what a guard refused.",
+            "title": "Message"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A reason code for noop and error results.",
+            "title": "Reason"
+          },
+          "reindex_queued": {
+            "default": false,
+            "title": "Reindex Queued",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "would_apply",
+              "applied",
+              "noop",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EditSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "item_id",
+          "status"
+        ],
+        "title": "EditApplyResult",
+        "type": "object"
+      },
+      "EditRequestBody": {
+        "properties": {
+          "dry_run": {
+            "default": true,
+            "description": "Report what would happen without changing anything.",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EditApplyItem"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "run_id": {
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "items"
+        ],
+        "title": "EditRequestBody",
+        "type": "object"
+      },
+      "EditResponse": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/ApplyCounts"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EditApplyResult"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "dry_run",
+          "counts",
+          "items"
+        ],
+        "title": "EditResponse",
+        "type": "object"
+      },
+      "EditSummary": {
+        "properties": {
+          "after": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "The changed fields as they are now.",
+            "title": "After",
+            "type": "object"
+          },
+          "before": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "The changed fields as they were.",
+            "title": "Before",
+            "type": "object"
+          },
+          "canonical_id": {
+            "title": "Canonical Id",
+            "type": "string"
+          },
+          "canonical_label": {
+            "title": "Canonical Label",
+            "type": "string"
+          },
+          "changed_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Changed Fields",
+            "type": "array"
+          },
+          "old_name_kept_as_alias": {
+            "title": "Old Name Kept As Alias",
+            "type": "boolean"
+          },
+          "saved_places_updated": {
+            "description": "Saved places that took the record's geography.",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Saved Places Updated",
+            "type": "array"
+          }
+        },
+        "required": [
+          "canonical_id",
+          "canonical_label",
+          "changed_fields",
+          "before",
+          "after",
+          "old_name_kept_as_alias",
+          "saved_places_updated"
+        ],
+        "title": "EditSummary",
         "type": "object"
       },
       "EvidenceActivity": {
@@ -5708,6 +6483,234 @@
           "public",
           "cleanup-preview"
         ]
+      },
+      "post": {
+        "description": "Set check results aside, or bring them back, with a reason you choose.\n\nDuplicate checks are dismissed one pair at a time (`left_id`, `right_id`); checks that list\nsingle canonicals use `canonical_id`. `dry_run` (the default) changes nothing. Each item\nsucceeds or fails on its own.",
+        "operationId": "post_cleanup_dismissals_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup_dismissals_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissalRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DismissalResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Post Cleanup Dismissals",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
       }
     },
     "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/runs": {
@@ -6925,6 +7928,494 @@
           }
         ],
         "summary": "Post Cleanup Run Close",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/{entity}/aliases": {
+      "post": {
+        "description": "Add a name a record is also known by, or take one away.\n\n`add` brings back a suppressed name too. `suppress` hides a name without deleting it, so its\nhistory stays. `dry_run` (the default) changes nothing. Each item succeeds or fails on its own.",
+        "operationId": "post_cleanup_aliases_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup__entity__aliases_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity",
+            "required": true,
+            "schema": {
+              "enum": [
+                "locations",
+                "people",
+                "organizations"
+              ],
+              "title": "Entity",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AliasRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AliasResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Post Cleanup Aliases",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/{entity}/edits": {
+      "post": {
+        "description": "Change a record's name, kind or other details.\n\nChanging the name keeps the old name as an alias. Locations can also set or clear their\ngeography and copy it onto the saved places that should follow it. `dry_run` (the default)\nchanges nothing. Each item succeeds or fails on its own.",
+        "operationId": "post_cleanup_edits_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup__entity__edits_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity",
+            "required": true,
+            "schema": {
+              "enum": [
+                "locations",
+                "people",
+                "organizations"
+              ],
+              "title": "Entity",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Post Cleanup Edits",
         "tags": [
           "public",
           "cleanup-preview"

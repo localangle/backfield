@@ -64,6 +64,23 @@ def filter_dismissed_pairs(
     return out
 
 
+def find_dismissal(
+    session: Session,
+    *,
+    stylebook_id: int,
+    check_id: str,
+    pair_key: str,
+) -> StylebookCleanupDismissal | None:
+    """The stored dismissal for one pair key (or single canonical id), if there is one."""
+    return session.exec(
+        select(StylebookCleanupDismissal).where(
+            StylebookCleanupDismissal.stylebook_id == stylebook_id,
+            StylebookCleanupDismissal.check_id == check_id,
+            StylebookCleanupDismissal.pair_key == pair_key,
+        )
+    ).first()
+
+
 def dismiss_pair(
     session: Session,
     *,
@@ -72,6 +89,8 @@ def dismiss_pair(
     left_id: str,
     right_id: str,
     created_by_user_id: int | None = None,
+    reason_code: str | None = None,
+    run_id: str | None = None,
 ) -> bool:
     """Record dismissal for one canonical pair. Returns True when a new row was inserted."""
     key = pair_key_for_ids(left_id, right_id)
@@ -84,6 +103,8 @@ def dismiss_pair(
             check_id=check_id,
             pair_key=key,
             created_by_user_id=created_by_user_id,
+            reason_code=reason_code,
+            run_id=run_id,
         )
     )
     return True
@@ -124,6 +145,8 @@ def dismiss_canonical_issue(
     check_id: str,
     canonical_id: str,
     created_by_user_id: int | None = None,
+    reason_code: str | None = None,
+    run_id: str | None = None,
 ) -> bool:
     """Dismiss a list-style cleanup item. Returns True when a new row was inserted."""
     key = canonical_dismissal_key(canonical_id)
@@ -136,6 +159,8 @@ def dismiss_canonical_issue(
             check_id=check_id,
             pair_key=key,
             created_by_user_id=created_by_user_id,
+            reason_code=reason_code,
+            run_id=run_id,
         )
     )
     return True

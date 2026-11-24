@@ -23,6 +23,8 @@ from backfield_entities.activity import (
 )
 from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
 from backfield_entities.catalog.search import catalog_label_alias_ilike_filter
+from backfield_entities.cleanup.edit_ops import UI_RENAME_ALIAS_PROVENANCE, apply_field_edits
+from backfield_entities.cleanup.entity_models import cleanup_entity_models
 from backfield_entities.connections.lifecycle import close_open_connections_for_canonical
 from backfield_entities.entities.organization.persist import create_standalone_canonical
 from backfield_entities.entities.organization.types import (
@@ -577,14 +579,16 @@ def patch_canonical_organization(
         raise HTTPException(status_code=404, detail="Canonical organization not found")
 
     updates = body.model_dump(exclude_unset=True)
-    if "label" in updates and updates["label"] is not None:
-        canon.label = str(updates["label"]).strip()
-    if "organization_type" in updates:
-        v = updates["organization_type"]
-        if v is None:
-            canon.organization_type = None
-        else:
-            canon.organization_type = normalize_organization_type(str(v).strip() or None)
+    try:
+        apply_field_edits(
+            session,
+            cleanup_entity_models("organizations"),
+            canon,
+            updates,
+            old_label_alias_provenance=UI_RENAME_ALIAS_PROVENANCE,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     log_stylebook_activity_safe(
         session,

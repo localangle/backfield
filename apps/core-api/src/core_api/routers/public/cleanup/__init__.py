@@ -6,6 +6,7 @@ Routes here carry the `cleanup-preview` tag, so they stay out of the published c
 
 from __future__ import annotations
 
+from backfield_entities.cleanup.alias_items import AliasResponse
 from backfield_entities.cleanup.candidates import (
     CandidateCounts,
     CandidateEvidence,
@@ -17,7 +18,9 @@ from backfield_entities.cleanup.check_reads import (
     CheckResultsPage,
     CheckRunOut,
 )
+from backfield_entities.cleanup.dismissal_items import DismissalResponse
 from backfield_entities.cleanup.dismissals_read import DismissalPage
+from backfield_entities.cleanup.edit_items import EditResponse
 from backfield_entities.cleanup.evidence import BatchEvidence, CanonicalEvidence, PairComparison
 from backfield_entities.cleanup.export import CleanupExportPage
 from backfield_entities.cleanup.integrity import IntegrityReport
@@ -26,6 +29,7 @@ from backfield_entities.cleanup.redirects import CanonicalResolution
 from backfield_entities.cleanup.runs import ActionOut, ActionPage, RunOut, RunPage
 from fastapi import APIRouter
 
+from core_api.routers.public.cleanup.aliases import post_cleanup_aliases
 from core_api.routers.public.cleanup.candidates import (
     get_cleanup_candidate_count,
     get_cleanup_candidate_evidence,
@@ -43,7 +47,12 @@ from core_api.routers.public.cleanup.checks import (
     post_cleanup_check_run,
 )
 from core_api.routers.public.cleanup.contract import get_cleanup_openapi
-from core_api.routers.public.cleanup.dismissals import get_cleanup_dismissals, get_cleanup_integrity
+from core_api.routers.public.cleanup.dismissals import (
+    get_cleanup_dismissals,
+    get_cleanup_integrity,
+    post_cleanup_dismissals,
+)
+from core_api.routers.public.cleanup.edits import post_cleanup_edits
 from core_api.routers.public.cleanup.evidence import (
     get_cleanup_compare,
     get_cleanup_evidence,
@@ -87,6 +96,7 @@ router.get("/candidates/{entity}/{candidate_id}/evidence", response_model=Candid
 )
 
 router.get("/dismissals", response_model=DismissalPage)(get_cleanup_dismissals)
+router.post("/dismissals", response_model=DismissalResponse)(post_cleanup_dismissals)
 
 router.post("/runs", response_model=RunOut)(post_cleanup_run)
 router.get("/runs", response_model=RunPage)(get_cleanup_runs)
@@ -108,3 +118,5 @@ router.get("/{entity}/{canonical_id}/resolution", response_model=CanonicalResolu
     get_cleanup_resolution
 )
 router.post("/{entity}/merges", response_model=MergeResponse)(post_cleanup_merges)
+router.post("/{entity}/aliases", response_model=AliasResponse)(post_cleanup_aliases)
+router.post("/{entity}/edits", response_model=EditResponse)(post_cleanup_edits)

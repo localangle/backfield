@@ -7,12 +7,12 @@ own consistency. Backfield provides the reads; the tool decides what to do with 
 This is a **preview**. It is tagged `cleanup-preview`, so it is left out of `/public/v1/openapi.json`
 and [`public.openapi.json`](public.openapi.json). The API Playground lists the read operations under
 **Cleanup (preview)**, with a Stylebook dropdown next to the project; opening runs, closing runs,
-and merges are not offered there. The contract can change between
+and apply routes are not offered there. The contract can change between
 versions: check `contract_version` in `capabilities`. The design is in the Stylebook cleanup API plan
 under `docs/plan/`; this page describes what is built.
 
-Merges are the only operation you can apply so far. `capabilities.operations` lists what this
-instance supports for your key (empty without `cleanup:apply`).
+You can apply merges, edits, aliases, and dismissals so far. `capabilities.operations` lists what
+this instance supports for your key (empty without `cleanup:apply`).
 
 ## Base path and access
 
@@ -49,7 +49,7 @@ committed as
 | `GET /checks/{check_id}/runs/latest` | Status of the newest run for the scope. `404` if there has not been one. |
 | `GET /candidates/{entity}` | The candidate queue. Also `/count` (per project) and `/types` (kinds for filtering). |
 | `GET /candidates/{entity}/{candidate_id}/evidence` | Article snippets and ranked catalog matches for one candidate. |
-| `GET /dismissals` | Issues editors set aside, optionally for one `check_id`. |
+| `GET /dismissals` | Issues set aside, optionally for one `check_id`, with the reason and run when a cleanup run set them aside. |
 | `GET /{entity}/{id}/resolution` | Where a merged-away id went. A live id resolves to itself. |
 | `GET /runs`, `GET /runs/{run_id}` | Runs in this Stylebook, newest first, with applied counts by operation. |
 | `GET /runs/{run_id}/actions` | What was applied in a run, oldest first. Read it after a crash to see what landed. |
@@ -62,10 +62,16 @@ same shape.
 
 1. `POST /runs` with an optional `label` and your own `client_run_ref`. Nothing can be applied
    without an open run.
-2. `POST /{entity}/merges` with `run_id`, `dry_run`, and up to 100 `items`. Each item has your own
-   `item_id`, the `source_id` to merge away, and the `target_id` that survives. Optional:
-   `resolved_type` (people and organizations), `geometry_winner` (locations), and `provenance`,
-   which is stored exactly as given and never interpreted.
+2. `POST` to one of the apply routes below with `run_id`, `dry_run`, and up to 100 `items`. Every
+   item has your own `item_id` and an optional `provenance`, which is stored exactly as given and
+   never interpreted.
+
+| Route | What an item says |
+|---|---|
+| `POST /{entity}/merges` | `source_id` to merge away and the `target_id` that survives. Optional: `resolved_type` (people and organizations) and `geometry_winner` (locations). |
+| `POST /{entity}/edits` | `canonical_id` and `changes` (see below). Optional: `apply_geometry_to_saved_places` (locations). |
+| `POST /{entity}/aliases` | `canonical_id`, `action` (`add` or `suppress`) and `alias_text`. |
+| `POST /dismissals` | `check_id`, `action` (`dismiss` or `reopen`), and the result: `left_id` and `right_id` for a duplicate check, or `canonical_id` for a check that lists single records. Optional: `reason_code`. |
 3. `POST /runs/{run_id}/close` with `closed`, or `aborted` to stop further changes at once.
 
 **`dry_run` defaults to `true`.** A dry run does the real work, reports it, and rolls it back, so
@@ -75,8 +81,9 @@ same shape.
 `noop`, or `error`. An `error` has a `reason` code and a plain-language `message`; the others in
 the batch are unaffected. Reason codes: `run_not_open`, `ceiling_reached`, `not_found`,
 `same_canonical`, `guard_refused` (the same checks the Stylebook app makes, such as different place
-kinds or conflicting metadata), `ledger_failed`, and `failed`. A repeat of a merge that already
-happened is a `noop` with reason `already_merged`, so retrying is safe.
+kinds or conflicting metadata), `invalid_item`, `unknown_check`, `ledger_failed`, and `failed`. A
+repeat of something that already happened is a `noop`, so retrying is safe: `already_merged`,
+`already_present`, `already_suppressed`, `already_dismissed`, `not_dismissed`, or `no_change`.
 
 **What a merge does.** The source's aliases, its label (as a reviewed alias), metadata, connections,
 and linked records all move to the survivor. A location's geography is kept on the survivor unless
@@ -84,6 +91,27 @@ you pass `geometry_winner: "source"`; geography the survivor did not take is ret
 `unapplied_source_geometry`. The old id is recorded so `resolution` can follow it, a merge event is
 emitted, and a search re-index is queued for each affected record (`reindex_queued`). Activity
 records the actor as an agent, with the run, your item id, your provenance, and the key's name.
+
+**What an edit does.** `changes` names the fields to change; leave a field out to keep it, send
+`null` to clear it. Locations: `label`, `location_type`, `formatted_address`, `geometry` (GeoJSON, or
+`null` to clear the stored geography). People: `label`, `person_type`, `title`, `affiliation`,
+`public_figure`, `sort_key`. Organizations: `label`, `organization_type`. Other fields (a slug, a
+status) are refused with `invalid_item`. **Changing `label` keeps the old name as an alias**, as a
+reviewed one, so mentions that still use it are not flagged as mismatches; the Stylebook app's
+rename does the same. With `apply_geometry_to_saved_places`, the record's geography is also copied
+onto the linked saved places that should follow it (the same rule the Stylebook app pre-selects
+by), and `saved_places_updated` lists them. The result shows `before` and `after` for each changed
+field.
+
+**What an alias change does.** `add` adds a name, or brings back one that was suppressed.
+`suppress` hides a name without deleting it, so the row and its history stay. A record's own name
+cannot be suppressed (change it with an edit). Every alias written here has the provenance
+`stylebook_cleanup_api`, which link checks trust like an editor's alias. A suppressed alias can
+come back if later processing links a mention with that exact name to the record.
+
+**What a dismissal does.** A duplicate check is dismissed one pair at a time, never a whole
+cluster, so a dismissal never covers pairs the check did not propose. `reopen` deletes the
+dismissal (as the Stylebook app does); what it was is kept in the ledger and the activity feed.
 
 **The ledger.** Every applied item writes one action in the same transaction as the change. If the
 action cannot be written, the change is undone and the item reports `ledger_failed`. An action holds
@@ -158,6 +186,5 @@ to 20 sample ids.
 
 ## Not built yet
 
-- Edits, aliases, dismissals, retirements, and deletions.
-- Dismissal reason and actor run on `GET /dismissals`.
+- Retirements and deletions.
 - Candidate decisions, mention links, relations, and undo (the second release).

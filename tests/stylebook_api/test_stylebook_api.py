@@ -1310,6 +1310,47 @@ def test_patch_canonical_location_updates_location_type_and_formatted_address(
     assert cleared.get("formatted_address") is None
 
 
+@pytest.mark.parametrize(
+    ("entity_path", "alias_model_name", "old_label", "new_label"),
+    [
+        ("canonical-locations", "StylebookLocationAlias", "Spingfield", "Springfield"),
+        ("canonical-people", "StylebookPersonAlias", "Jane Dow", "Jane Doe"),
+        ("canonical-organizations", "StylebookOrganizationAlias", "Acme Co", "Acme Corporation"),
+    ],
+)
+def test_renaming_a_canonical_keeps_the_old_name_as_a_trusted_alias(
+    editor_client: TestClient,
+    stylebook_test_engine: Engine,
+    entity_path: str,
+    alias_model_name: str,
+    old_label: str,
+    new_label: str,
+) -> None:
+    import backfield_db
+
+    alias_model = getattr(backfield_db, alias_model_name)
+    created = editor_client.post(f"/v1/stylebooks/default/{entity_path}", json={"label": old_label})
+    assert created.status_code == 200
+    cid = str(created.json()["id"])
+
+    renamed = editor_client.patch(
+        f"/v1/stylebooks/default/{entity_path}/{cid}", json={"label": new_label}
+    )
+    blank = editor_client.patch(f"/v1/stylebooks/default/{entity_path}/{cid}", json={"label": " "})
+
+    assert renamed.status_code == 200
+    assert renamed.json()["label"] == new_label
+    assert blank.status_code == 400
+    with Session(stylebook_test_engine) as s:
+        old_name_rows = [
+            row
+            for row in s.exec(select(alias_model)).all()
+            if row.alias_text.lower() == old_label.lower() and not row.suppressed
+        ]
+    assert old_name_rows
+    assert {row.provenance for row in old_name_rows} == {"stylebook_ui_manual"}
+
+
 def test_stats_locations_initial_zeros(client: TestClient) -> None:
     r = client.get("/v1/stats?project_slug=demo-proj", headers=_service_headers())
     assert r.status_code == 200

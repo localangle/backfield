@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from backfield_entities.entities.cleanup_alias_provenance import CLEANUP_API_ALIAS_PROVENANCE
+
 # Alias provenance values that must never be removed by ingest orphan cleanup.
 PERSON_CATALOG_EDITORIAL_PROVENANCES: frozenset[str] = frozenset(
     {
@@ -16,6 +18,7 @@ PERSON_CATALOG_EDITORIAL_PROVENANCES: frozenset[str] = frozenset(
 PERSON_CLEANUP_ALIAS_PROVENANCES: frozenset[str] = frozenset(
     {
         "stylebook_cleanup_merge",
+        CLEANUP_API_ALIAS_PROVENANCE,
         "stylebook_cleanup_ai_review",
         "stylebook_cleanup_2024_people",
     }
