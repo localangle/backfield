@@ -135,6 +135,7 @@ smoke-fast:
 	uv run python -u tests/smoke/smoke_auth.py
 	uv run python -u tests/smoke/smoke_agate_basic.py
 	uv run python -u tests/smoke/smoke_stylebook_basic.py
+	uv run python -u tests/smoke/smoke_cleanup_api.py
 
 smoke-observability:
 	uv run python -u tests/smoke/smoke_observability.py

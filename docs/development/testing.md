@@ -63,7 +63,10 @@ backfield seed \
 
 Common Make targets:
 
-- `make smoke-fast`: auth, basic Agate, and basic Stylebook checks (no external LLM required)
+- `make smoke-fast`: auth, basic Agate, basic Stylebook, and cleanup API checks (no external LLM
+  required). The cleanup check creates a throwaway service key and two "Smoke cleanup" places,
+  opens a run, dry-runs then applies one merge, reads the ledger and `merged_into` resolution
+  back, and removes everything it created (`SMOKE_KEEP_DATA=1` keeps it)
 - `make smoke`: the primary Agate-to-Stylebook handoff, including Starter flow execution and
   persisted output (needs configured model credentials)
 - `make smoke-observability`: EMF metric emission plus optional live success/failure run checks;

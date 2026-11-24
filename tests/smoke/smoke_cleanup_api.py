@@ -1,0 +1,296 @@
+#!/usr/bin/env python3
+"""Cleanup API smoke: open a run, dry-run then apply one merge, and read the ledger back.
+
+Uses only throwaway "Smoke cleanup ..." places, a throwaway service key, and removes them
+afterwards (set SMOKE_KEEP_DATA=1 to keep them for inspection).
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+import uuid
+from typing import Any
+
+import httpx
+from _helpers import (
+    assert_object,
+    default_stylebook_for_org,
+    delete_smoke_canonical,
+    ensure_health,
+    http_error_detail,
+    keep_smoke_data,
+    log,
+    login_session_context,
+    session_cookie_headers,
+    smoke_db_session,
+)
+from backfield_db import (
+    StylebookActivity,
+    StylebookCanonicalRedirect,
+    StylebookCleanupAction,
+    StylebookCleanupRun,
+    StylebookLocationCanonical,
+    SubstrateLocation,
+)
+from sqlmodel import col, delete
+
+AGATE_API_BASE = os.environ.get("AGATE_API_BASE", "http://localhost:8000")
+STYLEBOOK_API_BASE = os.environ.get("STYLEBOOK_API_BASE", "http://localhost:8003")
+CORE_API_BASE = os.environ.get("CORE_API_BASE", "http://localhost:8004")
+SMOKE_EMAIL = os.environ.get("SMOKE_EMAIL", "").strip()
+SMOKE_PASSWORD = os.environ.get("SMOKE_PASSWORD", "")
+SMOKE_WORKSPACE_SLUG = os.environ.get("SMOKE_WORKSPACE_SLUG", "default").strip()
+SMOKE_PROJECT_SLUG = os.environ.get("SMOKE_PROJECT_SLUG", "general").strip()
+
+
+def _expect(condition: bool, message: str) -> None:
+    if not condition:
+        raise RuntimeError(message)
+
+
+def _create_place(client: httpx.Client, stylebook_slug: str, project_slug: str, label: str) -> str:
+    created = assert_object(
+        client.post(
+            f"/v1/stylebooks/{stylebook_slug}/canonical-locations",
+            params={"project": project_slug},
+            json={"label": label, "location_type": "city"},
+        ),
+        f"create {label}",
+    )
+    return str(created["id"])
+
+
+def _remove_smoke_rows(
+    *,
+    stylebook_id: int,
+    run_id: str | None,
+    source_id: str | None,
+    target_id: str | None,
+    substrate_id: int | None,
+) -> None:
+    """Remove everything the scenario created, in foreign-key order."""
+    place_ids = [value for value in (source_id, target_id) if value]
+    with smoke_db_session() as session:
+        if place_ids:
+            session.exec(
+                delete(StylebookCanonicalRedirect).where(
+                    StylebookCanonicalRedirect.stylebook_id == stylebook_id,
+                    col(StylebookCanonicalRedirect.old_id).in_(place_ids),
+                )
+            )
+        if run_id:
+            session.exec(
+                delete(StylebookCleanupAction).where(StylebookCleanupAction.run_id == run_id)
+            )
+            session.exec(delete(StylebookCleanupRun).where(StylebookCleanupRun.id == run_id))
+        if place_ids:
+            session.exec(
+                delete(StylebookActivity).where(
+                    StylebookActivity.stylebook_id == stylebook_id,
+                    StylebookActivity.entity_type == "location",
+                    col(StylebookActivity.entity_id).in_(place_ids),
+                )
+            )
+        linked: set[int] = {substrate_id} if substrate_id is not None else set()
+        for canonical_id in place_ids:
+            if session.get(StylebookLocationCanonical, canonical_id) is not None:
+                delete_smoke_canonical(
+                    session, canonical_id=canonical_id, allowed_linked_location_ids=linked
+                )
+        if substrate_id is not None:
+            session.exec(delete(SubstrateLocation).where(SubstrateLocation.id == substrate_id))
+        session.commit()
+
+
+def main() -> int:
+    if not SMOKE_EMAIL or not SMOKE_PASSWORD:
+        raise RuntimeError("smoke-cleanup-api requires SMOKE_EMAIL and SMOKE_PASSWORD")
+
+    ctx = login_session_context(
+        core_base=CORE_API_BASE,
+        email=SMOKE_EMAIL,
+        password=SMOKE_PASSWORD,
+        workspace_slug=SMOKE_WORKSPACE_SLUG,
+        project_slug=SMOKE_PROJECT_SLUG,
+    )
+    session_headers = session_cookie_headers(ctx.session_token)
+    ensure_health(
+        agate_base=AGATE_API_BASE,
+        stylebook_base=STYLEBOOK_API_BASE,
+        core_base=CORE_API_BASE,
+        agate_headers=session_headers,
+        stylebook_headers=session_headers,
+    )
+    stylebook = default_stylebook_for_org(
+        stylebook_base=STYLEBOOK_API_BASE,
+        session_token=ctx.session_token,
+        organization_id=ctx.organization_id,
+    )
+    stylebook_slug = str(stylebook["slug"])
+    stylebook_id = int(stylebook["id"])
+    base = f"/public/v1/projects/{ctx.project_slug}/stylebooks/{stylebook_slug}/cleanup"
+    tag = uuid.uuid4().hex[:8]
+
+    credential_id: int | None = None
+    run_id: str | None = None
+    source_id: str | None = None
+    target_id: str | None = None
+    substrate_id: int | None = None
+    try:
+        with (
+            httpx.Client(base_url=STYLEBOOK_API_BASE, timeout=15.0, headers=session_headers) as sb,
+            httpx.Client(base_url=CORE_API_BASE, timeout=30.0, headers=session_headers) as core,
+        ):
+            source_id = _create_place(
+                sb, stylebook_slug, ctx.project_slug, f"Smoke cleanup A {tag}"
+            )
+            target_id = _create_place(
+                sb, stylebook_slug, ctx.project_slug, f"Smoke cleanup B {tag}"
+            )
+            with smoke_db_session() as session:
+                substrate = SubstrateLocation(
+                    project_id=ctx.project_id,
+                    name=f"Smoke cleanup A {tag}",
+                    normalized_name=f"smoke cleanup a {tag}",
+                    stylebook_location_canonical_id=source_id,
+                    canonical_link_status="linked",
+                )
+                session.add(substrate)
+                session.commit()
+                substrate_id = int(substrate.id)  # type: ignore[arg-type]
+
+            key = assert_object(
+                core.post(
+                    f"/v1/projects/{ctx.project_id}/api-keys",
+                    json={
+                        "credential_type": "service",
+                        "scopes": ["cleanup:apply"],
+                        "label": f"smoke cleanup {tag}",
+                    },
+                ),
+                "create service key",
+            )
+            credential_id = int(key["id"])
+            bearer = {"Authorization": f"Bearer {key['raw_key']}"}
+
+        with httpx.Client(base_url=CORE_API_BASE, timeout=60.0, headers=bearer) as api:
+            capabilities = assert_object(api.get(f"{base}/capabilities"), "capabilities")
+            _expect(capabilities.get("contract_version") == "preview-1", f"{capabilities!r}")
+            _expect("merges" in capabilities.get("operations", []), f"{capabilities!r}")
+            log("Capabilities advertise merges.")
+
+            run = assert_object(
+                api.post(f"{base}/runs", json={"label": f"smoke {tag}", "client_run_ref": tag}),
+                "open run",
+            )
+            run_id = str(run["id"])
+            _expect(run["status"] == "open", f"{run!r}")
+
+            item: dict[str, Any] = {
+                "item_id": f"smoke-{tag}",
+                "source_id": source_id,
+                "target_id": target_id,
+                "provenance": {"reason": "smoke"},
+            }
+            preview = assert_object(
+                api.post(f"{base}/locations/merges", json={"run_id": run_id, "items": [item]}),
+                "dry-run merge",
+            )
+            _expect(preview["dry_run"] is True, f"{preview!r}")
+            _expect(preview["counts"]["would_apply"] == 1, f"dry run: {preview!r}")
+            still_there = api.get(
+                f"{base}/locations/{source_id}/resolution",
+            ).json()
+            _expect(still_there["merged"] is False, f"dry run changed data: {still_there!r}")
+            with smoke_db_session() as session:
+                _expect(
+                    session.get(StylebookLocationCanonical, source_id) is not None,
+                    "dry run removed the source canonical",
+                )
+            log("Dry run reported would_apply and changed nothing.")
+
+            applied = assert_object(
+                api.post(
+                    f"{base}/locations/merges",
+                    json={"run_id": run_id, "dry_run": False, "items": [item]},
+                ),
+                "applied merge",
+            )
+            result = applied["items"][0]
+            _expect(result["status"] == "applied", f"apply: {applied!r}")
+            action_id = str(result["action_id"])
+            with smoke_db_session() as session:
+                _expect(
+                    session.get(StylebookLocationCanonical, source_id) is None,
+                    "source canonical survived the merge",
+                )
+                moved = session.get(SubstrateLocation, substrate_id)
+                _expect(
+                    moved is not None and moved.stylebook_location_canonical_id == target_id,
+                    "linked record did not move to the survivor",
+                )
+            log(f"Merge applied (action {action_id}); linked record moved to the survivor.")
+
+            resolution = assert_object(
+                api.get(f"{base}/locations/{source_id}/resolution"), "resolution"
+            )
+            _expect(
+                resolution["merged"] is True and resolution["resolved_id"] == target_id,
+                f"resolution: {resolution!r}",
+            )
+
+            actions = assert_object(api.get(f"{base}/runs/{run_id}/actions"), "run actions")
+            _expect([a["id"] for a in actions["items"]] == [action_id], f"{actions!r}")
+            action = assert_object(api.get(f"{base}/actions/{action_id}"), "action")
+            _expect(action["before_state"] is not None, "ledger row has no before-state")
+            _expect(action["client_item_id"] == item["item_id"], f"{action!r}")
+
+            repeat = assert_object(
+                api.post(
+                    f"{base}/locations/merges",
+                    json={"run_id": run_id, "dry_run": False, "items": [item]},
+                ),
+                "repeat merge",
+            )
+            repeated = repeat["items"][0]
+            _expect(
+                repeated["status"] == "noop" and repeated["reason"] == "already_merged",
+                f"repeat: {repeat!r}",
+            )
+            log("Ledger, resolution, and repeat-merge noop check out.")
+
+            closed = assert_object(
+                api.post(f"{base}/runs/{run_id}/close", json={"status": "closed"}), "close run"
+            )
+            _expect(closed["status"] == "closed", f"{closed!r}")
+            _expect(closed["action_counts"].get("merge") == 1, f"{closed!r}")
+
+        log("Smoke cleanup API passed.")
+        log(f"Stylebook: {stylebook_slug!r}  Run: {run_id}")
+        return 0
+    finally:
+        if not keep_smoke_data():
+            _remove_smoke_rows(
+                stylebook_id=stylebook_id,
+                run_id=run_id,
+                source_id=source_id,
+                target_id=target_id,
+                substrate_id=substrate_id,
+            )
+            if credential_id is not None:
+                with httpx.Client(
+                    base_url=CORE_API_BASE, timeout=15.0, headers=session_headers
+                ) as core:
+                    core.delete(f"/v1/projects/{ctx.project_id}/api-keys/{credential_id}")
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except httpx.HTTPError as exc:
+        print(f"HTTP smoke failure: {http_error_detail(exc)}", file=sys.stderr, flush=True)
+        raise SystemExit(1) from exc
+    except Exception as exc:
+        print(f"Smoke failure: {exc}", file=sys.stderr, flush=True)
+        raise SystemExit(1) from exc

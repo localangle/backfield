@@ -146,6 +146,10 @@ review becomes unwieldy, split at a slice boundary (D44 allows it).
 [`stylebook-cleanup-api-ledger.md`](stylebook-cleanup-api-ledger.md). Differences from the task text:
 - Migration `084_cleanup_run_ledger` adds the three tables. Tried on a scratch Postgres database
   (upgrade, downgrade, upgrade; no model drift on the new tables).
+- Checked on the live local stack (migration applied to the dev database, images rebuilt):
+  `tests/smoke/smoke_cleanup_api.py`, part of `make smoke-fast`, opens a run, dry-runs then applies
+  one merge with a throwaway service key, reads back the ledger, before-state and `merged_into`
+  resolution, repeats the merge for `noop`, closes the run, and removes its rows.
 - `apply_merge` persists `merged_into` itself, so the Stylebook app's merge routes record redirects
   too (with no ledger row). A chain shortens on the next merge, so resolving is one lookup.
 - A dry run does the real merge inside the item's transaction and rolls it back, rather than
