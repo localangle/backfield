@@ -960,3 +960,39 @@ def test_delete_canonical_person_requeues_linked_people_and_closes_connections(
         assert released.canonical_review_reasons_json[0]["code"] == (
             "reset_pending_after_canonical_deleted"
         )
+
+
+def test_candidate_decision_errors_keep_their_http_statuses(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    with Session(stylebook_test_engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        sid = _add_pending_person(
+            s,
+            project_id=int(proj.id),
+            name="Status Probe",
+            normalized_name="status probe",
+            fingerprint="fp-status-probe",
+        )
+    base = f"/v1/people/candidates/{sid}"
+    query = "?project_slug=demo-proj"
+
+    missing_target = client.post(
+        f"{base}/accept{query}",
+        headers=_service_headers(),
+        json={"stylebook_person_canonical_id": "00000000-0000-0000-0000-000000000000"},
+    )
+    no_target = client.post(f"{base}/accept{query}", headers=_service_headers(), json={})
+    created = client.post(
+        f"{base}/accept{query}", headers=_service_headers(), json={"create_new": True}
+    )
+    accepted_twice = client.post(
+        f"{base}/accept{query}", headers=_service_headers(), json={"create_new": True}
+    )
+    deferred_after_link = client.post(f"{base}/defer{query}", headers=_service_headers())
+
+    assert missing_target.status_code == 404
+    assert no_target.status_code == 400
+    assert created.status_code == 200
+    assert accepted_twice.status_code == 409
+    assert deferred_after_link.status_code == 409

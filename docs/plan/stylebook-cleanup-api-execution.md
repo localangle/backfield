@@ -226,7 +226,27 @@ D35, tracked in the open questions).
 
 ## Phase C2: candidate decisions, mention links, relations (release 2)
 
-**Branch:** `feat/cleanup-api-candidates`. **Size:** large. Sketch:
+**Candidate decisions status (2026-11-24):** Built on `feat/cleanup-shared-merge` (not a separate
+branch). `POST /candidates/{entity}/decisions` takes `link`, `create` and `defer` (the toolkit's
+need; waive and hold are the same as defer, which is how the Stylebook app models them).
+- **Extraction.** `cleanup/decision_ops.py` holds `link_candidate`, `create_candidate_canonical` and
+  `defer_candidate` for all three kinds. The nine Stylebook app accept and defer routes call them
+  and map the library's errors to the same statuses as before (409 already linked, 400 accept on a
+  wrong status, 409 defer on a wrong status). The location create path was moved over as written.
+  Differences: people and organizations used to answer 500 for a missing or foreign target record
+  and now answer 404 or 400; a blank name or unusable geometry is 400.
+- **Pipeline.** `decision_items.py`. Candidates in any project of the Stylebook are in scope.
+  Linking to a retired record is refused (the app never offers one). Retries are no-ops
+  (`already_linked`, `already_deferred`); a repeated `create` is recognised through the run's ledger
+  by item id and candidate. New ceiling class `decision` (default 5000).
+- **Ledger.** Migration `086_cleanup_action_no_canonical` makes `canonical_id` optional, because a
+  deferred candidate has no record. Before-state holds the candidate row and, for `link`, the
+  target's existing alias names.
+- **Reindex.** Linking and creating queue a search re-index for the candidate; the app's accept
+  button does not (an existing gap, left alone).
+- Not built: mention links and relations. Their routes are still to do.
+
+**Branch (original sketch):** `feat/cleanup-api-candidates`. **Size:** large. Sketch:
 - Move the candidate decision logic from `stylebook-api` `entities/*/candidates.py` into a library, then point both the UI routes and the new `decisions` route at it.
 - Add `mention-links` over `entities/linking/substrate_actions.py` and `relations` over `connections/writer.py`.
 - Biggest risk: the extraction, since the candidate queues are heavily used in the UI. Land the extraction with UI behavior unchanged first.

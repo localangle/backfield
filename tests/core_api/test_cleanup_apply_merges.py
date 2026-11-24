@@ -509,6 +509,7 @@ def test_capabilities_list_merges_only_for_keys_that_can_apply(
         "edits",
         "retirements",
         "deletions",
+        "decisions",
     ]
     assert read_caps["operations"] == []
     assert apply_caps["limits"]["run_ceilings"]["merge"] == 5000

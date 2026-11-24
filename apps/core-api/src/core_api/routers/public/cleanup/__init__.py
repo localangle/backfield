@@ -18,6 +18,7 @@ from backfield_entities.cleanup.check_reads import (
     CheckResultsPage,
     CheckRunOut,
 )
+from backfield_entities.cleanup.decision_items import DecisionResponse
 from backfield_entities.cleanup.dismissal_items import DismissalResponse
 from backfield_entities.cleanup.dismissals_read import DismissalPage
 from backfield_entities.cleanup.edit_items import EditResponse
@@ -48,6 +49,7 @@ from core_api.routers.public.cleanup.checks import (
     post_cleanup_check_run,
 )
 from core_api.routers.public.cleanup.contract import get_cleanup_openapi
+from core_api.routers.public.cleanup.decisions import post_cleanup_decisions
 from core_api.routers.public.cleanup.deletions import post_cleanup_deletions
 from core_api.routers.public.cleanup.dismissals import (
     get_cleanup_dismissals,
@@ -125,3 +127,6 @@ router.post("/{entity}/aliases", response_model=AliasResponse)(post_cleanup_alia
 router.post("/{entity}/edits", response_model=EditResponse)(post_cleanup_edits)
 router.post("/{entity}/retirements", response_model=RemovalResponse)(post_cleanup_retirements)
 router.post("/{entity}/deletions", response_model=RemovalResponse)(post_cleanup_deletions)
+router.post("/candidates/{entity}/decisions", response_model=DecisionResponse)(
+    post_cleanup_decisions
+)

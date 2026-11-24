@@ -19,8 +19,15 @@
             "title": "Before State"
           },
           "canonical_id": {
-            "title": "Canonical Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Id"
           },
           "client_item_id": {
             "anyOf": [
@@ -1606,6 +1613,297 @@
           }
         },
         "title": "CloseRunRequest",
+        "type": "object"
+      },
+      "DecisionApplyItem": {
+        "properties": {
+          "action": {
+            "description": "`link` to an existing record (needs `canonical_id`), `create` a new record from the candidate, or `defer` it.",
+            "enum": [
+              "link",
+              "create",
+              "defer"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "candidate_id": {
+            "description": "The candidate's id, from the candidates list.",
+            "title": "Candidate Id",
+            "type": "integer"
+          },
+          "canonical_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "With `link`: the record to link the candidate to.",
+            "title": "Canonical Id"
+          },
+          "geometry": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "With `create` for locations: GeoJSON geography. Defaults to the candidate's.",
+            "title": "Geometry"
+          },
+          "item_id": {
+            "description": "Your own id for this item; echoed back and stored with the action.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "With `create`: the place kind, person type or organization type. Defaults to the candidate's.",
+            "title": "Kind"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "With `create`: the new record's name. Defaults to the candidate's.",
+            "title": "Name"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Anything you want stored with the action, as given.",
+            "title": "Provenance"
+          }
+        },
+        "required": [
+          "item_id",
+          "candidate_id",
+          "action"
+        ],
+        "title": "DecisionApplyItem",
+        "type": "object"
+      },
+      "DecisionApplyResult": {
+        "properties": {
+          "action_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The ledger row, once applied.",
+            "title": "Action Id"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Plain-language detail, such as what a guard refused.",
+            "title": "Message"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A reason code for noop and error results.",
+            "title": "Reason"
+          },
+          "reindex_queued": {
+            "default": false,
+            "title": "Reindex Queued",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "would_apply",
+              "applied",
+              "noop",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DecisionSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "item_id",
+          "status"
+        ],
+        "title": "DecisionApplyResult",
+        "type": "object"
+      },
+      "DecisionRequestBody": {
+        "properties": {
+          "dry_run": {
+            "default": true,
+            "description": "Report what would happen without changing anything.",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionApplyItem"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "run_id": {
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "items"
+        ],
+        "title": "DecisionRequestBody",
+        "type": "object"
+      },
+      "DecisionResponse": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/ApplyCounts"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionApplyResult"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "dry_run",
+          "counts",
+          "items"
+        ],
+        "title": "DecisionResponse",
+        "type": "object"
+      },
+      "DecisionSummary": {
+        "properties": {
+          "action": {
+            "enum": [
+              "link",
+              "create",
+              "defer"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "candidate_id": {
+            "title": "Candidate Id",
+            "type": "integer"
+          },
+          "candidate_name": {
+            "title": "Candidate Name",
+            "type": "string"
+          },
+          "canonical_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The record it is now linked to; empty after `defer`.",
+            "title": "Canonical Id"
+          },
+          "canonical_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Label"
+          },
+          "created": {
+            "default": false,
+            "description": "True when `create` made a new record.",
+            "title": "Created",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "candidate_name",
+          "action"
+        ],
+        "title": "DecisionSummary",
         "type": "object"
       },
       "DeletionApplyItem": {
@@ -4658,6 +4956,250 @@
           }
         ],
         "summary": "Get Cleanup Candidate Count",
+        "tags": [
+          "public",
+          "cleanup-preview"
+        ]
+      }
+    },
+    "/public/v1/projects/{project_slug}/stylebooks/{stylebook_slug}/cleanup/candidates/{entity}/decisions": {
+      "post": {
+        "description": "Link candidates to existing records, create records from them, or defer them.\n\n`link` attaches the candidate to `canonical_id` (a retired record is refused). `create` makes a\nnew record from the candidate; `name`, `kind` and, for locations, `geometry` override what the\ncandidate carries. `defer` moves it out of the open queue without a record. Candidates in any\nproject of this Stylebook can be decided. `dry_run` (the default) changes nothing. Each item\nsucceeds or fails on its own, and repeating a decision that already stands is a no-op.",
+        "operationId": "post_cleanup_decisions_public_v1_projects__project_slug__stylebooks__stylebook_slug__cleanup_candidates__entity__decisions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity",
+            "required": true,
+            "schema": {
+              "enum": [
+                "locations",
+                "people",
+                "organizations"
+              ],
+              "title": "Entity",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stylebook_slug",
+            "required": true,
+            "schema": {
+              "title": "Stylebook Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_slug",
+            "required": true,
+            "schema": {
+              "title": "Project Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient permission",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit exceeded",
+            "headers": {
+              "RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "RateLimit-Reset": {
+                "description": "Seconds until the current window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicErrorResponse"
+                }
+              }
+            },
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until a request can be retried.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ProjectApiKey": []
+          }
+        ],
+        "summary": "Post Cleanup Decisions",
         "tags": [
           "public",
           "cleanup-preview"

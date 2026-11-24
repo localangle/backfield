@@ -483,9 +483,13 @@ class StylebookCleanupAction(SQLModel, table=True):
     stylebook_id: int = Field(foreign_key="stylebook.id")
     operation: str = Field(sa_column=Column(Text, nullable=False))
     entity_type: str = Field(sa_column=Column(Text, nullable=False))
-    canonical_id: str = Field(
-        sa_column=Column(Text, nullable=False),
-        description="The canonical the operation acted on (a merge's source).",
+    canonical_id: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+        description=(
+            "The canonical the operation acted on (a merge's source). Empty when there is none, "
+            "as for a deferred candidate."
+        ),
     )
     related_canonical_id: str | None = Field(
         default=None,

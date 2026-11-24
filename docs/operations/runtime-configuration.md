@@ -95,10 +95,10 @@ equivalent to an unset value and can mask a safe local default with an unusable 
 - `BACKFIELD_CLEANUP_SNIPPET_MAX_CHARS`: longest article snippet the preview cleanup evidence
   routes may return, whatever a caller asks for; defaults to 500. `0` turns snippet text off (the
   mention text and article references are still returned).
-- `BACKFIELD_CLEANUP_CEILING_MERGE`, `_EDIT`, `_ALIAS`, `_DISMISSAL`, `_RETIREMENT`,
-  `_DELETION`: most applied actions of each kind one preview cleanup run may hold. Defaults are
-  5000, 5000, 5000, 5000, 500, and 200. Read on every request, so a Core API restart is enough to
-  change them. A negative or unreadable value falls back to the default; `0` stops that operation.
+- `BACKFIELD_CLEANUP_CEILING_MERGE`, `_EDIT`, `_ALIAS`, `_DISMISSAL`, `_DECISION`,
+  `_RETIREMENT`, `_DELETION`: most applied actions of each kind one preview cleanup run may hold.
+  Defaults are 5000, 5000, 5000, 5000, 5000, 500, and 200. Read on every request, so a Core API
+  restart is enough to change them. A negative or unreadable value falls back to the default; `0` stops that operation.
 - `CELERY_QUEUE`: queue name; defaults to `agate`.
 - `CELERY_WORKER_CONCURRENCY`: prefork child count; defaults to 16 in the worker image and Compose.
 - `CELERY_PREFETCH_MULTIPLIER`: defaults to 1.

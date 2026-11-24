@@ -41,7 +41,7 @@ class ActionOut(BaseModel):
     run_id: str
     operation: str
     entity_type: str
-    canonical_id: str
+    canonical_id: str | None
     related_canonical_id: str | None
     client_item_id: str | None
     provenance: dict[str, JsonValue] | None

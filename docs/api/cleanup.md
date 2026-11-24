@@ -11,7 +11,8 @@ and apply routes are not offered there. The contract can change between
 versions: check `contract_version` in `capabilities`. The design is in the Stylebook cleanup API plan
 under `docs/plan/`; this page describes what is built.
 
-You can apply merges, edits, aliases, dismissals, retirements, and deletions so far. `capabilities.operations` lists what
+You can apply merges, edits, aliases, dismissals, retirements, deletions, and candidate decisions
+so far. `capabilities.operations` lists what
 this instance supports for your key (empty without `cleanup:apply`).
 
 ## Base path and access
@@ -73,6 +74,7 @@ same shape.
 | `POST /{entity}/aliases` | `canonical_id`, `action` (`add` or `suppress`) and `alias_text`. |
 | `POST /{entity}/retirements` | `canonical_id`. Optional: `action` (`retire`, the default, or `reinstate`), `mention_disposition`, `mention_reason_code`. |
 | `POST /{entity}/deletions` | `canonical_id`. Optional: `mention_disposition`, `mention_reason_code`. |
+| `POST /candidates/{entity}/decisions` | `candidate_id` and `action`: `link` (needs `canonical_id`), `create`, or `defer`. With `create`, optional `name`, `kind`, and (locations) `geometry`. |
 | `POST /dismissals` | `check_id`, `action` (`dismiss` or `reopen`), and the result: `left_id` and `right_id` for a duplicate check, or `canonical_id` for a check that lists single records. Optional: `reason_code`. |
 3. `POST /runs/{run_id}/close` with `closed`, or `aborted` to stop further changes at once.
 
@@ -86,7 +88,7 @@ the batch are unaffected. Reason codes: `run_not_open`, `ceiling_reached`, `not_
 kinds or conflicting metadata), `invalid_item`, `unknown_check`, `ledger_failed`, and `failed`. A
 repeat of something that already happened is a `noop`, so retrying is safe: `already_merged`,
 `already_present`, `already_suppressed`, `already_dismissed`, `not_dismissed`, `already_inactive`,
-`already_active`, `already_deleted`, or `no_change`.
+`already_active`, `already_deleted`, `already_linked`, `already_deferred`, or `no_change`.
 
 **What a merge does.** The source's aliases, its label (as a reviewed alias), metadata, connections,
 and linked records all move to the survivor. A location's geography is kept on the survivor unless
@@ -131,6 +133,24 @@ event is emitted. The ledger keeps a full snapshot of what it was (aliases, meta
 records, connections), but there is no undo route. After a deletion, `resolution` for that id
 returns `deleted: true`; repeating the deletion is a `noop` (`already_deleted`). Deleting is the
 same operation the Stylebook app's delete button performs.
+
+**What a candidate decision does.** The same for locations, people, and organizations, and the
+same code the Stylebook app's accept and defer buttons run. A candidate is a project record that is
+not linked to a record yet; candidates in any project of this Stylebook can be decided.
+- `link` attaches the candidate to `canonical_id`, adds the candidate's name as an alias of that
+  record (provenance `stylebook_cleanup_api`), and emits an evidence-changed event. A retired
+  record is refused (`guard_refused`): reinstate it first. A deferred candidate can be linked.
+- `create` makes a new record from the candidate and links it. `name`, `kind` (place kind, person
+  type or organization type) and, for locations, `geometry` override what the candidate carries;
+  an unknown place kind or a blank name is `invalid_item`.
+- `defer` takes a pending candidate out of the open queue (it shows under `status=deferred`).
+- A candidate that is already linked elsewhere is `guard_refused`. Repeating a decision that
+  already stands is a `noop`: `already_linked` (also for a `create` repeated with the same item id
+  in the run) or `already_deferred`. Fields that do not belong to the action are `invalid_item`.
+- A search re-index is queued for the candidate after `link` and `create`. The Stylebook app's
+  accept button does not queue one.
+- The ledger row holds the candidate as it was (and, for `link`, the names the record already
+  had); `canonical_id` is empty for `defer`.
 
 **The ledger.** Every applied item writes one action in the same transaction as the change. If the
 action cannot be written, the change is undone and the item reports `ledger_failed`. An action holds
@@ -205,4 +225,4 @@ to 20 sample ids.
 
 ## Not built yet
 
-- Candidate decisions, mention links, relations, and undo (the second release).
+- Mention links, relations, and undo (the second release).

@@ -23,11 +23,15 @@ from backfield_entities.canonical.link import (
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_WAIVED,
 )
+from backfield_entities.cleanup.decision_ops import (
+    CandidateDecisionError,
+    create_candidate_canonical,
+    link_candidate,
+)
+from backfield_entities.cleanup.decision_ops import defer_candidate as defer_candidate_decision
+from backfield_entities.cleanup.entity_models import cleanup_entity_models
 from backfield_entities.entities.person.persist import (
-    link_substrate_to_canonical_atomic,
-    materialize_new_canonical_and_link,
     rank_canonical_suggestions_for_substrate,
-    refresh_aliases_for_linked_person,
 )
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -36,6 +40,7 @@ from sqlmodel import Session, col, func, select
 
 from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
+from stylebook_api.helpers.candidate_decision_errors import candidate_decision_http_error
 from stylebook_api.helpers.candidate_review_display import (
     first_candidate_review_line,
     format_candidate_review_lines,
@@ -629,19 +634,12 @@ def defer_candidate(
         stylebook_slug=stylebook_slug,
         require_edit=True,
     )
-    if person.stylebook_person_canonical_id is not None:
-        raise HTTPException(status_code=409, detail="Person is already linked to a canonical")
-    if person.canonical_link_status != CANONICAL_LINK_PENDING:
-        raise HTTPException(
-            status_code=409,
-            detail="Person is not in the review queue (status must be pending)",
+    try:
+        defer_candidate_decision(
+            session, cleanup_entity_models("people"), person, provenance="stylebook_ui_defer"
         )
-
-    person.canonical_link_status = CANONICAL_LINK_WAIVED
-    person.canonical_review_reasons_json = [
-        {"code": "deferred_manual", "provenance": "stylebook_ui_defer"}
-    ]
-    session.add(person)
+    except CandidateDecisionError as exc:
+        raise candidate_decision_http_error(exc, not_in_queue_status=409) from exc
     session.commit()
     return {"message": "deferred"}
 
@@ -702,71 +700,35 @@ def accept_candidate(
         require_edit=True,
     )
     stylebook_id = int(guarded_stylebook.id)
-    if person.stylebook_person_canonical_id is not None:
-        raise HTTPException(status_code=409, detail="Person already linked to a canonical")
-    if person.canonical_link_status not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Person is not in the canonical review queue (status must be pending or deferred)"
-            ),
-        )
-
-    if body.create_new:
-        label = (body.name or person.name or "").strip()
-        if not label:
-            raise HTTPException(status_code=400, detail="name is required when create_new is true")
-        if body.person_type is not None:
-            pt = (body.person_type or "").strip() or None
-            person.person_type = pt
-            session.add(person)
-            session.flush()
-        materialize_new_canonical_and_link(
-            session,
-            stylebook_id=stylebook_id,
-            person=person,
-            label=label,
-            provenance="stylebook_ui_accept",
-        )
-        cid = str(person.stylebook_person_canonical_id or "")
-        if not cid:
-            raise HTTPException(status_code=500, detail="Canonical could not be created")
-        person.canonical_review_reasons_json = [
-            {"code": "linked_manual_accept_create_new", "canonical_id": cid}
-        ]
-        session.add(person)
-        if body.person_type is not None:
-            canon = session.get(StylebookPersonCanonical, cid)
-            if canon is not None:
-                canon.person_type = person.person_type
-                session.add(canon)
-    else:
-        if body.stylebook_person_canonical_id is None:
-            raise HTTPException(
-                status_code=400,
-                detail="stylebook_person_canonical_id is required when create_new is false",
+    models = cleanup_entity_models("people")
+    try:
+        if body.create_new:
+            cid = create_candidate_canonical(
+                session,
+                models,
+                person,
+                stylebook_id=stylebook_id,
+                name=body.name,
+                kind=body.person_type,
+                geometry_json=None,
+                provenance="stylebook_ui_accept",
             )
-        link_substrate_to_canonical_atomic(
-            session,
-            stylebook_id=stylebook_id,
-            person=person,
-            target_canonical_id=str(body.stylebook_person_canonical_id),
-            provenance="stylebook_ui_accept",
-        )
-        refresh_aliases_for_linked_person(
-            session,
-            stylebook_id=stylebook_id,
-            person=person,
-            provenance="stylebook_ui_accept",
-        )
-        person.canonical_review_reasons_json = [
-            {
-                "code": "linked_manual_accept_existing",
-                "canonical_id": str(body.stylebook_person_canonical_id),
-            }
-        ]
-        session.add(person)
-        cid = str(body.stylebook_person_canonical_id)
+        else:
+            if body.stylebook_person_canonical_id is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="stylebook_person_canonical_id is required when create_new is false",
+                )
+            cid = link_candidate(
+                session,
+                models,
+                person,
+                stylebook_id=stylebook_id,
+                canonical_id=str(body.stylebook_person_canonical_id),
+                provenance="stylebook_ui_accept",
+            )
+    except CandidateDecisionError as exc:
+        raise candidate_decision_http_error(exc, not_in_queue_status=400) from exc
 
     session.commit()
     return AcceptCandidateResponse(

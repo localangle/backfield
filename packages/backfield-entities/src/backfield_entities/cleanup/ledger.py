@@ -24,7 +24,7 @@ def record_action(
     stylebook_id: int,
     operation: str,
     entity_type: str,
-    canonical_id: str,
+    canonical_id: str | None,
     related_canonical_id: str | None,
     client_item_id: str,
     provenance: dict[str, JsonValue] | None,

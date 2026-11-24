@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Cleanup API smoke: open a run, dry-run then apply one merge, then an alias, an edit and a
-dismissal on the survivor, retire, reinstate and delete a third place, and read the ledger back.
+dismissal on the survivor, retire, reinstate and delete a third place, decide three candidates, and
+read the ledger back.
 
 Uses only throwaway "Smoke cleanup ..." places, a throwaway service key, and removes them
 afterwards (set SMOKE_KEEP_DATA=1 to keep them for inspection).
@@ -175,6 +176,72 @@ def _apply_removals(
     log("Refusal, retire, reinstate and delete applied and read back.")
 
 
+def _apply_candidate_decisions(
+    api: httpx.Client,
+    base: str,
+    *,
+    run_id: str,
+    project_id: int,
+    survivor_id: str,
+    tag: str,
+    candidate_ids: list[int],
+    created_ids: list[str],
+) -> None:
+    """Link, create from, and defer three throwaway candidates.
+
+    The candidates and the place created are added to ``candidate_ids`` and ``created_ids`` as soon
+    as they exist, so the caller can clean them up even when a step fails.
+    """
+    with smoke_db_session() as session:
+        candidates = [
+            SubstrateLocation(
+                project_id=project_id,
+                name=f"Smoke cleanup candidate {label} {tag}",
+                normalized_name=f"smoke cleanup candidate {label} {tag}",
+                canonical_link_status="pending",
+            )
+            for label in ("link", "create", "defer")
+        ]
+        session.add_all(candidates)
+        session.commit()
+        candidate_ids.extend(int(c.id) for c in candidates)  # type: ignore[arg-type]
+    link_id, create_id, defer_id = candidate_ids[-3:]
+    decisions = f"{base}/candidates/locations/decisions"
+    link_item = {"item_id": "link", "candidate_id": link_id, "action": "link"}
+    _apply_one(api, decisions, run_id, {**link_item, "canonical_id": survivor_id})
+    created = _apply_one(
+        api, decisions, run_id, {"item_id": "create", "candidate_id": create_id, "action": "create"}
+    )
+    created_id = str(created["summary"]["canonical_id"])
+    created_ids.append(created_id)
+    defer_item = {"item_id": "defer", "candidate_id": defer_id, "action": "defer"}
+    _apply_one(api, decisions, run_id, defer_item)
+    with smoke_db_session() as session:
+        link_row = session.get(SubstrateLocation, link_id)
+        create_row = session.get(SubstrateLocation, create_id)
+        defer_row = session.get(SubstrateLocation, defer_id)
+        _expect(
+            link_row is not None and link_row.stylebook_location_canonical_id == survivor_id,
+            "link decision did not stick",
+        )
+        _expect(
+            create_row is not None and create_row.stylebook_location_canonical_id == created_id,
+            "create decision did not stick",
+        )
+        _expect(
+            defer_row is not None
+            and defer_row.canonical_link_status == "waived"
+            and defer_row.stylebook_location_canonical_id is None,
+            "defer decision did not stick",
+        )
+    deferred = assert_object(
+        api.get(f"{base}/candidates/locations", params={"status": "deferred", "q": tag}),
+        "deferred candidates",
+    )
+    _expect([c["id"] for c in deferred["items"]] == [defer_id], f"deferred queue: {deferred!r}")
+    log("Candidate link, create and defer applied and read back.")
+
+
 def _remove_smoke_rows(
     *,
     stylebook_id: int,
@@ -183,9 +250,11 @@ def _remove_smoke_rows(
     target_id: str | None,
     spare_id: str | None,
     substrate_id: int | None,
+    candidate_ids: list[int],
+    created_ids: list[str],
 ) -> None:
     """Remove everything the scenario created, in foreign-key order."""
-    place_ids = [value for value in (source_id, target_id, spare_id) if value]
+    place_ids = [value for value in (source_id, target_id, spare_id, *created_ids) if value]
     with smoke_db_session() as session:
         if place_ids:
             session.exec(
@@ -195,6 +264,14 @@ def _remove_smoke_rows(
                 )
             )
         if run_id:
+            # A deferred candidate has no canonical, so its activity row is found by run instead.
+            session.exec(
+                delete(StylebookActivity).where(
+                    StylebookActivity.stylebook_id == stylebook_id,
+                    StylebookActivity.source == "cleanup_api",
+                    StylebookActivity.payload_json["run_id"].as_string() == run_id,
+                )
+            )
             session.exec(
                 delete(StylebookCleanupDismissal).where(StylebookCleanupDismissal.run_id == run_id)
             )
@@ -221,13 +298,15 @@ def _remove_smoke_rows(
                 )
             )
         linked: set[int] = {substrate_id} if substrate_id is not None else set()
+        linked.update(candidate_ids)
         for canonical_id in place_ids:
             if session.get(StylebookLocationCanonical, canonical_id) is not None:
                 delete_smoke_canonical(
                     session, canonical_id=canonical_id, allowed_linked_location_ids=linked
                 )
-        if substrate_id is not None:
-            session.exec(delete(SubstrateLocation).where(SubstrateLocation.id == substrate_id))
+        removable = [value for value in (substrate_id, *candidate_ids) if value is not None]
+        if removable:
+            session.exec(delete(SubstrateLocation).where(col(SubstrateLocation.id).in_(removable)))
         session.commit()
 
 
@@ -266,6 +345,8 @@ def main() -> int:
     target_id: str | None = None
     spare_id: str | None = None
     substrate_id: int | None = None
+    candidate_ids: list[int] = []
+    created_ids: list[str] = []
     try:
         with (
             httpx.Client(base_url=STYLEBOOK_API_BASE, timeout=15.0, headers=session_headers) as sb,
@@ -315,6 +396,7 @@ def main() -> int:
                 "dismissals",
                 "retirements",
                 "deletions",
+                "decisions",
             ):
                 _expect(operation in operations, f"{operation} missing: {capabilities!r}")
             log("Capabilities advertise every cleanup operation.")
@@ -402,6 +484,16 @@ def main() -> int:
             _apply_survivor_changes(api, base, run_id=run_id, survivor_id=target_id, tag=tag)
 
             _apply_removals(api, base, run_id=run_id, survivor_id=target_id, spare_id=spare_id)
+            _apply_candidate_decisions(
+                api,
+                base,
+                run_id=run_id,
+                project_id=ctx.project_id,
+                survivor_id=target_id,
+                tag=tag,
+                candidate_ids=candidate_ids,
+                created_ids=created_ids,
+            )
 
             closed = assert_object(
                 api.post(f"{base}/runs/{run_id}/close", json={"status": "closed"}), "close run"
@@ -421,6 +513,8 @@ def main() -> int:
                 target_id=target_id,
                 spare_id=spare_id,
                 substrate_id=substrate_id,
+                candidate_ids=candidate_ids,
+                created_ids=created_ids,
             )
             if credential_id is not None:
                 with httpx.Client(

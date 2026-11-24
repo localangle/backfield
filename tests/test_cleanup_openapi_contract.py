@@ -38,6 +38,7 @@ EXPECTED_OPERATIONS = {
     ("post", "/{entity}/edits"),
     ("post", "/{entity}/retirements"),
     ("post", "/{entity}/deletions"),
+    ("post", "/candidates/{entity}/decisions"),
     ("get", "/{entity}/{canonical_id}/resolution"),
     ("post", "/{entity}/evidence"),
     ("get", "/{entity}/export"),

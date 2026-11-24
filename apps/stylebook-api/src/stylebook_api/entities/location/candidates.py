@@ -18,25 +18,23 @@ from backfield_db import (
 from backfield_entities.canonical.candidate_review import (
     strip_ai_recommendations_from_review_reasons,
 )
-from backfield_entities.canonical.jurisdiction import (
-    place_extract_components_from_entry,
-    stylebook_district_fields_from_components,
-    stylebook_jurisdiction_fields_from_components,
-)
 from backfield_entities.canonical.link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_WAIVED,
 )
-from backfield_entities.canonical.slug import allocate_unique_canonical_slug
 from backfield_entities.catalog.search import substrate_name_ilike_filter
+from backfield_entities.cleanup.decision_ops import (
+    CandidateDecisionError,
+    create_candidate_canonical,
+    link_candidate,
+)
+from backfield_entities.cleanup.decision_ops import defer_candidate as defer_candidate_decision
+from backfield_entities.cleanup.entity_models import cleanup_entity_models
 from backfield_entities.entities.linking.substrate_actions import (
     rank_canonical_suggestions_for_substrate,
 )
-from backfield_entities.entities.location.persist import refresh_aliases_for_linked_location
 from backfield_entities.entities.location.types import PLACE_EXTRACT_LOCATION_TYPES
-from backfield_entities.geo.geometry_bind import GeometryBindError, assign_geojson_geometry
-from backfield_events import record_canonical_created, record_canonical_evidence_changed
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import exists
@@ -44,6 +42,7 @@ from sqlmodel import Session, col, func, select
 
 from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
+from stylebook_api.helpers.candidate_decision_errors import candidate_decision_http_error
 from stylebook_api.helpers.candidate_review_display import (
     first_candidate_review_line,
     format_candidate_review_lines,
@@ -693,19 +692,12 @@ def defer_candidate(
         stylebook_slug=stylebook_slug,
         require_edit=True,
     )
-    if loc.stylebook_location_canonical_id is not None:
-        raise HTTPException(status_code=409, detail="Location is already linked to a canonical")
-    if loc.canonical_link_status != CANONICAL_LINK_PENDING:
-        raise HTTPException(
-            status_code=409,
-            detail="Location is not in the review queue (status must be pending)",
+    try:
+        defer_candidate_decision(
+            session, cleanup_entity_models("locations"), loc, provenance="stylebook_ui_defer"
         )
-
-    loc.canonical_link_status = CANONICAL_LINK_WAIVED
-    loc.canonical_review_reasons_json = [
-        {"code": "deferred_manual", "provenance": "stylebook_ui_defer"}
-    ]
-    session.add(loc)
+    except CandidateDecisionError as exc:
+        raise candidate_decision_http_error(exc, not_in_queue_status=409) from exc
     session.commit()
     return {"message": "deferred"}
 
@@ -766,134 +758,38 @@ def accept_candidate(
         require_edit=True,
     )
     stylebook_id = int(guarded_stylebook.id)
-    if loc.stylebook_location_canonical_id is not None:
-        raise HTTPException(status_code=409, detail="Location already linked to a canonical")
-    if loc.canonical_link_status not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Location is not in the canonical review queue (status must be pending or deferred)"
-            ),
-        )
-
-    if body.create_new:
-        label = (body.name or loc.name or "").strip()
-        if not label:
-            raise HTTPException(status_code=400, detail="name is required when create_new is true")
-        # Review UI often omits geometry; inherit from substrate (parity with ingest materialize).
-        bind_body_geometry = isinstance(body.geometry_json, dict)
-        if bind_body_geometry:
-            gj: dict[str, Any] | None = dict(body.geometry_json)
-            canon_geometry: object | None = None
+    models = cleanup_entity_models("locations")
+    try:
+        if body.create_new:
+            canonical_id = create_candidate_canonical(
+                session,
+                models,
+                loc,
+                stylebook_id=stylebook_id,
+                name=body.name,
+                kind=body.location_type,
+                geometry_json=body.geometry_json,
+                provenance="stylebook_ui_accept",
+            )
         else:
-            raw_gj = loc.geometry_json
-            gj = dict(raw_gj) if isinstance(raw_gj, dict) else None
-            canon_geometry = loc.geometry
-        if body.location_type is not None:
-            lt_candidate = (body.location_type or "").strip().lower() or None
-            if lt_candidate is not None and lt_candidate not in PLACE_EXTRACT_LOCATION_TYPES:
+            if body.stylebook_location_id is None:
                 raise HTTPException(
                     status_code=400,
-                    detail="location_type must be a PlaceExtract location type when provided",
+                    detail="stylebook_location_id is required when create_new is false",
                 )
-            lt = lt_candidate
-        else:
-            lt = (loc.location_type or "").strip().lower() or None
-        fa = (loc.formatted_address or "").strip() or None
-        slug = allocate_unique_canonical_slug(session, stylebook_id=stylebook_id, label=label)
-        geometry_type: str | None = None
-        if isinstance(gj, dict):
-            gt_raw = gj.get("type")
-            if isinstance(gt_raw, str) and gt_raw.strip():
-                geometry_type = gt_raw.strip()
-        if geometry_type is None:
-            geometry_type = (loc.geometry_type or "").strip() or None
-        comps_accept = place_extract_components_from_entry(loc, None)
-        jur = stylebook_jurisdiction_fields_from_components(comps_accept)
-        dfields = stylebook_district_fields_from_components(comps_accept)
-        canon = StylebookLocationCanonical(
-            stylebook_id=stylebook_id,
-            label=label,
-            slug=slug,
-            location_type=lt,
-            formatted_address=fa,
-            primary_substrate_location_id=None,
-            status="active",
-            geometry_json=dict(gj) if isinstance(gj, dict) else gj,
-            geometry_type=geometry_type,
-            geometry=canon_geometry,
-            country_code=jur["country_code"],
-            subdivision_code=jur["subdivision_code"],
-            city_name=jur["city_name"],
-            district_kind=dfields["district_kind"],
-            district_number=dfields["district_number"],
-            district_key=dfields["district_key"],
-        )
-        session.add(canon)
-        session.flush()
-        # Body-supplied GeoJSON must also populate PostGIS (same as create_standalone_canonical).
-        if bind_body_geometry and isinstance(gj, dict):
-            try:
-                assign_geojson_geometry(session, canon, gj)
-            except GeometryBindError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
-            session.flush()
-        loc.stylebook_location_canonical_id = str(canon.id)
-    else:
-        if body.stylebook_location_id is None:
-            raise HTTPException(
-                status_code=400,
-                detail="stylebook_location_id is required when create_new is false",
+            canonical_id = link_candidate(
+                session,
+                models,
+                loc,
+                stylebook_id=stylebook_id,
+                canonical_id=str(body.stylebook_location_id),
+                provenance="stylebook_ui_accept",
             )
-        canon = session.get(StylebookLocationCanonical, str(body.stylebook_location_id))
-        if canon is None:
-            raise HTTPException(status_code=404, detail="Canonical location not found")
-        if int(canon.stylebook_id) != int(stylebook_id):
-            raise HTTPException(
-                status_code=400,
-                detail="Canonical is not in this project's Stylebook",
-            )
-        loc.stylebook_location_canonical_id = str(canon.id)
+    except CandidateDecisionError as exc:
+        raise candidate_decision_http_error(exc, not_in_queue_status=400) from exc
 
-    refresh_aliases_for_linked_location(
-        session,
-        stylebook_id=stylebook_id,
-        location=loc,
-        provenance="stylebook_ui_accept",
-    )
-    loc.canonical_link_status = CANONICAL_LINK_LINKED
-    if body.create_new:
-        loc.canonical_review_reasons_json = [
-            {
-                "code": "linked_manual_accept_create_new",
-                "canonical_id": str(canon.id),
-            }
-        ]
-        record_canonical_created(
-            session,
-            stylebook_id=stylebook_id,
-            entity_type="location",
-            canonical_id=str(canon.id),
-            label=str(canon.label),
-        )
-    else:
-        loc.canonical_review_reasons_json = [
-            {
-                "code": "linked_manual_accept_existing",
-                "canonical_id": str(canon.id),
-            }
-        ]
-        record_canonical_evidence_changed(
-            session,
-            stylebook_id=stylebook_id,
-            entity_type="location",
-            canonical_id=str(canon.id),
-            label=str(canon.label),
-            change="substrate_linked",
-        )
-    session.add(loc)
     session.commit()
     return AcceptCandidateResponse(
         message="linked",
-        stylebook_location_canonical_id=str(canon.id),
+        stylebook_location_canonical_id=canonical_id,
     )

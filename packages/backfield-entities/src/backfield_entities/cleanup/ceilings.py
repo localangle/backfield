@@ -9,12 +9,15 @@ from backfield_db import StylebookCleanupAction
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-OperationClass = Literal["merge", "edit", "alias", "dismissal", "retirement", "deletion"]
+OperationClass = Literal[
+    "merge", "edit", "alias", "dismissal", "decision", "retirement", "deletion"
+]
 OPERATION_CLASSES: tuple[OperationClass, ...] = (
     "merge",
     "edit",
     "alias",
     "dismissal",
+    "decision",
     "retirement",
     "deletion",
 )
@@ -25,6 +28,7 @@ DEFAULT_CEILINGS: dict[OperationClass, int] = {
     "edit": 5000,
     "alias": 5000,
     "dismissal": 5000,
+    "decision": 5000,
     "retirement": 500,
     "deletion": 200,
 }
