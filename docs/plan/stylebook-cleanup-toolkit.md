@@ -220,8 +220,8 @@ What the toolkit relies on, in brief:
   ceilings per run, a kill switch, a before-state ledger, and undo. Per item, the API enforces what
   the UI enforces and the data-model invariants of the operation.
 - **Service-key apply.** `cleanup:read` works on any key; `cleanup:apply` needs a service key.
-- **A preview contract.** The routes are not in the public OpenAPI or the Playground. The toolkit
-  reads a keyed schema and refuses to run against a preview version it does not know.
+- **A preview contract.** The routes are not in the public OpenAPI. The Playground lists the read
+  routes only. The toolkit reads a keyed schema and refuses to run against a preview version it does not know.
 
 ## Stream 4: Operator lane
 
